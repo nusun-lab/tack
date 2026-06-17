@@ -14,6 +14,8 @@ import us.nusun.llmshare.bean.LogTokens;
 import us.nusun.llmshare.model.LlmJobEnvelope;
 import us.nusun.llmshare.model.LlmJobRequest;
 import us.nusun.llmshare.model.LlmJobResult;
+import us.nusun.llmshare.runtime.AgentRuntimeDefinition;
+import us.nusun.llmshare.runtime.AgentRuntimeRegistry;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -34,6 +36,10 @@ public class LlmRoute extends RouteBuilder {
     @Inject
     LogTokens logTokens;
 
+    @Inject
+    AgentRuntimeRegistry agentRuntimeRegistry;
+
+
     @Override
     public void configure() {
         onException(JsonValidationException.class, ValidationException.class)
@@ -47,6 +53,7 @@ public class LlmRoute extends RouteBuilder {
                 .logStackTrace(false)
                 .logExhausted(false)
                 .log(LoggingLevel.WARN, "${exception.message}");
+
 
         from("direct:ask-llm")
                 .routeId("ask-llm")
@@ -166,12 +173,26 @@ public class LlmRoute extends RouteBuilder {
                     .when(header("CamelLangChain4jAgentSystemMessage").isNull())
                         .setHeader("CamelLangChain4jAgentSystemMessage", constant(DEFAULT_SYSTEM_PROMPT))
                 .end()
-                .process(exchange -> exchange.setProperty("llmStartedAt", Instant.now()))
+                .process(exchange -> {
+                    LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
+                    AgentRuntimeDefinition runtime = agentRuntimeRegistry.getRequired(job.requester());
+                    exchange.setProperty("agentRuntime", runtime);
+                    exchange.setProperty("llmStartedAt", Instant.now());
+                })
                 .choice()
-                    .when(simple("${exchangeProperty.llmJob.responseSchema} != null && ${exchangeProperty.llmJob.responseSchema} != '' && {{llm.structured-output.provider-schema-enabled:false}} == true"))
-                        .toD("langchain4j-agent:shared-llm?agentConfiguration=#sharedLlmConfig&jsonSchema=${exchangeProperty.llmJob.responseSchema}")
+                    .when(simple("${exchangeProperty.agentRuntime.roleId} == 'software-team/director'"))
+                        .to("direct:invoke-director-llm")
+                    .when(simple("${exchangeProperty.agentRuntime.roleId} == 'software-team/project-manager'"))
+                        .to("direct:invoke-project-manager-llm")
+                    .when(simple("${exchangeProperty.agentRuntime.roleId} == 'software-team/product-owner'"))
+                        .to("direct:invoke-product-owner-llm")
+                    .when(simple("${exchangeProperty.agentRuntime.roleId} == 'software-team/application-developer'"))
+                        .to("direct:invoke-application-developer-llm")
                     .otherwise()
-                        .to("langchain4j-agent:shared-llm?agentConfiguration=#sharedLlmConfig")
+                        .process(exchange -> {
+                            AgentRuntimeDefinition runtime = exchange.getProperty("agentRuntime", AgentRuntimeDefinition.class);
+                            throw new IllegalArgumentException("Unsupported agent runtime role: " + runtime.roleId());
+                        })
                 .end()
                 .validate(body().isNotNull())
                 .process(exchange -> {
@@ -181,6 +202,42 @@ public class LlmRoute extends RouteBuilder {
                     String rawResponse = exchange.getIn().getBody(String.class);
                     exchange.getIn().setBody(LlmJobResult.succeeded(job, model, rawResponse, rawResponse, startedAt));
                 });
+
+        from("direct:invoke-director-llm")
+                .routeId("invoke-director-llm")
+                .choice()
+                    .when(simple("${exchangeProperty.llmJob.responseSchema} != null && ${exchangeProperty.llmJob.responseSchema} != '' && {{llm.structured-output.provider-schema-enabled:false}} == true"))
+                        .toD("langchain4j-agent:software-team-director-llm?agentConfiguration=#directorAgentConfig&jsonSchema=${exchangeProperty.llmJob.responseSchema}")
+                    .otherwise()
+                        .to("langchain4j-agent:software-team-director-llm?agentConfiguration=#directorAgentConfig")
+                .end();
+
+        from("direct:invoke-project-manager-llm")
+                .routeId("invoke-project-manager-llm")
+                .choice()
+                    .when(simple("${exchangeProperty.llmJob.responseSchema} != null && ${exchangeProperty.llmJob.responseSchema} != '' && {{llm.structured-output.provider-schema-enabled:false}} == true"))
+                        .toD("langchain4j-agent:software-team-project-manager-llm?agentConfiguration=#projectManagerAgentConfig&jsonSchema=${exchangeProperty.llmJob.responseSchema}")
+                    .otherwise()
+                        .to("langchain4j-agent:software-team-project-manager-llm?agentConfiguration=#projectManagerAgentConfig")
+                .end();
+
+        from("direct:invoke-product-owner-llm")
+                .routeId("invoke-product-owner-llm")
+                .choice()
+                    .when(simple("${exchangeProperty.llmJob.responseSchema} != null && ${exchangeProperty.llmJob.responseSchema} != '' && {{llm.structured-output.provider-schema-enabled:false}} == true"))
+                        .toD("langchain4j-agent:software-team-product-owner-llm?agentConfiguration=#productOwnerAgentConfig&jsonSchema=${exchangeProperty.llmJob.responseSchema}")
+                    .otherwise()
+                        .to("langchain4j-agent:software-team-product-owner-llm?agentConfiguration=#productOwnerAgentConfig")
+                .end();
+
+        from("direct:invoke-application-developer-llm")
+                .routeId("invoke-application-developer-llm")
+                .choice()
+                    .when(simple("${exchangeProperty.llmJob.responseSchema} != null && ${exchangeProperty.llmJob.responseSchema} != '' && {{llm.structured-output.provider-schema-enabled:false}} == true"))
+                        .toD("langchain4j-agent:software-team-application-developer-llm?agentConfiguration=#applicationDeveloperAgentConfig&jsonSchema=${exchangeProperty.llmJob.responseSchema}")
+                    .otherwise()
+                        .to("langchain4j-agent:software-team-application-developer-llm?agentConfiguration=#applicationDeveloperAgentConfig")
+                .end();
 
         from("direct:build-failed-llm-result")
                 .routeId("build-failed-llm-result")

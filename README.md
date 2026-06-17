@@ -57,6 +57,8 @@ Focused tests:
 
 ### Important Configuration
 
+Local MCP identity setup is documented in [docs/local-mcp-agent-identities.md](/home/aphelio/Code/llm-share-camel-kafka/docs/local-mcp-agent-identities.md).
+
 Key properties live in [application.properties](src/main/resources/application.properties).
 
 ```properties

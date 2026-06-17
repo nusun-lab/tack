@@ -1,18 +1,22 @@
 package us.nusun.llmshare.bean;
 
+import dev.langchain4j.mcp.client.McpClient;
 import dev.langchain4j.model.openai.OpenAiChatModel;
-import jakarta.inject.Named;
 import jakarta.enterprise.inject.Produces;
+import jakarta.inject.Named;
 import jakarta.inject.Singleton;
 import org.apache.camel.component.langchain4j.agent.api.AgentConfiguration;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import us.nusun.llmshare.mcp.McpClientFactory;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 
 @Singleton
 public class LlmAgentFactory {
     @Produces
+    @Singleton
     OpenAiChatModel openAiChatModel(
             @ConfigProperty(name = "llm.openai.base-url") String baseUrl,
             @ConfigProperty(name = "llm.openai.api-key") String apiKey,
@@ -41,8 +45,44 @@ public class LlmAgentFactory {
     }
 
     @Produces
-    @Named("sharedLlmConfig")
-    AgentConfiguration sharedLlmConfig(OpenAiChatModel chatModel) {
-        return new AgentConfiguration().withChatModel(chatModel);
+    @Singleton
+    @Named("directorAgentConfig")
+    AgentConfiguration directorAgentConfig(OpenAiChatModel chatModel, McpClientFactory mcpClientFactory) {
+        return roleAgentConfig(chatModel, mcpClientFactory, "director", "leadership");
+    }
+
+    @Produces
+    @Singleton
+    @Named("projectManagerAgentConfig")
+    AgentConfiguration projectManagerAgentConfig(OpenAiChatModel chatModel, McpClientFactory mcpClientFactory) {
+        return roleAgentConfig(chatModel, mcpClientFactory, "project-manager", "planning");
+    }
+
+    @Produces
+    @Singleton
+    @Named("productOwnerAgentConfig")
+    AgentConfiguration productOwnerAgentConfig(OpenAiChatModel chatModel, McpClientFactory mcpClientFactory) {
+        return roleAgentConfig(chatModel, mcpClientFactory, "product-owner", "product");
+    }
+
+    @Produces
+    @Singleton
+    @Named("applicationDeveloperAgentConfig")
+    AgentConfiguration applicationDeveloperAgentConfig(OpenAiChatModel chatModel, McpClientFactory mcpClientFactory) {
+        return roleAgentConfig(chatModel, mcpClientFactory, "application-developer", "development");
+    }
+
+    private AgentConfiguration roleAgentConfig(
+            OpenAiChatModel chatModel,
+            McpClientFactory mcpClientFactory,
+            String identityKey,
+            String toolProfile) {
+        List<McpClient> mcpClients = mcpClientFactory.clientsFor(identityKey, toolProfile);
+        AgentConfiguration configuration = new AgentConfiguration().withChatModel(chatModel);
+        if (!mcpClients.isEmpty()) {
+            configuration.withMcpClients(mcpClients)
+                    .withMcpToolProviderFilter(mcpClientFactory.toolFilterFor(toolProfile));
+        }
+        return configuration;
     }
 }

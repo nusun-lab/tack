@@ -47,6 +47,13 @@ public class TeamPatterns extends RouteBuilder {
                         Day routine: ${exchangeProperty.currentRoutine}
                         Collaboration expectation: ${exchangeProperty.currentCollaboration}
                         Previous summary: ${exchangeProperty.priorSummary}
+                        Available MCP services in this environment: Mattermost, Gitea, and Plane.
+                        Backstage MCP is not available in this environment. If this routine mentions Backstage, say that it is unavailable and continue with the available MCP services instead of pretending you used it.
+                        Before answering, use the available MCP tools relevant to this routine step.
+                        You must make at least one concrete MCP tool call when a relevant tool exists.
+                        Do not claim you opened, reviewed, updated, posted, checked, validated, or confirmed anything unless a real MCP tool call in this turn supports that statement.
+                        If no relevant tool exists or the tool call fails, say so plainly in the summary and base the nextAction on that real limitation.
+                        Keep the summary grounded in the actual MCP result, not a generic placeholder.
                         You must return exactly one JSON object that matches this shape:
                         - role: the current agent id
                         - summary: one concise sentence explaining the result of this routine step
@@ -75,6 +82,8 @@ public class TeamPatterns extends RouteBuilder {
                         Day cycle: ${exchangeProperty.cycleCount}
                         Full day routine JSON:
                         ${exchangeProperty.dayRoutineResults}
+                        Judge completion only from the actual routine results above.
+                        Do not assume work happened unless the routine summaries say it happened.
                         Based on the objective, are you done?
                         You must return exactly one JSON object that matches this shape:
                         - done: true or false
