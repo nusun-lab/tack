@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AgentRoutineStep",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "role",
+    "summary",
+    "nextAction"
+  ],
+  "properties": {
+    "role": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "nextAction": {
+      "type": "string"
+    }
+  }
+}
