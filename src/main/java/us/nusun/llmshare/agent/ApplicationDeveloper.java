@@ -35,6 +35,8 @@ public class ApplicationDeveloper extends RouteBuilder {
                 .setHeader("sleepMessage", constant(ROLE.sleepMessage()))
                 .setHeader("systemPrompt", constant("{{agents.software-team.application-developer.system-prompt}}"))
                 .setProperty("priorSummary", constant("No prior Application Developer summary yet."))
+                .setProperty("projectBasics", constant("Use #forum-agents until exact channel, Plane project, and Gitea org are confirmed."))
+                .setProperty("agentScratchpad", constant("No DEV notes yet."))
                 .setProperty("dayCount", constant(0))
                 .loopDoWhile(simple("${exchangeProperty.dayCount} < {{agents.software-team.max-days}}"))
                     .setProperty("dayCount", simple("${exchangeProperty.dayCount} + 1"))

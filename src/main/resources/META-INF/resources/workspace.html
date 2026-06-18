@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LLM Share Workspace View</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { font-family: system-ui, sans-serif; margin: 24px; background: #111827; color: #e5e7eb; }
+    h1, h2, h3 { margin: 0 0 12px; }
+    .muted { color: #9ca3af; margin-bottom: 20px; }
+    .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+    .card { background: #1f2937; border: 1px solid #374151; border-radius: 10px; padding: 16px; }
+    .summary-card { margin-bottom: 20px; }
+    .summary-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom: 16px; }
+    .summary-item { background: #0f172a; border: 1px solid #374151; border-radius: 8px; padding: 12px; }
+    .summary-label { color: #9ca3af; font-size: 12px; }
+    .summary-value { font-size: 24px; font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid #374151; vertical-align: top; }
+    code, pre { font-family: ui-monospace, monospace; }
+    pre { white-space: pre-wrap; margin: 8px 0 0; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #374151; margin: 0 6px 6px 0; }
+    .list { display: grid; gap: 12px; }
+    .entry { background: #0f172a; border: 1px solid #374151; border-radius: 8px; padding: 12px; }
+    .entry-head { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+    .meta { color: #9ca3af; font-size: 12px; }
+    .preview { color: #d1d5db; }
+    details { border-top: 1px solid #374151; margin-top: 8px; padding-top: 8px; }
+    summary { cursor: pointer; color: #93c5fd; }
+    button { background: #2563eb; color: white; border: 0; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+    .error { color: #fca5a5; }
+  </style>
+</head>
+<body>
+  <h1>Workspace View</h1>
+  <div class="muted">Read-only view into live agent state. Auto-refreshes every 2s.</div>
+
+  <section class="card summary-card">
+    <h2>Summary</h2>
+    <div id="summary" class="summary-grid"></div>
+  </section>
+
+  <div class="grid">
+    <section class="card">
+      <h2>Routes</h2>
+      <table id="routes"></table>
+    </section>
+
+    <section class="card">
+      <h2>Topics</h2>
+      <div id="topics"></div>
+      <div id="topicDetails" class="list" style="margin-top: 12px;"></div>
+    </section>
+
+    <section class="card">
+      <h2>Project Basics</h2>
+      <div id="projects" class="list"></div>
+    </section>
+
+    <section class="card">
+      <h2>Agent Scratchpads</h2>
+      <div id="scratchpads" class="list"></div>
+    </section>
+  </div>
+
+  <script>
+    const expandedState = new Set();
+
+    function clear(el) {
+      while (el.firstChild) el.removeChild(el.firstChild);
+    }
+
+    function text(tag, value, className) {
+      const el = document.createElement(tag);
+      if (className) el.className = className;
+      el.textContent = value ?? '';
+      return el;
+    }
+
+    function button(label, onClick) {
+      const el = document.createElement('button');
+      el.type = 'button';
+      el.textContent = label;
+      el.addEventListener('click', onClick);
+      return el;
+    }
+
+    async function copyText(value) {
+      try {
+        await navigator.clipboard.writeText(value ?? '');
+      } catch (_) {
+      }
+    }
+
+    function renderTable(el, headers, rows) {
+      clear(el);
+      const thead = document.createElement('thead');
+      const trh = document.createElement('tr');
+      headers.forEach(h => trh.appendChild(text('th', h)));
+      thead.appendChild(trh);
+      el.appendChild(thead);
+
+      const tbody = document.createElement('tbody');
+      if (!rows.length) {
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = headers.length;
+        td.textContent = 'No data';
+        tr.appendChild(td);
+        tbody.appendChild(tr);
+      } else {
+        rows.forEach(row => {
+          const tr = document.createElement('tr');
+          row.forEach(cell => {
+            const td = document.createElement('td');
+            if (cell instanceof Node) td.appendChild(cell);
+            else td.textContent = cell ?? '';
+            tr.appendChild(td);
+          });
+          tbody.appendChild(tr);
+        });
+      }
+      el.appendChild(tbody);
+    }
+
+    function renderSummary(el, summary) {
+      clear(el);
+      const items = [
+        ['Routes', summary?.routes],
+        ['Started Routes', summary?.startedRoutes],
+        ['Topics', summary?.topics],
+        ['Topic Messages', summary?.totalTopicMessages],
+        ['Projects', summary?.projects],
+        ['Scratchpads', summary?.scratchpads]
+      ];
+      items.forEach(([label, value]) => {
+        const card = text('div', '', 'summary-item');
+        card.appendChild(text('div', label, 'summary-label'));
+        card.appendChild(text('div', String(value ?? 0), 'summary-value'));
+        el.appendChild(card);
+      });
+    }
+
+    function rememberDetailsState(details, stateKey) {
+      details.open = expandedState.has(stateKey);
+      details.addEventListener('toggle', () => {
+        if (details.open) expandedState.add(stateKey);
+        else expandedState.delete(stateKey);
+      });
+    }
+
+    function renderExpandableList(el, entries, sectionKey, labelKey, fullTextKey, stateKeyFn) {
+      clear(el);
+      if (!entries.length) {
+        el.appendChild(text('div', 'No data', 'meta'));
+        return;
+      }
+      entries.forEach(entry => {
+        const card = text('div', '', 'entry');
+        const head = text('div', '', 'entry-head');
+        head.appendChild(text('code', entry.requestId || ''));
+        head.appendChild(text('code', entry[labelKey] || ''));
+        head.appendChild(text('span', `len ${entry.length ?? 0}`, 'meta'));
+        head.appendChild(button('Copy', () => copyText(entry[fullTextKey] || '')));
+        card.appendChild(head);
+        card.appendChild(text('div', entry.preview || '', 'preview'));
+        const details = document.createElement('details');
+        const stateKey = stateKeyFn ? stateKeyFn(entry) : `${sectionKey}:${entry.requestId || ''}:${entry[labelKey] || ''}`;
+        rememberDetailsState(details, stateKey);
+        details.appendChild(text('summary', 'Show full text'));
+        details.appendChild(text('pre', entry[fullTextKey] || ''));
+        card.appendChild(details);
+        el.appendChild(card);
+      });
+    }
+
+    function renderTopicDetails(el, topicDetails) {
+      clear(el);
+      if (!topicDetails.length) {
+        el.appendChild(text('div', 'No topics', 'meta'));
+        return;
+      }
+      topicDetails.forEach(topic => {
+        const card = text('div', '', 'entry');
+        const head = text('div', '', 'entry-head');
+        head.appendChild(text('code', topic.name || ''));
+        head.appendChild(text('span', `partitions ${topic.partitions ?? '?'}`, 'meta'));
+        head.appendChild(text('span', `messages ${topic.messageCount ?? '?'}`, 'meta'));
+        card.appendChild(head);
+        if (topic.error) {
+          card.appendChild(text('div', `Error: ${topic.error}`, 'error'));
+        }
+        const details = document.createElement('details');
+        rememberDetailsState(details, `topic:${topic.name || ''}`);
+        details.appendChild(text('summary', 'Show offsets'));
+        const pre = document.createElement('pre');
+        pre.textContent = JSON.stringify(topic.offsets || [], null, 2);
+        details.appendChild(pre);
+        card.appendChild(details);
+        el.appendChild(card);
+      });
+    }
+
+    async function refresh() {
+      const res = await fetch('/workspace/view');
+      const data = await res.json();
+
+      renderSummary(document.getElementById('summary'), data.summary || {});
+
+      const topicsEl = document.getElementById('topics');
+      clear(topicsEl);
+      (data.topics || []).forEach(t => {
+        const pill = text('span', t, 'pill');
+        topicsEl.appendChild(pill);
+      });
+
+      renderTable(
+        document.getElementById('routes'),
+        ['Route', 'Status'],
+        (data.routes || []).map(r => [r.routeId, r.status])
+      );
+
+      renderTopicDetails(document.getElementById('topicDetails'), data.topicDetails || []);
+      renderExpandableList(
+        document.getElementById('projects'),
+        data.projects || [],
+        'projects',
+        'requestId',
+        'fullText',
+        entry => `project:${entry.requestId || ''}`
+      );
+      renderExpandableList(
+        document.getElementById('scratchpads'),
+        data.scratchpads || [],
+        'scratchpads',
+        'roleId',
+        'fullText',
+        entry => `scratchpad:${entry.requestId || ''}:${entry.roleId || ''}`
+      );
+    }
+
+    refresh();
+    setInterval(refresh, 2000);
+  </script>
+</body>
+</html>

@@ -21,6 +21,9 @@ public class ResetService {
     @Inject
     KafkaTopicProvisioner kafkaTopicProvisioner;
 
+    @Inject
+    ProjectMemoryStore projectMemoryStore;
+
     @ConfigProperty(name = "llm.worker.enabled", defaultValue = "true")
     boolean workerEnabled;
 
@@ -33,6 +36,7 @@ public class ResetService {
 
         try {
             kafkaTopicProvisioner.resetTopics();
+            projectMemoryStore.clear();
         } finally {
             for (String routeId : routesToResume) {
                 resumeAfterReset(routeId);
@@ -43,7 +47,8 @@ public class ResetService {
         response.put("status", "RESET");
         response.put("topics", kafkaTopicProvisioner.configuredTopicNames());
         response.put("jobsCleared", false);
-        response.put("message", "Kafka topics were reset. No in-memory job store is maintained.");
+        response.put("memoryCleared", true);
+        response.put("message", "Kafka topics and in-memory workspace view state were reset.");
         return response;
     }
 

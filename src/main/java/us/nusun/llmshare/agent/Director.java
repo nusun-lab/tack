@@ -58,13 +58,22 @@ public class Director extends RouteBuilder {
                 .setHeader("responseSchema", constant("classpath:schemas/director-objectives-schema.json"))
                 .process(exchange -> exchange.getIn().setBody("""
                         Original request: %s
+                        Known team members:
+                        %s
                         Available team roles:
                         %s
+                        Build each mission with awareness of the real team above.
+                        Every mission must explicitly mention the most relevant teammate, team role, or collaborator when coordination matters.
+                        Do not write isolated missions that ignore the existence of the rest of the team.
+                        For PM missions, explicitly mention the team and David Gordon (@aphelio) when collaboration setup or coordination is involved.
+                        For PO and DEV missions, explicitly mention the PM when project setup or shared execution context matters.
+                        If a mission depends on collaboration setup, assume David Gordon (@aphelio) must be included.
                         Return one JSON object where each key is an agent role id from the list above and each value is one concise mission statement for that role.
                         Include only the roles that are actually useful for this request.
                         Return JSON only.
                         """.formatted(
                         exchange.getProperty("requestPrompt", String.class),
+                        teamRoleRegistry.directorTeamRoster(),
                         teamRoleRegistry.directorRoleGuide()
                 )))
                 .to("direct:log-director-banner")

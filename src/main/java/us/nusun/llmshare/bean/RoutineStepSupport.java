@@ -5,8 +5,10 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.Exchange;
 import us.nusun.llmshare.model.LlmJobResult;
+import us.nusun.llmshare.model.ProjectCollaborationSetup;
 import us.nusun.llmshare.model.RoutineStepResult;
 import us.nusun.llmshare.model.RoutineToolTraceEntry;
+import us.nusun.llmshare.team.TeamRoleRegistry;
 
 import java.util.List;
 import java.util.UUID;
@@ -15,12 +17,19 @@ import java.util.UUID;
 public class RoutineStepSupport {
     private static final String FORMATTER_ROLE_ID = "software-team/routine-formatter";
     private static final String FORMATTER_ROLE = "routine-formatter";
+    private static final int MEMORY_LIMIT = 200;
 
     @Inject
     ObjectMapper objectMapper;
 
     @Inject
     RoutineToolTraceTracker routineToolTraceTracker;
+
+    @Inject
+    ProjectMemoryStore projectMemoryStore;
+
+    @Inject
+    TeamRoleRegistry teamRoleRegistry;
 
     public void prepareExploration(Exchange exchange) {
         UUID jobId = UUID.randomUUID();
@@ -36,6 +45,8 @@ public class RoutineStepSupport {
         exchange.setProperty("routineStepResult", null);
         exchange.setProperty("doneCandidate", false);
         exchange.setProperty("completionSignal", "continue");
+        ensureMemoryDefaults(exchange);
+        loadSharedMemory(exchange);
         routineToolTraceTracker.prepare(jobId);
         exchange.getIn().removeHeader("responseSchema");
         exchange.getIn().setBody("""
@@ -45,8 +56,15 @@ public class RoutineStepSupport {
                 Routine step: %s
                 Routine details: %s
                 Previous summary: %s
+                Known team roster:
+                %s
+                Project basics memory: %s
+                Agent scratchpad memory: %s
                 Available MCP services in this environment: Mattermost, Gitea, and Plane.
                 Backstage MCP is not available in this environment. If this routine mentions Backstage, say that it is unavailable and continue with the available MCP services instead of pretending you used it.
+                If you do not know the correct project collaboration location, fall back to Mattermost channel #forum-agents.
+                Use private team-only collaboration spaces, never public ones.
+                David Gordon (@aphelio) must always be included in team collaboration spaces.
                 Before answering, use the available MCP tools relevant to this routine step.
                 You must make at least one concrete MCP tool call when a relevant tool exists.
                 Do not claim you opened, reviewed, updated, posted, checked, validated, or confirmed anything unless a real MCP tool call in this turn supports that statement.
@@ -63,7 +81,10 @@ public class RoutineStepSupport {
                 stringProperty(exchange, "cycleCount"),
                 stringProperty(exchange, "currentStep"),
                 stringProperty(exchange, "currentRoutine"),
-                stringProperty(exchange, "priorSummary")));
+                stringProperty(exchange, "priorSummary"),
+                stringProperty(exchange, "teamRoster"),
+                stringProperty(exchange, "projectBasics"),
+                stringProperty(exchange, "agentScratchpad")));
     }
 
     public void captureExploration(Exchange exchange) {
@@ -112,6 +133,15 @@ public class RoutineStepSupport {
         exchange.setProperty("doneCandidate", result.doneCandidate());
         exchange.setProperty("needsFollowup", result.needsFollowup());
         exchange.setProperty("completionSignal", result.doneCandidate() ? "done-candidate" : "continue");
+        exchange.setProperty("agentScratchpad", clampMemory(composeAgentScratchpad(result)));
+        projectMemoryStore.putAgentScratchpad(
+                exchange,
+                resolveScratchpadOwnerRoleId(exchange, result),
+                stringProperty(exchange, "agentScratchpad"));
+        if (blank(stringProperty(exchange, "projectBasics"))) {
+            exchange.setProperty("projectBasics", clampMemory(result.summary()));
+            projectMemoryStore.putProjectBasics(exchange, stringProperty(exchange, "projectBasics"));
+        }
 
         String serialized = toJson(result);
         exchange.setProperty("lastRoutineResult", serialized);
@@ -121,6 +151,54 @@ public class RoutineStepSupport {
         } else {
             exchange.setProperty("dayRoutineResults", dayResults + "\n\n" + serialized);
         }
+    }
+
+    public void prepareCollaborationSetupCheck(Exchange exchange) {
+        ensureMemoryDefaults(exchange);
+        exchange.getIn().setHeader("responseSchema", "classpath:schemas/project-collaboration-setup-schema.json");
+        exchange.getIn().setBody("""
+                Original request: %s
+                Current project basics memory: %s
+                Current routine result JSON:
+                %s
+
+                Judge only from the routine results and memory above whether team collaboration is set up.
+                Collaboration is ready only if all of these are true:
+                - a private Mattermost project channel exists or is confirmed
+                - a private Plane project exists or is confirmed
+                - a private Gitea org exists or is confirmed
+                - the PM posted the exact Mattermost channel, Plane project, and Gitea org in #forum-agents
+                - David Gordon (@aphelio) is included in the team collaboration spaces
+                If a name is unknown, return an empty string for that field except Mattermost fallback may be #forum-agents.
+                Return exactly one JSON object with:
+                - collaborationReady
+                - chatChannelReady
+                - planeProjectReady
+                - giteaOrgReady
+                - forumAnnouncementReady
+                - mattermostChannel
+                - planeProject
+                - giteaOrg
+                - reason
+                Return JSON only.
+                """.formatted(
+                stringProperty(exchange, "requestPrompt"),
+                stringProperty(exchange, "projectBasics"),
+                stringProperty(exchange, "dayRoutineResults")));
+    }
+
+    public void applyCollaborationSetupCheck(Exchange exchange) {
+        ProjectCollaborationSetup result = exchange.getIn().getBody(ProjectCollaborationSetup.class);
+        exchange.setProperty("collaborationSetupComplete", result != null && result.collaborationReady());
+        exchange.setProperty("collaborationSetupReason", result == null ? "" : result.reason());
+        if (result != null) {
+            exchange.setProperty("mattermostChannel", safe(result.mattermostChannel()));
+            exchange.setProperty("planeProject", safe(result.planeProject()));
+            exchange.setProperty("giteaOrg", safe(result.giteaOrg()));
+            exchange.setProperty("projectBasics", clampMemory(composeProjectBasics(result, stringProperty(exchange, "projectBasics"))));
+            projectMemoryStore.putProjectBasics(exchange, stringProperty(exchange, "projectBasics"));
+        }
+        exchange.getIn().removeHeader("responseSchema");
     }
 
     public void restoreRoleHeaders(Exchange exchange) {
@@ -269,5 +347,93 @@ public class RoutineStepSupport {
     private static String stringProperty(Exchange exchange, String name) {
         Object value = exchange.getProperty(name);
         return value == null ? "" : String.valueOf(value);
+    }
+
+    private void ensureMemoryDefaults(Exchange exchange) {
+        if (blank(stringProperty(exchange, "projectBasics"))) {
+            exchange.setProperty("projectBasics", "Use #forum-agents until exact channel, Plane project, and Gitea org are confirmed.");
+        }
+        if (blank(stringProperty(exchange, "agentScratchpad"))) {
+            exchange.setProperty("agentScratchpad", "No agent notes yet.");
+        }
+        if (blank(stringProperty(exchange, "teamRoster"))) {
+            exchange.setProperty("teamRoster", teamRoleRegistry.directorTeamRoster());
+        }
+        if (exchange.getProperty("collaborationSetupComplete") == null) {
+            exchange.setProperty("collaborationSetupComplete", false);
+        }
+    }
+
+    private void loadSharedMemory(Exchange exchange) {
+        String sharedProjectBasics = projectMemoryStore.getProjectBasics(exchange);
+        if (!blank(sharedProjectBasics)) {
+            exchange.setProperty("projectBasics", sharedProjectBasics);
+        }
+        String sharedScratchpad = projectMemoryStore.getAgentScratchpad(exchange, resolveScratchpadOwnerRoleId(exchange, null));
+        if (!blank(sharedScratchpad)) {
+            exchange.setProperty("agentScratchpad", sharedScratchpad);
+        }
+    }
+
+    private static String resolveScratchpadOwnerRoleId(Exchange exchange, RoutineStepResult result) {
+        String originalAgent = stringProperty(exchange, "routineOriginalAgent");
+        if (!blank(originalAgent)) {
+            return originalAgent;
+        }
+        if (result != null && !blank(result.role()) && !FORMATTER_ROLE_ID.equals(result.role())) {
+            return result.role();
+        }
+        String currentAgent = exchange.getIn().getHeader("agent", String.class);
+        if (!blank(currentAgent)) {
+            return currentAgent;
+        }
+        return FORMATTER_ROLE_ID;
+    }
+
+    private static String composeAgentScratchpad(RoutineStepResult result) {
+        return safe(result.step()) + ": " + safe(result.summary()) + " Next: " + safe(result.nextAction());
+    }
+
+    private static String composeProjectBasics(ProjectCollaborationSetup result, String fallback) {
+        StringBuilder basics = new StringBuilder();
+        if (!blank(result.mattermostChannel())) {
+            basics.append("chat=").append(result.mattermostChannel());
+        }
+        if (!blank(result.planeProject())) {
+            appendWithSeparator(basics, "plane=" + result.planeProject());
+        }
+        if (!blank(result.giteaOrg())) {
+            appendWithSeparator(basics, "gitea=" + result.giteaOrg());
+        }
+        appendWithSeparator(basics, result.collaborationReady() ? "private ready include @aphelio" : "fallback #forum-agents");
+        appendWithSeparator(basics, result.reason());
+        String built = basics.toString().trim();
+        return blank(built) ? fallback : built;
+    }
+
+    private static void appendWithSeparator(StringBuilder builder, String value) {
+        if (blank(value)) {
+            return;
+        }
+        if (!builder.isEmpty()) {
+            builder.append(" | ");
+        }
+        builder.append(value);
+    }
+
+    private static String clampMemory(String value) {
+        String normalized = safe(value).replaceAll("\\s+", " ").trim();
+        if (normalized.length() <= MEMORY_LIMIT) {
+            return normalized;
+        }
+        return normalized.substring(0, MEMORY_LIMIT - 1).trim() + "…";
+    }
+
+    private static boolean blank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private static String safe(String value) {
+        return value == null ? "" : value;
     }
 }

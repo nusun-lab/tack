@@ -17,6 +17,7 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import java.time.Duration;
 import java.util.HashSet;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -114,6 +115,95 @@ public class KafkaTopicProvisioner {
             LOG.infof("Reset Kafka topics: %s", configuredTopicNames());
             return configuredTopicNames();
         }
+    }
+
+    public List<Map<String, Object>> topicDetails() {
+        try (AdminClient adminClient = adminClient(); KafkaConsumer<String, String> consumer = resetConsumer()) {
+            Map<String, Object> describedTopics = new LinkedHashMap<>(adminClient.describeTopics(configuredTopicNames()).allTopicNames().get());
+            List<TopicPartition> topicPartitions = topicPartitions(adminClient);
+            consumer.assign(topicPartitions);
+            consumer.poll(Duration.ZERO);
+            Map<TopicPartition, Long> beginningOffsets = consumer.beginningOffsets(topicPartitions);
+            Map<TopicPartition, Long> endOffsets = consumer.endOffsets(topicPartitions);
+
+            return configuredTopicNames().stream()
+                    .map(topic -> topicDetail(topic, describedTopics, beginningOffsets, endOffsets))
+                    .toList();
+        } catch (Exception e) {
+            return configuredTopicNames().stream()
+                    .map(topic -> topicErrorDetail(topic, e))
+                    .toList();
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> topicDetail(
+            String topic,
+            Map<String, Object> describedTopics,
+            Map<TopicPartition, Long> beginningOffsets,
+            Map<TopicPartition, Long> endOffsets) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("name", topic);
+        try {
+            Object description = describedTopics.get(topic);
+            List<?> partitions = (List<?>) description.getClass().getMethod("partitions").invoke(description);
+            row.put("partitions", partitions.size());
+
+            List<Map<String, Object>> offsetRows = partitions.stream()
+                    .map(partition -> {
+                        try {
+                            int partitionId = (Integer) partition.getClass().getMethod("partition").invoke(partition);
+                            TopicPartition topicPartition = new TopicPartition(topic, partitionId);
+                            long beginning = beginningOffsets.getOrDefault(topicPartition, 0L);
+                            long end = endOffsets.getOrDefault(topicPartition, 0L);
+                            Map<String, Object> offsetRow = new LinkedHashMap<>();
+                            offsetRow.put("partition", partitionId);
+                            offsetRow.put("beginningOffset", beginning);
+                            offsetRow.put("endOffset", end);
+                            offsetRow.put("messageCount", Math.max(0L, end - beginning));
+                            return offsetRow;
+                        } catch (Exception e) {
+                            Map<String, Object> offsetRow = new LinkedHashMap<>();
+                            offsetRow.put("partition", -1);
+                            offsetRow.put("error", rootMessage(e));
+                            return offsetRow;
+                        }
+                    })
+                    .toList();
+
+            long messageCount = offsetRows.stream()
+                    .map(rowMap -> rowMap.get("messageCount"))
+                    .filter(Long.class::isInstance)
+                    .map(Long.class::cast)
+                    .reduce(0L, Long::sum);
+
+            row.put("offsets", offsetRows);
+            row.put("messageCount", messageCount);
+            row.put("error", null);
+            return row;
+        } catch (Exception e) {
+            return topicErrorDetail(topic, e);
+        }
+    }
+
+    private Map<String, Object> topicErrorDetail(String topic, Exception e) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("name", topic);
+        row.put("partitions", null);
+        row.put("offsets", List.of());
+        row.put("messageCount", null);
+        row.put("error", rootMessage(e));
+        return row;
+    }
+
+    private static String rootMessage(Exception e) {
+        Throwable current = e;
+        while (current.getCause() != null) {
+            current = current.getCause();
+        }
+        return current.getMessage() == null || current.getMessage().isBlank()
+                ? current.getClass().getSimpleName()
+                : current.getMessage();
     }
 
     private AdminClient adminClient() {

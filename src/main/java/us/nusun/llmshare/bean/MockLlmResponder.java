@@ -40,6 +40,9 @@ public class MockLlmResponder {
                             ? "Two structured routine cycles are enough to satisfy the current objective in the mock flow."
                             : "Continue the daily routine before declaring the objective complete.");
                 }
+                case "classpath:schemas/project-collaboration-setup-schema.json" -> """
+                        {"collaborationReady":false,"chatChannelReady":false,"planeProjectReady":false,"giteaOrgReady":false,"forumAnnouncementReady":false,"mattermostChannel":"#forum-agents","planeProject":"","giteaOrg":"","reason":"Mock flow has no real collaboration setup evidence yet."}
+                        """;
                 default -> """
                         {"role":"%s","summary":"Synthetic schema response.","nextAction":"None."}
                         """.formatted(job.requester());

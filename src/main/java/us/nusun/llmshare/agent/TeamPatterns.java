@@ -8,6 +8,7 @@ import org.apache.camel.component.jsonvalidator.JsonValidationException;
 import org.apache.camel.model.dataformat.JsonLibrary;
 import us.nusun.llmshare.bean.LogTokens;
 import us.nusun.llmshare.bean.RoutineStepSupport;
+import us.nusun.llmshare.model.ProjectCollaborationSetup;
 import us.nusun.llmshare.model.RoutineStepResult;
 
 @ApplicationScoped
@@ -105,5 +106,13 @@ public class TeamPatterns extends RouteBuilder {
                 .unmarshal().json(JsonLibrary.Jackson)
                 .setProperty("done", simple("${body[done]}"))
                 .setProperty("doneReason", simple("${body[reason]}"));
+
+        from("direct:software-team-check-collaboration-setup")
+                .routeId("software-team-check-collaboration-setup")
+                .process(routineStepSupport::prepareCollaborationSetupCheck)
+                .to("direct:ask-llm")
+                .setBody(simple("${body.content}"))
+                .unmarshal().json(JsonLibrary.Jackson, ProjectCollaborationSetup.class)
+                .process(routineStepSupport::applyCollaborationSetupCheck);
     }
 }

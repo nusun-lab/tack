@@ -35,6 +35,16 @@ public class TeamRoleRegistry {
                 .collect(Collectors.joining("\n"));
     }
 
+    public String directorTeamRoster() {
+        String roleLines = roles.values().stream()
+                .map(role -> "- " + role.displayName() + " (" + role.roleId() + ", " + role.agentLabel() + ")")
+                .collect(Collectors.joining("\n"));
+        return """
+                - CEO: David Gordon (@aphelio)
+                %s
+                """.formatted(roleLines);
+    }
+
     public void validateAssignments(Map<String, String> assignments) {
         if (assignments == null || assignments.isEmpty()) {
             throw new IllegalArgumentException("Director assignments must include at least one role");

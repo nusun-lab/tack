@@ -27,6 +27,11 @@ public class ApiRoute extends RouteBuilder {
                 .post()
                     .to("direct:perform-llm-reset");
 
+        rest("/workspace/view")
+                .produces("application/json")
+                .get()
+                    .to("direct:workspace-view");
+
         from("direct:submit-user-goal")
                 .routeId("submit-user-goal")
                 .unmarshal().json(JsonLibrary.Jackson, UserGoalRequest.class)
@@ -50,6 +55,13 @@ public class ApiRoute extends RouteBuilder {
         from("direct:perform-llm-reset")
                 .routeId("perform-llm-reset")
                 .bean("resetService", "reset")
+                .marshal().json(JsonLibrary.Jackson)
+                .setHeader(Exchange.HTTP_RESPONSE_CODE, constant(200))
+                .setHeader(Exchange.CONTENT_TYPE, constant("application/json"));
+
+        from("direct:workspace-view")
+                .routeId("workspace-view")
+                .bean("workspaceViewService", "view")
                 .marshal().json(JsonLibrary.Jackson)
                 .setHeader(Exchange.HTTP_RESPONSE_CODE, constant(200))
                 .setHeader(Exchange.CONTENT_TYPE, constant("application/json"));
