@@ -1,5 +1,6 @@
 package us.nusun.llmshare.mcp;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.invocation.InvocationContext;
@@ -13,6 +14,7 @@ import dev.langchain4j.mcp.client.McpRoot;
 import dev.langchain4j.service.tool.ToolExecutionResult;
 import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.bean.LogTokens;
+import us.nusun.llmshare.bean.RoutineToolTraceTracker;
 import us.nusun.llmshare.config.AgentIdentityConfig;
 
 import java.util.LinkedHashMap;
@@ -24,12 +26,15 @@ import java.util.function.BiPredicate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class McpClientFactoryTest {
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
     @Test
     void tokenLookupUsesDifferentRoleSpecificProperties() {
-        McpClientFactory factory = new McpClientFactory(new FakeAgentIdentityConfig(), new LogTokens());
+        McpClientFactory factory = factory();
 
         assertEquals("Bearer mm-director", factory.mattermostConnection("director").headers().get("Authorization"));
         assertEquals("Bearer mm-pm", factory.mattermostConnection("project-manager").headers().get("Authorization"));
@@ -39,7 +44,7 @@ class McpClientFactoryTest {
 
     @Test
     void planeConnectionIncludesApiKeyAndWorkspaceSlugHeaders() {
-        McpClientFactory factory = new McpClientFactory(new FakeAgentIdentityConfig(), new LogTokens());
+        McpClientFactory factory = factory();
         McpClientFactory.McpServiceConnection connection = factory.planeConnection("director");
 
         assertEquals("plane-director", connection.headers().get("x-api-key"));
@@ -48,7 +53,7 @@ class McpClientFactoryTest {
 
     @Test
     void duplicateGetMeIsFilteredFromGiteaAndPlaneButNotMattermost() {
-        McpClientFactory factory = new McpClientFactory(new FakeAgentIdentityConfig(), new LogTokens());
+        McpClientFactory factory = factory();
         BiPredicate<McpClient, ToolSpecification> filter = factory.toolFilterFor("development");
         ToolSpecification getMe = ToolSpecification.builder().name("get_me").description("identity").build();
 
@@ -59,7 +64,7 @@ class McpClientFactoryTest {
 
     @Test
     void filteredVisibleToolNamesRemainUnique() {
-        McpClientFactory factory = new McpClientFactory(new FakeAgentIdentityConfig(), new LogTokens());
+        McpClientFactory factory = factory();
         BiPredicate<McpClient, ToolSpecification> filter = factory.toolFilterFor("planning");
         Map<McpClient, List<ToolSpecification>> toolsByClient = new LinkedHashMap<>();
         toolsByClient.put(new FakeMcpClient("mattermost:project-manager"), List.of(
@@ -85,10 +90,65 @@ class McpClientFactoryTest {
         assertEquals(1L, visibleNames.stream().filter("get_me"::equals).count());
     }
 
+    @Test
+    void boundedToolResultExtractorReturnsErrorWhenTextExceedsLimit() throws Exception {
+        BoundedMcpToolResultExtractor extractor = new BoundedMcpToolResultExtractor(10);
+
+        ToolExecutionResult result = extractor.extract(
+                OBJECT_MAPPER.readTree("""
+                        [{"type":"text","text":"01234567890"}]
+                        """),
+                false);
+
+        assertTrue(result.isError());
+        assertEquals(BoundedMcpToolResultExtractor.SUPPRESSED_MESSAGE, result.resultText());
+    }
+
+    @Test
+    void boundedToolResultExtractorPreservesSmallTextResults() throws Exception {
+        BoundedMcpToolResultExtractor extractor = new BoundedMcpToolResultExtractor(10);
+
+        ToolExecutionResult result = extractor.extract(
+                OBJECT_MAPPER.readTree("""
+                        [{"type":"text","text":"ok"}]
+                        """),
+                false);
+
+        assertFalse(result.isError());
+        assertEquals("ok", result.resultText());
+    }
+
+    @Test
+    void factoryConfigExposesDefaultMaxToolResultCharacters() {
+        McpClientFactory factory = factory();
+
+        assertNotNull(factory);
+        assertEquals(1000, new FakeAgentIdentityConfig().mcp().maxToolResultCharacters());
+    }
+
+    private static McpClientFactory factory() {
+        return new McpClientFactory(new FakeAgentIdentityConfig(), new LogTokens(), new RoutineToolTraceTracker());
+    }
+
     private static final class FakeAgentIdentityConfig implements AgentIdentityConfig {
         @Override
         public Mcp mcp() {
             return new Mcp() {
+                @Override
+                public int maxToolResultCharacters() {
+                    return 1000;
+                }
+
+                @Override
+                public long transportTimeoutMs() {
+                    return 60000;
+                }
+
+                @Override
+                public long initializationTimeoutMs() {
+                    return 30000;
+                }
+
                 @Override
                 public Logging logging() {
                     return new Logging() {
@@ -104,6 +164,21 @@ class McpClientFactoryTest {
 
                         @Override
                         public boolean transportResponses() {
+                            return false;
+                        }
+                    };
+                }
+
+                @Override
+                public StartupCheck startupCheck() {
+                    return new StartupCheck() {
+                        @Override
+                        public boolean enabled() {
+                            return false;
+                        }
+
+                        @Override
+                        public boolean failFast() {
                             return false;
                         }
                     };

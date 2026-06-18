@@ -12,6 +12,7 @@ import dev.langchain4j.mcp.client.McpResourceTemplate;
 import dev.langchain4j.mcp.client.McpRoot;
 import dev.langchain4j.service.tool.ToolExecutionResult;
 import us.nusun.llmshare.bean.LogTokens;
+import us.nusun.llmshare.bean.RoutineToolTraceTracker;
 
 import java.util.List;
 import java.util.Map;
@@ -21,13 +22,23 @@ final class LoggingMcpClient implements McpClient {
 
     private final McpClient delegate;
     private final LogTokens logTokens;
+    private final RoutineToolTraceTracker routineToolTraceTracker;
     private final String agentLabel;
     private final String messagePrefix;
+    private final String serviceName;
 
-    LoggingMcpClient(McpClient delegate, String serviceName, String identityKey, String agentLabel, LogTokens logTokens) {
+    LoggingMcpClient(
+            McpClient delegate,
+            String serviceName,
+            String identityKey,
+            String agentLabel,
+            LogTokens logTokens,
+            RoutineToolTraceTracker routineToolTraceTracker) {
         this.delegate = delegate;
         this.logTokens = logTokens;
+        this.routineToolTraceTracker = routineToolTraceTracker;
         this.agentLabel = agentLabel;
+        this.serviceName = serviceName;
         this.messagePrefix = "MCP " + serviceName + "[" + identityKey + "]";
     }
 
@@ -162,6 +173,12 @@ final class LoggingMcpClient implements McpClient {
         ToolExecutionResult result = invocationContext == null
                 ? delegate.executeTool(executionRequest)
                 : delegate.executeTool(executionRequest, invocationContext);
+        routineToolTraceTracker.record(
+                serviceName,
+                executionRequest.name(),
+                abbreviate(executionRequest.arguments()),
+                result.isError(),
+                abbreviate(resultText(result)));
         logDim("tool response name=" + executionRequest.name()
                 + " isError=" + result.isError()
                 + " result=" + abbreviate(resultText(result)));

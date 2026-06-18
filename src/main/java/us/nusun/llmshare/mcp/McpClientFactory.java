@@ -12,6 +12,7 @@ import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import us.nusun.llmshare.bean.LogTokens;
+import us.nusun.llmshare.bean.RoutineToolTraceTracker;
 import us.nusun.llmshare.config.AgentIdentityConfig;
 
 import java.time.Duration;
@@ -32,23 +33,25 @@ public class McpClientFactory {
 
     private final AgentIdentityConfig config;
     private final LogTokens logTokens;
+    private final RoutineToolTraceTracker routineToolTraceTracker;
 
     @Inject
-    public McpClientFactory(AgentIdentityConfig config, LogTokens logTokens) {
+    public McpClientFactory(AgentIdentityConfig config, LogTokens logTokens, RoutineToolTraceTracker routineToolTraceTracker) {
         this.config = config;
         this.logTokens = logTokens;
+        this.routineToolTraceTracker = routineToolTraceTracker;
     }
 
     public McpClient mattermost(String identityKey) {
-        return buildClient(mattermostConnection(identityKey));
+        return buildClient(identityKey, mattermostConnection(identityKey));
     }
 
     public McpClient gitea(String identityKey) {
-        return buildClient(giteaConnection(identityKey));
+        return buildClient(identityKey, giteaConnection(identityKey));
     }
 
     public McpClient plane(String identityKey) {
-        return buildClient(planeConnection(identityKey));
+        return buildClient(identityKey, planeConnection(identityKey));
     }
 
     public List<McpClient> clientsFor(String identityKey, String toolProfile) {
@@ -120,25 +123,95 @@ public class McpClientFactory {
                 "Bearer %s");
     }
 
-    private McpClient buildClient(McpServiceConnection connection) {
+    public boolean startupCheckEnabled() {
+        return config.mcp().startupCheck().enabled();
+    }
+
+    public boolean startupCheckFailFast() {
+        return config.mcp().startupCheck().failFast();
+    }
+
+    public void logStartupConfiguration() {
+        for (String identityKey : List.of("director", "project-manager", "product-owner", "application-developer")) {
+            logConnection(identityKey, mattermostConnection(identityKey));
+            logConnection(identityKey, giteaConnection(identityKey));
+            logConnection(identityKey, planeConnection(identityKey));
+        }
+    }
+
+    public void checkHealth(String identityKey, String serviceName) {
+        McpServiceConnection connection = switch (serviceName) {
+            case "mattermost" -> mattermostConnection(identityKey);
+            case "gitea" -> giteaConnection(identityKey);
+            case "plane" -> planeConnection(identityKey);
+            default -> throw new IllegalArgumentException("Unknown MCP service: " + serviceName);
+        };
         if (connection == null || !connection.isUsable()) {
+            LOG.info("Skipping MCP startup health check service={} identity={} because configuration is incomplete", serviceName, identityKey);
+            return;
+        }
+        LOG.info("Running MCP startup health check service={} identity={} transport={} url={} transportTimeoutMs={} initializationTimeoutMs={}",
+                connection.serviceName(), identityKey, connection.transportType(), connection.url(),
+                config.mcp().transportTimeoutMs(), config.mcp().initializationTimeoutMs());
+        McpClient client = buildClient(identityKey, connection);
+        try {
+            client.checkHealth();
+            LOG.info("MCP startup health check succeeded service={} identity={} url={}",
+                    connection.serviceName(), identityKey, connection.url());
+        } finally {
+            try {
+                client.close();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private McpClient buildClient(String identityKey, McpServiceConnection connection) {
+        if (connection == null || !connection.isUsable()) {
+            if (connection != null) {
+                LOG.info("MCP client not created service={} identity={} usable={} urlPresent={} tokenPresent={} headerCount={}",
+                        connection.serviceName(), identityKey, false, connection.url() != null, connection.hasToken(), connection.headers().size());
+            }
             return null;
         }
 
-        McpTransport transport = transport(connection);
-        McpClient client = DefaultMcpClient.builder()
-                .key(connection.serviceName() + ":" + connection.identityKey())
-                .clientName("llm-share-camel-kafka")
-                .clientVersion("0.1.0-SNAPSHOT")
-                .transport(transport)
-                .build();
+        String key = connection.serviceName() + ":" + connection.identityKey();
+        LOG.info("Preparing lazy MCP client service={} identity={} requestedBy={} transport={} url={} transportTimeoutMs={} initializationTimeoutMs={}",
+                connection.serviceName(),
+                connection.identityKey(),
+                identityKey,
+                connection.transportType(),
+                connection.url(),
+                config.mcp().transportTimeoutMs(),
+                config.mcp().initializationTimeoutMs());
+
+        McpClient client = new LazyInitializingMcpClient(
+                key,
+                connection.serviceName(),
+                connection.identityKey(),
+                connection.transportType(),
+                connection.url(),
+                config.mcp().transportTimeoutMs(),
+                config.mcp().initializationTimeoutMs(),
+                () -> {
+                    McpTransport transport = transport(connection);
+                    return DefaultMcpClient.builder()
+                            .key(key)
+                            .clientName("llm-share-camel-kafka")
+                            .clientVersion("0.1.0-SNAPSHOT")
+                            .transport(transport)
+                            .initializationTimeout(Duration.ofMillis(config.mcp().initializationTimeoutMs()))
+                            .toolResultExtractor(new BoundedMcpToolResultExtractor(config.mcp().maxToolResultCharacters()))
+                            .build();
+                });
         return config.mcp().logging().enabled()
                 ? new LoggingMcpClient(
                         client,
                         connection.serviceName(),
                         connection.identityKey(),
                         agentLabel(connection.identityKey()),
-                        logTokens)
+                        logTokens,
+                        routineToolTraceTracker)
                 : client;
     }
 
@@ -149,14 +222,14 @@ public class McpClientFactory {
             case "streamablehttp", "streamable-http", "streamable_http" -> StreamableHttpMcpTransport.builder()
                     .url(connection.url())
                     .customHeaders(headersSupplier)
-                    .timeout(DEFAULT_TIMEOUT)
+                    .timeout(Duration.ofMillis(config.mcp().transportTimeoutMs()))
                     .logRequests(config.mcp().logging().transportRequests())
                     .logResponses(config.mcp().logging().transportResponses())
                     .build();
             case "http", "sse" -> HttpMcpTransport.builder()
                     .sseUrl(connection.url())
                     .customHeaders(headersSupplier)
-                    .timeout(DEFAULT_TIMEOUT)
+                    .timeout(Duration.ofMillis(config.mcp().transportTimeoutMs()))
                     .logRequests(false)
                     .logResponses(config.mcp().logging().transportResponses())
                     .build();
@@ -214,6 +287,7 @@ public class McpClientFactory {
             case "project-manager" -> "PM";
             case "product-owner" -> "PO";
             case "application-developer" -> "DEV";
+            case "routine-formatter" -> "FMT";
             default -> identityKey;
         };
     }
@@ -260,6 +334,18 @@ public class McpClientFactory {
         if (client != null) {
             clients.add(client);
         }
+    }
+
+    private void logConnection(String identityKey, McpServiceConnection connection) {
+        LOG.info("MCP config service={} identity={} usable={} transport={} url={} transportTimeoutMs={} initializationTimeoutMs={} authHeaderNames={}",
+                connection.serviceName(),
+                identityKey,
+                connection.isUsable(),
+                connection.transportType(),
+                connection.url(),
+                config.mcp().transportTimeoutMs(),
+                config.mcp().initializationTimeoutMs(),
+                connection.headers().keySet());
     }
 
     private static String normalizeTransportType(String transportType) {

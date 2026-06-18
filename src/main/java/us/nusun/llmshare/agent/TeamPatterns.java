@@ -2,14 +2,21 @@ package us.nusun.llmshare.agent;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.apache.camel.ValidationException;
 import org.apache.camel.builder.RouteBuilder;
+import org.apache.camel.component.jsonvalidator.JsonValidationException;
 import org.apache.camel.model.dataformat.JsonLibrary;
 import us.nusun.llmshare.bean.LogTokens;
+import us.nusun.llmshare.bean.RoutineStepSupport;
+import us.nusun.llmshare.model.RoutineStepResult;
 
 @ApplicationScoped
 public class TeamPatterns extends RouteBuilder {
     @Inject
     LogTokens logTokens;
+
+    @Inject
+    RoutineStepSupport routineStepSupport;
 
     @Override
     public void configure() {
@@ -38,40 +45,42 @@ public class TeamPatterns extends RouteBuilder {
 
         from("direct:software-team-routine-step")
                 .routeId("software-team-routine-step")
-                .setHeader("responseSchema", constant("classpath:schemas/agent-routine-step-schema.json"))
-                .setBody(simple("""
-                        Objective: ${exchangeProperty.objective}
-                        Original request: ${exchangeProperty.requestPrompt}
-                        Day cycle: ${exchangeProperty.cycleCount}
-                        Routine step: ${exchangeProperty.currentStep}
-                        Day routine: ${exchangeProperty.currentRoutine}
-                        Collaboration expectation: ${exchangeProperty.currentCollaboration}
-                        Previous summary: ${exchangeProperty.priorSummary}
-                        Available MCP services in this environment: Mattermost, Gitea, and Plane.
-                        Backstage MCP is not available in this environment. If this routine mentions Backstage, say that it is unavailable and continue with the available MCP services instead of pretending you used it.
-                        Before answering, use the available MCP tools relevant to this routine step.
-                        You must make at least one concrete MCP tool call when a relevant tool exists.
-                        Do not claim you opened, reviewed, updated, posted, checked, validated, or confirmed anything unless a real MCP tool call in this turn supports that statement.
-                        If no relevant tool exists or the tool call fails, say so plainly in the summary and base the nextAction on that real limitation.
-                        Keep the summary grounded in the actual MCP result, not a generic placeholder.
-                        You must return exactly one JSON object that matches this shape:
-                        - role: the current agent id
-                        - summary: one concise sentence explaining the result of this routine step
-                        - nextAction: one concise sentence describing the next move
-                        Do not return status, error_code, error_type, message, next_action, markdown, or any wrapper object.
-                        Return JSON only.
-                        """))
+                .process(routineStepSupport::prepareExploration)
                 .to("direct:ask-llm")
-                .setProperty("lastRoutineResult", simple("${body.content}"))
-                .setBody(simple("${body.content}"))
-                .unmarshal().json(JsonLibrary.Jackson)
-                .setProperty("priorSummary", simple("${body[summary]}"))
-                .choice()
-                    .when(simple("${exchangeProperty.dayRoutineResults} == null || ${exchangeProperty.dayRoutineResults} == ''"))
-                        .setProperty("dayRoutineResults", exchangeProperty("lastRoutineResult"))
-                    .otherwise()
-                        .setProperty("dayRoutineResults", simple("${exchangeProperty.dayRoutineResults}\n\n${exchangeProperty.lastRoutineResult}"))
+                .process(routineStepSupport::captureExploration)
+                .doTry()
+                    .to("direct:software-team-routine-step-format")
+                .doFinally()
+                    .process(routineStepSupport::restoreRoleHeaders)
                 .end();
+
+        from("direct:software-team-routine-step-format")
+                .routeId("software-team-routine-step-format")
+                .process(routineStepSupport::prepareFormatter)
+                .doTry()
+                    .to("direct:software-team-routine-step-format-once")
+                .doCatch(JsonValidationException.class, ValidationException.class)
+                    .process(routineStepSupport::captureFormatterFailure)
+                    .to("direct:software-team-routine-step-format-retry")
+                .end();
+
+        from("direct:software-team-routine-step-format-retry")
+                .routeId("software-team-routine-step-format-retry")
+                .process(routineStepSupport::prepareFormatterRetry)
+                .doTry()
+                    .to("direct:software-team-routine-step-format-once")
+                .doCatch(JsonValidationException.class, ValidationException.class)
+                    .process(routineStepSupport::captureFormatterFailure)
+                    .process(routineStepSupport::failFormatter)
+                .end();
+
+        from("direct:software-team-routine-step-format-once")
+                .routeId("software-team-routine-step-format-once")
+                .to("direct:ask-llm")
+                .process(routineStepSupport::captureFormatterResult)
+                .to("json-validator:classpath:schemas/agent-routine-step-schema.json")
+                .unmarshal().json(JsonLibrary.Jackson, RoutineStepResult.class)
+                .process(routineStepSupport::applyRoutineStepResult);
 
         from("direct:software-team-check-done")
                 .routeId("software-team-check-done")
@@ -79,8 +88,8 @@ public class TeamPatterns extends RouteBuilder {
                 .setBody(simple("""
                         Objective: ${exchangeProperty.objective}
                         Original request: ${exchangeProperty.requestPrompt}
-                        Day cycle: ${exchangeProperty.cycleCount}
-                        Full day routine JSON:
+                        Cycle count: ${exchangeProperty.cycleCount}
+                        Full routine result JSON:
                         ${exchangeProperty.dayRoutineResults}
                         Judge completion only from the actual routine results above.
                         Do not assume work happened unless the routine summaries say it happened.

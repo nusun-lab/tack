@@ -2,6 +2,7 @@ package us.nusun.llmshare.bean;
 
 import dev.langchain4j.mcp.client.McpClient;
 import dev.langchain4j.model.openai.OpenAiChatModel;
+import io.smallrye.common.annotation.Identifier;
 import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Named;
 import jakarta.inject.Singleton;
@@ -22,6 +23,36 @@ public class LlmAgentFactory {
             @ConfigProperty(name = "llm.openai.api-key") String apiKey,
             @ConfigProperty(name = "llm.openai.model") String model,
             @ConfigProperty(name = "llm.openai.temperature") double temperature,
+            @ConfigProperty(name = "llm.openai.max-tokens") int maxTokens,
+            @ConfigProperty(name = "llm.openai.timeout-ms") long timeoutMs,
+            @ConfigProperty(name = "llm.thinking-off.enabled") boolean thinkingOffEnabled,
+            @ConfigProperty(name = "llm.openai.strict-json-schema", defaultValue = "true") boolean strictJsonSchema) {
+        var chatModelBuilder = OpenAiChatModel.builder()
+                .baseUrl(baseUrl)
+                .apiKey(apiKey)
+                .modelName(model)
+                .temperature(temperature)
+                .maxTokens(maxTokens)
+                .strictJsonSchema(strictJsonSchema)
+                .timeout(Duration.ofMillis(timeoutMs));
+
+        if (thinkingOffEnabled) {
+            chatModelBuilder.customParameters(Map.of(
+                    "chat_template_kwargs", Map.of("enable_thinking", false)
+            ));
+        }
+
+        return chatModelBuilder.build();
+    }
+
+    @Produces
+    @Singleton
+    @Identifier("routineFormatterChatModel")
+    OpenAiChatModel routineFormatterChatModel(
+            @ConfigProperty(name = "llm.openai.base-url") String baseUrl,
+            @ConfigProperty(name = "llm.openai.api-key") String apiKey,
+            @ConfigProperty(name = "llm.openai.model") String model,
+            @ConfigProperty(name = "llm.openai.formatter-temperature", defaultValue = "0") double temperature,
             @ConfigProperty(name = "llm.openai.max-tokens") int maxTokens,
             @ConfigProperty(name = "llm.openai.timeout-ms") long timeoutMs,
             @ConfigProperty(name = "llm.thinking-off.enabled") boolean thinkingOffEnabled,
@@ -70,6 +101,13 @@ public class LlmAgentFactory {
     @Named("applicationDeveloperAgentConfig")
     AgentConfiguration applicationDeveloperAgentConfig(OpenAiChatModel chatModel, McpClientFactory mcpClientFactory) {
         return roleAgentConfig(chatModel, mcpClientFactory, "application-developer", "development");
+    }
+
+    @Produces
+    @Singleton
+    @Named("routineFormatterAgentConfig")
+    AgentConfiguration routineFormatterAgentConfig(@Identifier("routineFormatterChatModel") OpenAiChatModel chatModel) {
+        return new AgentConfiguration().withChatModel(chatModel);
     }
 
     private AgentConfiguration roleAgentConfig(

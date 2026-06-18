@@ -16,6 +16,20 @@ public interface AgentIdentityConfig {
     interface Mcp {
         Logging logging();
 
+        @WithName("transport-timeout-ms")
+        @WithDefault("60000")
+        long transportTimeoutMs();
+
+        @WithName("initialization-timeout-ms")
+        @WithDefault("30000")
+        long initializationTimeoutMs();
+
+        StartupCheck startupCheck();
+
+        @WithName("max-tool-result-characters")
+        @WithDefault("1000")
+        int maxToolResultCharacters();
+
         Service mattermost();
 
         Service gitea();
@@ -33,6 +47,15 @@ public interface AgentIdentityConfig {
             @WithName("transport-responses")
             @WithDefault("false")
             boolean transportResponses();
+        }
+
+        interface StartupCheck {
+            @WithDefault("false")
+            boolean enabled();
+
+            @WithName("fail-fast")
+            @WithDefault("false")
+            boolean failFast();
         }
 
         interface Service {

@@ -45,6 +45,21 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+            <dependency>
+                <groupId>org.apache.camel</groupId>
+                <artifactId>camel-langchain4j-agent</artifactId>
+                <version>${camel.langchain4j.agent.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.camel</groupId>
+                <artifactId>camel-langchain4j-agent-api</artifactId>
+                <version>${camel.langchain4j.agent.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.camel</groupId>
+                <artifactId>camel-langchain4j-tools</artifactId>
+                <version>${camel.langchain4j.agent.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -123,6 +138,16 @@
             <artifactId>camel-langchain4j-agent</artifactId>
             <!-- Force only the LangChain4j agent runtime to 4.21.x API support while the
                  surrounding Camel Quarkus platform remains on its released 4.20-based line. -->
+            <version>${camel.langchain4j.agent.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.camel</groupId>
+            <artifactId>camel-langchain4j-agent-api</artifactId>
+            <version>${camel.langchain4j.agent.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.camel</groupId>
+            <artifactId>camel-langchain4j-tools</artifactId>
             <version>${camel.langchain4j.agent.version}</version>
         </dependency>
         <dependency>

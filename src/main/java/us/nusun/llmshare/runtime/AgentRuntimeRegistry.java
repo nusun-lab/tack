@@ -31,7 +31,13 @@ public class AgentRuntimeRegistry {
                     "software-team-application-developer-llm",
                     "applicationDeveloperAgentConfig",
                     "application-developer",
-                    "development"));
+                    "development"),
+            "software-team/routine-formatter", new AgentRuntimeDefinition(
+                    "software-team/routine-formatter",
+                    "software-team-routine-formatter-llm",
+                    "routineFormatterAgentConfig",
+                    "routine-formatter",
+                    "formatter"));
 
     public AgentRuntimeDefinition getRequired(String roleId) {
         AgentRuntimeDefinition definition = definitions.get(roleId);

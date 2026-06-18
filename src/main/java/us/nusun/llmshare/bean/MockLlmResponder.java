@@ -29,7 +29,7 @@ public class MockLlmResponder {
             content = switch (job.responseSchema()) {
                 case "classpath:schemas/director-objectives-schema.json" -> directorAssignmentsJson();
                 case "classpath:schemas/agent-routine-step-schema.json" -> """
-                        {"role":"%s","summary":"Completed the current routine step for the requested product and identified the next coordination need.","nextAction":"Continue the next routine step and keep the team aligned on the requested product."}
+                        {"role":"%s","step":"mock-step","routine":"Mock routine","summary":"Completed the current routine step for the requested product using the available evidence.","nextAction":"Continue the next routine step and keep the team aligned on the requested product.","actionsTaken":["Reviewed the available mock context."],"decisions":["Keep the flow moving."],"openQuestions":[],"artifactsTouched":["mock-artifact"],"needsFollowup":true,"doneCandidate":false}
                         """.formatted(job.requester());
                 case "classpath:schemas/agent-done-check-schema.json" -> {
                     int iteration = extractIteration(job.prompt());
@@ -47,7 +47,7 @@ public class MockLlmResponder {
         } else {
             content = switch (job.requester()) {
                 case "software-team/director" -> "Clarify the mission for the assigned role in the requested product effort.";
-                case "software-team/project-manager" -> "Coordinated the day's work for the requested product and exposed the next scheduling risk.";
+                case "software-team/project-manager" -> "Coordinated the current work for the requested product and exposed the next scheduling risk.";
                 case "software-team/product-owner" -> "Refined product scope for the requested product and clarified the next decision.";
                 case "software-team/application-developer" -> "Reviewed delivery work for the requested product and identified the next engineering move.";
                 default -> "Synthetic test response.";
@@ -69,7 +69,7 @@ public class MockLlmResponder {
     }
 
     private static int extractIteration(String prompt) {
-        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("Day cycle: (\\d+)").matcher(prompt);
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("Cycle count: (\\d+)").matcher(prompt);
         if (matcher.find()) {
             return Integer.parseInt(matcher.group(1));
         }

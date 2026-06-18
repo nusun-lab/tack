@@ -11,6 +11,7 @@ import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.jsonvalidator.JsonValidationException;
 import org.apache.camel.model.dataformat.JsonLibrary;
 import us.nusun.llmshare.bean.LogTokens;
+import us.nusun.llmshare.bean.RoutineToolTraceTracker;
 import us.nusun.llmshare.model.LlmJobEnvelope;
 import us.nusun.llmshare.model.LlmJobRequest;
 import us.nusun.llmshare.model.LlmJobResult;
@@ -39,6 +40,9 @@ public class LlmRoute extends RouteBuilder {
     @Inject
     AgentRuntimeRegistry agentRuntimeRegistry;
 
+    @Inject
+    RoutineToolTraceTracker routineToolTraceTracker;
+
 
     @Override
     public void configure() {
@@ -62,6 +66,7 @@ public class LlmRoute extends RouteBuilder {
                 .to("direct:log-llm-prompt")
                 .to("direct:dispatch-llm-job")
                 .bean("inFlightReplyManager", "await(${exchangeProperty.llmJobId}, {{llm.reply-timeout-ms:300000}})")
+                .to("direct:log-llm-response")
                 .to("direct:validate-llm-response-schema")
                 .validate(body().isInstanceOf(LlmJobResult.class))
                 .process(exchange -> {
@@ -69,8 +74,7 @@ public class LlmRoute extends RouteBuilder {
                     logTokens.print(logTokens.wrapDim(
                             exchange.getProperty("agentLabel", String.class),
                             "META " + result.jobId() + " " + result.model() + " " + result.latencyMs() + "ms"));
-                })
-                .to("direct:log-llm-response");
+                });
 
         from("direct:prepare-llm-job")
                 .routeId("prepare-llm-job")
@@ -178,6 +182,8 @@ public class LlmRoute extends RouteBuilder {
                     AgentRuntimeDefinition runtime = agentRuntimeRegistry.getRequired(job.requester());
                     exchange.setProperty("agentRuntime", runtime);
                     exchange.setProperty("llmStartedAt", Instant.now());
+                    exchange.setProperty("applyProviderSchema", shouldApplyProviderSchema(exchange, job));
+                    routineToolTraceTracker.bind(job.jobId());
                 })
                 .choice()
                     .when(simple("${exchangeProperty.agentRuntime.roleId} == 'software-team/director'"))
@@ -188,12 +194,15 @@ public class LlmRoute extends RouteBuilder {
                         .to("direct:invoke-product-owner-llm")
                     .when(simple("${exchangeProperty.agentRuntime.roleId} == 'software-team/application-developer'"))
                         .to("direct:invoke-application-developer-llm")
+                    .when(simple("${exchangeProperty.agentRuntime.roleId} == 'software-team/routine-formatter'"))
+                        .to("direct:invoke-routine-formatter-llm")
                     .otherwise()
                         .process(exchange -> {
                             AgentRuntimeDefinition runtime = exchange.getProperty("agentRuntime", AgentRuntimeDefinition.class);
                             throw new IllegalArgumentException("Unsupported agent runtime role: " + runtime.roleId());
                         })
                 .end()
+                .process(exchange -> routineToolTraceTracker.unbind())
                 .validate(body().isNotNull())
                 .process(exchange -> {
                     LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
@@ -206,7 +215,7 @@ public class LlmRoute extends RouteBuilder {
         from("direct:invoke-director-llm")
                 .routeId("invoke-director-llm")
                 .choice()
-                    .when(simple("${exchangeProperty.llmJob.responseSchema} != null && ${exchangeProperty.llmJob.responseSchema} != '' && {{llm.structured-output.provider-schema-enabled:false}} == true"))
+                    .when(simple("${exchangeProperty.applyProviderSchema} == true"))
                         .toD("langchain4j-agent:software-team-director-llm?agentConfiguration=#directorAgentConfig&jsonSchema=${exchangeProperty.llmJob.responseSchema}")
                     .otherwise()
                         .to("langchain4j-agent:software-team-director-llm?agentConfiguration=#directorAgentConfig")
@@ -215,7 +224,7 @@ public class LlmRoute extends RouteBuilder {
         from("direct:invoke-project-manager-llm")
                 .routeId("invoke-project-manager-llm")
                 .choice()
-                    .when(simple("${exchangeProperty.llmJob.responseSchema} != null && ${exchangeProperty.llmJob.responseSchema} != '' && {{llm.structured-output.provider-schema-enabled:false}} == true"))
+                    .when(simple("${exchangeProperty.applyProviderSchema} == true"))
                         .toD("langchain4j-agent:software-team-project-manager-llm?agentConfiguration=#projectManagerAgentConfig&jsonSchema=${exchangeProperty.llmJob.responseSchema}")
                     .otherwise()
                         .to("langchain4j-agent:software-team-project-manager-llm?agentConfiguration=#projectManagerAgentConfig")
@@ -224,7 +233,7 @@ public class LlmRoute extends RouteBuilder {
         from("direct:invoke-product-owner-llm")
                 .routeId("invoke-product-owner-llm")
                 .choice()
-                    .when(simple("${exchangeProperty.llmJob.responseSchema} != null && ${exchangeProperty.llmJob.responseSchema} != '' && {{llm.structured-output.provider-schema-enabled:false}} == true"))
+                    .when(simple("${exchangeProperty.applyProviderSchema} == true"))
                         .toD("langchain4j-agent:software-team-product-owner-llm?agentConfiguration=#productOwnerAgentConfig&jsonSchema=${exchangeProperty.llmJob.responseSchema}")
                     .otherwise()
                         .to("langchain4j-agent:software-team-product-owner-llm?agentConfiguration=#productOwnerAgentConfig")
@@ -233,15 +242,20 @@ public class LlmRoute extends RouteBuilder {
         from("direct:invoke-application-developer-llm")
                 .routeId("invoke-application-developer-llm")
                 .choice()
-                    .when(simple("${exchangeProperty.llmJob.responseSchema} != null && ${exchangeProperty.llmJob.responseSchema} != '' && {{llm.structured-output.provider-schema-enabled:false}} == true"))
+                    .when(simple("${exchangeProperty.applyProviderSchema} == true"))
                         .toD("langchain4j-agent:software-team-application-developer-llm?agentConfiguration=#applicationDeveloperAgentConfig&jsonSchema=${exchangeProperty.llmJob.responseSchema}")
                     .otherwise()
                         .to("langchain4j-agent:software-team-application-developer-llm?agentConfiguration=#applicationDeveloperAgentConfig")
                 .end();
 
+        from("direct:invoke-routine-formatter-llm")
+                .routeId("invoke-routine-formatter-llm")
+                .toD("langchain4j-agent:software-team-routine-formatter-llm?agentConfiguration=#routineFormatterAgentConfig&jsonSchema=${exchangeProperty.llmJob.responseSchema}");
+
         from("direct:build-failed-llm-result")
                 .routeId("build-failed-llm-result")
                 .process(exchange -> {
+                    routineToolTraceTracker.unbind();
                     Exception failure = exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class);
                     LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
                     String message = failure == null ? "Unknown LLM worker failure" : failure.getMessage();
@@ -253,9 +267,12 @@ public class LlmRoute extends RouteBuilder {
                 .choice()
                     .when(simple("${body.status} == 'SUCCEEDED' && ${body.content} != null && ${body.content} != '' && ${body.requester} != null && ${exchangeProperty.llmJob.responseSchema} != null && ${exchangeProperty.llmJob.responseSchema} != ''"))
                         .setProperty("llmResult", body())
-                        .setBody(simple("${body.content}"))
-                        .toD("json-validator:${exchangeProperty.llmJob.responseSchema}")
-                        .setBody(exchangeProperty("llmResult"))
+                        .doTry()
+                            .setBody(simple("${body.content}"))
+                            .toD("json-validator:${exchangeProperty.llmJob.responseSchema}")
+                        .doFinally()
+                            .setBody(exchangeProperty("llmResult"))
+                        .end()
                 .end();
     }
 
@@ -277,6 +294,17 @@ public class LlmRoute extends RouteBuilder {
             return headerLabel;
         }
         return request.requester();
+    }
+
+    private boolean shouldApplyProviderSchema(Exchange exchange, LlmJobEnvelope job) {
+        if (job == null || job.responseSchema() == null || job.responseSchema().isBlank()) {
+            return false;
+        }
+        if (Boolean.TRUE.equals(exchange.getProperty("llmForceProviderSchema", Boolean.class))) {
+            return true;
+        }
+        return Boolean.parseBoolean(exchange.getContext()
+                .resolvePropertyPlaceholders("{{llm.structured-output.provider-schema-enabled:false}}"));
     }
 
     private void verifyLlmRoutesAvailable() {

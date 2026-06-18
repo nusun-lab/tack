@@ -5,11 +5,25 @@
   "additionalProperties": false,
   "required": [
     "role",
+    "step",
+    "routine",
     "summary",
-    "nextAction"
+    "nextAction",
+    "actionsTaken",
+    "decisions",
+    "openQuestions",
+    "artifactsTouched",
+    "needsFollowup",
+    "doneCandidate"
   ],
   "properties": {
     "role": {
+      "type": "string"
+    },
+    "step": {
+      "type": "string"
+    },
+    "routine": {
       "type": "string"
     },
     "summary": {
@@ -17,6 +31,36 @@
     },
     "nextAction": {
       "type": "string"
+    },
+    "actionsTaken": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "decisions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "openQuestions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "artifactsTouched": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "needsFollowup": {
+      "type": "boolean"
+    },
+    "doneCandidate": {
+      "type": "boolean"
     }
   }
 }
