@@ -1,4 +1,4 @@
-package us.nusun.llmshare;
+package us.nusun.llmshare.tests.support;
 
 import io.quarkus.test.junit.QuarkusTestProfile;
 

@@ -84,21 +84,20 @@ llm.log.ansi-enabled=${LLM_LOG_ANSI_ENABLED:true}
 
 ### Current Structure
 
-Route builders for agents live under [`src/main/java/us/nusun/llmshare/agent`](src/main/java/us/nusun/llmshare/agent).
+Route builders for personas live under [`src/main/java/us/nusun/llmshare/agent`](src/main/java/us/nusun/llmshare/agent).
 
-That package should stay focused on Camel route definitions.
+That package is now the primary place where persona metadata lives.
 
-Route-builder pieces:
+Important pieces:
 
 - [Director.java](src/main/java/us/nusun/llmshare/agent/Director.java): asks for role missions and dynamically fans them out
 - [TeamPatterns.java](src/main/java/us/nusun/llmshare/agent/TeamPatterns.java): shared routine-step and done-check behavior
+- [AgentPersonaDefinition.java](src/main/java/us/nusun/llmshare/team/AgentPersonaDefinition.java): first-class persona metadata
+- [AgentPersonaProvider.java](src/main/java/us/nusun/llmshare/team/AgentPersonaProvider.java): discovery contract for routebuilder-owned personas
+- [AgentPersonaRegistry.java](src/main/java/us/nusun/llmshare/team/AgentPersonaRegistry.java): startup-discovered persona registry used by runtime, dashboard, and director prompts
+- [SoftwareTeamContext.java](src/main/java/us/nusun/llmshare/team/SoftwareTeamContext.java): shared team operating context, separate from persona definitions
 
-Role-catalog support lives separately under [`src/main/java/us/nusun/llmshare/team`](src/main/java/us/nusun/llmshare/team):
-
-- [TeamRoleDefinition.java](src/main/java/us/nusun/llmshare/team/TeamRoleDefinition.java): metadata the director needs about a role
-- [TeamRoleRegistry.java](src/main/java/us/nusun/llmshare/team/TeamRoleRegistry.java): tracks the currently available roles
-
-The director no longer returns a fixed three-field object. It returns a JSON object shaped like:
+The director returns a JSON object shaped like:
 
 ```json
 {
@@ -112,34 +111,38 @@ Keys are agent string identifiers. Values are missions.
 
 The director may leave a role out if that role is not needed for the goal.
 
-### Adding A New Role
+### Adding A New Persona
 
-The intended workflow is code-first, not config-heavy.
+The intended workflow is code-first, with the routebuilder as the main source of truth.
+
+Happy path:
 
 1. Create a new `RouteBuilder` in `src/main/java/us/nusun/llmshare/agent`.
-2. Add one `TeamRoleDefinition` constant in that class.
-3. Register it in `configure()` with `teamRoleRegistry.register(...)`.
-4. Define the route body in Camel DSL.
-5. Add the role's system prompt to [application.properties](src/main/resources/application.properties).
+2. Implement `AgentPersonaProvider`.
+3. Define one `AgentPersonaDefinition` constant in that class.
+4. Put the persona system prompt in that definition as a Java text block.
+5. Add `RoutineStepDefinition` entries in that definition.
+6. Add optional `platformIdentities` key/value mappings such as Mattermost, Gitea, or Plane handles.
+7. Define the route body in Camel DSL.
+8. Add any required runtime token/env wiring using the project’s naming convention.
+9. Start the app and verify the persona appears in `/workspace/view`.
+10. Add or update tests.
 
-A role route should provide:
+A normal persona definition should provide:
 
-- a stable role id such as `software-team/security-reviewer`
-- a `direct:` route URI that the director can dispatch to
-- an ANSI label for logging
-- a wake-up message
-- a short capability summary for the director prompt
-- a system prompt
+- stable `roleId`
+- `roleSlug`
+- `displayName`
+- `routeUri`
+- `routeId`
+- `agentLabel`
+- `ansiColor`
+- `capabilitySummary`
+- `systemPrompt`
+- `platformIdentities`
+- `routineSteps`
 
-A role route should also follow these conventions:
-
-- set header `agent` to the role id
-- set header `role` to a simple internal name
-- set header `agentLabel` for colorized logs
-- set header `wakeupMessage` for the wake-up line
-- set header `systemPrompt`
-- read its mission from `exchangeProperty.objective`
-- reuse the shared routes in [TeamPatterns.java](src/main/java/us/nusun/llmshare/agent/TeamPatterns.java)
+Runtime registration, dashboard display, scratchpad visibility, logging metadata, and director role guides are derived from the discovered persona definitions.
 
 Useful shared routes:
 
@@ -148,54 +151,71 @@ Useful shared routes:
 - `direct:software-team-routine-step`
 - `direct:software-team-check-done`
 
-### Minimal Role Pattern
+### Minimal Persona Pattern
 
 ```java
-import us.nusun.llmshare.team.TeamRoleDefinition;
-import us.nusun.llmshare.team.TeamRoleRegistry;
+import us.nusun.llmshare.team.AgentPersonaDefinition;
+import us.nusun.llmshare.team.AgentPersonaProvider;
+import us.nusun.llmshare.team.RoutineStepDefinition;
 
 @ApplicationScoped
-public class SecurityReviewer extends RouteBuilder {
-    private static final TeamRoleDefinition ROLE = new TeamRoleDefinition(
+public class SecurityReviewer extends RouteBuilder implements AgentPersonaProvider {
+    private static final AgentPersonaDefinition PERSONA = new AgentPersonaDefinition(
             "software-team/security-reviewer",
+            "security-reviewer",
             "Security Reviewer",
             "direct:software-team-security-reviewer",
+            "software-team-security-reviewer",
             "SEC",
-            "Security Reviewer reporting for duty. Threat model is forming.",
+            "38;2;220;120;120",
+            "Security Reviewer reporting for duty.",
+            "Security Reviewer standing down.",
             "Review security risks, trust boundaries, and abuse cases.",
-            "{{agents.software-team.security-reviewer.system-prompt}}"
+            """
+            You are the Security Reviewer in a small software team.
+            Review one concrete security concern at a time.
+            Return valid JSON only when asked for structured output.
+            """,
+            Map.of(
+                    "mattermost", "@security-reviewer",
+                    "gitea", "security-reviewer-bot"
+            ),
+            List.of(
+                    new RoutineStepDefinition("threat-scan", "Review one threat boundary.")
+            ),
+            true,
+            true
     );
 
-    @Inject
-    TeamRoleRegistry teamRoleRegistry;
+    @Override
+    public AgentPersonaDefinition persona() {
+        return PERSONA;
+    }
 
     @Override
     public void configure() {
-        teamRoleRegistry.register(ROLE);
+        from(PERSONA.routeUri())
+                .routeId(PERSONA.routeId())
+                .setHeader("agent", constant(PERSONA.roleId()))
+                .setHeader("role", constant(PERSONA.roleSlug()))
+                .setHeader("agentLabel", constant(PERSONA.agentLabel()))
+                .setHeader("wakeupMessage", constant(PERSONA.wakeupMessage()))
+                .setHeader("sleepMessage", constant(PERSONA.sleepMessage()))
+                .setHeader("systemPrompt", constant(PERSONA.systemPrompt()));
 
-        from("direct:software-team-security-reviewer")
-                .routeId("software-team-security-reviewer")
-                .setHeader("agent", constant(ROLE.roleId()))
-                .setHeader("role", constant("security-reviewer"))
-                .setHeader("agentLabel", constant(ROLE.agentLabel()))
-                .setHeader("wakeupMessage", constant(ROLE.wakeupMessage()))
-                .setHeader("systemPrompt", constant("{{agents.software-team.security-reviewer.system-prompt}}"))
-                .setProperty("priorSummary", constant("No prior Security Reviewer summary yet."))
-                .setProperty("cycleCount", constant(0))
-                .setProperty("done", constant(false))
-                .to("direct:log-agent-wakeup");
-
-        // define the rest of the role's routine here in Camel DSL
+        // define the rest of the routine here in Camel DSL
     }
 }
 ```
 
-### Removing Or Renaming A Role
+### Team Context vs Persona Context
 
-- removing a role: remove its route class and prompt property
-- renaming a role: change the role id, route URI, and any prompt property names together
+Keep these separate:
 
-The director only offers roles that register themselves at startup.
+- persona definition: who the agent is
+- team operating context: how the team works, shared tools, owner identity, shared coordination channel, and collaboration constraints
+
+That shared team context lives in [SoftwareTeamContext.java](src/main/java/us/nusun/llmshare/team/SoftwareTeamContext.java) instead of being duplicated into every persona prompt.
 
 ## Running A Scenario
 

@@ -1,4 +1,4 @@
-package us.nusun.llmshare;
+package us.nusun.llmshare.tests.integration;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -9,6 +9,7 @@ import org.apache.camel.ProducerTemplate;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
+import us.nusun.llmshare.tests.support.SchemaLiveTestProfile;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertFalse;

@@ -6,6 +6,7 @@ import org.apache.camel.ValidationException;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.jsonvalidator.JsonValidationException;
 import org.apache.camel.model.dataformat.JsonLibrary;
+import us.nusun.llmshare.bean.AgentActivityTracker;
 import us.nusun.llmshare.bean.LogTokens;
 import us.nusun.llmshare.bean.RoutineStepSupport;
 import us.nusun.llmshare.model.ProjectCollaborationSetup;
@@ -19,14 +20,21 @@ public class TeamPatterns extends RouteBuilder {
     @Inject
     RoutineStepSupport routineStepSupport;
 
+    @Inject
+    AgentActivityTracker agentActivityTracker;
+
     @Override
     public void configure() {
         from("direct:software-team-next-cycle")
                 .routeId("software-team-next-cycle")
-                .setProperty("cycleCount", simple("${exchangeProperty.cycleCount}++"));
+                .process(exchange -> {
+                    Integer cycleCount = exchange.getProperty("cycleCount", Integer.class);
+                    exchange.setProperty("cycleCount", cycleCount == null ? 1 : cycleCount + 1);
+                });
 
         from("direct:log-software-team-step")
                 .routeId("log-software-team-step")
+                .process(agentActivityTracker::markStep)
                 .process(exchange -> logTokens.print(logTokens.wrapDim(
                         exchange.getIn().getHeader("agentLabel", String.class),
                         "STEP " + exchange.getProperty("currentStep", String.class)
@@ -34,12 +42,14 @@ public class TeamPatterns extends RouteBuilder {
 
         from("direct:log-agent-wakeup")
                 .routeId("log-agent-wakeup")
+                .process(agentActivityTracker::markWakeup)
                 .process(exchange -> logTokens.print(logTokens.wrap(
                         exchange.getIn().getHeader("agentLabel", String.class),
                         exchange.getIn().getHeader("wakeupMessage", String.class))));
 
         from("direct:log-agent-sleep")
                 .routeId("log-agent-sleep")
+                .process(agentActivityTracker::markSleep)
                 .process(exchange -> logTokens.print(logTokens.wrap(
                         exchange.getIn().getHeader("agentLabel", String.class),
                         exchange.getIn().getHeader("sleepMessage", String.class))));

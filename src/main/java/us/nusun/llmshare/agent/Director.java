@@ -5,18 +5,49 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.LoggingLevel;
 import org.apache.camel.builder.RouteBuilder;
+import us.nusun.llmshare.bean.AgentActivityTracker;
 import us.nusun.llmshare.bean.LogTokens;
 import us.nusun.llmshare.model.LlmJobRequest;
-import us.nusun.llmshare.team.TeamRoleDefinition;
-import us.nusun.llmshare.team.TeamRoleRegistry;
+import us.nusun.llmshare.team.AgentPersonaDefinition;
+import us.nusun.llmshare.team.AgentPersonaProvider;
+import us.nusun.llmshare.team.AgentPersonaRegistry;
+
+import java.util.Map;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 @ApplicationScoped
-public class Director extends RouteBuilder {
+public class Director extends RouteBuilder implements AgentPersonaProvider {
+    private static final AgentPersonaDefinition PERSONA = new AgentPersonaDefinition(
+            "software-team/director",
+            "director",
+            "Director",
+            "direct:software-team-director",
+            "software-team-director",
+            "DIR",
+            "38;2;64;224;255",
+            "Director reporting for duty. Missions are being assigned.",
+            "Director standing down until the next goal arrives.",
+            "Break user goals into role-specific missions for the available team personas.",
+            """
+            You are the director of a small software team.
+            Break the user's request into role-specific missions for the available team roles.
+            Each mission should define one small intended outcome and its constraints.
+            Return valid JSON only when asked for structured output.
+            Do not include markdown fences, comments, prefixes, or explanatory text.
+            """,
+            Map.of(
+                    "mattermost", "@director-agent",
+                    "gitea", "director-agent",
+                    "plane", "Director"
+            ),
+            List.of(),
+            true,
+            false
+    );
+
     public static final class DirectorAssignmentException extends RuntimeException {
         public DirectorAssignmentException(String message) {
             super(message);
@@ -34,7 +65,15 @@ public class Director extends RouteBuilder {
     ObjectMapper objectMapper;
 
     @Inject
-    TeamRoleRegistry teamRoleRegistry;
+    AgentPersonaRegistry agentPersonaRegistry;
+
+    @Inject
+    AgentActivityTracker agentActivityTracker;
+
+    @Override
+    public AgentPersonaDefinition persona() {
+        return PERSONA;
+    }
 
     @Override
     public void configure() {
@@ -46,14 +85,16 @@ public class Director extends RouteBuilder {
 
         from("seda:software-team-director-start")
                 .routeId("software-team-director-start")
-                .to("direct:software-team-director");
+                .to(PERSONA.routeUri());
 
-        from("direct:software-team-director")
-                .routeId("software-team-director")
-                .setHeader("agent", constant("software-team/director"))
+        from(PERSONA.routeUri())
+                .routeId(PERSONA.routeId())
+                .setHeader("agent", constant(PERSONA.roleId()))
                 .setHeader("role", constant("director"))
-                .setHeader("agentLabel", constant("DIR"))
-                .setHeader("systemPrompt", constant("{{agents.software-team.director.system-prompt}}"))
+                .setHeader("agentLabel", constant(PERSONA.agentLabel()))
+                .setHeader("wakeupMessage", constant(PERSONA.wakeupMessage()))
+                .setHeader("systemPrompt", constant(PERSONA.systemPrompt()))
+                .process(agentActivityTracker::markRouteStart)
                 .to("direct:prepare-director-request")
                 .setHeader("responseSchema", constant("classpath:schemas/director-objectives-schema.json"))
                 .process(exchange -> exchange.getIn().setBody("""
@@ -73,8 +114,8 @@ public class Director extends RouteBuilder {
                         Return JSON only.
                         """.formatted(
                         exchange.getProperty("requestPrompt", String.class),
-                        teamRoleRegistry.directorTeamRoster(),
-                        teamRoleRegistry.directorRoleGuide()
+                        agentPersonaRegistry.directorTeamRoster(),
+                        agentPersonaRegistry.directorRoleGuide()
                 )))
                 .to("direct:log-director-banner")
                 .setProperty("llmJobId", exchangeProperty("requestId"))
@@ -83,7 +124,8 @@ public class Director extends RouteBuilder {
                 .wireTap("direct:dispatch-director-assignments")
                     .copy(true)
                 .end()
-                .removeProperty("llmJobId");
+                .removeProperty("llmJobId")
+                .process(agentActivityTracker::markRouteComplete);
 
         from("direct:prepare-director-request")
                 .routeId("prepare-director-request")
@@ -116,11 +158,11 @@ public class Director extends RouteBuilder {
                     .process(exchange -> {
                         @SuppressWarnings("unchecked")
                         Map.Entry<String, String> assignment = exchange.getIn().getBody(Map.Entry.class);
-                        TeamRoleDefinition definition = teamRoleRegistry.getRequired(assignment.getKey());
+                        AgentPersonaDefinition definition = agentPersonaRegistry.getRequired(assignment.getKey());
                         exchange.setProperty("objective", assignment.getValue());
-                        exchange.setProperty("roleDefinition", definition);
+                        exchange.setProperty("personaDefinition", definition);
                     })
-                    .toD("${exchangeProperty.roleDefinition.routeUri}")
+                    .toD("${exchangeProperty.personaDefinition.routeUri}")
                 .end();
 
         from("direct:parse-director-assignments")
@@ -138,7 +180,7 @@ public class Director extends RouteBuilder {
                         Map<String, String> assignments = objectMapper.readValue(
                                 exchange.getIn().getBody(String.class),
                                 Map.class);
-                        teamRoleRegistry.validateAssignments(assignments);
+                        agentPersonaRegistry.validateAssignments(assignments);
                         exchange.getIn().setBody(assignments);
                     } catch (Exception failure) {
                         throw new DirectorAssignmentException("Director LLM response is not valid JSON", failure);

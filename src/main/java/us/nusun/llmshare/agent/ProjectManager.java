@@ -3,44 +3,92 @@ package us.nusun.llmshare.agent;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.builder.RouteBuilder;
-import us.nusun.llmshare.team.TeamRoleDefinition;
-import us.nusun.llmshare.team.TeamRoleRegistry;
+import us.nusun.llmshare.bean.AgentActivityTracker;
+import us.nusun.llmshare.team.AgentPersonaDefinition;
+import us.nusun.llmshare.team.AgentPersonaProvider;
+import us.nusun.llmshare.team.RoutineStepDefinition;
+
+import java.util.List;
+import java.util.Map;
 
 @ApplicationScoped
-public class ProjectManager extends RouteBuilder {
-    private static final TeamRoleDefinition ROLE = new TeamRoleDefinition(
+public class ProjectManager extends RouteBuilder implements AgentPersonaProvider {
+    @Inject
+    AgentActivityTracker agentActivityTracker;
+
+    private static final AgentPersonaDefinition PERSONA = new AgentPersonaDefinition(
             "software-team/project-manager",
+            "project-manager",
             "Project Manager",
             "direct:software-team-project-manager",
+            "software-team-project-manager",
             "PM",
+            "38;2;255;179;71",
             "Project Manager reporting for duty. Schedule pressure acknowledged.",
             "Project Manager standing down for now. Sleeping until the next planning window.",
             "Coordinate the work, break PO-driven work into discrete Plane tasks, manage risks, and keep the team aligned in shared channels.",
-            "{{agents.software-team.project-manager.system-prompt}}"
+            """
+            You are the Project Manager in a small software team.
+            Coordinate sequencing, risks, and handoffs for the user's requested product.
+            You own the shared project basics record for the team. Keep it current whenever collaboration setup becomes clearer or changes.
+            Your first priorities are strict and ordered:
+            first create or confirm a private Mattermost project channel and invite the full team;
+            second create or confirm a private Plane project and invite the full team;
+            third create or confirm a private Gitea org and invite the full team.
+            Use available MCP tools whenever they are relevant, prefer real tool-backed status over assumptions, and never claim external state you did not verify with a tool call.
+            Keep responses concise.
+            Return valid JSON only when asked for structured output.
+            Do not include markdown fences, comments, prefixes, or explanatory text.
+            """,
+            Map.of(
+                    "mattermost", "@project-manager-agent",
+                    "gitea", "project-manager-agent",
+                    "plane", "PO"
+            ),
+            List.of(
+                    new RoutineStepDefinition("forum-fallback-check", "If the project collaboration location is unknown, use Mattermost channel #forum-agents for coordination."),
+                    new RoutineStepDefinition("chat-channel-setup", "Create or confirm the private Mattermost project channel and invite the full team including David Gordon (@aphelio). Never create a duplicate."),
+                    new RoutineStepDefinition("plane-project-setup", "Create or confirm the private Plane project and invite the full team including David Gordon (@aphelio). Never create a duplicate."),
+                    new RoutineStepDefinition("gitea-org-setup", "Create or confirm the private Gitea org and invite the full team including David Gordon (@aphelio). Never create a duplicate."),
+                    new RoutineStepDefinition("forum-announcement", "Post in #forum-agents the exact Mattermost channel, Plane project, and Gitea org for the project."),
+                    new RoutineStepDefinition("collaboration-setup-gap", "Announce the current state of project setup in #forum-agents."),
+                    new RoutineStepDefinition("plane-item-review", "Review one current PO-driven item in Plane."),
+                    new RoutineStepDefinition("task-breakdown", "Create or define one small discrete Plane task from the current PO-driven item."),
+                    new RoutineStepDefinition("task-sequencing", "Set or clarify the sequence of one Plane task."),
+                    new RoutineStepDefinition("standup-status-check", "Collect one focused work status update in the shared team channel."),
+                    new RoutineStepDefinition("actionability-check", "Check whether one planned task is actually actionable now."),
+                    new RoutineStepDefinition("release-checkpoint", "Assess one current delivery risk or one schedule risk."),
+                    new RoutineStepDefinition("loop-closeout", "Summarize one current blocker or one confirmed coordination outcome for this loop.")
+            ),
+            true,
+            true
     );
 
-    @Inject
-    TeamRoleRegistry teamRoleRegistry;
+    @Override
+    public AgentPersonaDefinition persona() {
+        return PERSONA;
+    }
 
     @Override
     public void configure() {
-        teamRoleRegistry.register(ROLE);
-
         from("direct:software-team-project-manager")
-                .routeId("software-team-project-manager")
-                .setHeader("agent", constant(ROLE.roleId()))
+                .routeId(PERSONA.routeId())
+                .setHeader("agent", constant(PERSONA.roleId()))
                 .setHeader("role", constant("project-manager"))
-                .setHeader("agentLabel", constant(ROLE.agentLabel()))
-                .setHeader("wakeupMessage", constant(ROLE.wakeupMessage()))
-                .setHeader("sleepMessage", constant(ROLE.sleepMessage()))
-                .setHeader("systemPrompt", constant("{{agents.software-team.project-manager.system-prompt}}"))
+                .setHeader("agentLabel", constant(PERSONA.agentLabel()))
+                .setHeader("wakeupMessage", constant(PERSONA.wakeupMessage()))
+                .setHeader("sleepMessage", constant(PERSONA.sleepMessage()))
+                .setHeader("systemPrompt", constant(PERSONA.systemPrompt()))
                 .setProperty("priorSummary", constant("No prior Project Manager summary yet."))
                 .setProperty("projectBasics", constant("Use #forum-agents until exact channel, Plane project, and Gitea org are confirmed."))
                 .setProperty("agentScratchpad", constant("No PM notes yet."))
                 .setProperty("collaborationSetupComplete", constant(false))
                 .setProperty("dayCount", constant(0))
                 .loopDoWhile(simple("${exchangeProperty.dayCount} < {{agents.software-team.max-days}}"))
-                    .setProperty("dayCount", simple("${exchangeProperty.dayCount} + 1"))
+                    .process(exchange -> {
+                        Integer dayCount = exchange.getProperty("dayCount", Integer.class);
+                        exchange.setProperty("dayCount", dayCount == null ? 1 : dayCount + 1);
+                    })
                     .setProperty("cycleCount", constant(0))
                     .setProperty("done", constant(false))
                     .to("direct:log-agent-wakeup")
@@ -52,7 +100,10 @@ public class ProjectManager extends RouteBuilder {
                             .when(simple("${exchangeProperty.collaborationSetupComplete} != true"))
                                 .setProperty("bootstrapAttemptCount", constant(0))
                                 .loopDoWhile(simple("${exchangeProperty.collaborationSetupComplete} != true && ${exchangeProperty.bootstrapAttemptCount} < {{agents.software-team.max-cycles}}"))
-                                    .setProperty("bootstrapAttemptCount", simple("${exchangeProperty.bootstrapAttemptCount} + 1"))
+                                    .process(exchange -> {
+                                        Integer bootstrapAttemptCount = exchange.getProperty("bootstrapAttemptCount", Integer.class);
+                                        exchange.setProperty("bootstrapAttemptCount", bootstrapAttemptCount == null ? 1 : bootstrapAttemptCount + 1);
+                                    })
                                     .setProperty("currentStep", constant("forum-fallback-check"))
                                     .setProperty("currentRoutine", constant("If the project collaboration location is unknown, use Mattermost channel #forum-agents for coordination."))
                                     .to("direct:log-software-team-step")
@@ -116,6 +167,7 @@ public class ProjectManager extends RouteBuilder {
                             .delay(simple("{{agents.software-team.sleep-ms}}"))
                     .end()
                 .end()
+                .process(agentActivityTracker::markRouteComplete)
                 ;
     }
 }

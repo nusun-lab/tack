@@ -2,15 +2,19 @@
 
 This wiring is for local inner-dev only.
 
+The runtime persona roster is now discovered from `AgentPersonaProvider` beans at startup.
+The dashboard and `/workspace/view` expose that discovered persona registry, including each persona's
+display metadata and platform identity map.
+
 ## What Is Configured
 
-All software-team roles still share one physical LLM backend and one LLM worker lane:
+All software-team personas still share one physical LLM backend and one LLM worker lane:
 
 - one Kafka request topic: `llm.requests`
 - one Kafka worker route: `llm-worker`
 - one Kafka-backed request/reply worker lane
 
-The role-specific runtime change in this repo is only the MCP identity wiring.
+The persona-specific runtime change in this repo is only the MCP identity wiring.
 
 ## Required Local Env Vars
 
@@ -55,12 +59,20 @@ Role token variables:
 
 ## Identity Model
 
-Roles:
+The UI-facing identity model is persona-driven and flexible:
 
-- `software-team/director`
-- `software-team/project-manager`
-- `software-team/product-owner`
-- `software-team/application-developer`
+- each persona exposes a `platformIdentities` key/value map
+- examples: `mattermost`, `gitea`, `plane`
+- the dashboard reads those values from the persona registry rather than from scattered helpers
+
+The current software-team runtime token wiring still supports these built-in MCP identity keys:
+
+- `director`
+- `project-manager`
+- `product-owner`
+- `application-developer`
+
+Those keys map to the corresponding discovered personas today.
 
 Per system:
 
@@ -69,6 +81,7 @@ Per system:
 - Plane uses real per-role onboarded users with role-specific API tokens.
 
 The code does not assume identical identity semantics across systems.
+The persona registry is the source of truth for who an agent is on each platform.
 
 ## Plane Header Behavior
 
@@ -93,7 +106,7 @@ Optional env toggles:
 
 ## Local Configuration Path
 
-All MCP endpoint and identity values are runtime config only:
+All MCP endpoint and token values are runtime config only:
 
 - [application.properties](/home/aphelio/Code/llm-share-camel-kafka/src/main/resources/application.properties)
 - local env file sourced into your shell
@@ -117,6 +130,20 @@ Use your real local env file instead of the example placeholders.
 ## Backstage
 
 Backstage MCP is intentionally not implemented in this change. Add it later as another runtime MCP service in the same factory layer.
+
+## Adding A New Persona
+
+To add a normal new persona:
+
+1. Create a new routebuilder that implements `AgentPersonaProvider`.
+2. Define its `AgentPersonaDefinition`, including `platformIdentities`.
+3. Start the app and verify the persona appears in `/workspace/view`.
+4. If that persona also needs real MCP runtime credentials, add matching token wiring using the existing runtime convention or extend the MCP identity-config layer.
+
+Important distinction:
+
+- persona registry display identities are dynamic and schema-flexible
+- MCP token wiring is still explicit runtime config
 
 ## Deferred Deployment Wiring
 

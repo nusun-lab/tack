@@ -1,4 +1,4 @@
-package us.nusun.llmshare;
+package us.nusun.llmshare.tests.integration;
 
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;

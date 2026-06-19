@@ -1,17 +1,33 @@
 package us.nusun.llmshare.bean;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import us.nusun.llmshare.team.AgentPersonaRegistry;
+
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @ApplicationScoped
 public class LogTokens {
-    private static final String DIRECTOR_COLOR = "38;2;64;224;255";
-    private static final String PM_COLOR = "38;2;255;179;71";
-    private static final String PO_COLOR = "38;2;114;209;163";
-    private static final String DEV_COLOR = "38;2;106;169;255";
+    private final Map<String, String> colorByAgentLabel;
 
     @ConfigProperty(name = "llm.log.ansi-enabled", defaultValue = "true")
     boolean ansiEnabled;
+
+    @ConfigProperty(name = "llm.log.enabled", defaultValue = "true")
+    boolean loggingEnabled;
+
+    @Inject
+    public LogTokens(AgentPersonaRegistry agentPersonaRegistry) {
+        this.colorByAgentLabel = agentPersonaRegistry.allPersonas().stream()
+                .collect(Collectors.toMap(
+                        persona -> persona.agentLabel() == null ? "" : persona.agentLabel(),
+                        persona -> persona.ansiColor() == null ? "" : persona.ansiColor(),
+                        (left, right) -> left,
+                        java.util.LinkedHashMap::new));
+    }
 
     public String color(String ansiColor) {
         return ansiEnabled ? sgr(ansiColor) : "";
@@ -22,7 +38,9 @@ public class LogTokens {
     }
 
     public void print(String message) {
-        System.out.println(message);
+        if (loggingEnabled) {
+            System.out.println(message);
+        }
     }
 
     public String wrap(String agentLabel, String message) {
@@ -44,13 +62,7 @@ public class LogTokens {
     }
 
     private String colorFor(String agentLabel) {
-        return switch (agentLabel == null ? "" : agentLabel) {
-            case "DIR" -> DIRECTOR_COLOR;
-            case "PM" -> PM_COLOR;
-            case "PO" -> PO_COLOR;
-            case "DEV" -> DEV_COLOR;
-            default -> "";
-        };
+        return colorByAgentLabel.getOrDefault(agentLabel == null ? "" : agentLabel, "");
     }
 
     private String dimColorFor(String agentLabel) {

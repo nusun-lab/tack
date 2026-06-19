@@ -6,6 +6,7 @@ import jakarta.enterprise.event.Observes;
 import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import us.nusun.llmshare.team.AgentPersonaRegistry;
 
 @ApplicationScoped
 public class McpStartupHealthCheck {
@@ -13,6 +14,9 @@ public class McpStartupHealthCheck {
 
     @Inject
     McpClientFactory mcpClientFactory;
+
+    @Inject
+    AgentPersonaRegistry agentPersonaRegistry;
 
     void onStartup(@Observes StartupEvent event) {
         mcpClientFactory.logStartupConfiguration();
@@ -22,7 +26,10 @@ public class McpStartupHealthCheck {
         }
 
         boolean failFast = mcpClientFactory.startupCheckFailFast();
-        for (String identityKey : new String[]{"director", "project-manager", "product-owner", "application-developer"}) {
+        for (String identityKey : agentPersonaRegistry.teamPersonas().stream()
+                .map(persona -> persona.roleSlug())
+                .filter(mcpClientFactory::supportsIdentityKey)
+                .toList()) {
             runCheck(identityKey, "mattermost", failFast);
             runCheck(identityKey, "gitea", failFast);
             runCheck(identityKey, "plane", failFast);

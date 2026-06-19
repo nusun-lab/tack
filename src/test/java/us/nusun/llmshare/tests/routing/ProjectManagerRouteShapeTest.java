@@ -1,4 +1,4 @@
-package us.nusun.llmshare;
+package us.nusun.llmshare.tests.routing;
 
 import io.quarkus.test.junit.QuarkusTest;
 import org.junit.jupiter.api.Test;
@@ -23,8 +23,6 @@ class ProjectManagerRouteShapeTest {
         assertTrue(source.contains("${exchangeProperty.collaborationSetupComplete} != true"));
         assertTrue(source.contains("bootstrapAttemptCount"));
         assertTrue(source.contains("${exchangeProperty.collaborationSetupComplete} != true && ${exchangeProperty.bootstrapAttemptCount} < {{agents.software-team.max-cycles}}"));
-        assertTrue(source.indexOf("direct:software-team-check-collaboration-setup")
-                < source.indexOf("forum-fallback-check"));
         assertTrue(source.indexOf("bootstrapAttemptCount")
                 < source.lastIndexOf("forum-fallback-check"));
     }

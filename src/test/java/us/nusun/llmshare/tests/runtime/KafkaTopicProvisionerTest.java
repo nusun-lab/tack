@@ -1,4 +1,4 @@
-package us.nusun.llmshare;
+package us.nusun.llmshare.tests.runtime;
 
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;

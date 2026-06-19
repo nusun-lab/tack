@@ -1,4 +1,4 @@
-package us.nusun.llmshare;
+package us.nusun.llmshare.tests.integration;
 
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.TestProfile;
@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import us.nusun.llmshare.model.RoutineStepResult;
 import us.nusun.llmshare.model.RoutineToolTraceEntry;
+import us.nusun.llmshare.tests.support.SchemaLiveTestProfile;
 
 import java.util.List;
 import java.util.Objects;

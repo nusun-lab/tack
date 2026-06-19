@@ -8,7 +8,8 @@ import us.nusun.llmshare.model.LlmJobResult;
 import us.nusun.llmshare.model.ProjectCollaborationSetup;
 import us.nusun.llmshare.model.RoutineStepResult;
 import us.nusun.llmshare.model.RoutineToolTraceEntry;
-import us.nusun.llmshare.team.TeamRoleRegistry;
+import us.nusun.llmshare.team.AgentPersonaRegistry;
+import us.nusun.llmshare.team.TeamOperatingContext;
 
 import java.util.List;
 import java.util.UUID;
@@ -16,8 +17,9 @@ import java.util.UUID;
 @ApplicationScoped
 public class RoutineStepSupport {
     private static final String FORMATTER_ROLE_ID = "software-team/routine-formatter";
+    private static final String PROJECT_MANAGER_ROLE_ID = "software-team/project-manager";
     private static final String FORMATTER_ROLE = "routine-formatter";
-    private static final int MEMORY_LIMIT = 200;
+    private static final int MEMORY_LIMIT = 1000;
 
     @Inject
     ObjectMapper objectMapper;
@@ -29,7 +31,7 @@ public class RoutineStepSupport {
     ProjectMemoryStore projectMemoryStore;
 
     @Inject
-    TeamRoleRegistry teamRoleRegistry;
+    AgentPersonaRegistry agentPersonaRegistry;
 
     public void prepareExploration(Exchange exchange) {
         UUID jobId = UUID.randomUUID();
@@ -58,21 +60,17 @@ public class RoutineStepSupport {
                 Previous summary: %s
                 Known team roster:
                 %s
+                Team operating context:
+                %s
                 Project basics memory: %s
                 Agent scratchpad memory: %s
-                Available MCP services in this environment: Mattermost, Gitea, and Plane.
-                Backstage MCP is not available in this environment. If this routine mentions Backstage, say that it is unavailable and continue with the available MCP services instead of pretending you used it.
-                If you do not know the correct project collaboration location, fall back to Mattermost channel #forum-agents.
-                Use private team-only collaboration spaces, never public ones.
-                David Gordon (@aphelio) must always be included in team collaboration spaces.
+                Available MCP services in this environment: %s.
+                Unavailable tools in this environment: %s.
                 Before answering, use the available MCP tools relevant to this routine step.
                 You must make at least one concrete MCP tool call when a relevant tool exists.
                 Do not claim you opened, reviewed, updated, posted, checked, validated, or confirmed anything unless a real MCP tool call in this turn supports that statement.
                 If no relevant tool exists or the tool call fails, say so plainly.
                 Treat this step as exactly one small discrete task.
-                Do not combine multiple actions in one step.
-                Any tool-written text must be a small granular edit, never more than about 100 characters.
-                Keep wiki content small, under 100 characters per page. Create linked sub-pages instead of large pages.
                 After doing the work, return a concise plain-language result for this one routine step.
                 Do not return JSON unless explicitly asked.
                 """.formatted(
@@ -83,8 +81,11 @@ public class RoutineStepSupport {
                 stringProperty(exchange, "currentRoutine"),
                 stringProperty(exchange, "priorSummary"),
                 stringProperty(exchange, "teamRoster"),
+                renderTeamContext(),
                 stringProperty(exchange, "projectBasics"),
-                stringProperty(exchange, "agentScratchpad")));
+                stringProperty(exchange, "agentScratchpad"),
+                String.join(", ", agentPersonaRegistry.teamContext().availableTools()),
+                String.join(", ", agentPersonaRegistry.teamContext().unavailableTools())));
     }
 
     public void captureExploration(Exchange exchange) {
@@ -138,10 +139,7 @@ public class RoutineStepSupport {
                 exchange,
                 resolveScratchpadOwnerRoleId(exchange, result),
                 stringProperty(exchange, "agentScratchpad"));
-        if (blank(stringProperty(exchange, "projectBasics"))) {
-            exchange.setProperty("projectBasics", clampMemory(result.summary()));
-            projectMemoryStore.putProjectBasics(exchange, stringProperty(exchange, "projectBasics"));
-        }
+        updateProjectBasicsForProjectManager(exchange, result);
 
         String serialized = toJson(result);
         exchange.setProperty("lastRoutineResult", serialized);
@@ -240,14 +238,7 @@ public class RoutineStepSupport {
         exchange.setProperty("routineFormatterSchemaApplied", true);
         exchange.getIn().setHeader("agent", FORMATTER_ROLE_ID);
         exchange.getIn().setHeader("role", FORMATTER_ROLE);
-        exchange.getIn().setHeader("systemPrompt", """
-                You are a strict structured formatter.
-                You do not have tools.
-                You do not invent facts.
-                You summarize only from the provided routine context, raw agent output, and tool evidence.
-                If the evidence is missing or ambiguous, say so explicitly in the structured fields instead of guessing.
-                Return valid JSON only when asked for structured output.
-                """);
+        exchange.getIn().setHeader("systemPrompt", agentPersonaRegistry.getRequired(FORMATTER_ROLE_ID).systemPrompt());
         exchange.getIn().setHeader("responseSchema", "classpath:schemas/agent-routine-step-schema.json");
         exchange.getIn().setBody(formatterPrompt(exchange));
     }
@@ -357,11 +348,28 @@ public class RoutineStepSupport {
             exchange.setProperty("agentScratchpad", "No agent notes yet.");
         }
         if (blank(stringProperty(exchange, "teamRoster"))) {
-            exchange.setProperty("teamRoster", teamRoleRegistry.directorTeamRoster());
+            exchange.setProperty("teamRoster", agentPersonaRegistry.directorTeamRoster());
         }
         if (exchange.getProperty("collaborationSetupComplete") == null) {
             exchange.setProperty("collaborationSetupComplete", false);
         }
+    }
+
+    private String renderTeamContext() {
+        TeamOperatingContext context = agentPersonaRegistry.teamContext();
+        return """
+                team=%s
+                owner=%s (%s)
+                defaultChannel=%s
+                rules=%s
+                constraints=%s
+                """.formatted(
+                context.teamDisplayName(),
+                context.ownerDisplayName(),
+                context.ownerIdentity(),
+                context.defaultCoordinationChannel(),
+                String.join(" | ", context.collaborationRules()),
+                String.join(" | ", context.sharedConstraints()));
     }
 
     private void loadSharedMemory(Exchange exchange) {
@@ -388,6 +396,33 @@ public class RoutineStepSupport {
             return currentAgent;
         }
         return FORMATTER_ROLE_ID;
+    }
+
+    private void updateProjectBasicsForProjectManager(Exchange exchange, RoutineStepResult result) {
+        String ownerRoleId = resolveScratchpadOwnerRoleId(exchange, result);
+        if (!PROJECT_MANAGER_ROLE_ID.equals(ownerRoleId)) {
+            return;
+        }
+        String currentBasics = stringProperty(exchange, "projectBasics");
+        if (blank(currentBasics)) {
+            currentBasics = "Use #forum-agents until exact channel, Plane project, and Gitea org are confirmed.";
+            exchange.setProperty("projectBasics", currentBasics);
+        }
+        if (isProjectBasicsStep(exchange)) {
+            projectMemoryStore.putProjectBasics(exchange, clampMemory(currentBasics));
+        }
+    }
+
+    private static boolean isProjectBasicsStep(Exchange exchange) {
+        return switch (stringProperty(exchange, "currentStep")) {
+            case "forum-fallback-check",
+                 "chat-channel-setup",
+                 "plane-project-setup",
+                 "gitea-org-setup",
+                 "forum-announcement",
+                 "collaboration-setup-gap" -> true;
+            default -> false;
+        };
     }
 
     private static String composeAgentScratchpad(RoutineStepResult result) {

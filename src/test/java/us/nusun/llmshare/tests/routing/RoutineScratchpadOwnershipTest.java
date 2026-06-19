@@ -1,4 +1,4 @@
-package us.nusun.llmshare;
+package us.nusun.llmshare.tests.routing;
 
 import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
@@ -17,6 +17,7 @@ import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 @QuarkusTest
 class RoutineScratchpadOwnershipTest {
@@ -59,6 +60,36 @@ class RoutineScratchpadOwnershipTest {
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
 
         assertFalse(scratchpads.containsKey("req-1::software-team/routine-formatter"));
+    }
+
+    @Test
+    void projectBasicsAreOwnedByProjectManagerSetupSteps() {
+        writeScratchpad("software-team/product-owner", "PO summary");
+        assertNull(projectMemoryStore.snapshotProjectBasics().get("req-1"));
+
+        Exchange exchange = new DefaultExchange(camelContext);
+        exchange.setProperty("requestId", "req-1");
+        exchange.setProperty("routineOriginalAgent", "software-team/project-manager");
+        exchange.setProperty("currentStep", "chat-channel-setup");
+        exchange.setProperty("projectBasics", "chat=#proj | fallback #forum-agents");
+        exchange.getIn().setHeader("agent", "software-team/routine-formatter");
+        exchange.getIn().setBody(new RoutineStepResult(
+                "software-team/routine-formatter",
+                "chat-channel-setup",
+                "Mock routine",
+                "PM setup summary",
+                "next",
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                false,
+                false
+        ));
+
+        routineStepSupport.applyRoutineStepResult(exchange);
+
+        assertEquals("chat=#proj | fallback #forum-agents", projectMemoryStore.snapshotProjectBasics().get("req-1"));
     }
 
     private void writeScratchpad(String originalAgentRoleId, String summary) {

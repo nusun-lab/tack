@@ -1,43 +1,31 @@
 package us.nusun.llmshare.runtime;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import us.nusun.llmshare.team.AgentPersonaDefinition;
+import us.nusun.llmshare.team.AgentPersonaRegistry;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 @ApplicationScoped
 public class AgentRuntimeRegistry {
-    private final Map<String, AgentRuntimeDefinition> definitions = Map.of(
-            "software-team/director", new AgentRuntimeDefinition(
-                    "software-team/director",
-                    "software-team-director-llm",
-                    "directorAgentConfig",
-                    "director",
-                    "leadership"),
-            "software-team/project-manager", new AgentRuntimeDefinition(
-                    "software-team/project-manager",
-                    "software-team-project-manager-llm",
-                    "projectManagerAgentConfig",
-                    "project-manager",
-                    "planning"),
-            "software-team/product-owner", new AgentRuntimeDefinition(
-                    "software-team/product-owner",
-                    "software-team-product-owner-llm",
-                    "productOwnerAgentConfig",
-                    "product-owner",
-                    "product"),
-            "software-team/application-developer", new AgentRuntimeDefinition(
-                    "software-team/application-developer",
-                    "software-team-application-developer-llm",
-                    "applicationDeveloperAgentConfig",
-                    "application-developer",
-                    "development"),
-            "software-team/routine-formatter", new AgentRuntimeDefinition(
-                    "software-team/routine-formatter",
-                    "software-team-routine-formatter-llm",
-                    "routineFormatterAgentConfig",
-                    "routine-formatter",
-                    "formatter"));
+    private final Map<String, AgentRuntimeDefinition> definitions;
+
+    @Inject
+    public AgentRuntimeRegistry(AgentPersonaRegistry agentPersonaRegistry) {
+        LinkedHashMap<String, AgentRuntimeDefinition> rows = new LinkedHashMap<>();
+        for (AgentPersonaDefinition persona : agentPersonaRegistry.allPersonas()) {
+            rows.put(persona.roleId(), new AgentRuntimeDefinition(
+                    persona.roleId(),
+                    persona.routeId() + "-llm",
+                    agentConfigurationBeanName(persona.roleSlug()),
+                    persona.roleSlug(),
+                    persona.roleSlug()));
+        }
+        this.definitions = Map.copyOf(rows);
+    }
 
     public AgentRuntimeDefinition getRequired(String roleId) {
         AgentRuntimeDefinition definition = definitions.get(roleId);
@@ -49,5 +37,21 @@ public class AgentRuntimeRegistry {
 
     public List<AgentRuntimeDefinition> allDefinitions() {
         return definitions.values().stream().toList();
+    }
+
+    private static String agentConfigurationBeanName(String roleSlug) {
+        if (roleSlug == null || roleSlug.isBlank()) {
+            throw new IllegalArgumentException("roleSlug must not be blank");
+        }
+        String[] tokens = roleSlug.split("-");
+        StringBuilder name = new StringBuilder(tokens[0]);
+        for (int i = 1; i < tokens.length; i++) {
+            if (tokens[i].isBlank()) {
+                continue;
+            }
+            name.append(Character.toUpperCase(tokens[i].charAt(0)));
+            name.append(tokens[i].substring(1));
+        }
+        return name + "AgentConfig";
     }
 }

@@ -3,14 +3,17 @@ package us.nusun.llmshare.bean;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.apache.camel.Exchange;
 
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @ApplicationScoped
 public class ProjectMemoryStore {
     private final Map<String, String> projectBasicsByRequest = new ConcurrentHashMap<>();
     private final Map<String, String> scratchpadByRequestAndRole = new ConcurrentHashMap<>();
+    private final Map<String, ScratchpadStats> scratchpadStatsByRequestAndRole = new ConcurrentHashMap<>();
 
     public String projectKey(Exchange exchange) {
         Object requestId = exchange.getProperty("requestId");
@@ -49,11 +52,13 @@ public class ProjectMemoryStore {
     }
 
     public void putAgentScratchpad(Exchange exchange, String value) {
-        scratchpadByRequestAndRole.put(roleKey(exchange), value);
+        putAgentScratchpad(exchange, exchange.getIn().getHeader("agent", String.class), value);
     }
 
     public void putAgentScratchpad(Exchange exchange, String roleId, String value) {
-        scratchpadByRequestAndRole.put(roleKey(exchange, roleId), value);
+        String key = roleKey(exchange, roleId);
+        scratchpadByRequestAndRole.put(key, value);
+        scratchpadStatsByRequestAndRole.computeIfAbsent(key, ignored -> new ScratchpadStats()).recordWrite();
     }
 
     public Map<String, String> snapshotProjectBasics() {
@@ -64,8 +69,37 @@ public class ProjectMemoryStore {
         return new LinkedHashMap<>(scratchpadByRequestAndRole);
     }
 
+    public Map<String, ScratchpadStatsSnapshot> snapshotScratchpadStats() {
+        LinkedHashMap<String, ScratchpadStatsSnapshot> rows = new LinkedHashMap<>();
+        scratchpadStatsByRequestAndRole.forEach((key, value) -> rows.put(key, value.snapshot()));
+        return rows;
+    }
+
     public void clear() {
         projectBasicsByRequest.clear();
         scratchpadByRequestAndRole.clear();
+        scratchpadStatsByRequestAndRole.clear();
+    }
+
+    public record ScratchpadStatsSnapshot(
+            int writeCount,
+            String lastUpdatedAt
+    ) {
+    }
+
+    private static final class ScratchpadStats {
+        private final AtomicInteger writeCount = new AtomicInteger();
+        private volatile Instant lastUpdatedAt;
+
+        private void recordWrite() {
+            writeCount.incrementAndGet();
+            lastUpdatedAt = Instant.now();
+        }
+
+        private ScratchpadStatsSnapshot snapshot() {
+            return new ScratchpadStatsSnapshot(
+                    writeCount.get(),
+                    lastUpdatedAt == null ? null : lastUpdatedAt.toString());
+        }
     }
 }

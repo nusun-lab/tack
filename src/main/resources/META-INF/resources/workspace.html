@@ -6,31 +6,46 @@
   <title>LLM Share Workspace View</title>
   <style>
     :root { color-scheme: dark; }
-    body { font-family: system-ui, sans-serif; margin: 24px; background: #111827; color: #e5e7eb; }
+    body { font-family: system-ui, sans-serif; margin: 24px; background: #0d1117; color: #e6edf3; }
     h1, h2, h3 { margin: 0 0 12px; }
-    .muted { color: #9ca3af; margin-bottom: 20px; }
-    .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
-    .card { background: #1f2937; border: 1px solid #374151; border-radius: 10px; padding: 16px; }
+    .muted { color: #8b949e; margin-bottom: 20px; }
+    a, summary { color: #58a6ff; }
+    .workspace-grid { display: grid; gap: 16px; grid-template-columns: 1.8fr 2.8fr 2.8fr 2fr; align-items: start; }
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 16px; box-shadow: 0 0 0 1px rgba(240,246,252,0.02) inset; }
     .summary-card { margin-bottom: 20px; }
     .summary-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); margin-bottom: 16px; }
-    .summary-item { background: #0f172a; border: 1px solid #374151; border-radius: 8px; padding: 12px; }
-    .summary-label { color: #9ca3af; font-size: 12px; }
+    .summary-item { background: #0d1117; border: 1px solid #30363d; border-radius: 10px; padding: 12px; }
+    .summary-label { color: #8b949e; font-size: 12px; }
     .summary-value { font-size: 24px; font-weight: 700; }
     table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    th, td { text-align: left; padding: 8px; border-bottom: 1px solid #374151; vertical-align: top; }
+    th, td { text-align: left; padding: 8px; border-bottom: 1px solid #30363d; vertical-align: top; }
     code, pre { font-family: ui-monospace, monospace; }
     pre { white-space: pre-wrap; margin: 8px 0 0; }
-    .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #374151; margin: 0 6px 6px 0; }
     .list { display: grid; gap: 12px; }
-    .entry { background: #0f172a; border: 1px solid #374151; border-radius: 8px; padding: 12px; }
+    .entry { background: #0d1117; border: 1px solid #30363d; border-radius: 10px; padding: 12px; }
     .entry-head { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
-    .meta { color: #9ca3af; font-size: 12px; }
-    .preview { color: #d1d5db; }
-    details { border-top: 1px solid #374151; margin-top: 8px; padding-top: 8px; }
-    summary { cursor: pointer; color: #93c5fd; }
-    button { background: #2563eb; color: white; border: 0; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
-    button:hover { background: #1d4ed8; }
+    .entry-subhead { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
+    .meta { color: #8b949e; font-size: 12px; }
+    .preview { color: #c9d1d9; }
+    details { border-top: 1px solid #30363d; margin-top: 8px; padding-top: 8px; }
+    summary { cursor: pointer; }
+    button { background: #1f6feb; color: white; border: 0; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+    button:hover { background: #388bfd; }
     .error { color: #fca5a5; }
+    .section-projects { order: 1; }
+    .section-team { order: 2; }
+    .section-scratchpads { order: 3; }
+    .section-ops { order: 4; }
+    .role-pill { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; color: #f0f6fc; border: 1px solid transparent; }
+    .agent-title { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; }
+    .agent-state { font-size: 14px; }
+    .routes-block { margin-top: 16px; }
+    @media (max-width: 1400px) {
+      .workspace-grid { grid-template-columns: 1.5fr 2.2fr 2.2fr 1.8fr; }
+    }
+    @media (max-width: 1100px) {
+      .workspace-grid { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
@@ -42,26 +57,29 @@
     <div id="summary" class="summary-grid"></div>
   </section>
 
-  <div class="grid">
-    <section class="card">
-      <h2>Routes</h2>
-      <table id="routes"></table>
-    </section>
-
-    <section class="card">
-      <h2>Topics</h2>
-      <div id="topics"></div>
-      <div id="topicDetails" class="list" style="margin-top: 12px;"></div>
-    </section>
-
-    <section class="card">
+  <div class="workspace-grid">
+    <section class="card section-projects">
       <h2>Project Basics</h2>
       <div id="projects" class="list"></div>
     </section>
 
-    <section class="card">
+    <section class="card section-team">
+      <h2>Team Registry</h2>
+      <div id="teamRegistry" class="list"></div>
+    </section>
+
+    <section class="card section-scratchpads">
       <h2>Agent Scratchpads</h2>
       <div id="scratchpads" class="list"></div>
+    </section>
+
+    <section class="card section-ops">
+      <h2>Topics &amp; Routes</h2>
+      <div id="topicDetails" class="list"></div>
+      <div class="routes-block">
+        <h3>Routes</h3>
+        <table id="routes"></table>
+      </div>
     </section>
   </div>
 
@@ -85,6 +103,34 @@
       el.textContent = label;
       el.addEventListener('click', onClick);
       return el;
+    }
+
+    function clipText(value, maxChars = 200) {
+      const normalized = (value || '').replace(/\s+/g, ' ').trim();
+      if (normalized.length <= maxChars) return normalized;
+      return normalized.slice(0, maxChars - 1).trimEnd() + '…';
+    }
+
+    function formatTimestamp(value) {
+      if (!value) return '';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value;
+      return date.toLocaleString();
+    }
+
+    function parseAnsiColor(value) {
+      const match = /^38;2;(\d+);(\d+);(\d+)$/.exec(value || '');
+      if (!match) return { bg: '#30363d', border: '#484f58' };
+      const [, r, g, b] = match;
+      return {
+        bg: `rgba(${r}, ${g}, ${b}, 0.28)`,
+        border: `rgb(${r}, ${g}, ${b})`
+      };
+    }
+
+    function activityIcon(entry) {
+      if ((entry.routeStatus || '').toUpperCase() !== 'STARTED') return '⏳';
+      return entry.activeNow ? '☀️' : '🌙';
     }
 
     async function copyText(value) {
@@ -132,6 +178,8 @@
         ['Started Routes', summary?.startedRoutes],
         ['Topics', summary?.topics],
         ['Topic Messages', summary?.totalTopicMessages],
+        ['Personas', summary?.personas],
+        ['Active Personas', summary?.activePersonas],
         ['Projects', summary?.projects],
         ['Scratchpads', summary?.scratchpads]
       ];
@@ -151,7 +199,8 @@
       });
     }
 
-    function renderExpandableList(el, entries, sectionKey, labelKey, fullTextKey, stateKeyFn) {
+    function renderExpandableList(el, entries, sectionKey, labelKey, fullTextKey, stateKeyFn, options = {}) {
+      const previewChars = options.previewChars || 200;
       clear(el);
       if (!entries.length) {
         el.appendChild(text('div', 'No data', 'meta'));
@@ -165,7 +214,7 @@
         head.appendChild(text('span', `len ${entry.length ?? 0}`, 'meta'));
         head.appendChild(button('Copy', () => copyText(entry[fullTextKey] || '')));
         card.appendChild(head);
-        card.appendChild(text('div', entry.preview || '', 'preview'));
+        card.appendChild(text('div', clipText(entry[fullTextKey] || '', previewChars), 'preview'));
         const details = document.createElement('details');
         const stateKey = stateKeyFn ? stateKeyFn(entry) : `${sectionKey}:${entry.requestId || ''}:${entry[labelKey] || ''}`;
         rememberDetailsState(details, stateKey);
@@ -203,18 +252,59 @@
       });
     }
 
+    function renderTeamRegistry(el, entries) {
+      clear(el);
+      if (!entries.length) {
+        el.appendChild(text('div', 'No personas', 'meta'));
+        return;
+      }
+      entries.forEach(entry => {
+        const card = text('div', '', 'entry');
+        const head = text('div', '', 'entry-head');
+        const title = text('div', '', 'agent-title');
+        title.appendChild(text('span', activityIcon(entry), 'agent-state'));
+        title.appendChild(text('strong', entry.displayName || ''));
+        head.appendChild(title);
+        const rolePill = text('span', entry.roleId || '', 'role-pill');
+        const color = parseAnsiColor(entry.ansiColor);
+        rolePill.style.background = color.bg;
+        rolePill.style.borderColor = color.border;
+        head.appendChild(rolePill);
+        card.appendChild(head);
+        const subhead = text('div', '', 'entry-subhead');
+        subhead.appendChild(text('span', entry.loopStatus || 'Idle', 'meta'));
+        subhead.appendChild(text('span', entry.routeStatus || 'UNKNOWN', 'meta'));
+        subhead.appendChild(text('span', `messages ${entry.messageCount ?? 0}`, 'meta'));
+        if (entry.lastActivity) subhead.appendChild(text('span', `last ${formatTimestamp(entry.lastActivity)}`, 'meta'));
+        card.appendChild(subhead);
+        card.appendChild(text('div', entry.capabilitySummary || '', 'preview'));
+
+        const activity = text('div', '', 'meta');
+        const activityParts = [];
+        if (entry.lastActivity) activityParts.push(`last ${formatTimestamp(entry.lastActivity)}`);
+        activity.textContent = activityParts.length ? activityParts.join(' | ') : 'No recent activity';
+        card.appendChild(activity);
+
+        const identities = text('div', '', 'meta');
+        const identityMap = entry.platformIdentities || {};
+        const identityValues = Object.entries(identityMap).map(([key, value]) => `${key}: ${value}`);
+        identities.textContent = identityValues.length ? identityValues.join(' | ') : 'No platform identities';
+        card.appendChild(identities);
+
+        const routineDetails = document.createElement('details');
+        rememberDetailsState(routineDetails, `persona-activity:${entry.roleId || ''}`);
+        routineDetails.appendChild(text('summary', 'Show current routine context'));
+        routineDetails.appendChild(text('pre', entry.currentRoutine || 'No current routine'));
+        card.appendChild(routineDetails);
+        el.appendChild(card);
+      });
+    }
+
     async function refresh() {
       const res = await fetch('/workspace/view');
       const data = await res.json();
 
       renderSummary(document.getElementById('summary'), data.summary || {});
-
-      const topicsEl = document.getElementById('topics');
-      clear(topicsEl);
-      (data.topics || []).forEach(t => {
-        const pill = text('span', t, 'pill');
-        topicsEl.appendChild(pill);
-      });
 
       renderTable(
         document.getElementById('routes'),
@@ -222,6 +312,7 @@
         (data.routes || []).map(r => [r.routeId, r.status])
       );
 
+      renderTeamRegistry(document.getElementById('teamRegistry'), data.teamRegistry || []);
       renderTopicDetails(document.getElementById('topicDetails'), data.topicDetails || []);
       renderExpandableList(
         document.getElementById('projects'),
@@ -237,7 +328,8 @@
         'scratchpads',
         'roleId',
         'fullText',
-        entry => `scratchpad:${entry.requestId || ''}:${entry.roleId || ''}`
+        entry => `scratchpad:${entry.requestId || ''}:${entry.roleId || ''}`,
+        { previewChars: 200 }
       );
     }
 

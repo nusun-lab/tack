@@ -1,4 +1,4 @@
-package us.nusun.llmshare;
+package us.nusun.llmshare.tests.routing;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.model.openai.OpenAiChatModel;

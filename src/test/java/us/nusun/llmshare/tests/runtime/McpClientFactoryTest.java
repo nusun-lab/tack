@@ -1,4 +1,4 @@
-package us.nusun.llmshare.mcp;
+package us.nusun.llmshare.tests.runtime;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
@@ -16,6 +16,11 @@ import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.bean.LogTokens;
 import us.nusun.llmshare.bean.RoutineToolTraceTracker;
 import us.nusun.llmshare.config.AgentIdentityConfig;
+import us.nusun.llmshare.mcp.BoundedMcpToolResultExtractor;
+import us.nusun.llmshare.mcp.McpClientFactory;
+import us.nusun.llmshare.team.AgentPersonaDefinition;
+import us.nusun.llmshare.team.AgentPersonaRegistry;
+import us.nusun.llmshare.team.TeamOperatingContext;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -101,7 +106,10 @@ class McpClientFactoryTest {
                 false);
 
         assertTrue(result.isError());
-        assertEquals(BoundedMcpToolResultExtractor.SUPPRESSED_MESSAGE, result.resultText());
+        assertEquals(
+                "Tool result suppressed by policy because it exceeded the maximum allowed size. "
+                        + "Make a more precise tool call with a smaller result.",
+                result.resultText());
     }
 
     @Test
@@ -127,7 +135,35 @@ class McpClientFactoryTest {
     }
 
     private static McpClientFactory factory() {
-        return new McpClientFactory(new FakeAgentIdentityConfig(), new LogTokens(), new RoutineToolTraceTracker());
+        AgentPersonaRegistry registry = new AgentPersonaRegistry(
+                List.of(
+                        persona("software-team/director", "director", "DIR"),
+                        persona("software-team/project-manager", "project-manager", "PM"),
+                        persona("software-team/product-owner", "product-owner", "PO"),
+                        persona("software-team/application-developer", "application-developer", "DEV")
+                ),
+                new TeamOperatingContext("software-team", "Software Team", "David Gordon", "@aphelio", "#forum-agents", List.of(), List.of(), List.of(), List.of()));
+        return new McpClientFactory(new FakeAgentIdentityConfig(), new LogTokens(registry), new RoutineToolTraceTracker(), registry);
+    }
+
+    private static AgentPersonaDefinition persona(String roleId, String roleSlug, String agentLabel) {
+        return new AgentPersonaDefinition(
+                roleId,
+                roleSlug,
+                roleSlug,
+                "direct:" + roleSlug,
+                roleSlug,
+                agentLabel,
+                "38;2;1;2;3",
+                "wake",
+                "sleep",
+                "summary",
+                "prompt",
+                Map.of(),
+                List.of(),
+                true,
+                true
+        );
     }
 
     private static final class FakeAgentIdentityConfig implements AgentIdentityConfig {

@@ -1,4 +1,4 @@
-package us.nusun.llmshare;
+package us.nusun.llmshare.tests.support;
 
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import jakarta.enterprise.context.ApplicationScoped;

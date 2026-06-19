@@ -1,14 +1,19 @@
 package us.nusun.llmshare.route;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.apache.camel.Exchange;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.model.dataformat.JsonLibrary;
 import us.nusun.llmshare.model.LlmJobRequest;
 import us.nusun.llmshare.model.UserGoalRequest;
+import us.nusun.llmshare.team.AgentPersonaRegistry;
 
 @ApplicationScoped
 public class ApiRoute extends RouteBuilder {
+    @Inject
+    AgentPersonaRegistry agentPersonaRegistry;
+
     @Override
     public void configure() {
         restConfiguration()
@@ -38,16 +43,24 @@ public class ApiRoute extends RouteBuilder {
                 .process(exchange -> {
                     UserGoalRequest request = exchange.getIn().getBody(UserGoalRequest.class);
                     request.validate();
+                    String directorRoleId = agentPersonaRegistry.allPersonas().stream()
+                            .filter(persona -> "director".equals(persona.roleSlug()))
+                            .findFirst()
+                            .orElseThrow(() -> new IllegalStateException("Director persona is not registered"))
+                            .roleId();
+                    String directorRouteUri = agentPersonaRegistry.getRequired(directorRoleId).routeUri();
+                    exchange.setProperty("directorRouteUri", directorRouteUri);
                     exchange.getIn().setBody(LlmJobRequest.fromPrompt(
                             null,
-                            "software-team/director",
+                            directorRoleId,
                             "director",
                             request.goal(),
                             null,
                             null
                     ));
                 })
-                .to("direct:software-team-director")
+                .toD("${exchangeProperty.directorRouteUri}")
+                .removeHeaders("*")
                 .marshal().json(JsonLibrary.Jackson)
                 .setHeader(Exchange.HTTP_RESPONSE_CODE, constant(200))
                 .setHeader(Exchange.CONTENT_TYPE, constant("application/json"));

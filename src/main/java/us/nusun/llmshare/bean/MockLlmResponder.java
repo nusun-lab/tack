@@ -6,8 +6,8 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Named;
 import us.nusun.llmshare.model.LlmJobEnvelope;
 import us.nusun.llmshare.model.LlmJobResult;
-import us.nusun.llmshare.team.TeamRoleDefinition;
-import us.nusun.llmshare.team.TeamRoleRegistry;
+import us.nusun.llmshare.team.AgentPersonaDefinition;
+import us.nusun.llmshare.team.AgentPersonaRegistry;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -17,7 +17,7 @@ import java.util.Map;
 @Named("mockLlmResponder")
 public class MockLlmResponder {
     @Inject
-    TeamRoleRegistry teamRoleRegistry;
+    AgentPersonaRegistry agentPersonaRegistry;
 
     @Inject
     ObjectMapper objectMapper;
@@ -48,13 +48,8 @@ public class MockLlmResponder {
                         """.formatted(job.requester());
             };
         } else {
-            content = switch (job.requester()) {
-                case "software-team/director" -> "Clarify the mission for the assigned role in the requested product effort.";
-                case "software-team/project-manager" -> "Coordinated the current work for the requested product and exposed the next scheduling risk.";
-                case "software-team/product-owner" -> "Refined product scope for the requested product and clarified the next decision.";
-                case "software-team/application-developer" -> "Reviewed delivery work for the requested product and identified the next engineering move.";
-                default -> "Synthetic test response.";
-            };
+            AgentPersonaDefinition persona = safePersona(job.requester());
+            content = persona == null ? "Synthetic test response." : persona.capabilitySummary();
         }
         return LlmJobResult.succeeded(job, "mock", content, content, startedAt);
     }
@@ -62,12 +57,20 @@ public class MockLlmResponder {
     private String directorAssignmentsJson() {
         try {
             Map<String, String> assignments = new LinkedHashMap<>();
-            for (TeamRoleDefinition role : teamRoleRegistry.allRoles()) {
+            for (AgentPersonaDefinition role : agentPersonaRegistry.directorAssignablePersonas()) {
                 assignments.put(role.roleId(), role.capabilitySummary());
             }
             return objectMapper.writeValueAsString(assignments);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to build mock director assignments", e);
+        }
+    }
+
+    private AgentPersonaDefinition safePersona(String roleId) {
+        try {
+            return agentPersonaRegistry.getRequired(roleId);
+        } catch (IllegalArgumentException ignored) {
+            return null;
         }
     }
 

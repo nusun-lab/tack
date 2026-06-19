@@ -14,6 +14,7 @@ import org.slf4j.LoggerFactory;
 import us.nusun.llmshare.bean.LogTokens;
 import us.nusun.llmshare.bean.RoutineToolTraceTracker;
 import us.nusun.llmshare.config.AgentIdentityConfig;
+import us.nusun.llmshare.team.AgentPersonaRegistry;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -34,12 +35,14 @@ public class McpClientFactory {
     private final AgentIdentityConfig config;
     private final LogTokens logTokens;
     private final RoutineToolTraceTracker routineToolTraceTracker;
+    private final AgentPersonaRegistry agentPersonaRegistry;
 
     @Inject
-    public McpClientFactory(AgentIdentityConfig config, LogTokens logTokens, RoutineToolTraceTracker routineToolTraceTracker) {
+    public McpClientFactory(AgentIdentityConfig config, LogTokens logTokens, RoutineToolTraceTracker routineToolTraceTracker, AgentPersonaRegistry agentPersonaRegistry) {
         this.config = config;
         this.logTokens = logTokens;
         this.routineToolTraceTracker = routineToolTraceTracker;
+        this.agentPersonaRegistry = agentPersonaRegistry;
     }
 
     public McpClient mattermost(String identityKey) {
@@ -132,7 +135,10 @@ public class McpClientFactory {
     }
 
     public void logStartupConfiguration() {
-        for (String identityKey : List.of("director", "project-manager", "product-owner", "application-developer")) {
+        for (String identityKey : agentPersonaRegistry.teamPersonas().stream()
+                .map(persona -> persona.roleSlug())
+                .filter(this::supportsIdentityKey)
+                .toList()) {
             logConnection(identityKey, mattermostConnection(identityKey));
             logConnection(identityKey, giteaConnection(identityKey));
             logConnection(identityKey, planeConnection(identityKey));
@@ -281,15 +287,19 @@ public class McpClientFactory {
         };
     }
 
-    private static String agentLabel(String identityKey) {
+    public boolean supportsIdentityKey(String identityKey) {
         return switch (identityKey) {
-            case "director" -> "DIR";
-            case "project-manager" -> "PM";
-            case "product-owner" -> "PO";
-            case "application-developer" -> "DEV";
-            case "routine-formatter" -> "FMT";
-            default -> identityKey;
+            case "director", "project-manager", "product-owner", "application-developer" -> true;
+            default -> false;
         };
+    }
+
+    private String agentLabel(String identityKey) {
+        return agentPersonaRegistry.allPersonas().stream()
+                .filter(persona -> identityKey.equals(persona.roleSlug()))
+                .findFirst()
+                .map(persona -> persona.agentLabel())
+                .orElse(identityKey);
     }
 
     private Set<String> disabledToolsForService(String serviceName) {
