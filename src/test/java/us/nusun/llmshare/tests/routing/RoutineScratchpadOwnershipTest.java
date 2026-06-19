@@ -4,6 +4,7 @@ import io.quarkus.test.junit.QuarkusTest;
 import jakarta.inject.Inject;
 import org.apache.camel.CamelContext;
 import org.apache.camel.Exchange;
+import org.apache.camel.ProducerTemplate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.apache.camel.support.DefaultExchange;
@@ -23,6 +24,9 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 class RoutineScratchpadOwnershipTest {
     @Inject
     CamelContext camelContext;
+
+    @Inject
+    ProducerTemplate producerTemplate;
 
     @Inject
     RoutineStepSupport routineStepSupport;
@@ -63,6 +67,18 @@ class RoutineScratchpadOwnershipTest {
     }
 
     @Test
+    void sameRoleScratchpadKeepsLatestThoughtAndPriorContext() {
+        writeScratchpad("software-team/project-manager", "first summary");
+        writeScratchpad("software-team/project-manager", "second summary");
+
+        String scratchpad = projectMemoryStore.snapshotScratchpads().get("req-1::software-team/project-manager");
+
+        assertEquals(
+                "mock-step: second summary Next: next\n\nmock-step: first summary Next: next",
+                scratchpad);
+    }
+
+    @Test
     void projectBasicsAreOwnedByProjectManagerSetupSteps() {
         writeScratchpad("software-team/product-owner", "PO summary");
         assertNull(projectMemoryStore.snapshotProjectBasics().get("req-1"));
@@ -88,6 +104,7 @@ class RoutineScratchpadOwnershipTest {
         ));
 
         routineStepSupport.applyRoutineStepResult(exchange);
+        producerTemplate.send("direct:workspace-project-basics-store", exchange);
 
         assertEquals("chat=#proj | fallback #forum-agents", projectMemoryStore.snapshotProjectBasics().get("req-1"));
     }
@@ -111,5 +128,6 @@ class RoutineScratchpadOwnershipTest {
                 false
         ));
         routineStepSupport.applyRoutineStepResult(exchange);
+        producerTemplate.send("direct:workspace-scratchpad-store", exchange);
     }
 }

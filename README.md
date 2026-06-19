@@ -121,12 +121,11 @@ Happy path:
 2. Implement `AgentPersonaProvider`.
 3. Define one `AgentPersonaDefinition` constant in that class.
 4. Put the persona system prompt in that definition as a Java text block.
-5. Add `RoutineStepDefinition` entries in that definition.
-6. Add optional `platformIdentities` key/value mappings such as Mattermost, Gitea, or Plane handles.
-7. Define the route body in Camel DSL.
-8. Add any required runtime token/env wiring using the project’s naming convention.
-9. Start the app and verify the persona appears in `/workspace/view`.
-10. Add or update tests.
+5. Add optional `platformIdentities` key/value mappings such as Mattermost, Gitea, or Plane handles.
+6. Define the route body in Camel DSL.
+7. Add any required runtime token/env wiring using the project’s naming convention.
+8. Start the app and verify the persona appears in `/workspace/view`.
+9. Add or update tests.
 
 A normal persona definition should provide:
 
@@ -140,7 +139,6 @@ A normal persona definition should provide:
 - `capabilitySummary`
 - `systemPrompt`
 - `platformIdentities`
-- `routineSteps`
 
 Runtime registration, dashboard display, scratchpad visibility, logging metadata, and director role guides are derived from the discovered persona definitions.
 
@@ -156,7 +154,6 @@ Useful shared routes:
 ```java
 import us.nusun.llmshare.team.AgentPersonaDefinition;
 import us.nusun.llmshare.team.AgentPersonaProvider;
-import us.nusun.llmshare.team.RoutineStepDefinition;
 
 @ApplicationScoped
 public class SecurityReviewer extends RouteBuilder implements AgentPersonaProvider {
@@ -179,9 +176,6 @@ public class SecurityReviewer extends RouteBuilder implements AgentPersonaProvid
             Map.of(
                     "mattermost", "@security-reviewer",
                     "gitea", "security-reviewer-bot"
-            ),
-            List.of(
-                    new RoutineStepDefinition("threat-scan", "Review one threat boundary.")
             ),
             true,
             true
@@ -219,7 +213,14 @@ That shared team context lives in [SoftwareTeamContext.java](src/main/java/us/nu
 
 ## Running A Scenario
 
-### Submit A Goal
+The workspace now has two kinds of scenario actions:
+
+- start a new goal
+- resume persisted goal state
+
+The director goal, project basics, and scratchpads are persisted in Kafka-backed workspace state topics. That means a restart does not require starting from scratch unless you explicitly reset the workspace.
+
+### Submit A New Goal
 
 ```bash
 curl -s -X POST http://localhost:8080/goals \
@@ -239,7 +240,93 @@ Response shape:
 }
 ```
 
-### Reset The Workspace
+This creates a new request unless you explicitly provide a `requestId` in the body. Normal use should prefer `POST /goals` for new work and `POST /goals/resume` for existing work.
+
+### Resume One Existing Goal
+
+If you already know the original request id, resume that exact goal:
+
+```bash
+curl -s -X POST "http://localhost:8080/goals/resume?requestId=<original-request-id>" | jq
+```
+
+Response shape:
+
+```json
+{
+  "status": "RESUMED",
+  "resumedCount": 1,
+  "requestIds": [
+    "<original-request-id>"
+  ]
+}
+```
+
+### Resume All Existing Goals
+
+To restart every persisted goal after an app restart:
+
+```bash
+curl -s -X POST http://localhost:8080/goals/resume | jq
+```
+
+Response shape:
+
+```json
+{
+  "status": "RESUMED",
+  "resumedCount": 2,
+  "requestIds": [
+    "11111111-1111-1111-1111-111111111111",
+    "22222222-2222-2222-2222-222222222222"
+  ]
+}
+```
+
+### Inspect Existing Goals And Request IDs
+
+Use the workspace view to find persisted request ids, the original director goal, project basics, and scratchpads:
+
+```bash
+curl -s http://localhost:8080/workspace/view | jq
+```
+
+The `projects` section includes:
+
+- `requestId`
+- `goal`
+- `projectBasics`
+
+That is the easiest place to find the original request id for a targeted resume or reset.
+
+### Reset One Existing Goal
+
+To clear one project namespace without wiping the whole workspace:
+
+```bash
+curl -s -X POST "http://localhost:8080/workspace/reset?requestId=<original-request-id>" | jq
+```
+
+Response shape:
+
+```json
+{
+  "status": "RESET",
+  "scope": "REQUEST",
+  "requestId": "<original-request-id>",
+  "scratchpadsCleared": 3,
+  "memoryCleared": true,
+  "message": "Workspace state for the request was reset."
+}
+```
+
+This removes the persisted workspace state for that request:
+
+- director goal state
+- project basics
+- scratchpads
+
+### Reset The Entire Workspace
 
 ```bash
 curl -s -X POST http://localhost:8080/workspace/reset | jq
@@ -253,9 +340,21 @@ Response shape:
   "topics": [
     "llm.requests",
     "llm.responses",
-    "llm.dead-letter"
+    "llm.dead-letter",
+    "workspace.project-basics",
+    "workspace.scratchpads",
+    "workspace.director-state"
   ],
   "jobsCleared": false,
-  "message": "Kafka topics were reset. No in-memory job store is maintained."
+  "memoryCleared": true,
+  "message": "Kafka topics and in-memory workspace view state were reset."
 }
 ```
+
+### Recommended Procedure After A Restart
+
+1. Open the workspace view and confirm the persisted goals are present.
+2. If you want to continue everything, call `POST /goals/resume`.
+3. If you want to continue one project only, call `POST /goals/resume?requestId=<id>`.
+4. If one project is stale or corrupted, call `POST /workspace/reset?requestId=<id>`.
+5. Only use full `/workspace/reset` when you intentionally want to wipe all workspace state and Kafka-backed scenario state.

@@ -41,6 +41,15 @@ public class KafkaTopicProvisioner {
     @ConfigProperty(name = "llm.topic.dead-letter")
     String deadLetterTopic;
 
+    @ConfigProperty(name = "workspace.topic.project-basics")
+    String projectBasicsTopic;
+
+    @ConfigProperty(name = "workspace.topic.scratchpads")
+    String scratchpadsTopic;
+
+    @ConfigProperty(name = "workspace.topic.director-state")
+    String directorStateTopic;
+
     @ConfigProperty(name = "llm.kafka.provision-topics", defaultValue = "true")
     boolean provisionTopics;
 
@@ -64,13 +73,19 @@ public class KafkaTopicProvisioner {
     }
 
     public List<String> configuredTopicNames() {
-        return List.of(requestsTopic, responsesTopic, deadLetterTopic);
+        return List.of(requestsTopic, responsesTopic, deadLetterTopic, projectBasicsTopic, scratchpadsTopic, directorStateTopic);
     }
 
     public List<NewTopic> configuredTopics() {
-        return configuredTopicNames().stream()
-                .map(topic -> new NewTopic(topic, partitions, replicationFactor))
-                .toList();
+        List<NewTopic> topics = List.of(
+                new NewTopic(requestsTopic, partitions, replicationFactor),
+                new NewTopic(responsesTopic, partitions, replicationFactor),
+                new NewTopic(deadLetterTopic, partitions, replicationFactor),
+                compactedTopic(projectBasicsTopic),
+                compactedTopic(scratchpadsTopic),
+                compactedTopic(directorStateTopic)
+        );
+        return topics;
     }
 
     public List<String> ensureTopics() throws Exception {
@@ -210,6 +225,11 @@ public class KafkaTopicProvisioner {
         return AdminClient.create(Map.of(
                 AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers
         ));
+    }
+
+    private NewTopic compactedTopic(String topicName) {
+        return new NewTopic(topicName, partitions, replicationFactor)
+                .configs(Map.of("cleanup.policy", "compact"));
     }
 
     private KafkaConsumer<String, String> resetConsumer() {

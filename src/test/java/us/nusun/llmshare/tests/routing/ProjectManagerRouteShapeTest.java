@@ -17,7 +17,7 @@ class ProjectManagerRouteShapeTest {
         assertTrue(source.contains("forum-fallback-check"));
         assertTrue(source.contains("chat-channel-setup"));
         assertTrue(source.contains("plane-project-setup"));
-        assertTrue(source.contains("gitea-org-setup"));
+        assertTrue(source.contains("gitea-wiki-repo-setup"));
         assertTrue(source.contains("forum-announcement"));
         assertTrue(source.contains("direct:software-team-check-collaboration-setup"));
         assertTrue(source.contains("${exchangeProperty.collaborationSetupComplete} != true"));

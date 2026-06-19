@@ -160,7 +160,6 @@ class McpClientFactoryTest {
                 "summary",
                 "prompt",
                 Map.of(),
-                List.of(),
                 true,
                 true
         );

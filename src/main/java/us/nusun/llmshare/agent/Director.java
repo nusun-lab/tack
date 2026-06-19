@@ -15,7 +15,6 @@ import us.nusun.llmshare.team.AgentPersonaRegistry;
 import java.util.Map;
 
 import java.util.ArrayList;
-import java.util.List;
 import java.util.UUID;
 
 @ApplicationScoped
@@ -43,7 +42,6 @@ public class Director extends RouteBuilder implements AgentPersonaProvider {
                     "gitea", "director-agent",
                     "plane", "Director"
             ),
-            List.of(),
             true,
             false
     );
@@ -121,6 +119,8 @@ public class Director extends RouteBuilder implements AgentPersonaProvider {
                 .setProperty("llmJobId", exchangeProperty("requestId"))
                 .to("direct:ask-llm")
                 .to("direct:parse-director-assignments")
+                .to("direct:workspace-director-state-store")
+                .setBody(exchangeProperty("directorAssignmentsMap"))
                 .wireTap("direct:dispatch-director-assignments")
                     .copy(true)
                 .end()
@@ -189,6 +189,7 @@ public class Director extends RouteBuilder implements AgentPersonaProvider {
                 .process(exchange -> {
                     @SuppressWarnings("unchecked")
                     Map<String, String> assignments = exchange.getIn().getBody(Map.class);
+                    exchange.setProperty("directorAssignmentsMap", assignments);
                     exchange.setProperty("directorAssignments", new ArrayList<>(assignments.entrySet()));
                 });
     }

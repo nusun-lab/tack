@@ -54,15 +54,23 @@ public class WorkspaceViewService {
     }
 
     private List<Map<String, Object>> projectViews() {
-        return projectMemoryStore.snapshotProjectBasics().entrySet().stream()
-                .sorted(Map.Entry.comparingByKey())
-                .map(entry -> {
+        Map<String, String> projectBasicsByRequest = projectMemoryStore.snapshotProjectBasics();
+        Map<String, us.nusun.llmshare.model.DirectorStateRecord> directorStates = projectMemoryStore.snapshotDirectorStates();
+        java.util.Set<String> requestIds = new java.util.TreeSet<>();
+        requestIds.addAll(projectBasicsByRequest.keySet());
+        requestIds.addAll(directorStates.keySet());
+        return requestIds.stream()
+                .map(requestId -> {
+                    String projectBasics = projectBasicsByRequest.get(requestId);
+                    us.nusun.llmshare.model.DirectorStateRecord directorState = directorStates.get(requestId);
                     Map<String, Object> row = new LinkedHashMap<>();
-                    row.put("requestId", entry.getKey());
-                    row.put("projectBasics", entry.getValue());
-                    row.put("length", entry.getValue() == null ? 0 : entry.getValue().length());
-                    row.put("preview", preview(entry.getValue()));
-                    row.put("fullText", entry.getValue());
+                    row.put("requestId", requestId);
+                    row.put("goal", directorState == null ? null : directorState.goal());
+                    row.put("directorAssignments", directorState == null ? Map.of() : directorState.assignments());
+                    row.put("projectBasics", projectBasics == null ? "" : projectBasics);
+                    row.put("length", projectBasics == null ? 0 : projectBasics.length());
+                    row.put("preview", preview(projectBasics));
+                    row.put("fullText", projectBasics == null ? "" : projectBasics);
                     return row;
                 })
                 .toList();
@@ -157,12 +165,6 @@ public class WorkspaceViewService {
                             ? "Running " + blankToFallback(activity.currentStep(), "loop")
                             : blank(scratchpad) ? "No scratchpad yet" : "Idle");
                     row.put("platformIdentities", persona.platformIdentities());
-                    row.put("routineSteps", persona.routineSteps().stream().map(step -> {
-                        Map<String, Object> stepRow = new LinkedHashMap<>();
-                        stepRow.put("stepId", step.stepId());
-                        stepRow.put("routine", step.routine());
-                        return stepRow;
-                    }).toList());
                     return row;
                 })
                 .toList();

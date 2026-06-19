@@ -6,9 +6,6 @@ import org.apache.camel.builder.RouteBuilder;
 import us.nusun.llmshare.bean.AgentActivityTracker;
 import us.nusun.llmshare.team.AgentPersonaDefinition;
 import us.nusun.llmshare.team.AgentPersonaProvider;
-import us.nusun.llmshare.team.RoutineStepDefinition;
-
-import java.util.List;
 import java.util.Map;
 
 @ApplicationScoped
@@ -34,7 +31,8 @@ public class ProjectManager extends RouteBuilder implements AgentPersonaProvider
             Your first priorities are strict and ordered:
             first create or confirm a private Mattermost project channel and invite the full team;
             second create or confirm a private Plane project and invite the full team;
-            third create or confirm a private Gitea org and invite the full team.
+            third create or confirm the shared markdown wiki repo inside the existing Gitea org agent-workspace;
+            fourth define or confirm the target application code repo name and location the developer should use.
             Use available MCP tools whenever they are relevant, prefer real tool-backed status over assumptions, and never claim external state you did not verify with a tool call.
             Keep responses concise.
             Return valid JSON only when asked for structured output.
@@ -44,21 +42,6 @@ public class ProjectManager extends RouteBuilder implements AgentPersonaProvider
                     "mattermost", "@project-manager-agent",
                     "gitea", "project-manager-agent",
                     "plane", "PO"
-            ),
-            List.of(
-                    new RoutineStepDefinition("forum-fallback-check", "If the project collaboration location is unknown, use Mattermost channel #forum-agents for coordination."),
-                    new RoutineStepDefinition("chat-channel-setup", "Create or confirm the private Mattermost project channel and invite the full team including David Gordon (@aphelio). Never create a duplicate."),
-                    new RoutineStepDefinition("plane-project-setup", "Create or confirm the private Plane project and invite the full team including David Gordon (@aphelio). Never create a duplicate."),
-                    new RoutineStepDefinition("gitea-org-setup", "Create or confirm the private Gitea org and invite the full team including David Gordon (@aphelio). Never create a duplicate."),
-                    new RoutineStepDefinition("forum-announcement", "Post in #forum-agents the exact Mattermost channel, Plane project, and Gitea org for the project."),
-                    new RoutineStepDefinition("collaboration-setup-gap", "Announce the current state of project setup in #forum-agents."),
-                    new RoutineStepDefinition("plane-item-review", "Review one current PO-driven item in Plane."),
-                    new RoutineStepDefinition("task-breakdown", "Create or define one small discrete Plane task from the current PO-driven item."),
-                    new RoutineStepDefinition("task-sequencing", "Set or clarify the sequence of one Plane task."),
-                    new RoutineStepDefinition("standup-status-check", "Collect one focused work status update in the shared team channel."),
-                    new RoutineStepDefinition("actionability-check", "Check whether one planned task is actually actionable now."),
-                    new RoutineStepDefinition("release-checkpoint", "Assess one current delivery risk or one schedule risk."),
-                    new RoutineStepDefinition("loop-closeout", "Summarize one current blocker or one confirmed coordination outcome for this loop.")
             ),
             true,
             true
@@ -80,7 +63,7 @@ public class ProjectManager extends RouteBuilder implements AgentPersonaProvider
                 .setHeader("sleepMessage", constant(PERSONA.sleepMessage()))
                 .setHeader("systemPrompt", constant(PERSONA.systemPrompt()))
                 .setProperty("priorSummary", constant("No prior Project Manager summary yet."))
-                .setProperty("projectBasics", constant("Use #forum-agents until exact channel, Plane project, and Gitea org are confirmed."))
+                .setProperty("projectBasics", constant("Use #forum-agents until exact channel, Plane project, the agent-workspace wiki repo, and the target application code repo are confirmed."))
                 .setProperty("agentScratchpad", constant("No PM notes yet."))
                 .setProperty("collaborationSetupComplete", constant(false))
                 .setProperty("dayCount", constant(0))
@@ -116,12 +99,16 @@ public class ProjectManager extends RouteBuilder implements AgentPersonaProvider
                                     .setProperty("currentRoutine", constant("Create or confirm the private Plane project and invite the full team including David Gordon (@aphelio). Never create a duplicate."))
                                     .to("direct:log-software-team-step")
                                     .to("direct:software-team-routine-step")
-                                    .setProperty("currentStep", constant("gitea-org-setup"))
-                                    .setProperty("currentRoutine", constant("Create or confirm the private Gitea org and invite the full team including David Gordon (@aphelio). Never create a duplicate."))
+                                    .setProperty("currentStep", constant("gitea-wiki-repo-setup"))
+                                    .setProperty("currentRoutine", constant("Create or confirm the shared markdown wiki repo inside the existing Gitea org agent-workspace. Never create a duplicate."))
+                                    .to("direct:log-software-team-step")
+                                    .to("direct:software-team-routine-step")
+                                    .setProperty("currentStep", constant("code-repo-plan"))
+                                    .setProperty("currentRoutine", constant("Define or confirm the target application code repo name and location the developer should use in Gitea."))
                                     .to("direct:log-software-team-step")
                                     .to("direct:software-team-routine-step")
                                     .setProperty("currentStep", constant("forum-announcement"))
-                                    .setProperty("currentRoutine", constant("Post in #forum-agents the exact Mattermost channel, Plane project, and Gitea org for the project."))
+                                    .setProperty("currentRoutine", constant("Post in #forum-agents the exact Mattermost channel, Plane project, agent-workspace wiki repo, and target application code repo for the project."))
                                     .to("direct:log-software-team-step")
                                     .to("direct:software-team-routine-step")
                                     .setProperty("currentStep", constant("collaboration-setup-gap"))

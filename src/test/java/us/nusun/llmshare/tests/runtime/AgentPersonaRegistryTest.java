@@ -3,7 +3,6 @@ package us.nusun.llmshare.tests.runtime;
 import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.team.AgentPersonaDefinition;
 import us.nusun.llmshare.team.AgentPersonaRegistry;
-import us.nusun.llmshare.team.RoutineStepDefinition;
 import us.nusun.llmshare.team.TeamOperatingContext;
 
 import java.util.List;
@@ -29,7 +28,6 @@ class AgentPersonaRegistryTest {
                 "Coordinate work.",
                 "prompt",
                 Map.of("mattermost", "@pm", "gitea", "pm-bot"),
-                List.of(new RoutineStepDefinition("step-1", "Do one thing.")),
                 true,
                 true
         );
@@ -46,7 +44,6 @@ class AgentPersonaRegistryTest {
                 "Observe.",
                 "prompt",
                 Map.of("mattermost", "@observer"),
-                List.of(),
                 true,
                 false
         );
@@ -76,7 +73,6 @@ class AgentPersonaRegistryTest {
                         "Observe.",
                         "prompt",
                         Map.of(),
-                        List.of(),
                         true,
                         false
                 )),

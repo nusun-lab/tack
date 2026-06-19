@@ -1,6 +1,5 @@
 package us.nusun.llmshare.team;
 
-import java.util.List;
 import java.util.Map;
 
 public record AgentPersonaDefinition(
@@ -16,12 +15,10 @@ public record AgentPersonaDefinition(
         String capabilitySummary,
         String systemPrompt,
         Map<String, String> platformIdentities,
-        List<RoutineStepDefinition> routineSteps,
         boolean teamMember,
         boolean assignableByDirector
 ) {
     public AgentPersonaDefinition {
         platformIdentities = platformIdentities == null ? Map.of() : Map.copyOf(platformIdentities);
-        routineSteps = routineSteps == null ? List.of() : List.copyOf(routineSteps);
     }
 }

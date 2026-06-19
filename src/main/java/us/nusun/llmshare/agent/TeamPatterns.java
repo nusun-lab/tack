@@ -91,7 +91,13 @@ public class TeamPatterns extends RouteBuilder {
                 .process(routineStepSupport::captureFormatterResult)
                 .to("json-validator:classpath:schemas/agent-routine-step-schema.json")
                 .unmarshal().json(JsonLibrary.Jackson, RoutineStepResult.class)
-                .process(routineStepSupport::applyRoutineStepResult);
+                .process(routineStepSupport::applyRoutineStepResult)
+                .to("direct:workspace-scratchpad-store")
+                .choice()
+                    .when(simple("${exchangeProperty.workspaceProjectBasicsDirty} == true"))
+                        .to("direct:workspace-project-basics-store")
+                        .removeProperty("workspaceProjectBasicsDirty")
+                .end();
 
         from("direct:software-team-check-done")
                 .routeId("software-team-check-done")
@@ -123,6 +129,11 @@ public class TeamPatterns extends RouteBuilder {
                 .to("direct:ask-llm")
                 .setBody(simple("${body.content}"))
                 .unmarshal().json(JsonLibrary.Jackson, ProjectCollaborationSetup.class)
-                .process(routineStepSupport::applyCollaborationSetupCheck);
+                .process(routineStepSupport::applyCollaborationSetupCheck)
+                .choice()
+                    .when(simple("${exchangeProperty.workspaceProjectBasicsDirty} == true"))
+                        .to("direct:workspace-project-basics-store")
+                        .removeProperty("workspaceProjectBasicsDirty")
+                .end();
     }
 }

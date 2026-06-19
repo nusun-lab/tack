@@ -3,9 +3,6 @@ package us.nusun.llmshare.tests.support;
 import jakarta.enterprise.context.ApplicationScoped;
 import us.nusun.llmshare.team.AgentPersonaDefinition;
 import us.nusun.llmshare.team.AgentPersonaProvider;
-import us.nusun.llmshare.team.RoutineStepDefinition;
-
-import java.util.List;
 import java.util.Map;
 
 @ApplicationScoped
@@ -26,7 +23,6 @@ public class TestPersonaProvider implements AgentPersonaProvider {
                     "mattermost", "@test-observer",
                     "gitea", "test-observer-bot"
             ),
-            List.of(new RoutineStepDefinition("registry-check", "Verify persona registry projection.")),
             true,
             false
     );

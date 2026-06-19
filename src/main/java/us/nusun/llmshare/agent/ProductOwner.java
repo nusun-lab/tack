@@ -6,9 +6,6 @@ import org.apache.camel.builder.RouteBuilder;
 import us.nusun.llmshare.bean.AgentActivityTracker;
 import us.nusun.llmshare.team.AgentPersonaDefinition;
 import us.nusun.llmshare.team.AgentPersonaProvider;
-import us.nusun.llmshare.team.RoutineStepDefinition;
-
-import java.util.List;
 import java.util.Map;
 
 @ApplicationScoped
@@ -32,7 +29,7 @@ public class ProductOwner extends RouteBuilder implements AgentPersonaProvider {
             Clarify scope, backlog priorities, and acceptance criteria for the user's requested product.
             Use the exact project collaboration basics already established by the team, and do not invent new channels, projects, or orgs.
             As a strong default, do not start normal product execution work until the Project Manager has set up the project collaboration basics.
-            Before backlog shaping or acceptance-detail work, prefer confirming that the PM has established the shared Mattermost channel, Plane project, and Gitea org.
+            Before backlog shaping or acceptance-detail work, prefer confirming that the PM has established the shared Mattermost channel, Plane project, and wiki repo inside agent-workspace.
             Use available MCP tools whenever they are relevant, prefer real tool-backed status over assumptions, and never claim external state you did not verify with a tool call.
             Keep responses concise.
             Return valid JSON only when asked for structured output.
@@ -42,20 +39,6 @@ public class ProductOwner extends RouteBuilder implements AgentPersonaProvider {
                     "mattermost", "@product-owner-agent",
                     "gitea", "product-owner-agent",
                     "plane", "PO"
-            ),
-            List.of(
-                    new RoutineStepDefinition("chat-focus-post", "Post the current product focus in the shared chat channel."),
-                    new RoutineStepDefinition("collaboration-sync", "Ask one focused product question or give one focused product clarification in the shared chat channel."),
-                    new RoutineStepDefinition("plane-backlog-review", "Review the current backlog item or current priority in Plane."),
-                    new RoutineStepDefinition("backstage-context-check", "Check service context in Backstage for the current product work."),
-                    new RoutineStepDefinition("wiki-product-context-read", "Read the most relevant current product note in the shared markdown wiki repo."),
-                    new RoutineStepDefinition("scope-refinement", "Refine one scope boundary for the current work."),
-                    new RoutineStepDefinition("gherkin-update", "Draft or revise one Gherkin acceptance criterion for the current work."),
-                    new RoutineStepDefinition("plane-priority-update", "Update one priority or one backlog field in Plane if a change is needed."),
-                    new RoutineStepDefinition("wiki-decision-update", "Write one small product decision note in the shared markdown wiki repo."),
-                    new RoutineStepDefinition("constraint-reconciliation", "Resolve one open product question against known service constraints."),
-                    new RoutineStepDefinition("loop-closeout", "Summarize one remaining product gap or one confirmed product outcome for this loop."),
-                    new RoutineStepDefinition("wiki-closeout", "Write one small unresolved product follow-up note in the shared markdown wiki repo if needed.")
             ),
             true,
             true
@@ -77,7 +60,7 @@ public class ProductOwner extends RouteBuilder implements AgentPersonaProvider {
                 .setHeader("sleepMessage", constant(PERSONA.sleepMessage()))
                 .setHeader("systemPrompt", constant(PERSONA.systemPrompt()))
                 .setProperty("priorSummary", constant("No prior Product Owner summary yet."))
-                .setProperty("projectBasics", constant("Use #forum-agents until exact channel, Plane project, and Gitea org are confirmed."))
+                .setProperty("projectBasics", constant("Use #forum-agents until exact channel, Plane project, and the agent-workspace wiki repo are confirmed."))
                 .setProperty("agentScratchpad", constant("No PO notes yet."))
                 .setProperty("dayCount", constant(0))
                 .loopDoWhile(simple("${exchangeProperty.dayCount} < {{agents.software-team.max-days}}"))

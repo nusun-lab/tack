@@ -2,7 +2,6 @@ package us.nusun.llmshare.team;
 
 import jakarta.enterprise.context.ApplicationScoped;
 
-import java.util.List;
 import java.util.Map;
 
 @ApplicationScoped
@@ -27,7 +26,6 @@ public class RoutineFormatterPersonaProvider implements AgentPersonaProvider {
             Return valid JSON only when asked for structured output.
             """,
             Map.of(),
-            List.of(),
             false,
             false
     );

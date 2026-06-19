@@ -135,10 +135,7 @@ public class RoutineStepSupport {
         exchange.setProperty("needsFollowup", result.needsFollowup());
         exchange.setProperty("completionSignal", result.doneCandidate() ? "done-candidate" : "continue");
         exchange.setProperty("agentScratchpad", clampMemory(composeAgentScratchpad(result)));
-        projectMemoryStore.putAgentScratchpad(
-                exchange,
-                resolveScratchpadOwnerRoleId(exchange, result),
-                stringProperty(exchange, "agentScratchpad"));
+        exchange.setProperty("workspaceScratchpadRoleId", resolveScratchpadOwnerRoleId(exchange, result));
         updateProjectBasicsForProjectManager(exchange, result);
 
         String serialized = toJson(result);
@@ -153,6 +150,7 @@ public class RoutineStepSupport {
 
     public void prepareCollaborationSetupCheck(Exchange exchange) {
         ensureMemoryDefaults(exchange);
+        loadSharedMemory(exchange);
         exchange.getIn().setHeader("responseSchema", "classpath:schemas/project-collaboration-setup-schema.json");
         exchange.getIn().setBody("""
                 Original request: %s
@@ -164,8 +162,8 @@ public class RoutineStepSupport {
                 Collaboration is ready only if all of these are true:
                 - a private Mattermost project channel exists or is confirmed
                 - a private Plane project exists or is confirmed
-                - a private Gitea org exists or is confirmed
-                - the PM posted the exact Mattermost channel, Plane project, and Gitea org in #forum-agents
+                - the shared markdown wiki repo exists or is confirmed inside the existing Gitea org agent-workspace
+                - the PM posted the exact Mattermost channel, Plane project, and agent-workspace wiki repo in #forum-agents
                 - David Gordon (@aphelio) is included in the team collaboration spaces
                 If a name is unknown, return an empty string for that field except Mattermost fallback may be #forum-agents.
                 Return exactly one JSON object with:
@@ -190,11 +188,15 @@ public class RoutineStepSupport {
         exchange.setProperty("collaborationSetupComplete", result != null && result.collaborationReady());
         exchange.setProperty("collaborationSetupReason", result == null ? "" : result.reason());
         if (result != null) {
+            String previousBasics = stringProperty(exchange, "projectBasics");
             exchange.setProperty("mattermostChannel", safe(result.mattermostChannel()));
             exchange.setProperty("planeProject", safe(result.planeProject()));
             exchange.setProperty("giteaOrg", safe(result.giteaOrg()));
-            exchange.setProperty("projectBasics", clampMemory(composeProjectBasics(result, stringProperty(exchange, "projectBasics"))));
-            projectMemoryStore.putProjectBasics(exchange, stringProperty(exchange, "projectBasics"));
+            String updatedBasics = clampMemory(composeProjectBasics(result, previousBasics));
+            exchange.setProperty("projectBasics", updatedBasics);
+            if (!updatedBasics.equals(previousBasics)) {
+                exchange.setProperty("workspaceProjectBasicsDirty", true);
+            }
         }
         exchange.getIn().removeHeader("responseSchema");
     }
@@ -342,7 +344,7 @@ public class RoutineStepSupport {
 
     private void ensureMemoryDefaults(Exchange exchange) {
         if (blank(stringProperty(exchange, "projectBasics"))) {
-            exchange.setProperty("projectBasics", "Use #forum-agents until exact channel, Plane project, and Gitea org are confirmed.");
+            exchange.setProperty("projectBasics", "Use #forum-agents until exact channel, Plane project, and the agent-workspace wiki repo are confirmed.");
         }
         if (blank(stringProperty(exchange, "agentScratchpad"))) {
             exchange.setProperty("agentScratchpad", "No agent notes yet.");
@@ -405,11 +407,11 @@ public class RoutineStepSupport {
         }
         String currentBasics = stringProperty(exchange, "projectBasics");
         if (blank(currentBasics)) {
-            currentBasics = "Use #forum-agents until exact channel, Plane project, and Gitea org are confirmed.";
+            currentBasics = "Use #forum-agents until exact channel, Plane project, and the agent-workspace wiki repo are confirmed.";
             exchange.setProperty("projectBasics", currentBasics);
         }
         if (isProjectBasicsStep(exchange)) {
-            projectMemoryStore.putProjectBasics(exchange, clampMemory(currentBasics));
+            exchange.setProperty("workspaceProjectBasicsDirty", true);
         }
     }
 
@@ -418,7 +420,7 @@ public class RoutineStepSupport {
             case "forum-fallback-check",
                  "chat-channel-setup",
                  "plane-project-setup",
-                 "gitea-org-setup",
+                 "gitea-wiki-repo-setup",
                  "forum-announcement",
                  "collaboration-setup-gap" -> true;
             default -> false;

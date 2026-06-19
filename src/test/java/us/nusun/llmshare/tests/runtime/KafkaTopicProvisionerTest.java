@@ -15,9 +15,12 @@ class KafkaTopicProvisionerTest {
 
     @Test
     void exposesConfiguredTopicNamesIncludingDeadLetter() {
-        assertEquals(3, topicProvisioner.configuredTopicNames().size());
+        assertEquals(6, topicProvisioner.configuredTopicNames().size());
         assertTrue(topicProvisioner.configuredTopicNames().contains("llm.requests"));
         assertTrue(topicProvisioner.configuredTopicNames().contains("llm.responses"));
         assertTrue(topicProvisioner.configuredTopicNames().contains("llm.dead-letter"));
+        assertTrue(topicProvisioner.configuredTopicNames().contains("workspace.project-basics"));
+        assertTrue(topicProvisioner.configuredTopicNames().contains("workspace.scratchpads"));
+        assertTrue(topicProvisioner.configuredTopicNames().contains("workspace.director-state"));
     }
 }

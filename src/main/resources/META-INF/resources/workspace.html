@@ -27,6 +27,7 @@
     .entry-subhead { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
     .meta { color: #8b949e; font-size: 12px; }
     .preview { color: #c9d1d9; }
+    .content-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
     details { border-top: 1px solid #30363d; margin-top: 8px; padding-top: 8px; }
     summary { cursor: pointer; }
     button { background: #1f6feb; color: white; border: 0; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
@@ -210,17 +211,37 @@
         const card = text('div', '', 'entry');
         const head = text('div', '', 'entry-head');
         head.appendChild(text('code', entry.requestId || ''));
-        head.appendChild(text('code', entry[labelKey] || ''));
-        head.appendChild(text('span', `len ${entry.length ?? 0}`, 'meta'));
-        head.appendChild(button('Copy', () => copyText(entry[fullTextKey] || '')));
+        const labelValue = labelKey ? entry[labelKey] : '';
+        if (labelValue && (options.showDuplicateLabel || labelValue !== entry.requestId)) {
+          head.appendChild(text('code', labelValue));
+        }
         card.appendChild(head);
-        card.appendChild(text('div', clipText(entry[fullTextKey] || '', previewChars), 'preview'));
-        const details = document.createElement('details');
+        if (entry.goal) {
+          card.appendChild(text('div', `Goal: ${entry.goal}`, 'meta'));
+        }
         const stateKey = stateKeyFn ? stateKeyFn(entry) : `${sectionKey}:${entry.requestId || ''}:${entry[labelKey] || ''}`;
-        rememberDetailsState(details, stateKey);
-        details.appendChild(text('summary', 'Show full text'));
-        details.appendChild(text('pre', entry[fullTextKey] || ''));
-        card.appendChild(details);
+        const content = text('pre', '', 'preview');
+        const fullText = entry[fullTextKey] || '';
+        const previewText = clipText(fullText, previewChars);
+        const canExpand = fullText !== previewText;
+        const renderContent = () => {
+          content.textContent = expandedState.has(stateKey) ? fullText : previewText;
+        };
+        renderContent();
+        card.appendChild(content);
+        const contentMeta = text('div', '', 'content-meta');
+        contentMeta.appendChild(text('span', `len ${entry.length ?? 0}`, 'meta'));
+        contentMeta.appendChild(button('Copy', () => copyText(fullText)));
+        if (canExpand) {
+          const toggle = button(expandedState.has(stateKey) ? 'Show less' : 'Show full text', () => {
+            if (expandedState.has(stateKey)) expandedState.delete(stateKey);
+            else expandedState.add(stateKey);
+            toggle.textContent = expandedState.has(stateKey) ? 'Show less' : 'Show full text';
+            renderContent();
+          });
+          contentMeta.appendChild(toggle);
+        }
+        card.appendChild(contentMeta);
         el.appendChild(card);
       });
     }

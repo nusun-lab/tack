@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.bean.AgentActivityTracker;
 import us.nusun.llmshare.bean.ProjectMemoryStore;
+import us.nusun.llmshare.model.DirectorStateRecord;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
@@ -67,9 +68,15 @@ class WorkspaceViewApiTest {
 
     @Test
     void workspaceViewReturnsAllScratchpads() {
+        projectMemoryStore.applyDirectorState(new DirectorStateRecord(
+                "req-1",
+                "Build a parking lot manager app.",
+                java.util.Map.of("software-team/project-manager", "Coordinate delivery."),
+                "2026-06-19T00:00:00Z"));
         putScratchpad("req-1", "software-team/project-manager", "pm-note");
         putScratchpad("req-1", "software-team/product-owner", "po-note");
         putScratchpad("req-1", "software-team/application-developer", "dev-note");
+        putProjectBasics("req-1", "chat=#forum-agents | plane=parking | gitea=agent-workspace/parking-lot");
 
         given()
                 .when()
@@ -87,7 +94,26 @@ class WorkspaceViewApiTest {
                 .body("scratchpads.find { it.roleId == 'software-team/project-manager' && it.requestId == 'req-1' }.preview", equalTo("pm-note"))
                 .body("scratchpads.find { it.roleId == 'software-team/project-manager' && it.requestId == 'req-1' }.fullText", equalTo("pm-note"))
                 .body("scratchpads.find { it.roleId == 'software-team/project-manager' && it.requestId == 'req-1' }.messageCount", equalTo(1))
+                .body("projects.find { it.requestId == 'req-1' }.goal", equalTo("Build a parking lot manager app."))
+                .body("projects.find { it.requestId == 'req-1' }.projectBasics", equalTo("chat=#forum-agents | plane=parking | gitea=agent-workspace/parking-lot"))
                 .body("scratchpads.scratchpad", hasItems("pm-note", "po-note", "dev-note"));
+    }
+
+    @Test
+    void workspaceViewShowsGoalEvenBeforeProjectBasicsExist() {
+        projectMemoryStore.applyDirectorState(new DirectorStateRecord(
+                "req-goal",
+                "Resume the parking lot manager app.",
+                java.util.Map.of("software-team/project-manager", "Coordinate delivery."),
+                "2026-06-19T00:00:00Z"));
+
+        given()
+                .when()
+                .get("/workspace/view")
+                .then()
+                .statusCode(200)
+                .body("projects.find { it.requestId == 'req-goal' }.goal", equalTo("Resume the parking lot manager app."))
+                .body("projects.find { it.requestId == 'req-goal' }.projectBasics", equalTo(""));
     }
 
     @Test
@@ -120,5 +146,11 @@ class WorkspaceViewApiTest {
         Exchange exchange = new DefaultExchange(camelContext);
         exchange.setProperty("requestId", requestId);
         projectMemoryStore.putAgentScratchpad(exchange, roleId, value);
+    }
+
+    private void putProjectBasics(String requestId, String value) {
+        Exchange exchange = new DefaultExchange(camelContext);
+        exchange.setProperty("requestId", requestId);
+        projectMemoryStore.putProjectBasics(exchange, value);
     }
 }
