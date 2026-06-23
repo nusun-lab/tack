@@ -210,6 +210,9 @@ public class McpClientFactory {
                             .toolResultExtractor(new BoundedMcpToolResultExtractor(config.mcp().maxToolResultCharacters()))
                             .build();
                 });
+        if ("plane".equals(connection.serviceName())) {
+            client = new PlaneProjectFieldsMcpClient(client);
+        }
         return config.mcp().logging().enabled()
                 ? new LoggingMcpClient(
                         client,

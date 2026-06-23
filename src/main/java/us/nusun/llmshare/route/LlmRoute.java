@@ -25,6 +25,7 @@ import java.util.UUID;
 @ApplicationScoped
 public class LlmRoute extends RouteBuilder {
     private static final String DEFAULT_SYSTEM_PROMPT = "You are a precise worker in a shared LLM queue. Return only what the requester asked for.";
+    private static final String AGENT_MEMORY_ID_HEADER = "CamelLangChain4jAgentMemoryId";
 
     public static final class LlmAvailabilityException extends RuntimeException {
         public LlmAvailabilityException(String message) {
@@ -177,6 +178,7 @@ public class LlmRoute extends RouteBuilder {
                 .routeId("call-llm-agent")
                 .setBody(simple("${exchangeProperty.llmJob.prompt}"))
                 .setHeader("CamelLangChain4jAgentSystemMessage", simple("${exchangeProperty.llmJob.systemPrompt}"))
+                .setHeader(AGENT_MEMORY_ID_HEADER, simple("${exchangeProperty.llmJob.jobId}"))
                 .choice()
                     .when(header("CamelLangChain4jAgentSystemMessage").isNull())
                         .setHeader("CamelLangChain4jAgentSystemMessage", constant(DEFAULT_SYSTEM_PROMPT))

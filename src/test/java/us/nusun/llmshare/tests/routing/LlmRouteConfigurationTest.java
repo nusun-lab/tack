@@ -18,6 +18,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 @QuarkusTest
@@ -57,12 +58,17 @@ class LlmRouteConfigurationTest {
         assertSame(openAiChatModel, projectManagerAgentConfig.getChatModel());
         assertSame(openAiChatModel, productOwnerAgentConfig.getChatModel());
         assertSame(openAiChatModel, applicationDeveloperAgentConfig.getChatModel());
+        assertNotNull(directorAgentConfig.getChatMemoryProvider());
+        assertNotNull(projectManagerAgentConfig.getChatMemoryProvider());
+        assertNotNull(productOwnerAgentConfig.getChatMemoryProvider());
+        assertNotNull(applicationDeveloperAgentConfig.getChatMemoryProvider());
     }
 
     @Test
     void formatterConfigurationUsesADedicatedModel() {
         assertNotNull(routineFormatterAgentConfig.getChatModel());
         assertFalse(routineFormatterAgentConfig.getChatModel() == openAiChatModel);
+        assertNull(routineFormatterAgentConfig.getChatMemoryProvider());
     }
 
     @Test

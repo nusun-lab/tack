@@ -12,12 +12,14 @@ import dev.langchain4j.mcp.client.McpResource;
 import dev.langchain4j.mcp.client.McpResourceTemplate;
 import dev.langchain4j.mcp.client.McpRoot;
 import dev.langchain4j.service.tool.ToolExecutionResult;
+import dev.langchain4j.service.tool.ToolExecutor;
 import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.bean.LogTokens;
 import us.nusun.llmshare.bean.RoutineToolTraceTracker;
 import us.nusun.llmshare.config.AgentIdentityConfig;
 import us.nusun.llmshare.mcp.BoundedMcpToolResultExtractor;
 import us.nusun.llmshare.mcp.McpClientFactory;
+import us.nusun.llmshare.mcp.PlaneToolWrappers;
 import us.nusun.llmshare.team.AgentPersonaDefinition;
 import us.nusun.llmshare.team.AgentPersonaRegistry;
 import us.nusun.llmshare.team.TeamOperatingContext;
@@ -132,6 +134,78 @@ class McpClientFactoryTest {
 
         assertNotNull(factory);
         assertEquals(1000, new FakeAgentIdentityConfig().mcp().maxToolResultCharacters());
+    }
+
+    @Test
+    void planeWrapperLeavesNonListProjectsRequestsUnchanged() throws Exception {
+        RecordingToolExecutor delegate = new RecordingToolExecutor();
+        ToolExecutor wrapper = PlaneToolWrappers.addMinimalProjectFields(delegate);
+        ToolExecutionRequest request = ToolExecutionRequest.builder()
+                .name("get_project")
+                .arguments("{\"id\":\"p1\"}")
+                .build();
+
+        wrapper.execute(request, "memory-1");
+
+        assertEquals(1, delegate.executeCalls);
+        assertEquals(request.name(), delegate.lastRequest.name());
+        assertEquals(request.arguments(), delegate.lastRequest.arguments());
+        assertEquals("memory-1", delegate.lastMemoryId);
+    }
+
+    @Test
+    void planeWrapperAddsFieldsWhenListProjectsArgumentsAreBlankOrNull() throws Exception {
+        RecordingToolExecutor delegate = new RecordingToolExecutor();
+        ToolExecutor wrapper = PlaneToolWrappers.addMinimalProjectFields(delegate);
+
+        wrapper.execute(ToolExecutionRequest.builder().name("list_projects").arguments(null).build(), "memory-null");
+        assertEquals(1, delegate.executeCalls);
+        assertEquals(Map.of("fields", "id,name,identifier"),
+                OBJECT_MAPPER.readValue(delegate.lastRequest.arguments(), Map.class));
+        assertEquals("memory-null", delegate.lastMemoryId);
+
+        wrapper.execute(ToolExecutionRequest.builder().name("list_projects").arguments("   ").build(), "memory-blank");
+        assertEquals(2, delegate.executeCalls);
+        assertEquals(Map.of("fields", "id,name,identifier"),
+                OBJECT_MAPPER.readValue(delegate.lastRequest.arguments(), Map.class));
+        assertEquals("memory-blank", delegate.lastMemoryId);
+    }
+
+    @Test
+    void planeWrapperPreservesOtherArgumentsButForcesFieldsForListProjects() throws Exception {
+        RecordingToolExecutor delegate = new RecordingToolExecutor();
+        ToolExecutor wrapper = PlaneToolWrappers.addMinimalProjectFields(delegate);
+        ToolExecutionRequest request = ToolExecutionRequest.builder()
+                .name("list_projects")
+                .arguments("{\"workspace\":\"inner-dev\",\"fields\":\"too-much\",\"limit\":5}")
+                .build();
+
+        wrapper.execute(request, "memory-2");
+
+        assertEquals(1, delegate.executeCalls);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> arguments = OBJECT_MAPPER.readValue(delegate.lastRequest.arguments(), Map.class);
+        assertEquals("inner-dev", arguments.get("workspace"));
+        assertEquals(5, arguments.get("limit"));
+        assertEquals("id,name,identifier", arguments.get("fields"));
+    }
+
+    @Test
+    void planeWrapperForcesMinimalFieldsForListWorkItems() throws Exception {
+        RecordingToolExecutor delegate = new RecordingToolExecutor();
+        ToolExecutor wrapper = PlaneToolWrappers.addMinimalProjectFields(delegate);
+        ToolExecutionRequest request = ToolExecutionRequest.builder()
+                .name("list_work_items")
+                .arguments("{\"project_id\":\"p1\",\"fields\":\"too-much\"}")
+                .build();
+
+        wrapper.execute(request, "memory-3");
+
+        assertEquals(1, delegate.executeCalls);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> arguments = OBJECT_MAPPER.readValue(delegate.lastRequest.arguments(), Map.class);
+        assertEquals("p1", arguments.get("project_id"));
+        assertEquals("id,name,sequence_id,state,priority", arguments.get("fields"));
     }
 
     private static McpClientFactory factory() {
@@ -439,6 +513,25 @@ class McpClientFactoryTest {
 
         @Override
         public void close() {
+        }
+    }
+
+    private static final class RecordingToolExecutor implements ToolExecutor {
+        private int executeCalls;
+        private ToolExecutionRequest lastRequest;
+        private Object lastMemoryId;
+
+        @Override
+        public String execute(ToolExecutionRequest executionRequest, Object memoryId) {
+            executeCalls++;
+            lastRequest = executionRequest;
+            lastMemoryId = memoryId;
+            return "ok";
+        }
+
+        @Override
+        public ToolExecutionResult executeWithContext(ToolExecutionRequest executionRequest, InvocationContext invocationContext) {
+            throw new UnsupportedOperationException("Not needed for these tests");
         }
     }
 }
