@@ -1,9 +1,0 @@
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "DirectorObjectives",
-  "type": "object",
-  "minProperties": 1,
-  "additionalProperties": {
-    "type": "string"
-  }
-}

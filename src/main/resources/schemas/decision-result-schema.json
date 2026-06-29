@@ -1,0 +1,1 @@
+{"type":"object","properties":{"decisionId":{"type":"string"},"result":{"type":"boolean"},"confidence":{"type":"number"},"reason":{"type":"string"},"evidence":{"type":"array","items":{"type":"string"}}},"required":["decisionId","result","confidence","reason","evidence"]}
