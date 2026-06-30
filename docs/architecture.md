@@ -13,6 +13,35 @@ Kafka plus Camel is a strong fit for LLM sharing because it separates submission
 - The LLM worker route becomes the lane parallelism gate.
 - Results become events that other agents can consume.
 
+## AgentRun Scheduling
+
+AgentRun scheduling is event-driven. Admission is deliberately short:
+
+```text
+direct:start-agent-run
+  -> validate AgentRunRequest
+  -> create/record AgentRun as accepted
+  -> publish AgentRunScheduled
+  -> return AgentRunHandle
+```
+
+`AgentRunScheduled` is a durable start signal on `agent-runs.scheduled`, shaped as:
+
+```json
+{
+  "missionId": "mission-...",
+  "agentRunId": "run-..."
+}
+```
+
+The Kafka consumer unmarshals the event, performs an idempotent accepted/scheduled-to-running transition, launches `direct:execute-agent-run` asynchronously, and returns. It does not hold the Kafka message open for the full routine.
+
+`direct:execute-agent-run` rebuilds mission and AgentRun context from state, invokes the configured routine route, and records complete or failed projection state. Duplicate scheduled events for running, complete, failed, or otherwise ineligible runs are ignored.
+
+This mode intentionally has no framework-level AgentRun concurrency limit. Each eligible scheduled event launches an async routine execution. LLM/model concurrency remains controlled by inference lanes.
+
+Lifecycle hardening is future work. AgentRun admission records accepted state and then publishes `AgentRunScheduled`. If publication fails after admission, a run can remain accepted without a scheduled event. That is acceptable for this local/in-memory prototype; a future reconciler should scan stale accepted runs and republish `AgentRunScheduled`.
+
 ## Inference Lane Parallelism
 
 An inference lane is a shared Kafka-backed model work pool. Its `parallelism` controls how many jobs that lane can work on concurrently in the current single-runtime-instance topology.
@@ -53,7 +82,7 @@ For the first proof, keep priority as metadata only.
 
 ### Persistence
 
-The in-memory `JobStore` is intentionally disposable. Replace it with Postgres when you care about restarts.
+The in-memory agent-run state and LLM reply waiters are intentionally disposable in this proof. Replace them with durable storage when you care about restarts. A future startup reconciler can use durable run state to republish `AgentRunScheduled` for stale accepted or running runs.
 
 ### Result contracts
 

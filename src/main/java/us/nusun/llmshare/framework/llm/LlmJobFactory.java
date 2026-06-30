@@ -128,7 +128,7 @@ public class LlmJobFactory {
         if (request.metadata() != null) {
             metadata.putAll(request.metadata());
         }
-        putIfPresent(metadata, "executionRuntime", runtime.id());
+        putIfPresent(metadata, "executionRuntimeId", runtime.id());
         putIfPresent(metadata, "inferenceLane", lane.id());
         putIfPresent(metadata, "model", selectedModel(runtime, lane, globalModelFallback));
         putIfPresent(metadata, "partitionKeyStrategy", lane.partitionKeyStrategy().name());
@@ -162,16 +162,6 @@ public class LlmJobFactory {
                 exchange.setProperty(key, String.valueOf(value));
             }
         });
-        putMetadataAlias(exchange, job, "executionRuntime", "executionRuntimeId");
-        putMetadataAlias(exchange, job, "primitive", "currentPrimitive");
-        putMetadataAlias(exchange, job, "primitiveId", "currentPrimitiveId");
-    }
-
-    private static void putMetadataAlias(Exchange exchange, LlmJobEnvelope job, String from, String to) {
-        Object value = job.metadata().get(from);
-        if (value != null) {
-            exchange.setProperty(to, String.valueOf(value));
-        }
     }
 
     private static LlmJobRequest normalize(LlmJobRequest request, UUID overrideJobId, String runtimeId) {
@@ -245,6 +235,6 @@ public class LlmJobFactory {
     }
 
     private static String globalModelFallback(Exchange exchange) {
-        return resolveOptionalPlaceholder(exchange, "{{llm.openai.model:}}");
+        return resolveOptionalPlaceholder(exchange, "{{llm.runtime-default.openai.model:}}");
     }
 }

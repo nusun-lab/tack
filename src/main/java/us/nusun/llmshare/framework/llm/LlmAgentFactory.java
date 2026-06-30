@@ -40,7 +40,7 @@ public class LlmAgentFactory {
 
     @Produces
     @Singleton
-    TokenCountEstimator toolPassTokenCountEstimator(@ConfigProperty(name = "llm.openai.model") String model) {
+    TokenCountEstimator toolPassTokenCountEstimator(@ConfigProperty(name = "llm.runtime-default.openai.model") String model) {
         try {
             return new OpenAiTokenCountEstimator(model);
         } catch (IllegalArgumentException e) {
@@ -58,16 +58,16 @@ public class LlmAgentFactory {
             ToolProfileRegistry toolProfiles,
             PersonaCatalog personas,
             TokenCountEstimator tokenCountEstimator,
-            @ConfigProperty(name = "llm.openai.base-url") String defaultBaseUrl,
-            @ConfigProperty(name = "llm.openai.api-key") String defaultApiKey,
-            @ConfigProperty(name = "llm.openai.model") String model,
-            @ConfigProperty(name = "llm.openai.temperature") double temperature,
-            @ConfigProperty(name = "llm.openai.max-tokens") int maxTokens,
-            @ConfigProperty(name = "llm.openai.timeout-ms") long timeoutMs,
-            @ConfigProperty(name = "llm.thinking-off.enabled") boolean thinkingOffEnabled,
-            @ConfigProperty(name = "llm.openai.strict-json-schema", defaultValue = "true") boolean strictJsonSchema,
-            @ConfigProperty(name = "llm.agent.memory.max-tokens", defaultValue = "12000") int memoryMaxTokens) {
-        Map<String, OpenAiChatModel> runtimeModels = runtimeModels(runtimes, defaultBaseUrl, defaultApiKey, model, temperature, maxTokens, timeoutMs, thinkingOffEnabled, strictJsonSchema);
+            @ConfigProperty(name = "llm.runtime-default.openai.base-url") String defaultBaseUrl,
+            @ConfigProperty(name = "llm.runtime-default.openai.api-key") String defaultApiKey,
+            @ConfigProperty(name = "llm.runtime-default.openai.model") String defaultModel,
+            @ConfigProperty(name = "llm.runtime-default.openai.temperature") double temperature,
+            @ConfigProperty(name = "llm.runtime-default.openai.max-tokens") int maxTokens,
+            @ConfigProperty(name = "llm.runtime-default.openai.timeout-ms") long timeoutMs,
+            @ConfigProperty(name = "llm.runtime-default.openai.thinking-off.enabled") boolean thinkingOffEnabled,
+            @ConfigProperty(name = "llm.runtime-default.openai.strict-json-schema", defaultValue = "true") boolean strictJsonSchema,
+            @ConfigProperty(name = "llm.runtime-default.tool-memory.max-tokens", defaultValue = "12000") int memoryMaxTokens) {
+        Map<String, OpenAiChatModel> runtimeModels = runtimeModels(runtimes, defaultBaseUrl, defaultApiKey, defaultModel, temperature, maxTokens, timeoutMs, thinkingOffEnabled, strictJsonSchema);
         return new ExecutionRuntimeAgentFactory(runtimes, runtimeModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator, memoryMaxTokens);
     }
 
@@ -75,7 +75,7 @@ public class LlmAgentFactory {
             ExecutionRuntimeRegistry runtimes,
             String defaultBaseUrl,
             String defaultApiKey,
-            String model,
+            String defaultModel,
             double temperature,
             int maxTokens,
             long timeoutMs,
@@ -87,7 +87,7 @@ public class LlmAgentFactory {
             models.put(runtime.id(), chatModel(
                     firstNonBlank(lane.endpoint(), defaultBaseUrl),
                     firstNonBlank(resolveLaneApiKey(lane), defaultApiKey),
-                    selectedModel(runtime, lane, model),
+                    selectedModel(runtime, lane, defaultModel),
                     temperature,
                     maxTokens,
                     timeoutMs,

@@ -10,6 +10,12 @@ import java.util.List;
 import java.util.Map;
 
 public class AgentRun {
+    public static final String STATUS_ACCEPTED = "accepted";
+    public static final String STATUS_SCHEDULED = "scheduled";
+    public static final String STATUS_RUNNING = "running";
+    public static final String STATUS_COMPLETE = "complete";
+    public static final String STATUS_FAILED = "failed";
+
     private final String id;
     private final String missionId;
     private final String parentAgentRunId;
@@ -36,7 +42,7 @@ public class AgentRun {
         this.parentAgentRunId = parentAgentRunId;
         this.personaId = personaId;
         this.routineId = routineId;
-        this.status = "active";
+        this.status = STATUS_RUNNING;
         this.workingState = workingState == null ? new java.util.LinkedHashMap<>() : new java.util.LinkedHashMap<>(workingState);
         this.startedAt = Instant.now();
     }
@@ -68,10 +74,10 @@ public class AgentRun {
             stepHistory.add(result);
             status = switch (String.valueOf(result.status())) {
                 case "blocked" -> "blocked";
-                case "failed" -> "failed";
+                case "failed" -> STATUS_FAILED;
                 case "needs-coordinator" -> "needs-coordinator";
                 case "needs-human" -> "needs-human";
-                default -> "active";
+                default -> STATUS_RUNNING;
             };
         }
     }

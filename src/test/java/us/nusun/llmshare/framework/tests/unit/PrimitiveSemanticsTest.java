@@ -95,7 +95,7 @@ class PrimitiveSemanticsTest {
         assertEquals("source-control", request.metadata().get("toolProfile"));
         assertEquals("act", request.metadata().get("primitive"));
         assertEquals("assignment-review", request.metadata().get("primitiveId"));
-        assertEquals("tool-low", request.metadata().get("executionRuntime"));
+        assertEquals("tool-low", request.metadata().get("executionRuntimeId"));
         assertEquals("low-pass", request.metadata().get("inferenceLane"));
         assertEquals("run-1", request.metadata().get("agentRunId"));
         assertEquals("mission-1", request.metadata().get("missionId"));

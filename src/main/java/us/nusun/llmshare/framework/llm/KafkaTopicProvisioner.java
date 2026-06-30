@@ -27,6 +27,7 @@ public class KafkaTopicProvisioner {
     @jakarta.inject.Inject ExecutionRuntimeRegistry runtimes;
     @ConfigProperty(name = "kafka.bootstrap.servers") String bootstrapServers;
     @ConfigProperty(name = "llm.topic.dead-letter", defaultValue = "llm.dead-letter") String deadLetterTopic;
+    @ConfigProperty(name = "agent-run.scheduled.topic", defaultValue = "agent-runs.scheduled") String agentRunScheduledTopic;
     @ConfigProperty(name = "llm.kafka.provision-topics", defaultValue = "true") boolean provisionTopics;
     @ConfigProperty(name = "llm.kafka.topic-partitions", defaultValue = "1") int partitions;
     @ConfigProperty(name = "llm.kafka.topic-replication-factor", defaultValue = "1") short replicationFactor;
@@ -49,6 +50,7 @@ public class KafkaTopicProvisioner {
             topics.add(lane.requestTopic());
             topics.add(lane.responseTopic());
         }
+        topics.add(agentRunScheduledTopic);
         topics.add(deadLetterTopic);
         return topics.stream().distinct().toList();
     }
@@ -65,6 +67,7 @@ public class KafkaTopicProvisioner {
             topicPartitions.merge(lane.requestTopic(), lane.parallelism(), Math::max);
             topicPartitions.putIfAbsent(lane.responseTopic(), 1);
         }
+        topicPartitions.putIfAbsent(agentRunScheduledTopic, Math.max(1, partitions));
         topicPartitions.putIfAbsent(deadLetterTopic, Math.max(1, partitions));
         return Collections.unmodifiableMap(topicPartitions);
     }

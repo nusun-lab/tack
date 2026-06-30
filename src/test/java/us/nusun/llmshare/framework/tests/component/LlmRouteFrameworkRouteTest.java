@@ -1,30 +1,23 @@
 package us.nusun.llmshare.framework.tests.component;
 
 import org.apache.camel.CamelExecutionException;
-import org.apache.camel.Consumer;
-import org.apache.camel.Endpoint;
 import org.apache.camel.Exchange;
-import org.apache.camel.Processor;
-import org.apache.camel.Producer;
 import org.apache.camel.component.kafka.KafkaConstants;
 import org.apache.camel.impl.DefaultCamelContext;
-import org.apache.camel.support.DefaultComponent;
-import org.apache.camel.support.DefaultConsumer;
-import org.apache.camel.support.DefaultEndpoint;
-import org.apache.camel.support.DefaultProducer;
 import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.framework.llm.InFlightReplyManager;
 import us.nusun.llmshare.framework.llm.LlmDeadLetterFactory;
 import us.nusun.llmshare.framework.llm.LlmJobFactory;
+import us.nusun.llmshare.framework.llm.LlmRouteSupport;
 import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.LlmJobResult;
 import us.nusun.llmshare.framework.model.LlmJobStatus;
 import us.nusun.llmshare.framework.route.LlmRoute;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
+import us.nusun.llmshare.framework.tests.support.StubKafkaComponent;
 import us.nusun.llmshare.framework.tests.support.TestCamelContexts;
 
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -148,7 +141,7 @@ class LlmRouteFrameworkRouteTest {
         Properties properties = new Properties();
         properties.setProperty("llm.consumer.group", "framework-test");
         properties.setProperty("llm.response.consumer.group", "framework-test-response");
-        properties.setProperty("llm.openai.model", "test-model");
+        properties.setProperty("llm.runtime-default.openai.model", "test-model");
         properties.setProperty("llm.reply-timeout-ms", "100");
         properties.setProperty("llm.topic.dead-letter", "llm.dead-letter");
         context.getPropertiesComponent().setOverrideProperties(properties);
@@ -157,11 +150,15 @@ class LlmRouteFrameworkRouteTest {
         context.getRegistry().bind("executionRuntimeAgentFactory", new Object());
         FrameworkFixtures.bindCatalogBeans(context);
         LlmRoute route = new LlmRoute();
-        FrameworkFixtures.set(route, "camelContext", context);
         FrameworkFixtures.set(route, "runtimes", FrameworkFixtures.executionRuntimeRegistry());
-        FrameworkFixtures.set(route, "inFlightReplyManager", replies);
         FrameworkFixtures.set(route, "jobFactory", new LlmJobFactory(FrameworkFixtures.executionRuntimeRegistry(), FrameworkFixtures.personaCatalog()));
-        FrameworkFixtures.set(route, "deadLetterFactory", new LlmDeadLetterFactory());
+        LlmDeadLetterFactory deadLetters = new LlmDeadLetterFactory();
+        FrameworkFixtures.set(route, "deadLetterFactory", deadLetters);
+        FrameworkFixtures.set(route, "routeSupport", new LlmRouteSupport(
+                context,
+                FrameworkFixtures.executionRuntimeRegistry(),
+                replies,
+                deadLetters));
         context.addRoutes(route);
         return context;
     }
@@ -175,87 +172,5 @@ class LlmRouteFrameworkRouteTest {
             Thread.sleep(10);
         }
         assertTrue(condition.getAsBoolean());
-    }
-
-    private interface SendObserver {
-        void sent(String topic, Exchange exchange) throws Exception;
-    }
-
-    private static final class StubKafkaComponent extends DefaultComponent {
-        private final SendObserver observer;
-        private final List<SentExchange> sent = new ArrayList<>();
-
-        private StubKafkaComponent() {
-            this((topic, exchange) -> { });
-        }
-
-        private StubKafkaComponent(SendObserver observer) {
-            this.observer = observer;
-        }
-
-        @Override
-        protected Endpoint createEndpoint(String uri, String remaining, Map<String, Object> parameters) {
-            return new StubKafkaEndpoint(uri, this, remaining);
-        }
-
-        private List<String> sentTopics() {
-            return sent.stream().map(SentExchange::topic).toList();
-        }
-
-        private List<Exchange> sentTo(String topic) {
-            return sent.stream()
-                    .filter(item -> item.topic().equals(topic))
-                    .map(SentExchange::exchange)
-                    .toList();
-        }
-    }
-
-    private static final class StubKafkaEndpoint extends DefaultEndpoint {
-        private final StubKafkaComponent component;
-        private final String topic;
-
-        private StubKafkaEndpoint(String endpointUri, StubKafkaComponent component, String topic) {
-            super(endpointUri, component);
-            this.component = component;
-            this.topic = normalizeTopic(topic);
-        }
-
-        @Override
-        public Producer createProducer() {
-            return new DefaultProducer(this) {
-                @Override
-                public void process(Exchange exchange) throws Exception {
-                    Exchange copy = exchange.copy();                    component.sent.add(new SentExchange(topic, copy));
-                    component.observer.sent(topic, exchange);
-                }
-            };
-        }
-
-        @Override
-        public Consumer createConsumer(Processor processor) {
-            return new DefaultConsumer(this, processor);
-        }
-
-        @Override
-        public boolean isSingleton() {
-            return true;
-        }
-
-        @Override
-        public boolean isLenientProperties() {
-            return true;
-        }
-
-        private static String normalizeTopic(String topic) {
-            String normalized = topic == null ? "" : topic;
-            while (normalized.startsWith("/")) {
-                normalized = normalized.substring(1);
-            }
-            int query = normalized.indexOf('?');
-            return query < 0 ? normalized : normalized.substring(0, query);
-        }
-    }
-
-    private record SentExchange(String topic, Exchange exchange) {
     }
 }

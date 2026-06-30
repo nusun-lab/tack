@@ -118,7 +118,9 @@ public class AgentRunProjectionManager {
     private ProjectionTimeline timeline(Exchange exchange) {
         ProjectionTimeline timeline = exchange.getProperty("projectionTimeline", ProjectionTimeline.class);
         if (timeline == null) {
-            timeline = new ProjectionTimeline();
+            AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
+            AgentRunProjection current = run == null ? null : store.get(run.id());
+            timeline = new ProjectionTimeline(current == null ? List.of() : current.timeline());
             exchange.setProperty("projectionTimeline", timeline);
         }
         return timeline;
@@ -142,6 +144,13 @@ public class AgentRunProjectionManager {
 
     static class ProjectionTimeline {
         private final ArrayList<Map<String, Object>> entries = new ArrayList<>();
+        ProjectionTimeline() {
+        }
+        ProjectionTimeline(List<Map<String, Object>> existing) {
+            if (existing != null) {
+                entries.addAll(existing);
+            }
+        }
         void add(String type) {
             entries.add(Map.of("type", type, "at", Instant.now().toString()));
         }

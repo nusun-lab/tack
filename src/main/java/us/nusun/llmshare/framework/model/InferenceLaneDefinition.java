@@ -18,14 +18,6 @@ public record InferenceLaneDefinition(
         partitionKeyStrategy = partitionKeyStrategy == null ? PartitionKeyStrategy.AGENT_RUN : partitionKeyStrategy;
     }
 
-    /**
-     * @deprecated Use {@link #parallelism()}.
-     */
-    @Deprecated(forRemoval = false)
-    public int concurrency() {
-        return parallelism;
-    }
-
     public static Builder builder(String id) { return new Builder(id); }
 
     public static final class Builder {
@@ -43,11 +35,6 @@ public record InferenceLaneDefinition(
         public Builder requestTopic(String requestTopic) { this.requestTopic = requestTopic; return this; }
         public Builder responseTopic(String responseTopic) { this.responseTopic = responseTopic; return this; }
         public Builder parallelism(int parallelism) { this.parallelism = parallelism; return this; }
-        /**
-         * @deprecated Use {@link #parallelism(int)}.
-         */
-        @Deprecated(forRemoval = false)
-        public Builder concurrency(int concurrency) { return parallelism(concurrency); }
         public Builder partitionKeyStrategy(PartitionKeyStrategy partitionKeyStrategy) { this.partitionKeyStrategy = partitionKeyStrategy; return this; }
         public Builder endpoint(String endpoint) { this.endpoint = endpoint; return this; }
         public Builder model(String model) { this.model = model; return this; }

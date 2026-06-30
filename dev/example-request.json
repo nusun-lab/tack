@@ -1,3 +1,9 @@
 {
-  "goal": "We need a basic internal baby-tracking web app for feeds, diapers, sleep, and wake events. Give the team one concise mission each so they can start work today."
+  "goal": "Build a small parking lot manager app.",
+  "agentRuns": [
+    {
+      "personaId": "software-team/noah",
+      "routineId": "software-team/director"
+    }
+  ]
 }

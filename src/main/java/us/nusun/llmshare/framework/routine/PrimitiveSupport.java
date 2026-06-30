@@ -237,7 +237,7 @@ public class PrimitiveSupport {
         putIfPresent(metadata, "decisionId", exchange.getProperty("decisionId", String.class));
         putIfPresent(metadata, "createId", exchange.getProperty("createId", String.class));
         putIfPresent(metadata, "toolProfile", exchange.getProperty("toolProfile", String.class));
-        putIfPresent(metadata, "executionRuntime", runtimeId);
+        putIfPresent(metadata, "executionRuntimeId", runtimeId);
         if (runtimeId != null && !runtimeId.isBlank()) {
             putIfPresent(metadata, "inferenceLane", runtimes.getRequired(runtimeId).laneId());
         }

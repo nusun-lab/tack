@@ -3,7 +3,7 @@ package us.nusun.llmshare.framework.tests.boundary;
 import dev.langchain4j.mcp.client.McpClient;
 import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.framework.logging.LogTokens;
-import us.nusun.llmshare.framework.mcp.AgentIdentityConfig;
+import us.nusun.llmshare.framework.inventory.AgentIdentityConfig;
 import us.nusun.llmshare.framework.mcp.McpClientFactory;
 import us.nusun.llmshare.framework.model.McpServerDefinition;
 import us.nusun.llmshare.framework.model.Persona;

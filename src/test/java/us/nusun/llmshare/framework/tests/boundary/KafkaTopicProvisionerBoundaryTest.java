@@ -34,10 +34,12 @@ class KafkaTopicProvisionerBoundaryTest {
                 "llm.replies.low",
                 "llm.requests.high",
                 "llm.replies.high",
+                "agent-runs.scheduled",
                 "llm.dead-letter"), Set.copyOf(topics));
-        assertEquals(5, topics.size());
+        assertEquals(6, topics.size());
         assertTrue(topics.indexOf("llm.requests.low") < topics.indexOf("llm.replies.low"));
         assertTrue(topics.indexOf("llm.requests.high") < topics.indexOf("llm.replies.high"));
+        assertEquals("agent-runs.scheduled", topics.get(topics.size() - 2));
         assertEquals("llm.dead-letter", topics.getLast());
     }
 
@@ -52,8 +54,9 @@ class KafkaTopicProvisionerBoundaryTest {
                 "llm.requests.low",
                 "llm.replies.low",
                 "llm.requests.high",
-                "llm.replies.high"), Set.copyOf(topics));
-        assertEquals(4, topics.size());
+                "llm.replies.high",
+                "agent-runs.scheduled"), Set.copyOf(topics));
+        assertEquals(5, topics.size());
     }
 
     @Test
@@ -71,6 +74,7 @@ class KafkaTopicProvisionerBoundaryTest {
         assertEquals(1, partitionsByTopic.get("llm.replies.low"));
         assertEquals(1, partitionsByTopic.get("llm.requests.high"));
         assertEquals(1, partitionsByTopic.get("llm.replies.high"));
+        assertEquals(4, partitionsByTopic.get("agent-runs.scheduled"));
         assertEquals(4, partitionsByTopic.get("llm.dead-letter"));
         assertTrue(topics.stream().allMatch(topic -> topic.replicationFactor() == 2));
     }
@@ -113,8 +117,8 @@ class KafkaTopicProvisionerBoundaryTest {
         List<String> ensured = provisioner.ensureTopics();
 
         assertEquals(provisioner.configuredTopicNames(), ensured);
-        assertEquals(Set.of("llm.requests.high", "llm.replies.high"), Set.copyOf(provisioner.createdTopicNames()));
-        assertEquals(2, provisioner.createdTopicNames().size());
+        assertEquals(Set.of("llm.requests.high", "llm.replies.high", "agent-runs.scheduled"), Set.copyOf(provisioner.createdTopicNames()));
+        assertEquals(3, provisioner.createdTopicNames().size());
         assertEquals(1, provisioner.closeCount);
     }
 
@@ -179,6 +183,7 @@ class KafkaTopicProvisionerBoundaryTest {
         KafkaTopicProvisioner provisioner = new KafkaTopicProvisioner();
         FrameworkFixtures.set(provisioner, "runtimes", registry);
         FrameworkFixtures.set(provisioner, "deadLetterTopic", "llm.dead-letter");
+        FrameworkFixtures.set(provisioner, "agentRunScheduledTopic", "agent-runs.scheduled");
         FrameworkFixtures.set(provisioner, "bootstrapServers", "localhost:9092");
         FrameworkFixtures.set(provisioner, "provisionTopics", enabled);
         FrameworkFixtures.set(provisioner, "partitions", 1);
@@ -194,6 +199,7 @@ class KafkaTopicProvisionerBoundaryTest {
         TestableProvisioner provisioner = new TestableProvisioner(existingTopics);
         FrameworkFixtures.set(provisioner, "runtimes", registry);
         FrameworkFixtures.set(provisioner, "deadLetterTopic", "llm.dead-letter");
+        FrameworkFixtures.set(provisioner, "agentRunScheduledTopic", "agent-runs.scheduled");
         FrameworkFixtures.set(provisioner, "bootstrapServers", "localhost:9092");
         FrameworkFixtures.set(provisioner, "provisionTopics", true);
         FrameworkFixtures.set(provisioner, "partitions", 1);

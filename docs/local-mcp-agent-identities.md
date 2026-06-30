@@ -77,7 +77,7 @@ export LLM_LOW_API_KEY=...
 export LLM_HIGH_API_KEY=...
 ```
 
-The global `OPENAI_API_KEY` remains a fallback when a lane-specific token is not configured.
+`LLM_RUNTIME_DEFAULT_OPENAI_API_KEY` is the fallback when a lane-specific token is not configured.
 
 ## Identity Model
 

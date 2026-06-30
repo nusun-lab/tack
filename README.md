@@ -19,12 +19,13 @@ The framework treats an agent run as application state, not as a single long-liv
 A mission moves through the framework in a small number of explicit steps:
 
 1. `POST /missions` accepts a goal plus one or more explicit `AgentRunRequest` entries.
-2. The mission route creates a mission, schedules each requested `AgentRun`, and returns accepted handles quickly.
-3. Scheduled routines run outside the HTTP request thread as normal Camel routes.
-4. Routines call framework primitives such as `direct:act`, `direct:decide`, `direct:create`, and `direct:start-agent-run`.
-5. `direct:start-agent-run` schedules more agent runs and returns accepted handles immediately.
-6. LLM work is queued through Kafka by inference lane.
-7. Replies return through Kafka and update the agent run projection.
+2. The mission route creates and records each requested `AgentRun` as accepted, publishes one durable `AgentRunScheduled` start signal per run, and returns accepted handles quickly.
+3. The `AgentRunScheduled` Kafka consumer transitions accepted runs to running, launches routine execution asynchronously, and then finishes the Kafka route so the event can be committed.
+4. Async routine execution rebuilds the run context, runs the configured routine route, and records complete or failed state in the workspace projection.
+5. Routines call framework primitives such as `direct:act`, `direct:decide`, `direct:create`, and `direct:start-agent-run`.
+6. `direct:start-agent-run` records child agent runs, publishes the same scheduled event, and returns accepted handles immediately.
+7. LLM work is queued through Kafka by inference lane.
+8. Replies return through Kafka and update the agent run projection.
 
 At runtime, a mission is a goal/context container. An `AgentRun` is one persona/routine execution scheduled inside that mission. Parent/child agent runs are lineage only; no agent run synchronously waits for another agent run to complete.
 
@@ -45,9 +46,9 @@ Start Kafka and your OpenAI-compatible model endpoint, then configure the local 
 ```bash
 export KAFKA_BOOTSTRAP_SERVERS=localhost:9092
 
-export OPENAI_BASE_URL=http://localhost:8000/v1
-export OPENAI_MODEL=qwen-36-27b
-export OPENAI_API_KEY=not-needed
+export LLM_RUNTIME_DEFAULT_OPENAI_BASE_URL=http://localhost:8000/v1
+export LLM_RUNTIME_DEFAULT_OPENAI_MODEL=qwen-36-27b
+export LLM_RUNTIME_DEFAULT_OPENAI_API_KEY=not-needed
 
 export LLM_WORKER_ENABLED=true
 export LLM_LOCAL_WORKER_ROUTE_VERIFICATION_ENABLED=true
@@ -115,7 +116,7 @@ The bundled `us.nusun.llmshare.example` package demonstrates a software-team cat
 | Ethan   | `software-team/ethan` | `software-team/product-owner`         | Clarifies scope and acceptance criteria.  |
 | Miles   | `software-team/miles` | `software-team/application-developer` | Implements and reports delivery progress. |
 
-Mission requests explicitly choose which agent runs to schedule. There is no framework-level default, root, or initial persona/routine. To start the bundled example, submit Noah on the Director routine in the `agentRuns` array.
+Mission requests explicitly choose which `AgentRunRequest` objects to schedule. To start the bundled example, submit Noah on the Director routine in the `agentRuns` array.
 
 ## Core concepts
 
@@ -125,7 +126,7 @@ A mission is the top-level goal/context container. It owns the mission ID, goal 
 
 ### AgentRun
 
-An `AgentRun` is one execution of one persona on one routine. It carries working state, current primitive state, thought-stack state, latest results, and projection data. Agent runs may schedule more agent runs. Parent/child means lineage, not blocking. Starting an agent run returns an accepted handle immediately; output is eventual projection/result state.
+An `AgentRun` is one execution of one persona on one routine. It carries working state, current primitive state, thought-stack state, latest results, and projection data. Agent runs may schedule more agent runs. Parent/child means lineage, not blocking. Starting an agent run returns an accepted handle immediately; output is eventual projection/result state. Admission records accepted state, `AgentRunScheduled` consumption records running state, and the async routine records complete or failed state.
 
 ### Persona
 
@@ -207,7 +208,7 @@ Use `direct:create` for schema-shaped JSON generation.
 .process(routine.create("planned-agent-runs")
         .schema("classpath:schemas/example/software-team/agent-run-requests-schema.json")
         .prompt(simple("""
-                Given this mission, propose the initial software-team AgentRuns.
+                Given this mission, propose software-team AgentRunRequest objects to schedule.
 
                 Mission:
                 ${exchangeProperty.mission.goal}
@@ -237,7 +238,18 @@ Use `direct:start-agent-run` to schedule another agent run from the same `AgentR
 }
 ```
 
-The framework supplies mission id, agent run id, parent lineage, status, timestamps, and lifecycle projection data. The route returns an accepted `AgentRunHandle` immediately and does not wait for the scheduled routine to complete. The `input` object is preserved as structured working state for the scheduled run.
+The framework supplies mission id, agent run id, parent lineage, status, timestamps, and lifecycle projection data. The route records the child run, publishes `AgentRunScheduled`, returns an accepted `AgentRunHandle` immediately, and does not wait for the scheduled routine to complete. The `input` object is preserved as structured working state for the scheduled run.
+
+The scheduled event is intentionally small:
+
+```json
+{
+  "missionId": "mission-...",
+  "agentRunId": "run-..."
+}
+```
+
+The default topic is `agent-runs.scheduled`. The event is a durable start signal, not the routine execution payload.
 
 ## Defining catalog entries
 
@@ -260,7 +272,7 @@ At minimum, a framework adopter provides:
 * `RoutineProvider` for Camel routes those actors can run.
 * `InferenceLaneProvider` for queue topics, endpoint overrides, and optional lane model names.
 * `ExecutionRuntimeProvider` for runtime IDs that select lanes, tool-calling behavior, and optional runtime model overrides.
-* Initial persona/routine selection in each `POST /missions` request through one or more `agentRuns` entries.
+* `AgentRunRequest` entries in each `POST /missions` request for the AgentRuns the framework should schedule.
 
 Optional pieces:
 
@@ -391,12 +403,22 @@ public class SynthesisLow implements ExecutionRuntimeProvider {
 | `LLM_LOW_REPLY_TOPIC`        | `llm.replies.low`          | Low-lane reply topic.                |
 | `LLM_HIGH_REQUEST_TOPIC`     | `llm.requests.high`        | High-lane request topic.             |
 | `LLM_HIGH_REPLY_TOPIC`       | `llm.replies.high`         | High-lane reply topic.               |
+| `AGENT_RUN_SCHEDULED_TOPIC`  | `agent-runs.scheduled`     | Durable `AgentRunScheduled` start-signal topic. |
+| `AGENT_RUN_SCHEDULED_CONSUMER_GROUP` | `agent-run-scheduler` | Consumer group for scheduled agent-run start signals. |
+| `AGENT_RUN_SCHEDULED_CONSUMER_ENABLED` | `true`              | Enables the scheduled-event consumer route. |
 | `LLM_TOPIC_DEAD_LETTER`      | `llm.dead-letter`          | Failed queued-job topic.             |
 | `LLM_KAFKA_PROVISION_TOPICS` | `true`                     | Create configured topics at startup. |
-| `LLM_KAFKA_TOPIC_PARTITIONS` | `1`                        | Dead-letter topic partitions. Lane request topics use lane parallelism; reply topics are single-partition. |
-| `OPENAI_BASE_URL`            | `http://localhost:8000/v1` | Fallback OpenAI-compatible endpoint. |
-| `OPENAI_MODEL`               | `qwen-36-27b`              | Fallback model name.                 |
-| `OPENAI_API_KEY`             | `not-needed`               | Fallback API key.                    |
+| `LLM_KAFKA_TOPIC_PARTITIONS` | `1`                        | Scheduled-event and dead-letter topic partitions. Lane request topics use lane parallelism; reply topics are single-partition. |
+| `LLM_RUNTIME_DEFAULT_OPENAI_BASE_URL` | `http://localhost:8000/v1` | Runtime-inventory fallback OpenAI-compatible endpoint. |
+| `LLM_RUNTIME_DEFAULT_OPENAI_MODEL` | `qwen-36-27b`           | Runtime-inventory fallback model name. |
+| `LLM_RUNTIME_DEFAULT_OPENAI_API_KEY` | `not-needed`           | Runtime-inventory fallback API key.  |
+| `LLM_RUNTIME_DEFAULT_OPENAI_TEMPERATURE` | `0`                  | Default temperature for inventory-created OpenAI chat models. |
+| `LLM_RUNTIME_DEFAULT_OPENAI_MAX_TOKENS` | `4096`               | Default max output tokens for inventory-created OpenAI chat models. |
+| `LLM_RUNTIME_DEFAULT_OPENAI_TIMEOUT_MS` | `300000`             | Default OpenAI request timeout. |
+| `LLM_RUNTIME_DEFAULT_OPENAI_STRICT_JSON_SCHEMA` | `true`         | Default strict JSON-schema mode for OpenAI chat models. |
+| `LLM_RUNTIME_DEFAULT_OPENAI_THINKING_OFF_ENABLED` | `true`       | Default `enable_thinking=false` custom parameter for compatible models. |
+| `LLM_RUNTIME_DEFAULT_STRUCTURED_OUTPUT_PROVIDER_SCHEMA_ENABLED` | `false` | Default provider-schema mode for structured synthesis calls. |
+| `LLM_RUNTIME_DEFAULT_TOOL_MEMORY_MAX_TOKENS` | `12000`          | Default ephemeral tool-pass memory window. |
 | `LLM_LOW_MODEL`              | blank                      | Low-lane model override.             |
 | `LLM_HIGH_MODEL`             | blank                      | High-lane model override.            |
 | `LLM_LOW_PARALLELISM`        | `1`                        | Low-lane worker parallelism and request-topic partition count. |
@@ -408,7 +430,7 @@ public class SynthesisLow implements ExecutionRuntimeProvider {
 Model selection precedence is:
 
 ```text
-execution runtime model override > inference lane model > OPENAI_MODEL fallback
+execution runtime model override > inference lane model > LLM_RUNTIME_DEFAULT_OPENAI_MODEL fallback
 ```
 
 The selected model is copied into LLM request metadata and preserved on worker failures and DLQ entries.
@@ -444,6 +466,34 @@ JOB:     jobId
 Request messages use the selected partition key as the Kafka key. Reply messages continue to use `jobId` as the Kafka key and are correlated in memory by `jobId`.
 
 Current topology assumption: the request/reply implementation assumes one active orchestrator/runtime instance owns the in-memory LLM reply waiters. Lane worker parallelism is supported within that topology. Horizontally scaled orchestrator instances require reply-to routing or durable reply storage and are out of scope for this mode.
+
+### AgentRun scheduling
+
+Agent-run scheduling is event-driven:
+
+```text
+direct:start-agent-run
+  -> validate AgentRunRequest
+  -> create/record AgentRun as accepted
+  -> publish AgentRunScheduled
+  -> return AgentRunHandle
+
+Kafka consumer: AgentRunScheduled
+  -> accepted/scheduled -> running when eligible
+  -> launch direct:execute-agent-run asynchronously
+  -> return so Kafka can commit
+
+direct:execute-agent-run
+  -> rebuild mission + AgentRun context
+  -> execute the routine route
+  -> record complete or failed
+```
+
+Duplicate scheduled events are idempotent. Accepted or scheduled runs transition to running and launch once. Running, complete, failed, or otherwise ineligible runs are ignored.
+
+The framework does not impose an AgentRun concurrency limit in this mode. Every eligible scheduled event launches an async routine execution. LLM/model concurrency is controlled separately by inference lanes.
+
+Lifecycle hardening is intentionally future work. AgentRun admission records accepted state and then publishes `AgentRunScheduled`. If publication fails after admission, a run can remain accepted without a scheduled event. That is acceptable for this local/in-memory prototype; a future reconciler should scan stale accepted runs and republish `AgentRunScheduled`.
 
 ### Local worker verification
 
@@ -495,11 +545,10 @@ The workspace API is intended for local development and debugging.
 | Endpoint           | Method | Purpose                                    |
 | ------------------ | ------ | ------------------------------------------ |
 | `/missions`        | `POST` | Accept and schedule a new mission.         |
-| `/goals`           | `POST` | Deprecated alias for `/missions`.          |
 | `/workspace/view`  | `GET`  | Inspect catalog and agent-run projections. |
 | `/workspace/reset` | `POST` | Reset local workspace state.               |
 
-`POST /missions` returns `202 Accepted` after mission creation and agent-run scheduling. Scheduled routines continue asynchronously. Later routine failures are visible through workspace projection state and normal logs, not as a delayed HTTP response. `/goals` remains a deprecated compatibility alias and uses the same explicit request shape.
+`POST /missions` returns `202 Accepted` after mission creation, accepted run recording, and scheduled-event publication. Routine execution starts when `AgentRunScheduled` is consumed and continues asynchronously after the Kafka route commits. Later routine failures are visible through workspace projection state and normal logs, not as a delayed HTTP response.
 
 The projection includes mission IDs, agent-run IDs, persona/routine metadata, primitive state, runtime/lane information, latest results, timeline entries, and thought-stack snapshots.
 

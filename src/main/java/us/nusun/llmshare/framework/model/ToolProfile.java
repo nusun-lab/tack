@@ -45,24 +45,18 @@ public record ToolProfile(
         if (!allowsServer(server)) {
             return false;
         }
-        Set<String> denied = deniedTools.get(server);
-        if (denied != null && denied.contains(toolName)) {
+        if (deniedTools.getOrDefault(server, Set.of()).contains(toolName)) {
             return false;
         }
         if (allowAllToolServers.contains(server)) {
             return true;
         }
-        Set<String> allowed = allowedTools.get(server);
-        return allowed == null || allowed.isEmpty() || allowed.contains(toolName);
+        Set<String> allowed = allowedTools.getOrDefault(server, Set.of());
+        return allowed.isEmpty() || allowed.contains(toolName);
     }
 
     public Map<String, JsonNode> defaultArguments(String server, String toolName) {
-        Map<String, Map<String, JsonNode>> serverDefaults = defaultArguments.get(server);
-        if (serverDefaults == null) {
-            return Map.of();
-        }
-        Map<String, JsonNode> toolDefaults = serverDefaults.get(toolName);
-        return toolDefaults == null ? Map.of() : toolDefaults;
+        return defaultArguments.getOrDefault(server, Map.of()).getOrDefault(toolName, Map.of());
     }
 
     public static final class Builder {

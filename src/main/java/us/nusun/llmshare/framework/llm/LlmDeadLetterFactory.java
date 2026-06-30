@@ -100,8 +100,7 @@ public class LlmDeadLetterFactory {
         return firstNonBlank(
                 exchange.getProperty("executionRuntimeId", String.class),
                 runtime == null ? null : runtime.id(),
-                metadataValue(job, "executionRuntime"),
-                metadataValue(job, "runtimeId"),
+                metadataValue(job, "executionRuntimeId"),
                 job == null ? null : job.requester(),
                 "unknown");
     }
@@ -220,7 +219,7 @@ public class LlmDeadLetterFactory {
     }
 
     private static String globalModelFallback(Exchange exchange) {
-        return resolveOptionalPlaceholder(exchange, "{{llm.openai.model:}}");
+        return resolveOptionalPlaceholder(exchange, "{{llm.runtime-default.openai.model:}}");
     }
 
     private static String firstNonBlank(String... values) {

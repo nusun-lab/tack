@@ -96,7 +96,7 @@ class InFlightReplyManagerBoundaryTest {
                 "prompt",
                 "system",
                 null,
-                Map.of("executionRuntime", "tool-low", "inferenceLane", "low-pass"),
+                Map.of("executionRuntimeId", "tool-low", "inferenceLane", "low-pass"),
                 Instant.now()));
     }
 }

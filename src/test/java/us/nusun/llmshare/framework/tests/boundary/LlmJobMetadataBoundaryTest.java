@@ -40,7 +40,7 @@ class LlmJobMetadataBoundaryTest {
                         "toolProfile", "source-control",
                         "primitive", "act",
                         "primitiveId", "assignment-review",
-                        "executionRuntime", "tool-low",
+                        "executionRuntimeId", "tool-low",
                         "inferenceLane", "low-pass"),
                 null).normalized();
         LlmJobEnvelope envelope = LlmJobEnvelope.queued(request);

@@ -10,14 +10,14 @@ import us.nusun.llmshare.framework.inventory.RoutineCatalog;
 import us.nusun.llmshare.framework.model.AgentRunHandle;
 import us.nusun.llmshare.framework.model.AgentRunProjection;
 import us.nusun.llmshare.framework.model.AgentRunRequest;
+import us.nusun.llmshare.framework.model.AgentRunScheduled;
 import us.nusun.llmshare.framework.model.Mission;
-import us.nusun.llmshare.framework.model.RoutineDefinition;
 import us.nusun.llmshare.framework.projection.AgentRunProjectionManager;
 import us.nusun.llmshare.framework.projection.ProjectionStore;
-import us.nusun.llmshare.framework.route.MissionRoute;
 import us.nusun.llmshare.framework.state.AgentRun;
+import us.nusun.llmshare.framework.state.AgentRunStore;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
-import us.nusun.llmshare.framework.tests.support.TestCamelContexts;
+import us.nusun.llmshare.framework.tests.support.StubKafkaComponent;
 
 import java.time.Instant;
 import java.util.List;
@@ -29,21 +29,28 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static us.nusun.llmshare.framework.tests.support.AgentRunRouteTestSupport.SCHEDULED_TOPIC;
+import static us.nusun.llmshare.framework.tests.support.AgentRunRouteTestSupport.context;
+import static us.nusun.llmshare.framework.tests.support.AgentRunRouteTestSupport.events;
+import static us.nusun.llmshare.framework.tests.support.AgentRunRouteTestSupport.routine;
+import static us.nusun.llmshare.framework.tests.support.AgentRunRouteTestSupport.scheduledEvent;
+import static us.nusun.llmshare.framework.tests.support.AgentRunRouteTestSupport.waitForEvent;
 
 class AgentRunIsolationRouteTest {
     @Test
     void startAgentRunReturnsHandleImmediatelyAndChildCompletesLater() throws Exception {
         ProjectionStore store = FrameworkFixtures.projectionStore();
         AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
-        RoutineCatalog routines = routines(routine("test/parent", "direct:test-parent"), routine("test/child", "direct:slow-child"));
+        AgentRunStore agentRuns = new AgentRunStore();
+        StubKafkaComponent kafka = new StubKafkaComponent();
+        RoutineCatalog routines = new RoutineCatalog(List.of(routine("test/parent", "direct:test-parent"), routine("test/child", "direct:slow-child")));
         FrameworkFixtures.set(manager, "routines", routines);
         CountDownLatch childStarted = new CountDownLatch(1);
         CountDownLatch childRelease = new CountDownLatch(1);
 
-        try (DefaultCamelContext context = context(manager, routines)) {
+        try (DefaultCamelContext context = context(manager, routines, agentRuns, kafka, "agent-run-isolation-test")) {
             context.addRoutes(new RouteBuilder() {
                 @Override
                 public void configure() {
@@ -72,16 +79,26 @@ class AgentRunIsolationRouteTest {
             assertNotEquals(parent.id(), handle.agentRunId());
             assertParentStateRestored(result, parent);
 
+            assertEquals(1, agentRuns.missions().size());
+            assertEquals(1, agentRuns.runs().size());
+            assertEquals(List.of(SCHEDULED_TOPIC), kafka.sentTopics());
+            AgentRunScheduled scheduled = scheduledEvent(kafka, 0);
+            assertEquals(handle.missionId(), scheduled.missionId());
+            assertEquals(handle.agentRunId(), scheduled.agentRunId());
+            assertFalse(childStarted.await(100, TimeUnit.MILLISECONDS), "child routine should not start before scheduled event consumption");
+            assertEquals(List.of("AGENT_RUN_ACCEPTED"), events(store.get(handle.agentRunId())));
+
+            template.sendBody("direct:handle-agent-run-scheduled", scheduled);
             assertTrue(childStarted.await(2, TimeUnit.SECONDS));
             AgentRunProjection startedProjection = store.get(handle.agentRunId());
             assertNotNull(startedProjection);
-            assertEquals(List.of("AGENT_RUN_STARTED"), events(startedProjection));
+            assertEquals(List.of("AGENT_RUN_ACCEPTED", "AGENT_RUN_STARTED"), events(startedProjection));
 
             childRelease.countDown();
             assertTrue(waitForEvent(store, handle.agentRunId(), "AGENT_RUN_COMPLETED"));
             AgentRunProjection completed = store.get(handle.agentRunId());
             assertEquals(parent.id(), completed.parentAgentRunId());
-            assertEquals(List.of("AGENT_RUN_STARTED", "AGENT_RUN_COMPLETED"), events(completed));
+            assertEquals(List.of("AGENT_RUN_ACCEPTED", "AGENT_RUN_STARTED", "AGENT_RUN_COMPLETED"), events(completed));
         }
     }
 
@@ -89,11 +106,14 @@ class AgentRunIsolationRouteTest {
     void parentRoutineDoesNotWaitForScheduledChildCompletion() throws Exception {
         ProjectionStore store = FrameworkFixtures.projectionStore();
         AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
-        RoutineCatalog routines = routines(routine("test/parent", "direct:parent-schedules-child"), routine("test/child", "direct:blocked-child"));
+        AgentRunStore agentRuns = new AgentRunStore();
+        StubKafkaComponent kafka = new StubKafkaComponent();
+        RoutineCatalog routines = new RoutineCatalog(List.of(routine("test/parent", "direct:parent-schedules-child"), routine("test/child", "direct:blocked-child")));
         FrameworkFixtures.set(manager, "routines", routines);
+        CountDownLatch childStarted = new CountDownLatch(1);
         CountDownLatch childRelease = new CountDownLatch(1);
 
-        try (DefaultCamelContext context = context(manager, routines)) {
+        try (DefaultCamelContext context = context(manager, routines, agentRuns, kafka, "agent-run-isolation-test")) {
             context.addRoutes(new RouteBuilder() {
                 @Override
                 public void configure() {
@@ -103,6 +123,7 @@ class AgentRunIsolationRouteTest {
                             .setProperty("parentContinuedAfterScheduling", constant(true));
 
                     from("direct:blocked-child")
+                            .process(exchange -> childStarted.countDown())
                             .process(exchange -> childRelease.await(2, TimeUnit.SECONDS));
                 }
             });
@@ -118,11 +139,14 @@ class AgentRunIsolationRouteTest {
             assertTrue(elapsedMs < 300, "parent route should continue after scheduling child");
             assertEquals(true, exchange.getProperty("parentContinuedAfterScheduling"));
             assertParentStateRestored(exchange, parent);
+            assertEquals(List.of(SCHEDULED_TOPIC), kafka.sentTopics());
             String childRunId = store.all().stream()
                     .filter(projection -> parent.id().equals(projection.parentAgentRunId()))
                     .findFirst()
                     .orElseThrow()
                     .agentRunId();
+            template.sendBody("direct:handle-agent-run-scheduled", scheduledEvent(kafka, 0));
+            assertTrue(childStarted.await(2, TimeUnit.SECONDS));
             childRelease.countDown();
             assertTrue(waitForEvent(store, childRunId, "AGENT_RUN_COMPLETED"));
         }
@@ -132,10 +156,12 @@ class AgentRunIsolationRouteTest {
     void childFailureLaterUpdatesOnlyChildProjection() throws Exception {
         ProjectionStore store = FrameworkFixtures.projectionStore();
         AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
-        RoutineCatalog routines = routines(routine("test/parent", "direct:test-parent"), routine("test/failing-child", "direct:failing-child"));
+        AgentRunStore agentRuns = new AgentRunStore();
+        StubKafkaComponent kafka = new StubKafkaComponent();
+        RoutineCatalog routines = new RoutineCatalog(List.of(routine("test/parent", "direct:test-parent"), routine("test/failing-child", "direct:failing-child")));
         FrameworkFixtures.set(manager, "routines", routines);
 
-        try (DefaultCamelContext context = context(manager, routines)) {
+        try (DefaultCamelContext context = context(manager, routines, agentRuns, kafka, "agent-run-isolation-test")) {
             context.addRoutes(new RouteBuilder() {
                 @Override
                 public void configure() {
@@ -151,9 +177,10 @@ class AgentRunIsolationRouteTest {
             AgentRunHandle handle = exchange.getIn().getBody(AgentRunHandle.class);
 
             assertParentStateRestored(exchange, parent);
+            context.createProducerTemplate().sendBody("direct:handle-agent-run-scheduled", scheduledEvent(kafka, 0));
             assertTrue(waitForEvent(store, handle.agentRunId(), "AGENT_RUN_FAILED"));
             assertFalse(events(store.get(handle.agentRunId())).contains("AGENT_RUN_COMPLETED"));
-            assertEquals("active", parent.status());
+            assertEquals("running", parent.status());
         }
     }
 
@@ -161,10 +188,12 @@ class AgentRunIsolationRouteTest {
     void schedulingValidationFailureRestoresParentState() throws Exception {
         ProjectionStore store = FrameworkFixtures.projectionStore();
         AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
-        RoutineCatalog routines = routines(routine("test/parent", "direct:test-parent"), routine("test/child", "direct:test-child"));
+        AgentRunStore agentRuns = new AgentRunStore();
+        StubKafkaComponent kafka = new StubKafkaComponent();
+        RoutineCatalog routines = new RoutineCatalog(List.of(routine("test/parent", "direct:test-parent"), routine("test/child", "direct:test-child")));
         FrameworkFixtures.set(manager, "routines", routines);
 
-        try (DefaultCamelContext context = context(manager, routines)) {
+        try (DefaultCamelContext context = context(manager, routines, agentRuns, kafka, "agent-run-isolation-test")) {
             context.addRoutes(new RouteBuilder() {
                 @Override
                 public void configure() {
@@ -179,21 +208,21 @@ class AgentRunIsolationRouteTest {
             Exchange result = context.createProducerTemplate().send("direct:start-agent-run", exchange);
             assertNotNull(result.getException());
             assertParentStateRestored(exchange, parent);
-            assertFalse(exchange.getProperties().containsKey("agentRunExchangeScopeStack"));
+            assertEquals(0, agentRuns.missions().size());
+            assertEquals(0, agentRuns.runs().size());
             assertEquals(0, store.all().size());
-        }
-    }
+            assertEquals(List.of(), kafka.sentTopics());
 
-    private static DefaultCamelContext context(AgentRunProjectionManager manager, RoutineCatalog routines) throws Exception {
-        DefaultCamelContext context = TestCamelContexts.quiet();
-        context.getShutdownStrategy().setTimeout(1);
-        context.getShutdownStrategy().setSuppressLoggingOnTimeout(true);
-        MissionRoute route = new MissionRoute();
-        FrameworkFixtures.set(route, "personas", FrameworkFixtures.personaCatalog());
-        FrameworkFixtures.set(route, "routines", routines);
-        FrameworkFixtures.set(route, "projections", manager);
-        context.addRoutes(route);
-        return context;
+            Exchange missingRoutine = preparedExchange(context, parent, new AgentRunRequest(FrameworkFixtures.PERSONA_A, "test/child", Map.of()));
+            missingRoutine.getIn().setBody(Map.of("personaId", FrameworkFixtures.PERSONA_A, "routineId", "missing"));
+            Exchange missingRoutineResult = context.createProducerTemplate().send("direct:start-agent-run", missingRoutine);
+            assertNotNull(missingRoutineResult.getException());
+            assertParentStateRestored(missingRoutine, parent);
+            assertEquals(0, agentRuns.missions().size());
+            assertEquals(0, agentRuns.runs().size());
+            assertEquals(0, store.all().size());
+            assertEquals(List.of(), kafka.sentTopics());
+        }
     }
 
     private static Exchange preparedExchange(DefaultCamelContext context, AgentRun parent, AgentRunRequest request) {
@@ -217,27 +246,4 @@ class AgentRunIsolationRouteTest {
         assertEquals("mission-1", exchange.getProperty("mission", Mission.class).id());
     }
 
-    private static RoutineCatalog routines(RoutineDefinition... routines) {
-        return new RoutineCatalog(List.of(routines));
-    }
-
-    private static RoutineDefinition routine(String id, String routeUri) {
-        return RoutineDefinition.builder(id).name(id).description(id).routeUri(routeUri).build();
-    }
-
-    private static boolean waitForEvent(ProjectionStore store, String runId, String event) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
-        while (System.nanoTime() < deadline) {
-            AgentRunProjection projection = store.get(runId);
-            if (projection != null && events(projection).contains(event)) {
-                return true;
-            }
-            Thread.sleep(25);
-        }
-        return false;
-    }
-
-    private static List<String> events(AgentRunProjection projection) {
-        return projection.timeline().stream().map(row -> String.valueOf(row.get("type"))).toList();
-    }
 }

@@ -19,13 +19,6 @@ public class HttpApiRoute extends RouteBuilder {
                     .type(MissionRequest.class)
                     .to("direct:submit-mission");
 
-        rest("/goals")
-                .produces("application/json")
-                .consumes("application/json")
-                .post()
-                    .type(MissionRequest.class)
-                    .to("direct:submit-mission");
-
         rest("/workspace/reset")
                 .produces("application/json")
                 .post()

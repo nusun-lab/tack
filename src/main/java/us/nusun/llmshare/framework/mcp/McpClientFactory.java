@@ -9,6 +9,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import us.nusun.llmshare.framework.inventory.AgentIdentityConfig;
 import us.nusun.llmshare.framework.logging.LogTokens;
 import us.nusun.llmshare.framework.model.ExternalIdentity;
 import us.nusun.llmshare.framework.model.McpServerDefinition;
@@ -25,7 +26,8 @@ import java.util.Map;
 public class McpClientFactory {
     private static final Logger LOG = LoggerFactory.getLogger(McpClientFactory.class);
 
-    @Inject AgentIdentityConfig config;
+    @Inject
+    AgentIdentityConfig config;
     @Inject LogTokens logTokens;
 
     public List<McpClient> clientsFor(Persona persona, ToolProfile profile) {

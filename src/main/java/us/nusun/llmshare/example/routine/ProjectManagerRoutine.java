@@ -26,7 +26,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .name("Project Manager")
                 .description("""
                         Own collaboration setup, delivery coordination, task breakdown,
-                        sequencing, status, risks, and PM closeout.
+                        sequencing, wiki coordination state, status, risks, and PM closeout.
                         """)
                 .routeUri("direct:example-software-team-project-manager")
                 .defaultToolRuntime("tool-low")
@@ -40,9 +40,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .routeId("example-software-team-project-manager")
                 .process(routine.enterThought("project-manager-routine", """
                         Project Manager working context: collaboration basics,
+                        durable wiki coordination state, recent team chat,
                         delivery risks, project management state, blockers,
-                        decisions, David Gordon (@aphelio) coordination,
-                        and next actions.
+                        decisions, David Gordon (@aphelio) coordination, and next actions.
                         """, 900))
                 .setProperty("collaborationSetupAttempt", constant(0))
                 .process(routine.decide("collaboration-setup-complete")
@@ -72,9 +72,11 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     """, 700))
                             .process(routine.act("forum-fallback-check")
                                     .prompt("""
-                                            If the project collaboration location is unknown,
-                                            use the default team coordination channel for
-                                            coordination. Report the fallback plainly.
+                                            Read recent messages in the default team
+                                            coordination channel. If the project collaboration
+                                            location is unknown, use that channel as the
+                                            temporary coordination location and report the
+                                            fallback plainly.
                                             """)
                                     .toolProfile("team-chat"))
                             .to("direct:act")
@@ -110,12 +112,26 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                             """)
                                     .toolProfile("source-control"))
                             .to("direct:act")
+                            .process(routine.act("wiki-project-index")
+                                    .prompt("""
+                                            Create or update one compact project index note
+                                            in the shared markdown wiki repository. Include
+                                            exact links or names for the team chat channel,
+                                            project management project, wiki repository, target
+                                            source repository, current owners, and open setup
+                                            blockers. Prefer a small organized edit over a long
+                                            narrative.
+                                            """)
+                                    .toolProfile("source-control"))
+                            .to("direct:act")
                             .process(routine.act("forum-announcement")
                                     .prompt("""
-                                            Post the exact team chat channel, project
-                                            management project, wiki repository, and target
-                                            application source repository in the default team
-                                            coordination channel.
+                                            Read recent messages in the default team
+                                            coordination channel. If the exact project basics
+                                            have not already been posted, post one concise
+                                            message with the team chat channel, project
+                                            management project, wiki index note, wiki
+                                            repository, and target source repository.
                                             """)
                                     .toolProfile("team-chat"))
                             .to("direct:act")
@@ -146,9 +162,19 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .setProperty("projectManagerCycle", simple("${exchangeProperty.projectManagerCycle++}"))
                     .process(routine.enterThought("project-manager-cycle", """
                             Project Manager loop context: current project management
-                            item, task breakdown, sequencing, team status,
-                            actionability, delivery risk, and closeout for this cycle.
+                            item, wiki project index, recent team chat, task breakdown,
+                            sequencing, team status, actionability, delivery risk, and
+                            closeout for this cycle.
                             """, 500))
+                    .process(routine.act("wiki-coordination-read")
+                            .prompt("""
+                                    Read the current project index and latest status notes
+                                    in the shared markdown wiki repository. Report only the
+                                    concrete coordination facts and gaps needed for this PM
+                                    cycle.
+                                    """)
+                            .toolProfile("source-control"))
+                    .to("direct:act")
                     .process(routine.act("work-item-review")
                             .prompt("""
                                     Review one current PO-driven item in the project
@@ -175,9 +201,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .to("direct:act")
                     .process(routine.act("standup-status-check")
                             .prompt("""
-                                    Collect one focused work status update in the shared
-                                    team channel. Ask only for the missing status needed
-                                    for coordination.
+                                    Read recent messages in the shared team channel for
+                                    status updates first. Ask only one focused question if
+                                    a specific status needed for coordination is still
+                                    missing.
                                     """)
                             .toolProfile("team-chat"))
                     .to("direct:act")
@@ -191,17 +218,21 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .to("direct:act")
                     .process(routine.act("release-checkpoint")
                             .prompt("""
-                                    Assess one current delivery or schedule risk. Use
-                                    verified project management, team chat, and source
-                                    repository state when available. Identify mitigation.
-                                    """))
+                                    Assess one current delivery or schedule risk from the
+                                    project management system. Update or annotate the
+                                    relevant work item only when the mitigation or blocker
+                                    is supported by verified state.
+                                    """)
+                            .toolProfile("project-management"))
                     .to("direct:act")
                     .process(routine.act("loop-closeout")
                             .prompt("""
-                                    Summarize one current blocker or one confirmed
-                                    coordination outcome for this routine pass. Include
-                                    whether Director attention is needed.
-                                    """))
+                                    Update one small PM status note in the shared markdown
+                                    wiki repository. Include the current blocker or confirmed
+                                    coordination outcome, next owner, and whether Director
+                                    attention is needed. Keep the edit compact and organized.
+                                    """)
+                            .toolProfile("source-control"))
                     .to("direct:act")
                     .process(routine.decide("project-manager-done")
                             .prompt("""

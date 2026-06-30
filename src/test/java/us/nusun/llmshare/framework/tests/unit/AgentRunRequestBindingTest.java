@@ -19,8 +19,8 @@ class AgentRunRequestBindingTest {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     @Test
-    void jsonRequestPreservesNestedInput() {
-        AgentRunRequest request = AgentRunRequest.fromJson(nestedRequestJson(), OBJECT_MAPPER);
+    void jacksonJsonRequestPreservesNestedInput() throws Exception {
+        AgentRunRequest request = OBJECT_MAPPER.readValue(nestedRequestJson(), AgentRunRequest.class);
 
         Map<String, Object> input = request.input();
         assertEquals("pm", input.get("role"));
@@ -62,7 +62,7 @@ class AgentRunRequestBindingTest {
         body.put("routineId", "routine-a");
         body.put("input", input);
 
-        AgentRunRequest request = AgentRunRequest.fromMap(body, OBJECT_MAPPER);
+        AgentRunRequest request = OBJECT_MAPPER.convertValue(body, AgentRunRequest.class);
 
         assertInstanceOf(Map.class, request.input().get("config"));
         assertInstanceOf(List.class, request.input().get("tags"));
@@ -74,9 +74,9 @@ class AgentRunRequestBindingTest {
 
     @Test
     void jsonRoundTripPreservesStructuredInputAndNoOperationalFieldsAreRequired() throws Exception {
-        AgentRunRequest original = AgentRunRequest.fromJson(nestedRequestJson(), OBJECT_MAPPER);
+        AgentRunRequest original = OBJECT_MAPPER.readValue(nestedRequestJson(), AgentRunRequest.class);
         String json = OBJECT_MAPPER.writeValueAsString(original);
-        AgentRunRequest roundTripped = AgentRunRequest.fromJson(json, OBJECT_MAPPER);
+        AgentRunRequest roundTripped = OBJECT_MAPPER.readValue(json, AgentRunRequest.class);
 
         assertFalse(json.contains("missionId"));
         assertFalse(json.contains("parentAgentRunId"));

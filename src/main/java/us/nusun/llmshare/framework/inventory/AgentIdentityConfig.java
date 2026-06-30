@@ -1,4 +1,4 @@
-package us.nusun.llmshare.framework.mcp;
+package us.nusun.llmshare.framework.inventory;
 
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithDefault;

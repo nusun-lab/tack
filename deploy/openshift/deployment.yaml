@@ -20,14 +20,10 @@ spec:
           env:
             - name: KAFKA_BOOTSTRAP_SERVERS
               value: my-cluster-kafka-bootstrap:9092
-            - name: LLM_OPENAI_BASE_URL
+            - name: LLM_RUNTIME_DEFAULT_OPENAI_BASE_URL
               value: http://vllm:8000/v1
-            - name: LLM_OPENAI_MODEL
+            - name: LLM_RUNTIME_DEFAULT_OPENAI_MODEL
               value: qwen
-            - name: LLM_WORKER_CONSUMERS_COUNT
-              value: "1"
-            - name: LLM_WORKER_MAX_POLL_RECORDS
-              value: "1"
 ---
 apiVersion: v1
 kind: Service

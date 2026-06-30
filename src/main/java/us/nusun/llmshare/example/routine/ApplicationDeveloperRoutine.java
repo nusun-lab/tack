@@ -26,7 +26,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .name("Application Developer")
                 .description("""
                         Drive implementation through assignment review, source readiness,
-                        delivery, change-review readiness, and closeout notes.
+                        wiki context, delivery, change-review readiness, and closeout notes.
                         """)
                 .routeUri("direct:example-software-team-application-developer")
                 .defaultToolRuntime("tool-low")
@@ -40,8 +40,9 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .routeId("example-software-team-application-developer")
                 .process(routine.enterThought("application-developer-routine", """
                         Developer working context: assigned work, target source
-                        repository, tests, implementation decisions, change-review
-                        readiness, tool evidence, and technical blockers.
+                        repository, wiki engineering notes, recent team chat, tests,
+                        implementation decisions, change-review readiness, tool evidence,
+                        and technical blockers.
                         """, 1100))
                 .setProperty("applicationDeveloperCycle", constant(0))
                 .loopDoWhile(simple("""
@@ -51,23 +52,26 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .setProperty("applicationDeveloperCycle", simple("${exchangeProperty.applicationDeveloperCycle++}"))
                     .process(routine.enterThought("application-developer-cycle", """
                             Developer loop context: current assigned task, source
-                            repository readiness, implementation/test action,
-                            change-review readiness, project management updates,
-                            and closeout evidence for this cycle.
+                            repository readiness, wiki engineering context,
+                            implementation/test action, change-review readiness,
+                            project management updates, recent team chat, and closeout
+                            evidence for this cycle.
                             """, 600))
                     .process(routine.act("chat-kickoff")
                             .prompt("""
-                                    Post the current implementation focus in the shared
-                                    chat channel. Use verified project basics and do not
-                                    invent channels.
+                                    Read recent messages in the shared chat channel for
+                                    PM setup notes, product clarifications, and developer
+                                    blockers. Post the current implementation focus only
+                                    if it is missing or stale. Use verified project basics
+                                    and do not invent channels.
                                     """)
                             .toolProfile("team-chat"))
                     .to("direct:act")
                     .process(routine.act("collaboration-sync")
                             .prompt("""
-                                    Ask one focused implementation question or give one
-                                    focused implementation status update in the shared
-                                    chat channel.
+                                    Read the latest shared chat context, then ask one
+                                    focused implementation question or give one focused
+                                    implementation status update only if it unblocks work.
                                     """)
                             .toolProfile("team-chat"))
                     .to("direct:act")
@@ -89,10 +93,12 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .to("direct:act")
                     .process(routine.act("service-context-check")
                             .prompt("""
-                                    Check implementation context in service catalog for
-                                    the current task. If no service catalog tool profile
-                                    is configured, report that capability gap plainly.
-                                    """))
+                                    Read current service, architecture, setup, or repository
+                                    context from the shared markdown wiki repository and
+                                    source repository notes. If context is missing, report
+                                    the specific missing note or repository blocker plainly.
+                                    """)
+                            .toolProfile("source-control"))
                     .to("direct:act")
                     .process(routine.act("wiki-engineering-context-read")
                             .prompt("""
@@ -104,10 +110,12 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .to("direct:act")
                     .process(routine.act("implementation-intake")
                             .prompt("""
-                                    Define one small implementation action for the current
-                                    task. Include expected files, tests, and prerequisite
-                                    repository or project management state.
-                                    """))
+                                    Update or annotate the assigned project-management task
+                                    with one small implementation action. Include expected
+                                    files, tests, and prerequisite repository or wiki state
+                                    needed before changing code.
+                                    """)
+                            .toolProfile("project-management"))
                     .to("direct:act")
                     .process(routine.act("source-repository-readiness")
                             .prompt("""
@@ -151,10 +159,12 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .to("direct:act")
                     .process(routine.act("delivery-wrap-up")
                             .prompt("""
-                                    Summarize one current blocker or one confirmed
-                                    delivery outcome for this routine pass. Include
-                                    whether Director or PM attention is needed.
-                                    """))
+                                    Read recent team chat before posting. If there is a
+                                    current blocker or confirmed delivery outcome that
+                                    affects PM or product work, post one concise status
+                                    message and whether Director or PM attention is needed.
+                                    """)
+                            .toolProfile("team-chat"))
                     .to("direct:act")
                     .process(routine.act("wiki-closeout")
                             .prompt("""

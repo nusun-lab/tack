@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.framework.llm.InFlightReplyManager;
 import us.nusun.llmshare.framework.llm.LlmDeadLetterFactory;
 import us.nusun.llmshare.framework.llm.LlmJobFactory;
+import us.nusun.llmshare.framework.llm.LlmRouteSupport;
 import us.nusun.llmshare.framework.inventory.ExecutionRuntimeRegistry;
 import us.nusun.llmshare.framework.model.ExecutionRuntimeDefinition;
 import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
@@ -42,7 +43,7 @@ class LlmQueueLifecycleTest {
     @Test
     void selectedLaneVerificationDoesNotRequireUnselectedLaneRoutes() throws Exception {
         DefaultCamelContext context = TestCamelContexts.quiet();
-        LlmRoute route = route(context);
+        LlmRouteSupport support = routeSupport(context);
         context.addRoutes(new RouteBuilder() {
             @Override
             public void configure() {
@@ -53,7 +54,7 @@ class LlmQueueLifecycleTest {
         context.start();
         try {
             Exchange exchange = exchangeForLane(context, "low-pass");
-            assertDoesNotThrow(() -> route.verifySelectedLlmRoutesAvailable(exchange));
+            assertDoesNotThrow(() -> support.verifySelectedRoutesAvailable(exchange.getProperty("inferenceLane", InferenceLaneDefinition.class), exchange));
         } finally {
             context.stop();
         }
@@ -62,7 +63,7 @@ class LlmQueueLifecycleTest {
     @Test
     void selectedLaneVerificationFailsForRequestedLaneOnly() throws Exception {
         DefaultCamelContext context = TestCamelContexts.quiet();
-        LlmRoute route = route(context);
+        LlmRouteSupport support = routeSupport(context);
         context.addRoutes(new RouteBuilder() {
             @Override
             public void configure() {
@@ -73,9 +74,9 @@ class LlmQueueLifecycleTest {
         context.start();
         try {
             Exchange exchange = exchangeForLane(context, "high-pass");
-            LlmRoute.LlmAvailabilityException failure = assertThrows(
-                    LlmRoute.LlmAvailabilityException.class,
-                    () -> route.verifySelectedLlmRoutesAvailable(exchange));
+            LlmRouteSupport.LlmAvailabilityException failure = assertThrows(
+                    LlmRouteSupport.LlmAvailabilityException.class,
+                    () -> support.verifySelectedRoutesAvailable(exchange.getProperty("inferenceLane", InferenceLaneDefinition.class), exchange));
             assertTrue(failure.getMessage().contains("llm-worker-high-pass"));
             assertTrue(failure.getMessage().contains("jobId="));
             assertTrue(failure.getMessage().contains("laneId=high-pass"));
@@ -91,7 +92,7 @@ class LlmQueueLifecycleTest {
         Properties properties = new Properties();
         properties.setProperty("llm.local-worker-route-verification.enabled", "false");
         context.getPropertiesComponent().setOverrideProperties(properties);
-        LlmRoute route = route(context);
+        LlmRouteSupport support = routeSupport(context);
         context.addRoutes(new RouteBuilder() {
             @Override
             public void configure() {
@@ -101,7 +102,7 @@ class LlmQueueLifecycleTest {
         context.start();
         try {
             Exchange exchange = exchangeForLane(context, "high-pass");
-            assertDoesNotThrow(() -> route.verifySelectedLlmRoutesAvailable(exchange));
+            assertDoesNotThrow(() -> support.verifySelectedRoutesAvailable(exchange.getProperty("inferenceLane", InferenceLaneDefinition.class), exchange));
         } finally {
             context.stop();
         }
@@ -183,7 +184,7 @@ class LlmQueueLifecycleTest {
         assertEquals("llm.requests.high", exchange.getProperty("laneRequestTopic"));
         assertEquals("llm.replies.high", exchange.getProperty("laneReplyTopic"));
         assertEquals(jobId.toString(), exchange.getProperty("llmPartitionKey"));
-        assertEquals("tool-high", envelope.metadata().get("executionRuntime"));
+        assertEquals("tool-high", envelope.metadata().get("executionRuntimeId"));
         assertEquals("high-pass", envelope.metadata().get("inferenceLane"));
         assertEquals("AGENT_RUN", envelope.metadata().get("partitionKeyStrategy"));
         assertEquals("persona-a", envelope.metadata().get("personaId"));
@@ -309,7 +310,7 @@ class LlmQueueLifecycleTest {
     void runtimeModelOverrideWinsOverLaneModelAndGlobalFallback() {
         DefaultCamelContext context = TestCamelContexts.quiet();
         Properties properties = new Properties();
-        properties.setProperty("llm.openai.model", "global-model");
+        properties.setProperty("llm.runtime-default.openai.model", "global-model");
         context.getPropertiesComponent().setOverrideProperties(properties);
         LlmJobFactory jobs = jobFactory(registryWithModels("runtime-low-model", "low-lane-model", "", "high-lane-model"));
         Exchange exchange = new DefaultExchange(context);
@@ -326,7 +327,7 @@ class LlmQueueLifecycleTest {
     void globalModelRemainsFallbackWhenRuntimeAndLaneDoNotSelectModel() {
         DefaultCamelContext context = TestCamelContexts.quiet();
         Properties properties = new Properties();
-        properties.setProperty("llm.openai.model", "global-model");
+        properties.setProperty("llm.runtime-default.openai.model", "global-model");
         context.getPropertiesComponent().setOverrideProperties(properties);
         LlmJobFactory jobs = jobFactory(registryWithModels("", "", "", ""));
         Exchange exchange = new DefaultExchange(context);
@@ -340,13 +341,13 @@ class LlmQueueLifecycleTest {
     }
 
     @Test
-    void awaitLlmReplyWrapsTimeoutWithRouteContextAndCleansUp() {
+    void awaitReplyWrapsTimeoutWithRouteContextAndCleansUp() {
         DefaultCamelContext context = TestCamelContexts.quiet();
         Properties properties = new Properties();
         properties.setProperty("llm.reply-timeout-ms", "1");
         context.getPropertiesComponent().setOverrideProperties(properties);
         InFlightReplyManager manager = new InFlightReplyManager();
-        LlmRoute route = route(context, manager);
+        LlmRouteSupport support = routeSupport(context, manager);
         UUID jobId = UUID.randomUUID();
         LlmJobEnvelope job = queuedJob(jobId);
         manager.register(job);
@@ -354,7 +355,9 @@ class LlmQueueLifecycleTest {
         exchange.setProperty("llmJobId", jobId);
         exchange.setProperty("llmJob", job);
 
-        LlmRoute.LlmAvailabilityException failure = assertThrows(LlmRoute.LlmAvailabilityException.class, () -> route.awaitLlmReply(exchange));
+        LlmRouteSupport.LlmAvailabilityException failure = assertThrows(
+                LlmRouteSupport.LlmAvailabilityException.class,
+                () -> support.awaitReply(jobId, exchange));
 
         assertTrue(failure.getMessage().contains("LLM reply failure"));
         assertTrue(failure.getMessage().contains("jobId=" + jobId));
@@ -409,7 +412,7 @@ class LlmQueueLifecycleTest {
     void deadLetterPrefersTypedLaneDefinitionOverMetadata() {
         DefaultCamelContext context = TestCamelContexts.quiet();
         LlmJobEnvelope job = queuedJob(UUID.randomUUID(), Map.of(
-                "executionRuntime", "tool-low",
+                "executionRuntimeId", "tool-low",
                 "inferenceLane", "metadata-lane"));
         Exchange exchange = new DefaultExchange(context);
         exchange.setProperty("llmJob", job);
@@ -425,7 +428,7 @@ class LlmQueueLifecycleTest {
     void deadLetterAcceptsStringLaneProperty() {
         DefaultCamelContext context = TestCamelContexts.quiet();
         LlmJobEnvelope job = queuedJob(UUID.randomUUID(), Map.of(
-                "executionRuntime", "synthesis-low",
+                "executionRuntimeId", "synthesis-low",
                 "inferenceLane", "metadata-lane"));
         Exchange exchange = new DefaultExchange(context);
         exchange.setProperty("llmJob", job);
@@ -441,7 +444,7 @@ class LlmQueueLifecycleTest {
     void deadLetterFallsBackToJobMetadataWhenLanePropertyIsMissing() {
         DefaultCamelContext context = TestCamelContexts.quiet();
         LlmJobEnvelope job = queuedJob(UUID.randomUUID(), Map.of(
-                "executionRuntime", "synthesis-high",
+                "executionRuntimeId", "synthesis-high",
                 "inferenceLane", "metadata-lane",
                 "model", "metadata-model"));
         Exchange exchange = new DefaultExchange(context);
@@ -599,7 +602,7 @@ class LlmQueueLifecycleTest {
     void failedWorkerResultPreservesSelectedJobModelTimingAndRootCauseContext() {
         DefaultCamelContext context = TestCamelContexts.quiet();
         Properties properties = new Properties();
-        properties.setProperty("llm.openai.model", "global-model");
+        properties.setProperty("llm.runtime-default.openai.model", "global-model");
         context.getPropertiesComponent().setOverrideProperties(properties);
         Instant requestedAt = Instant.parse("2026-01-01T00:00:00Z");
         Instant startedAt = Instant.parse("2026-01-01T00:00:05Z");
@@ -613,7 +616,7 @@ class LlmQueueLifecycleTest {
                 "be concise",
                 null,
                 Map.of(
-                        "executionRuntime", "tool-high",
+                        "executionRuntimeId", "tool-high",
                         "inferenceLane", "high-pass",
                         "model", "selected-high-model",
                         "toolProfile", "source-control"),
@@ -648,13 +651,29 @@ class LlmQueueLifecycleTest {
     }
 
     private static LlmRoute route(DefaultCamelContext context, InFlightReplyManager manager, ExecutionRuntimeRegistry registry) {
+        LlmDeadLetterFactory deadLetters = deadLetters();
         LlmRoute route = new LlmRoute();
-        FrameworkFixtures.set(route, "camelContext", context);
         FrameworkFixtures.set(route, "runtimes", registry);
-        FrameworkFixtures.set(route, "inFlightReplyManager", manager);
         FrameworkFixtures.set(route, "jobFactory", jobFactory(registry));
-        FrameworkFixtures.set(route, "deadLetterFactory", deadLetters());
+        FrameworkFixtures.set(route, "deadLetterFactory", deadLetters);
+        FrameworkFixtures.set(route, "routeSupport", routeSupport(context, registry, manager, deadLetters));
         return route;
+    }
+
+    private static LlmRouteSupport routeSupport(DefaultCamelContext context) {
+        return routeSupport(context, new InFlightReplyManager());
+    }
+
+    private static LlmRouteSupport routeSupport(DefaultCamelContext context, InFlightReplyManager manager) {
+        return routeSupport(context, FrameworkFixtures.executionRuntimeRegistry(), manager, deadLetters());
+    }
+
+    private static LlmRouteSupport routeSupport(
+            DefaultCamelContext context,
+            ExecutionRuntimeRegistry registry,
+            InFlightReplyManager manager,
+            LlmDeadLetterFactory deadLetters) {
+        return new LlmRouteSupport(context, registry, manager, deadLetters);
     }
 
     private static LlmJobFactory jobFactory() {
@@ -730,7 +749,7 @@ class LlmQueueLifecycleTest {
 
     private static LlmJobEnvelope queuedJob(UUID jobId) {
         return queuedJob(jobId, Map.of(
-                "executionRuntime", "tool-low",
+                "executionRuntimeId", "tool-low",
                 "inferenceLane", "low-pass",
                 "primitive", "act"));
     }

@@ -27,8 +27,8 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
         return RoutineDefinition.builder(ID)
                 .name("Director")
                 .description("""
-                        Create initial mission-bound software-team agent runs from
-                        available personas and routines.
+                        Create software-team AgentRunRequest objects from available
+                        personas and routines, with explicit wiki/chat coordination.
                         """)
                 .routeUri("direct:example-software-team-director")
                 .defaultToolRuntime("tool-low")
@@ -50,10 +50,9 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         .schemaId("agent-run-request-list")
                         .schema("classpath:schemas/example/software-team/agent-run-requests-schema.json")
                         .prompt(simple("""
-                                Given the mission, propose the initial software-team
-                                agent runs to schedule as generic AgentRunRequest
-                                objects. Include only personaId, routineId, and
-                                optional input. The framework supplies mission id,
+                                Given the mission, propose software-team AgentRunRequest
+                                objects to schedule. Include only personaId, routineId,
+                                and optional input. The framework supplies mission id,
                                 agent run id, parent lineage, status, and timestamps.
 
                                 Mission:
@@ -70,8 +69,13 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
 
                                 Choose personas and routines from the catalog data above.
                                 Prefer a small set that makes concrete progress and respects
-                                setup dependencies. Scheduling is fire-and-forget; do not
-                                assume one agent waits for another. Return only schema-compliant JSON.
+                                setup dependencies. If collaboration basics are uncertain,
+                                include the Project Manager so the wiki, chat, project board,
+                                and source repository can become the shared coordination base.
+                                Scheduling is fire-and-forget; do not assume one agent waits
+                                for another. Use input only for concise coordination hints,
+                                such as what wiki page or chat context each run should read.
+                                Return only schema-compliant JSON.
                                 """)))
                 .to("direct:create")
                 .split().jsonpath("$.agentRuns[*]")

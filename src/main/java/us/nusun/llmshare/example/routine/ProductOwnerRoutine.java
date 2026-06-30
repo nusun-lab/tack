@@ -25,8 +25,9 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         return RoutineDefinition.builder(ID)
                 .name("Product Owner")
                 .description("""
-                        Clarify product focus through chat sync, backlog review,
-                        acceptance criteria, priority updates, decisions, and closeout.
+                        Clarify product focus through chat listening, wiki notes,
+                        backlog review, acceptance criteria, priority updates,
+                        decisions, and closeout.
                         """)
                 .routeUri("direct:example-software-team-product-owner")
                 .defaultToolRuntime("tool-low")
@@ -41,7 +42,8 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .process(routine.enterThought("product-owner-routine", """
                         Product Owner working context: product goal, users,
                         acceptance criteria, scope boundaries, project management
-                        work breakdown, open questions, and PM dependencies.
+                        work breakdown, current wiki notes, recent chat context,
+                        open questions, and PM dependencies.
                         """, 900))
                 .setProperty("productOwnerCycle", constant(0))
                 .loopDoWhile(simple("""
@@ -52,21 +54,24 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                     .process(routine.enterThought("product-owner-cycle", """
                             Product Owner loop context: current product focus,
                             backlog item, acceptance criteria, product decisions,
-                            unresolved questions, and follow-up notes for this cycle.
+                            wiki product notes, recent team chat, unresolved questions,
+                            and follow-up notes for this cycle.
                             """, 500))
                     .process(routine.act("chat-focus-post")
                             .prompt("""
-                                    Post the current product focus in the shared chat
-                                    channel. Use verified project basics and avoid
-                                    inventing channels or project state.
+                                    Read recent messages in the shared chat channel for
+                                    product questions, PM setup notes, and developer
+                                    blockers. Post one concise product focus update only
+                                    if it is missing or stale. Use verified project basics
+                                    and avoid inventing channels or project state.
                                     """)
                             .toolProfile("team-chat"))
                     .to("direct:act")
                     .process(routine.act("collaboration-sync")
                             .prompt("""
-                                    Ask one focused product question or give one
-                                    focused product clarification in the shared chat
-                                    channel.
+                                    Read the latest shared chat context, then ask one
+                                    focused product question or give one focused product
+                                    clarification only if it unblocks PM or developer work.
                                     """)
                             .toolProfile("team-chat"))
                     .to("direct:act")
@@ -80,10 +85,12 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                     .to("direct:act")
                     .process(routine.act("service-context-check")
                             .prompt("""
-                                    Check service context in service catalog for the
-                                    current product work. If no service catalog tool
-                                    profile is configured, report that capability gap.
-                                    """))
+                                    Read current service, domain, or architecture context
+                                    from the shared markdown wiki repository and source
+                                    repository notes. If context is missing, report the
+                                    specific missing note or repository blocker plainly.
+                                    """)
+                            .toolProfile("source-control"))
                     .to("direct:act")
                     .process(routine.act("wiki-product-context-read")
                             .prompt("""
@@ -95,17 +102,22 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                     .to("direct:act")
                     .process(routine.act("scope-refinement")
                             .prompt("""
-                                    Refine one scope boundary for the current work.
-                                    State what is in scope, out of scope, and what
-                                    remains unknown.
-                                    """))
+                                    Create or update one compact scope note in the shared
+                                    markdown wiki repository for the current work. State
+                                    what is in scope, out of scope, and what remains
+                                    unknown. Prefer a small organized edit over a long
+                                    product narrative.
+                                    """)
+                            .toolProfile("source-control"))
                     .to("direct:act")
                     .process(routine.act("gherkin-update")
                             .prompt("""
-                                    Draft or revise one Gherkin acceptance criterion
-                                    for the current work. Keep it testable and tied to
-                                    the current backlog item.
-                                    """))
+                                    Draft or revise one small Gherkin acceptance criterion
+                                    in the shared markdown wiki repository. Keep it testable,
+                                    tied to the current backlog item, and easy for PM and
+                                    developer agents to find.
+                                    """)
+                            .toolProfile("source-control"))
                     .to("direct:act")
                     .process(routine.act("priority-update")
                             .prompt("""
@@ -125,17 +137,22 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                     .to("direct:act")
                     .process(routine.act("constraint-reconciliation")
                             .prompt("""
-                                    Resolve one open product question against known
-                                    service constraints. If constraints are missing,
-                                    report the uncertainty explicitly.
-                                    """))
+                                    Reconcile one open product question against known wiki
+                                    or source-repository constraints. If constraints are
+                                    missing, update the relevant wiki note with the explicit
+                                    uncertainty and the next question to ask.
+                                    """)
+                            .toolProfile("source-control"))
                     .to("direct:act")
                     .process(routine.act("loop-closeout")
                             .prompt("""
-                                    Summarize one remaining product gap or one confirmed
-                                    product outcome for this routine pass. Include whether
-                                    PM or Director attention is needed.
-                                    """))
+                                    Read recent team chat before posting. If there is a
+                                    remaining product gap or confirmed product outcome that
+                                    affects PM or developer work, post one concise message
+                                    with the status and whether PM or Director attention is
+                                    needed.
+                                    """)
+                            .toolProfile("team-chat"))
                     .to("direct:act")
                     .process(routine.act("wiki-closeout")
                             .prompt("""

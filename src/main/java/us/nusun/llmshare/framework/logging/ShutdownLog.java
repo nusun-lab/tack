@@ -1,4 +1,4 @@
-package us.nusun.llmshare.framework.lifecycle;
+package us.nusun.llmshare.framework.logging;
 
 import io.quarkus.runtime.ShutdownEvent;
 import jakarta.enterprise.context.ApplicationScoped;
