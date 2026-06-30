@@ -14,6 +14,7 @@ public record ToolProfile(
         Map<String, Set<String>> allowedTools,
         Map<String, Set<String>> deniedTools,
         Set<String> allowAllToolServers,
+        Map<String, McpServerDefinition> mcpServers,
         Map<String, Map<String, Map<String, JsonNode>>> defaultArguments,
         int maxResultCharacters
 ) {
@@ -24,6 +25,7 @@ public record ToolProfile(
         allowedTools = allowedTools == null ? Map.of() : Map.copyOf(allowedTools);
         deniedTools = deniedTools == null ? Map.of() : Map.copyOf(deniedTools);
         allowAllToolServers = allowAllToolServers == null ? Set.of() : Set.copyOf(allowAllToolServers);
+        mcpServers = mcpServers == null ? Map.of() : Map.copyOf(mcpServers);
         defaultArguments = copyDefaultArguments(defaultArguments);
     }
 
@@ -69,6 +71,7 @@ public record ToolProfile(
         private final Map<String, Set<String>> allowedTools = new LinkedHashMap<>();
         private final Map<String, Set<String>> deniedTools = new LinkedHashMap<>();
         private final Set<String> allowAllToolServers = new LinkedHashSet<>();
+        private final Map<String, McpServerDefinition> mcpServers = new LinkedHashMap<>();
         private final Map<String, Map<String, Map<String, JsonNode>>> defaultArguments = new LinkedHashMap<>();
         private int maxResultCharacters;
 
@@ -76,8 +79,24 @@ public record ToolProfile(
             this.id = id;
         }
 
+        /**
+         * Declares a logical server id for tool allow/deny/default-argument rules only.
+         * Use {@link #mcpServer(McpServerDefinition)} when the profile should build
+         * an MCP client for that server.
+         */
         public Builder server(String server) { this.servers.add(server); return this; }
+        /**
+         * Declares logical server ids for tool allow/deny/default-argument rules only.
+         * Use {@link #mcpServer(McpServerDefinition)} for buildable MCP servers.
+         */
         public Builder servers(String... servers) { for (String server : servers) this.servers.add(server); return this; }
+        public Builder mcpServer(McpServerDefinition server) {
+            if (server != null && server.id() != null && !server.id().isBlank()) {
+                this.servers.add(server.id());
+                this.mcpServers.put(server.id(), server);
+            }
+            return this;
+        }
         public Builder allowedTool(String server, String toolName) { return allowTool(server, toolName); }
         public Builder allowTool(String server, String toolName) {
             this.servers.add(server);
@@ -128,7 +147,7 @@ public record ToolProfile(
         public Builder maxResultCharacters(int maxResultCharacters) { this.maxResultCharacters = maxResultCharacters; return this; }
 
         public ToolProfile build() {
-            return new ToolProfile(id, servers, allowedTools, deniedTools, allowAllToolServers, defaultArguments, maxResultCharacters);
+            return new ToolProfile(id, servers, allowedTools, deniedTools, allowAllToolServers, mcpServers, defaultArguments, maxResultCharacters);
         }
     }
 

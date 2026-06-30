@@ -196,7 +196,7 @@
 
     function renderLanes(lanes) {
       document.getElementById('lanes').innerHTML = lanes.map(l => `<article class="card">
-        <div class="inventory-title"><h3>${esc(l.id)}</h3><span class="label">concurrency ${esc(l.concurrency)}</span></div>
+        <div class="inventory-title"><h3>${esc(l.id)}</h3><span class="label">parallelism ${esc(l.parallelism)}</span></div>
         <dl class="kv"><dt>Request topic</dt><dd class="mono">${esc(l.requestTopic)}</dd><dt>Reply topic</dt><dd class="mono">${esc(l.responseTopic)}</dd><dt>Endpoint</dt><dd>${esc(l.endpoint || '(global fallback)')}</dd><dt>API key config</dt><dd class="mono">${esc(l.apiKeyConfigKey)}</dd><dt>API key env</dt><dd class="mono">${esc(l.apiKeyEnvVariable)}</dd></dl>
       </article>`).join('') || '<div class="empty">No InferenceLanes registered.</div>';
     }

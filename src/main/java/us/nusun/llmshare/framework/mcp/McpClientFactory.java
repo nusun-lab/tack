@@ -9,10 +9,9 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.eclipse.microprofile.config.ConfigProvider;
 import us.nusun.llmshare.framework.logging.LogTokens;
-import us.nusun.llmshare.framework.mcp.AgentIdentityConfig;
 import us.nusun.llmshare.framework.model.ExternalIdentity;
+import us.nusun.llmshare.framework.model.McpServerDefinition;
 import us.nusun.llmshare.framework.model.Persona;
 import us.nusun.llmshare.framework.model.ToolProfile;
 
@@ -34,59 +33,45 @@ public class McpClientFactory {
             return List.of();
         }
         ArrayList<McpClient> clients = new ArrayList<>();
-        add(clients, persona, profile, "mattermost", () -> mattermost(persona));
-        add(clients, persona, profile, "gitea", () -> gitea(persona));
-        add(clients, persona, profile, "plane", () -> plane(persona));
+        for (McpServerDefinition server : profile.mcpServers().values()) {
+            add(clients, persona, profile, server);
+        }
         return List.copyOf(clients);
     }
 
-    private void add(List<McpClient> clients, Persona persona, ToolProfile profile, String server, Supplier supplier) {
-        if (!profile.allowsServer(server)) {
+    private void add(List<McpClient> clients, Persona persona, ToolProfile profile, McpServerDefinition server) {
+        if (!profile.allowsServer(server.id())) {
             return;
         }
-        McpClient client = supplier.get();
+        McpClient client = build(persona, server);
         if (client != null) {
-            clients.add(new ProfiledMcpClient(client, server, profile, persona, logTokens));
+            clients.add(new ProfiledMcpClient(client, server.id(), profile, persona, logTokens, config.mcp().maxToolResultCharacters()));
         }
     }
 
-    private McpClient mattermost(Persona persona) {
-        return build(persona, "mattermost", config.mcp().mattermost().url().orElse(null), config.mcp().mattermost().transportType(), config.mcp().mattermost().authHeaderName().orElse("Authorization"), config.mcp().mattermost().authHeaderValueFormat().orElse("Bearer %s"), Map.of());
-    }
-
-    private McpClient gitea(Persona persona) {
-        return build(persona, "gitea", config.mcp().gitea().url().orElse(null), config.mcp().gitea().transportType(), config.mcp().gitea().authHeaderName().orElse("Authorization"), config.mcp().gitea().authHeaderValueFormat().orElse("token %s"), Map.of());
-    }
-
-    private McpClient plane(Persona persona) {
-        LinkedHashMap<String, String> extra = new LinkedHashMap<>();
-        config.mcp().plane().workspaceSlug().filter(v -> !v.isBlank()).ifPresent(v -> extra.put("x-workspace-slug", v));
-        return build(persona, "plane", config.mcp().plane().url().orElse(null), config.mcp().plane().transportType(), config.mcp().plane().authHeaderName().orElse("Authorization"), config.mcp().plane().authHeaderValueFormat().orElse("Bearer %s"), extra);
-    }
-
-    private McpClient build(Persona persona, String server, String url, String transportType, String headerName, String headerFormat, Map<String, String> extraHeaders) {
-        ExternalIdentity identity = persona.identityFor(server);
+    private McpClient build(Persona persona, McpServerDefinition server) {
+        ExternalIdentity identity = persona.identityFor(server.id());
         String handle = identity == null || blank(identity.handle()) ? persona.id() : identity.handle();
         String token = token(identity);
+        String url = url(server);
         if (blank(url) || blank(token)) {
-            LOG.debug("Skipping MCP client server={} persona={} handle={} tokenEnv={} urlPresent={} tokenPresent={}",
-                    server,
+            LOG.debug("Skipping MCP client server={} persona={} handle={} urlPresent={} tokenPresent={}",
+                    server.id(),
                     persona.id(),
                     handle,
-                    identity == null ? null : identity.tokenEnvVariable(),
                     !blank(url),
                     !blank(token));
             return null;
         }
         LinkedHashMap<String, String> headers = new LinkedHashMap<>();
-        headers.put(headerName, headerFormat.formatted(token));
-        headers.putAll(extraHeaders);
-        String key = server + ":" + persona.id();
+        headers.put(authHeaderName(server), authHeaderValueFormat(server).formatted(token));
+        headers.putAll(server.extraHeaders() == null ? Map.of() : server.extraHeaders());
+        String key = server.id() + ":" + persona.id();
         return new LazyInitializingMcpClient(
                 key,
-                server,
+                server.id(),
                 handle,
-                transportType,
+                transportType(server),
                 url,
                 config.mcp().transportTimeoutMs(),
                 config.mcp().initializationTimeoutMs(),
@@ -94,25 +79,29 @@ public class McpClientFactory {
                         .key(key)
                         .clientName("llm-share-camel-kafka")
                         .clientVersion("0.1.0-SNAPSHOT")
-                        .transport(transport(url, transportType, headers))
+                        .transport(transport(url, transportType(server), headers))
                         .initializationTimeout(Duration.ofMillis(config.mcp().initializationTimeoutMs()))
                 .build());
     }
 
+    private String url(McpServerDefinition server) {
+        return server.url();
+    }
+
+    private String transportType(McpServerDefinition server) {
+        return firstNonBlank(server.transportType(), "streamableHttp");
+    }
+
+    private String authHeaderName(McpServerDefinition server) {
+        return firstNonBlank(server.authHeaderName(), "Authorization");
+    }
+
+    private String authHeaderValueFormat(McpServerDefinition server) {
+        return firstNonBlank(server.authHeaderValueFormat(), "Bearer %s");
+    }
+
     private String token(ExternalIdentity identity) {
-        if (identity == null) {
-            return null;
-        }
-        if (!blank(identity.tokenConfigKey())) {
-            String value = ConfigProvider.getConfig().getOptionalValue(identity.tokenConfigKey(), String.class).orElse(null);
-            if (!blank(value)) {
-                return value;
-            }
-        }
-        if (!blank(identity.tokenEnvVariable())) {
-            return System.getenv(identity.tokenEnvVariable());
-        }
-        return null;
+        return identity == null ? null : identity.token();
     }
 
     private McpTransport transport(String url, String transportType, Map<String, String> headers) {
@@ -138,5 +127,7 @@ public class McpClientFactory {
         return value == null || value.isBlank();
     }
 
-    private interface Supplier { McpClient get(); }
+    private static String firstNonBlank(String first, String second) {
+        return blank(first) ? second : first;
+    }
 }

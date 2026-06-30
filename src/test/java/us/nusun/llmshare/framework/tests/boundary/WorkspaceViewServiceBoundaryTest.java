@@ -26,7 +26,7 @@ class WorkspaceViewServiceBoundaryTest {
         assertTrue(assertInstanceOf(List.class, view.get("routines")).size() >= 2);
         assertTrue(assertInstanceOf(List.class, view.get("executionRuntimes")).size() >= 4);
         assertTrue(assertInstanceOf(List.class, view.get("inferenceLanes")).size() >= 2);
-        assertTrue(assertInstanceOf(List.class, view.get("toolProfiles")).size() >= 4);
+        assertTrue(assertInstanceOf(List.class, view.get("toolProfiles")).size() >= 3);
         assertEquals(List.of(), view.get("agentRunProjections"));
     }
 

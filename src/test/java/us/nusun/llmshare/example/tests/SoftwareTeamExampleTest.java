@@ -15,7 +15,6 @@ import us.nusun.llmshare.example.runtime.SynthesisHighRuntime;
 import us.nusun.llmshare.example.runtime.SynthesisLowRuntime;
 import us.nusun.llmshare.example.runtime.ToolHighRuntime;
 import us.nusun.llmshare.example.runtime.ToolLowRuntime;
-import us.nusun.llmshare.example.tool.NoneToolProfile;
 import us.nusun.llmshare.example.tool.ProjectManagementToolProfile;
 import us.nusun.llmshare.example.tool.SourceControlToolProfile;
 import us.nusun.llmshare.example.tool.TeamChatToolProfile;
@@ -49,7 +48,6 @@ class SoftwareTeamExampleTest {
                 new ProductOwnerRoutine().routine(),
                 new ApplicationDeveloperRoutine().routine());
         List<ToolProfile> toolProfiles = List.of(
-                new NoneToolProfile().toolProfiles().getFirst(),
                 new TeamChatToolProfile().toolProfiles().getFirst(),
                 new ProjectManagementToolProfile().toolProfiles().getFirst(),
                 new SourceControlToolProfile().toolProfiles().getFirst());
@@ -87,7 +85,8 @@ class SoftwareTeamExampleTest {
         assertEquals("id,name,sequence_id,state,priority", projectManagement.defaultArguments("plane", "list_work_items").get("fields").asText());
         assertTrue(toolProfile(toolProfiles, SourceControlToolProfile.ID).allowsTool("gitea", "get_repository"));
         assertTrue(toolProfile(toolProfiles, TeamChatToolProfile.ID).allowsTool("mattermost", "create_post"));
-        assertTrue(toolProfile(toolProfiles, "none").none());
+        assertEquals(Set.of(TeamChatToolProfile.ID, ProjectManagementToolProfile.ID, SourceControlToolProfile.ID),
+                toolProfiles.stream().map(ToolProfile::id).collect(Collectors.toSet()));
 
         assertEquals(Set.of("low-pass", "high-pass"), lanes.stream().map(InferenceLaneDefinition::id).collect(Collectors.toSet()));
         assertEquals(Set.of("tool-low", "tool-high", "synthesis-low", "synthesis-high"), runtimes.stream().map(ExecutionRuntimeDefinition::id).collect(Collectors.toSet()));

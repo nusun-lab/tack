@@ -45,9 +45,9 @@ public final class FrameworkFixtures {
                         .label("PA")
                         .color("38;2;106;169;255")
                         .trait("Builds framework test scenarios")
-                        .identity("mattermost", "test.persona-a.mattermost.token", "PERSONA_A_MATTERMOST_TOKEN", "@persona-a")
-                        .identity("gitea", "test.persona-a.gitea.token", "PERSONA_A_GITEA_TOKEN", "@persona-a")
-                        .identity("plane", "test.persona-a.plane.token", "PERSONA_A_PLANE_TOKEN", "@persona-a")
+                        .identity("mattermost", "mattermost-token", "@persona-a")
+                        .identity("gitea", "gitea-token", "@persona-a")
+                        .identity("plane", "plane-token", "@persona-a")
                         .build(),
                 Persona.builder(PERSONA_B)
                         .name("Persona B")
@@ -87,7 +87,6 @@ public final class FrameworkFixtures {
 
     public static List<ToolProfile> toolProfiles() {
         return List.of(
-                ToolProfile.builder("none").build(),
                 ToolProfile.builder("team-chat")
                         .allowTools("mattermost", "create_post", "get_channel")
                         .maxResultCharacters(1500)
@@ -112,7 +111,7 @@ public final class FrameworkFixtures {
                 InferenceLaneDefinition.builder("low-pass")
                         .requestTopic("llm.requests.low")
                         .responseTopic("llm.replies.low")
-                        .concurrency(1)
+                        .parallelism(1)
                         .endpoint("http://low-vllm.example/v1")
                         .apiKeyConfigKey("llm.inference-lane.low.api-key")
                         .apiKeyEnvVariable("LLM_LOW_API_KEY")
@@ -120,7 +119,7 @@ public final class FrameworkFixtures {
                 InferenceLaneDefinition.builder("high-pass")
                         .requestTopic("llm.requests.high")
                         .responseTopic("llm.replies.high")
-                        .concurrency(1)
+                        .parallelism(1)
                         .endpoint("http://high-vllm.example/v1")
                         .apiKeyConfigKey("llm.inference-lane.high.api-key")
                         .apiKeyEnvVariable("LLM_HIGH_API_KEY")

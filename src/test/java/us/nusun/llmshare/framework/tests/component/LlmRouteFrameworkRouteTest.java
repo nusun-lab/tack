@@ -6,6 +6,7 @@ import org.apache.camel.Endpoint;
 import org.apache.camel.Exchange;
 import org.apache.camel.Processor;
 import org.apache.camel.Producer;
+import org.apache.camel.component.kafka.KafkaConstants;
 import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.support.DefaultComponent;
 import org.apache.camel.support.DefaultConsumer;
@@ -25,6 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.UUID;
 import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -36,8 +38,8 @@ class LlmRouteFrameworkRouteTest {
     void directLlmRouteQueuesKafkaRequestAwaitsReplyAndReturnsSuccessfulResult() throws Exception {
         InFlightReplyManager replies = new InFlightReplyManager();
         StubKafkaComponent kafka = new StubKafkaComponent((topic, exchange) -> {
-            if (topic.startsWith("llm.requests.high")) {
-                LlmJobEnvelope queued = exchange.getProperty("llmJob", LlmJobEnvelope.class);
+            LlmJobEnvelope queued = exchange.getProperty("llmJob", LlmJobEnvelope.class);
+            if (queued != null && "tool-high".equals(queued.requester())) {
                 replies.complete(LlmJobResult.succeeded(queued, "test-model", "{\"result\":\"ok\"}", "{\"result\":\"ok\"}", Instant.now()));
             }
         });
@@ -47,6 +49,7 @@ class LlmRouteFrameworkRouteTest {
 
             Exchange result = context.createProducerTemplate().request("direct:llm", exchange -> {
                 exchange.setProperty("personaId", FrameworkFixtures.PERSONA_A);
+                exchange.setProperty("agentRunId", "run:/high?partition=stable");
                 exchange.setProperty("toolProfile", "source-control");
                 exchange.getIn().setHeader("executionRuntime", "tool-high");
                 exchange.getIn().setHeader("responseSchema", "classpath:schemas/framework/text-result-schema.json");
@@ -58,7 +61,28 @@ class LlmRouteFrameworkRouteTest {
             assertEquals("tool-high", body.requester());
             assertEquals("{\"result\":\"ok\"}", body.content());
             assertEquals(List.of("llm.requests.high"), kafka.sentTopics());
+            assertEquals("run:/high?partition=stable", kafka.sentTo("llm.requests.high").getFirst().getIn().getHeader(KafkaConstants.KEY));
             assertEquals(0, replies.inFlightCount());
+        }
+    }
+
+    @Test
+    void kafkaPublishEndpointsDoNotInterpolateDynamicKeysIntoUris() throws Exception {
+        try (DefaultCamelContext context = context(new InFlightReplyManager(), new StubKafkaComponent())) {
+            String requestUri = context.getRouteDefinition("llm").getOutputs().stream()
+                    .map(Object::toString)
+                    .filter(value -> value.contains("kafka:${exchangeProperty.laneRequestTopic}"))
+                    .findFirst()
+                    .orElse("");
+            String replyInput = context.getRouteDefinition("llm-worker-low-pass").getOutputs().toString();
+            String deadLetterOutput = context.getRouteDefinition("publish-failed-llm-job-dlq").getOutputs().toString();
+
+            assertTrue(requestUri.contains("kafka:${exchangeProperty.laneRequestTopic}"));
+            assertTrue(replyInput.contains("kafka:llm.replies.low"));
+            assertTrue(deadLetterOutput.contains("kafka:{{llm.topic.dead-letter:llm.dead-letter}}"));
+            assertTrue(!requestUri.contains("?key="));
+            assertTrue(!replyInput.contains("?key="));
+            assertTrue(!deadLetterOutput.contains("?key="));
         }
     }
 
@@ -66,8 +90,8 @@ class LlmRouteFrameworkRouteTest {
     void directLlmRoutePublishesDeadLetterAndClearsInFlightReplyWhenSchemaValidationFails() throws Exception {
         InFlightReplyManager replies = new InFlightReplyManager();
         StubKafkaComponent kafka = new StubKafkaComponent((topic, exchange) -> {
-            if (topic.startsWith("llm.requests.low")) {
-                LlmJobEnvelope queued = exchange.getProperty("llmJob", LlmJobEnvelope.class);
+            LlmJobEnvelope queued = exchange.getProperty("llmJob", LlmJobEnvelope.class);
+            if (queued != null && "synthesis-low".equals(queued.requester())) {
                 replies.complete(LlmJobResult.succeeded(queued, "test-model", "{\"wrong\":true}", "{\"wrong\":true}", Instant.now()));
             }
         });
@@ -91,6 +115,7 @@ class LlmRouteFrameworkRouteTest {
             String deadLetterJson = deadLetterExchange.getIn().getBody(String.class);
             assertTrue(deadLetterJson.contains("\"runtimeId\":\"synthesis-low\""));
             assertTrue(deadLetterJson.contains("\"failureMessage\""));
+            assertTrue(deadLetterExchange.getIn().getHeader(KafkaConstants.KEY) instanceof UUID);
         }
     }
 
@@ -189,7 +214,7 @@ class LlmRouteFrameworkRouteTest {
         private StubKafkaEndpoint(String endpointUri, StubKafkaComponent component, String topic) {
             super(endpointUri, component);
             this.component = component;
-            this.topic = topic;
+            this.topic = normalizeTopic(topic);
         }
 
         @Override
@@ -216,6 +241,15 @@ class LlmRouteFrameworkRouteTest {
         @Override
         public boolean isLenientProperties() {
             return true;
+        }
+
+        private static String normalizeTopic(String topic) {
+            String normalized = topic == null ? "" : topic;
+            while (normalized.startsWith("/")) {
+                normalized = normalized.substring(1);
+            }
+            int query = normalized.indexOf('?');
+            return query < 0 ? normalized : normalized.substring(0, query);
         }
     }
 

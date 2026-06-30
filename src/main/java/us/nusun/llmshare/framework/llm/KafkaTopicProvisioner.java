@@ -7,13 +7,16 @@ import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.admin.TopicDescription;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 import us.nusun.llmshare.framework.inventory.ExecutionRuntimeRegistry;
 import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
 
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Collections;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 
@@ -51,9 +54,19 @@ public class KafkaTopicProvisioner {
     }
 
     public List<NewTopic> configuredTopics() {
-        return configuredTopicNames().stream()
-                .map(topic -> new NewTopic(topic, partitions, replicationFactor))
+        return configuredTopicPartitions().entrySet().stream()
+                .map(topic -> new NewTopic(topic.getKey(), topic.getValue(), replicationFactor))
                 .toList();
+    }
+
+    public Map<String, Integer> configuredTopicPartitions() {
+        LinkedHashMap<String, Integer> topicPartitions = new LinkedHashMap<>();
+        for (InferenceLaneDefinition lane : runtimes.allLanes()) {
+            topicPartitions.merge(lane.requestTopic(), lane.parallelism(), Math::max);
+            topicPartitions.putIfAbsent(lane.responseTopic(), 1);
+        }
+        topicPartitions.putIfAbsent(deadLetterTopic, Math.max(1, partitions));
+        return Collections.unmodifiableMap(topicPartitions);
     }
 
     public List<String> ensureTopics() throws Exception {
@@ -65,6 +78,7 @@ public class KafkaTopicProvisioner {
         }
         try (Admin adminClient = adminClient()) {
             Set<String> existingTopics = existingTopicNames(adminClient);
+            verifyExistingRequestTopicPartitions(adminClient, existingTopics);
             List<NewTopic> missingTopics = configuredTopics().stream()
                     .filter(topic -> !existingTopics.contains(topic.name()))
                     .toList();
@@ -86,11 +100,44 @@ public class KafkaTopicProvisioner {
         return adminClient.listTopics().names().get();
     }
 
+    protected Map<String, Integer> existingTopicPartitions(Admin adminClient, Set<String> topicNames) throws Exception {
+        if (topicNames.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, TopicDescription> descriptions = adminClient.describeTopics(topicNames).allTopicNames().get();
+        LinkedHashMap<String, Integer> partitionsByTopic = new LinkedHashMap<>();
+        descriptions.forEach((topic, description) -> partitionsByTopic.put(topic, description.partitions().size()));
+        return partitionsByTopic;
+    }
+
     protected void createTopics(Admin adminClient, List<NewTopic> topics) throws Exception {
         adminClient.createTopics(topics).all().get();
     }
 
     protected Admin adminClient() {
         return AdminClient.create(Map.of(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers));
+    }
+
+    private void verifyExistingRequestTopicPartitions(Admin adminClient, Set<String> existingTopics) throws Exception {
+        LinkedHashMap<String, Integer> requiredRequestPartitions = new LinkedHashMap<>();
+        for (InferenceLaneDefinition lane : runtimes.allLanes()) {
+            if (existingTopics.contains(lane.requestTopic())) {
+                requiredRequestPartitions.merge(lane.requestTopic(), lane.parallelism(), Math::max);
+            }
+        }
+        if (requiredRequestPartitions.isEmpty()) {
+            return;
+        }
+        Map<String, Integer> actualPartitions = existingTopicPartitions(adminClient, requiredRequestPartitions.keySet());
+        for (Map.Entry<String, Integer> required : requiredRequestPartitions.entrySet()) {
+            int actual = actualPartitions.getOrDefault(required.getKey(), 0);
+            if (actual < required.getValue()) {
+                throw new IllegalStateException("Kafka topic " + required.getKey()
+                        + " has " + actual
+                        + " partitions but lane parallelism requires at least "
+                        + required.getValue()
+                        + ". Topic provisioning creates missing topics but does not increase partitions on existing topics; increase the topic partition count or reduce the lane parallelism.");
+            }
+        }
     }
 }

@@ -35,19 +35,44 @@ public class MissionRoute extends RouteBuilder {
 
     @Override
     public void configure() {
+        errorHandler(noErrorHandler());
+
         from("direct:start-mission")
                 .routeId("start-mission")
                 .setProperty("missionGoal", bodyAs(String.class))
                 .setProperty("mission", method(this, "newMission(${exchangeProperty.missionGoal}, ${header.requestId})"))
                 .setBody(method(this, "initialAgentRunCommand(${exchangeProperty.mission})"))
-                .to("direct:start-agent-run")
-                .setProperty("startAgentRunResult", body())
+                .to("direct:prepare-agent-run")
+                .setProperty("startAgentRunResult", method(this, "result(${exchangeProperty.agentRun})"))
+                .wireTap("seda:execute-accepted-agent-run")
                 .setBody(method(this, "acceptedMissionResponse(${exchangeProperty.mission}, ${exchangeProperty.startAgentRunResult})"));
+
+        from("direct:prepare-agent-run")
+                .routeId("prepare-agent-run")
+                .bean(this, "prepareAgentRun");
 
         from("direct:start-agent-run")
                 .routeId("start-agent-run")
                 .doTry()
-                    .bean(this, "prepareAgentRun")
+                    .to("direct:prepare-agent-run")
+                .doCatch(Exception.class)
+                    .bean(this, "failAgentRun")
+                .doFinally()
+                    .choice()
+                        .when(exchangeProperty("childAgentRunSetupFailure").isNotNull())
+                            .bean(this, "restoreAgentRunScope")
+                        .otherwise()
+                            .to("direct:execute-agent-run")
+                    .end()
+                .end();
+
+        from("seda:execute-accepted-agent-run?concurrentConsumers=1")
+                .routeId("execute-accepted-agent-run")
+                .to("direct:execute-agent-run");
+
+        from("direct:execute-agent-run")
+                .routeId("execute-agent-run")
+                .doTry()
                     .toD("${exchangeProperty.agentRunRouteUri}")
                     .bean(this, "completeAgentRun")
                 .doCatch(Exception.class)
@@ -81,6 +106,7 @@ public class MissionRoute extends RouteBuilder {
         return Map.of(
                 "missionId", mission.id(),
                 "status", "accepted",
+                "rootAgentRunId", result == null ? "" : result.agentRunId(),
                 "projection", result == null ? "" : result.agentRunId());
     }
 

@@ -4,6 +4,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
 import us.nusun.llmshare.framework.inventory.InferenceLaneProvider;
+import us.nusun.llmshare.framework.model.PartitionKeyStrategy;
 
 @ApplicationScoped
 public class LowPassLane implements InferenceLaneProvider {
@@ -20,13 +21,24 @@ public class LowPassLane implements InferenceLaneProvider {
     @ConfigProperty(name = "llm.inference-lane.low.endpoint", defaultValue = "")
     String endpoint;
 
+    @ConfigProperty(name = "llm.inference-lane.low.model", defaultValue = "")
+    String model;
+
+    @ConfigProperty(name = "llm.inference-lane.low.parallelism", defaultValue = "1")
+    int parallelism = 1;
+
+    @ConfigProperty(name = "llm.inference-lane.low.partition-key-strategy", defaultValue = "AGENT_RUN")
+    PartitionKeyStrategy partitionKeyStrategy = PartitionKeyStrategy.AGENT_RUN;
+
     @Override
     public InferenceLaneDefinition inferenceLane() {
         return InferenceLaneDefinition.builder(LowPassLane.ID)
                 .requestTopic(requestTopic)
                 .responseTopic(responseTopic)
-                .concurrency(1)
+                .parallelism(parallelism)
+                .partitionKeyStrategy(partitionKeyStrategy)
                 .endpoint(endpoint)
+                .model(model)
                 .apiKeyConfigKey(API_KEY_CONFIG_KEY)
                 .apiKeyEnvVariable(API_KEY_ENV_VARIABLE)
                 .build();

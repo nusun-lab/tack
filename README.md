@@ -1,104 +1,284 @@
 # LLM Share Camel Kafka
 
-`llm-share-camel-kafka` is a Quarkus + Apache Camel framework for running mission-bound agents as structured Camel workflows.
+A Quarkus and Apache Camel framework for running mission-bound LLM agents through structured workflows, Kafka-backed model execution, and optional MCP tools.
 
-The framework does not treat an agent as a single LangChain4j object. In this project:
+The framework treats an agent run as application state, not as a single long-lived LangChain4j object. Camel routes define the workflow, Kafka serializes model work, and the catalog describes the personas, routines, tool profiles, inference lanes, and execution runtimes available to the system.
 
-```text
-AgentRun = Mission + Persona + Routine + working state
+## Highlights
+
+* **Mission-bound agent runs** with isolated parent/child state.
+* **Catalog-driven configuration** for personas, routines, tool profiles, inference lanes, and execution runtimes.
+* **Kafka-backed LLM queueing** so model calls can be serialized and routed by lane.
+* **Reusable Camel primitives** for action, decision, schema-shaped creation, and child agent startup.
+* **Two-pass tool execution** for `direct:act`: one pass for tool use, one pass for structured `StepResult` synthesis.
+* **Optional MCP integration** with persona-specific credentials, tool filtering, default arguments, and bounded tool results.
+* **Workspace projection API** for inspecting active missions and agent runs during local development.
+
+## Architecture
+
+A mission moves through the framework in a small number of explicit steps:
+
+1. `POST /goals` accepts a user goal and creates the root `AgentRun` projection.
+2. The mission route schedules the configured initial persona and routine asynchronously.
+3. The selected routine runs outside the HTTP request thread as a normal Camel route.
+4. The routine calls framework primitives such as `direct:act`, `direct:decide`, `direct:create`, and `direct:start-agent-run`.
+5. LLM work is queued through Kafka by inference lane.
+6. Worker routes call the configured OpenAI-compatible model endpoint and optional MCP tools.
+7. Replies return through Kafka and update the agent run projection.
+
+At runtime, a mission starts one configured `AgentRun`. That run selects a persona and routine from the catalog. The routine composes framework primitives while the framework handles queueing, model invocation, MCP tool exposure, scoped state, and projection updates.
+
+## Requirements
+
+* Java 21
+* Maven
+* Kafka
+* An OpenAI-compatible chat/completions endpoint, such as vLLM
+* Optional MCP server definitions declared by tool profiles. The bundled example profiles include Mattermost, Gitea, and Plane.
+
+The project currently uses Quarkus 3.36.0 and a snapshot Camel LangChain4j agent dependency because endpoint-level agent configuration and JSON schema support are still ahead of the released Camel Quarkus line used by the rest of the application.
+
+## Quick start
+
+Start Kafka and your OpenAI-compatible model endpoint, then configure the local runtime:
+
+```bash
+export KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+
+export OPENAI_BASE_URL=http://localhost:8000/v1
+export OPENAI_MODEL=qwen-36-27b
+export OPENAI_API_KEY=not-needed
+
+export LLM_WORKER_ENABLED=true
+export LLM_LOCAL_WORKER_ROUTE_VERIFICATION_ENABLED=true
+export LLM_KAFKA_PROVISION_TOPICS=true
 ```
 
-LangChain4j/Camel agents are lower-level execution details. The framework gives you reusable primitives for routines, catalog-discovered personas/runtimes/tools, scoped thought state, and dashboard-safe projections.
+Run the application:
 
-## What You Build
-
-A project built on this framework usually defines a catalog:
-
-| Catalog Item | What It Answers | Example |
-| --- | --- | --- |
-| `Persona` | Who is acting? | `software-team/owen`, a project manager persona |
-| `RoutineDefinition` | What workflow does that persona run? | `software-team/project-manager` -> `direct:example-software-team-project-manager` |
-| `ToolProfile` | Which MCP servers/tools are visible for an action? | `project-management` -> Plane tools minus destructive deletes |
-| `InferenceLane` | Where does LLM work queue and execute? | `low-pass` -> `llm.requests.low` / local vLLM endpoint |
-| `ExecutionRuntime` | How does a primitive invoke the model? | `tool-low`, `synthesis-low` |
-
-A mission starts from a user goal. An `AgentRun` starts with one persona and one routine. Routines then use framework primitives:
-
-```text
-direct:act      -> tool/action pass + StepResult synthesis
-direct:decide   -> boolean DecisionResult for route control
-direct:create   -> schema-shaped JSON creation
-direct:start-agent-run -> generic child AgentRun start
+```bash
+./mvnw quarkus:dev
 ```
 
-## Why The Catalog Matters
+Submit a mission:
 
-The catalog is the framework's runtime inventory. It is not hard-coded into framework routes.
-
-Quarkus discovers catalog entries from CDI beans that implement provider interfaces:
-
-```text
-PersonaProvider
-RoutineProvider
-ToolProfileProvider
-InferenceLaneProvider
-ExecutionRuntimeProvider
-RuntimeTopologyProvider
+```bash
+curl -s -X POST http://localhost:8080/goals \
+  -H 'content-type: application/json' \
+  --data '{
+    "goal": "Build a small parking lot manager app. The team should clarify scope, coordinate work, and start one implementation path."
+  }' | jq
 ```
 
-At startup, registries collect all providers and fail fast on duplicate IDs or invalid runtime/lane references.
+Example response:
 
-The framework uses the catalog for:
+```json
+{
+  "missionId": "mission-...",
+  "status": "accepted",
+  "rootAgentRunId": "run-...",
+  "projection": "run-..."
+}
+```
 
-- validating `StartAgentRunCommand.personaId` and `routineId`
-- making catalog data available to routines as normal Camel/CDI beans
-- resolving routine route URIs for `direct:start-agent-run`
-- resolving runtime and lane metadata for LLM calls
-- resolving tool profiles before MCP calls
-- exposing workspace/catalog state through `/workspace/view`
+Inspect the workspace:
 
-## Bundled Example Catalog
+```bash
+curl -s http://localhost:8080/workspace/view | jq
+```
 
-The current bundled namespace is `us.nusun.llmshare.example`. It demonstrates a software team, not a framework requirement.
+Reset local workspace state between experiments:
 
-| Person | Persona Id | Routine Id | Purpose |
-| --- | --- | --- | --- |
-| Noah | `software-team/noah` | `software-team/director` | Example orchestration persona |
-| Owen | `software-team/owen` | `software-team/project-manager` | Coordination and project setup |
-| Ethan | `software-team/ethan` | `software-team/product-owner` | Scope and acceptance criteria |
-| Miles | `software-team/miles` | `software-team/application-developer` | Implementation and delivery |
+```bash
+curl -s -X POST http://localhost:8080/workspace/reset | jq
+```
 
-The Director is just an example routine. It demonstrates orchestration by composing a `direct:create` prompt with Camel Simple catalog bean expressions, receiving generic `StartAgentRunCommand` objects, and sending them to generic `direct:start-agent-run`.
+## Bundled example
 
-You can remove the Director pattern entirely and start child runs from any routine, API route, scheduler, or event handler.
+The bundled `us.nusun.llmshare.example` package demonstrates a software-team catalog. It is an example namespace, not a framework requirement.
 
-## Configure The Starting AgentRun
+| Persona | Persona ID            | Routine ID                            | Purpose                                   |
+| ------- | --------------------- | ------------------------------------- | ----------------------------------------- |
+| Noah    | `software-team/noah`  | `software-team/director`              | Starts and coordinates the mission.       |
+| Owen    | `software-team/owen`  | `software-team/project-manager`       | Coordinates work and project setup.       |
+| Ethan   | `software-team/ethan` | `software-team/product-owner`         | Clarifies scope and acceptance criteria.  |
+| Miles   | `software-team/miles` | `software-team/application-developer` | Implements and reports delivery progress. |
 
-`direct:start-mission` creates the first `AgentRun` from two config properties:
+The default mission starts Noah on the Director routine:
 
 ```properties
 agent.framework.initial-agent-run.persona-id=${AGENT_FRAMEWORK_INITIAL_AGENT_RUN_PERSONA_ID:software-team/noah}
 agent.framework.initial-agent-run.routine-id=${AGENT_FRAMEWORK_INITIAL_AGENT_RUN_ROUTINE_ID:software-team/director}
 ```
 
-To run a different catalog namespace, provide different IDs:
+Override those values to start a different catalog namespace:
 
 ```bash
 export AGENT_FRAMEWORK_INITIAL_AGENT_RUN_PERSONA_ID=my-domain/coordinator
 export AGENT_FRAMEWORK_INITIAL_AGENT_RUN_ROUTINE_ID=my-domain/coordinator-routine
 ```
 
-Those IDs must exist in the discovered `PersonaCatalog` and `RoutineCatalog`.
+## Core concepts
 
-## Defining Catalog Entries
+### Mission
+
+A mission is the top-level user goal. It owns the mission ID, goal text, status, metadata, and the root agent run.
+
+### AgentRun
+
+An `AgentRun` is one execution of one persona on one routine. It carries working state, current primitive state, thought-stack state, latest results, and projection data. Child agent runs are isolated from parent runs through exchange-scope capture and restore.
 
 ### Persona
 
-A persona defines prompt identity, display metadata, and external identity token mappings. It does not directly own tools.
+A persona defines the actor: name, description, behavioral traits, display metadata, and external identity mappings. It does not directly own tools.
+
+### Routine
+
+A routine is a Camel route plus catalog metadata. Routines should compose framework primitives and domain-specific route logic. Framework core should stay generic.
+
+### ToolProfile
+
+A tool profile defines which MCP servers and tools are visible during `direct:act`. Profiles can declare MCP server connection settings, allow tools, deny tools, add default arguments, and cap returned tool-result size. If an act omits a profile, the framework uses an internal no-tools profile; adopters do not need to publish a `none` profile.
+
+### InferenceLane
+
+An inference lane defines where LLM jobs are queued and which model endpoint/model serves them. The bundled example provides `low-pass` and `high-pass` lanes.
+
+### ExecutionRuntime
+
+An execution runtime selects an inference lane and model behavior, such as whether tool calling is enabled. It can also override the lane model. The bundled example provides `tool-low`, `tool-high`, `synthesis-low`, and `synthesis-high`.
+
+## Framework primitives
+
+### `direct:act`
+
+Use `direct:act` when the model may need tools and the routine needs a structured `StepResult` afterward.
+
+```java
+.process(routine.act("source-readiness")
+        .prompt("Confirm the target repository exists and report blockers.")
+        .toolProfile("source-control"))
+.to("direct:act")
+```
+
+`direct:act` performs a tool/action pass first, then synthesizes the result into the common `StepResult` schema. This keeps tool usage and structured route state separate.
+
+### `direct:decide`
+
+Use `direct:decide` for narrow control-flow questions.
+
+```java
+.process(routine.decide("done")
+        .prompt("Is this routine complete or blocked for this pass?"))
+.to("direct:decide")
+.choice()
+    .when(simple("${exchangeProperty[decision.done.result]} == true"))
+        .stop()
+.end()
+```
+
+The boolean result is exposed at:
+
+* `decisions.<decisionId>`
+* `decision.<decisionId>.result`
+
+### `direct:create`
+
+Use `direct:create` for schema-shaped JSON generation.
+
+```java
+.process(routine.create("mvp-slice")
+        .schemaId("mvp-slice-schema")
+        .schemaJson("""
+                {
+                  "type": "object",
+                  "properties": {
+                    "component": { "type": "string" }
+                  },
+                  "required": ["component"]
+                }
+                """)
+        .prompt("Create a small MVP slice description."))
+.to("direct:create")
+```
+
+`direct:create` is generic. It does not automatically inject catalog data. If a prompt needs catalog context, compose the prompt explicitly with Camel Simple expressions:
+
+```java
+.process(routine.create("initial-agent-runs")
+        .schema("classpath:schemas/example/software-team/start-agent-run-commands-schema.json")
+        .prompt(simple("""
+                Given this mission, propose the initial software-team AgentRuns.
+
+                Mission:
+                ${exchangeProperty.mission.goal}
+
+                Personas:
+                ${bean:personaCatalog.agentRunStartAssignableJson}
+
+                Routines:
+                ${bean:routineCatalog.startableJson}
+
+                Return only schema-compliant JSON.
+                """)))
+.to("direct:create")
+```
+
+### `direct:start-agent-run`
+
+Use `direct:start-agent-run` to start a child or top-level agent run from a generic `StartAgentRunCommand`.
+
+```json
+{
+  "missionId": "mission-1",
+  "personaId": "software-team/owen",
+  "routineId": "software-team/project-manager",
+  "parentAgentRunId": "run-parent",
+  "reason": "Coordinate setup and delivery risks.",
+  "input": {
+    "priority": "high",
+    "tags": ["planning", "delivery"]
+  }
+}
+```
+
+The `input` object is preserved as structured working state for the child run.
+
+## Defining catalog entries
+
+Catalog entries are discovered from CDI beans. The main provider interfaces are:
+
+| Provider                   | Registers                 |
+| -------------------------- | ------------------------- |
+| `PersonaProvider`          | Personas                  |
+| `RoutineProvider`          | Routine definitions       |
+| `ToolProfileProvider`      | MCP tool profiles         |
+| `InferenceLaneProvider`    | LLM queue/model lanes     |
+| `ExecutionRuntimeProvider` | Runtime definitions       |
+| `RuntimeTopologyProvider`  | Runtime topology metadata |
+
+## Create your own catalog
+
+At minimum, a framework adopter provides:
+
+* `PersonaProvider` for the actors available to missions.
+* `RoutineProvider` for Camel routes those actors can run.
+* `InferenceLaneProvider` for queue topics, endpoint overrides, and optional lane model names.
+* `ExecutionRuntimeProvider` for runtime IDs that select lanes, tool-calling behavior, and optional runtime model overrides.
+* Initial persona/routine config through `agent.framework.initial-agent-run.persona-id` and `agent.framework.initial-agent-run.routine-id`.
+
+Optional pieces:
+
+* `ToolProfileProvider` when routines need MCP tools. Tool profiles can include `McpServerDefinition` entries for each server they expose, including concrete URL, transport, auth header format, extra headers, default tool arguments, deny lists, and result limits.
+
+### Persona example
 
 ```java
 @ApplicationScoped
 public class CoordinatorPersona implements PersonaProvider {
+    @ConfigProperty(name = "agent.identity.coordinator.gitea.token", defaultValue = "")
+    String giteaToken = "";
+
     @Override
     public List<Persona> personas() {
         return List.of(Persona.builder("my-domain/coordinator")
@@ -107,17 +287,15 @@ public class CoordinatorPersona implements PersonaProvider {
                 .trait("Keeps plans concrete and reports blockers clearly.")
                 .label("COORD")
                 .color("38;2;100;180;255")
-                .identity("gitea", "agent.identity.coordinator.gitea.token", "COORDINATOR_GITEA_TOKEN", "coordinator-agent")
+                .identity("gitea", giteaToken, "coordinator-agent")
                 .build());
     }
 }
 ```
 
-`agentRunStartAssignable(false)` keeps a persona out of `personaCatalog.agentRunStartAssignable()` and `personaCatalog.agentRunStartAssignableJson()`. The bundled Director persona uses that setting so orchestration prompts that reference assignable personas do not ask it to start another Director by default.
+Use `agentRunStartAssignable(false)` when a persona should not be proposed by orchestration prompts that start child runs.
 
-### Routine
-
-A routine is a Camel route plus catalog metadata.
+### Routine example
 
 ```java
 @ApplicationScoped
@@ -141,7 +319,7 @@ public class CoordinatorRoutine extends RouteBuilder implements RoutineProvider 
     public void configure() {
         from("direct:my-domain-coordinator")
                 .process(routine.enterThought("coordinator", "Mission plan and current blockers.", 800))
-                .process(routine.decide("needs-work")
+                .process(routine.decide("needs-worker")
                         .prompt("Does this mission need another worker AgentRun?"))
                 .to("direct:decide")
                 .process(routine.exitThought("coordinator"));
@@ -149,19 +327,21 @@ public class CoordinatorRoutine extends RouteBuilder implements RoutineProvider 
 }
 ```
 
-Routines should compose framework primitives and local route logic. Avoid moving domain-specific behavior into framework core.
-
-### ToolProfile
-
-A tool profile defines the MCP surface available during `direct:act`.
+### Tool profile example
 
 ```java
 @ApplicationScoped
 public class SourceToolProfile implements ToolProfileProvider {
+    @ConfigProperty(name = "agent.mcp.gitea.url", defaultValue = "")
+    String giteaUrl = "";
+
     @Override
     public List<ToolProfile> toolProfiles() {
         return List.of(ToolProfile.builder("source-control")
-                .server("gitea")
+                .mcpServer(McpServerDefinition.builder("gitea")
+                        .url(giteaUrl)
+                        .authHeaderValueFormat("token %s")
+                        .build())
                 .denyTools("gitea", "delete_repository", "delete_branch")
                 .maxResultCharacters(6000)
                 .build());
@@ -169,11 +349,9 @@ public class SourceToolProfile implements ToolProfileProvider {
 }
 ```
 
-ToolProfile semantics are broad by default for listed servers: if a server is visible and no allow-list is declared, tools are allowed unless explicitly denied. This is intentional so users can try MCP servers without knowing every tool name up front. Use `denyTools(...)`, `allowTool(...)`, default arguments, and result limits to tighten profiles.
+If a listed server has no allow-list, its tools are allowed unless explicitly denied. Use `allowTool`, `allowTools`, `denyTool`, `denyTools`, default arguments, and result limits to make profiles narrower. The reserved profile id `none` is built into the framework and is intentionally excluded from catalog listings.
 
-### InferenceLane And ExecutionRuntime
-
-An inference lane owns queue placement and model endpoint placement. An execution runtime chooses a lane and whether tool calling is enabled.
+### Inference lane and runtime examples
 
 ```java
 @ApplicationScoped
@@ -183,8 +361,9 @@ public class LowLane implements InferenceLaneProvider {
         return InferenceLaneDefinition.builder("low-pass")
                 .requestTopic("llm.requests.low")
                 .responseTopic("llm.replies.low")
-                .concurrency(1)
+                .parallelism(1)
                 .endpoint("http://localhost:8000/v1")
+                .model("qwen-low")
                 .apiKeyConfigKey("llm.inference-lane.low.api-key")
                 .apiKeyEnvVariable("LLM_LOW_API_KEY")
                 .build();
@@ -198,6 +377,7 @@ public class SynthesisLow implements ExecutionRuntimeProvider {
         return ExecutionRuntimeDefinition.builder("synthesis-low")
                 .lane("low-pass")
                 .toolCalling(false)
+                .model("qwen-runtime-override")
                 .agentName("synthesis-low")
                 .agentFactoryBeanName("executionRuntimeAgentFactory")
                 .build();
@@ -205,215 +385,89 @@ public class SynthesisLow implements ExecutionRuntimeProvider {
 }
 ```
 
-The bundled example provides:
+## Runtime configuration
+
+### Kafka and LLM
+
+| Environment variable         | Default                    | Purpose                              |
+| ---------------------------- | -------------------------- | ------------------------------------ |
+| `KAFKA_BOOTSTRAP_SERVERS`    | `localhost:9092`           | Kafka bootstrap servers.             |
+| `LLM_LOW_REQUEST_TOPIC`      | `llm.requests.low`         | Low-lane request topic.              |
+| `LLM_LOW_REPLY_TOPIC`        | `llm.replies.low`          | Low-lane reply topic.                |
+| `LLM_HIGH_REQUEST_TOPIC`     | `llm.requests.high`        | High-lane request topic.             |
+| `LLM_HIGH_REPLY_TOPIC`       | `llm.replies.high`         | High-lane reply topic.               |
+| `LLM_TOPIC_DEAD_LETTER`      | `llm.dead-letter`          | Failed queued-job topic.             |
+| `LLM_KAFKA_PROVISION_TOPICS` | `true`                     | Create configured topics at startup. |
+| `LLM_KAFKA_TOPIC_PARTITIONS` | `1`                        | Dead-letter topic partitions. Lane request topics use lane parallelism; reply topics are single-partition. |
+| `OPENAI_BASE_URL`            | `http://localhost:8000/v1` | Fallback OpenAI-compatible endpoint. |
+| `OPENAI_MODEL`               | `qwen-36-27b`              | Fallback model name.                 |
+| `OPENAI_API_KEY`             | `not-needed`               | Fallback API key.                    |
+| `LLM_LOW_MODEL`              | blank                      | Low-lane model override.             |
+| `LLM_HIGH_MODEL`             | blank                      | High-lane model override.            |
+| `LLM_LOW_PARALLELISM`        | `1`                        | Low-lane worker parallelism and request-topic partition count. |
+| `LLM_HIGH_PARALLELISM`       | `1`                        | High-lane worker parallelism and request-topic partition count. |
+| `LLM_LOW_PARTITION_KEY_STRATEGY` | `AGENT_RUN`             | Low-lane partition key strategy: `AGENT_RUN`, `MISSION`, or `JOB`. |
+| `LLM_HIGH_PARTITION_KEY_STRATEGY` | `AGENT_RUN`            | High-lane partition key strategy: `AGENT_RUN`, `MISSION`, or `JOB`. |
+| `LLM_REPLY_TIMEOUT_MS`       | `900000`                   | Synchronous reply wait timeout.      |
+
+Model selection precedence is:
 
 ```text
-low-pass, high-pass
-tool-low, tool-high
-synthesis-low, synthesis-high
+execution runtime model override > inference lane model > OPENAI_MODEL fallback
 ```
 
-## Framework Primitives
+The selected model is copied into LLM request metadata and preserved on worker failures and DLQ entries.
 
-### `direct:start-agent-run`
-
-Starts a generic child or top-level `AgentRun` from `StartAgentRunCommand`.
-
-```json
-{
-  "missionId": "mission-1",
-  "personaId": "software-team/owen",
-  "routineId": "software-team/project-manager",
-  "parentAgentRunId": "run-parent",
-  "reason": "Coordinate setup and delivery risks.",
-  "input": {
-    "role": "pm",
-    "config": { "priority": "high" },
-    "tags": ["planning", "delivery"]
-  }
-}
-```
-
-`input` is arbitrary structured JSON and is preserved as maps/lists/booleans/numbers/nulls in the child run working state and route body.
-
-`AgentRunExchangeScope` keeps parent and child run state isolated, including thoughts, current primitive state, latest results, and projection timelines.
-
-### `direct:act`
-
-Use `direct:act` for work that may involve tools and then must become a universal `StepResult`.
-
-Protocol:
-
-```text
-resolve tool and synthesis runtimes
-mark current act
-prepare tool/action pass prompt
-queue LLM call through selected runtime/lane
-capture tool/action result
-prepare StepResult synthesis prompt
-queue synthesis LLM call
-parse StepResult
-rewrite writable ThoughtStack frames
-update AgentRun and projection
-```
-
-A routine usually sets the act properties through `RoutineSupport`:
-
-```java
-.process(routine.act("source-readiness")
-        .prompt("Confirm the target repository exists and report blockers.")
-        .toolProfile("source-control"))
-.to("direct:act")
-```
-
-### `direct:decide`
-
-Use `direct:decide` for narrow control-flow questions. It returns a `DecisionResult` and mirrors the boolean result for Camel DSL use:
-
-```text
-exchange property: decisions.<decisionId>
-exchange property: decision.<decisionId>.result
-```
-
-Example:
-
-```java
-.process(routine.decide("done")
-        .prompt("Is this routine complete or blocked for this pass?"))
-.to("direct:decide")
-.choice()
-    .when(simple("${exchangeProperty[decision.done.result]} == true"))
-        .stop()
-.end()
-```
-
-### `direct:create`
-
-Use `direct:create` for schema-shaped JSON generation.
-
-It is generic: it does not inject persona, routine, or tool-profile catalog data. The caller supplies the already-composed prompt and schema, and receives a schema-valid JSON object.
-
-```java
-.process(routine.create("mvp-slice")
-        .schemaId("mvp-slice-schema")
-        .schemaJson("""
-                {"type":"object","properties":{"component":{"type":"string"}},"required":["component"]}
-                """)
-        .prompt("Create a small MVP slice description."))
-.to("direct:create")
-```
-
-If a routine wants catalog data in the prompt, compose it explicitly with Camel Simple. The framework exposes the catalogs as normal beans:
-
-```text
-${bean:personaCatalog.agentRunStartAssignableJson}
-${bean:routineCatalog.startableJson}
-${bean:toolProfileCatalog.allJson}
-```
-
-The bundled Director example uses that pattern:
-
-```java
-.process(routine.create("initial-agent-runs")
-        .schema("classpath:schemas/example/software-team/start-agent-run-commands-schema.json")
-        .prompt(simple("""
-                Given this mission, propose the initial software-team
-                AgentRuns to start as generic StartAgentRunCommand objects.
-
-                Mission:
-                ${exchangeProperty.mission.goal}
-
-                Personas:
-                ${bean:personaCatalog.agentRunStartAssignableJson}
-
-                Routines:
-                ${bean:routineCatalog.startableJson}
-
-                Tool profiles:
-                ${bean:toolProfileCatalog.allJson}
-
-                Return only schema-compliant JSON.
-                """)))
-.to("direct:create")
-```
-
-This keeps the primitive generic: catalogs provide data, Simple inserts data, and `direct:create` consumes the resulting prompt.
-
-## ThoughtStack And Projection
-
-`ThoughtStack` is exchange-local working context. Routines push frames around routine scopes or loop scopes. `direct:act` can rewrite the top writable frames using `StepResult.thoughts`.
-
-Thought content is synthesized working context, not hidden chain-of-thought.
-
-`AgentRunProjection` is the dashboard/API view. It includes sanitized observability state:
-
-```text
-agentRunId, missionId, parentAgentRunId, status
-persona, routine
-current primitive/id/prompt summary
-toolProfile
-resolved runtimes and lanes
-full thought content
-latest result
-timeline
-```
-
-Read projections through:
-
-```bash
-curl -s http://localhost:8080/workspace/view | jq '.agentRunProjections'
-```
-
-## Runtime Configuration
-
-### Kafka And LLM
-
-Minimum local configuration:
-
-```bash
-export KAFKA_BOOTSTRAP_SERVERS=localhost:9092
-export LLM_WORKER_ENABLED=true
-export LLM_KAFKA_PROVISION_TOPICS=true
-export OPENAI_BASE_URL=http://localhost:8000/v1
-export OPENAI_MODEL=qwen-36-27b
-export OPENAI_API_KEY=not-needed
-```
-
-Per-lane overrides:
+Per-lane endpoints, model names, and API keys override the global fallback values when set:
 
 ```bash
 export LLM_LOW_ENDPOINT=http://localhost:8000/v1
+export LLM_LOW_MODEL=qwen-low
 export LLM_LOW_API_KEY=not-needed
 export LLM_HIGH_ENDPOINT=http://localhost:8001/v1
+export LLM_HIGH_MODEL=qwen-high
 export LLM_HIGH_API_KEY=not-needed
 ```
 
-Relevant config keys:
+An inference lane is a shared Kafka-backed model work pool. `parallelism(1)` behaves like the original serialized lane. `parallelism(n)` creates the worker consumer route with `consumersCount=n&maxPollRecords=1`.
 
-```properties
-llm.inference-lane.low.request-topic=${LLM_LOW_REQUEST_TOPIC:llm.requests.low}
-llm.inference-lane.low.reply-topic=${LLM_LOW_REPLY_TOPIC:llm.replies.low}
-llm.inference-lane.low.endpoint=${LLM_LOW_ENDPOINT:}
-llm.inference-lane.low.api-key=${LLM_LOW_API_KEY:}
-llm.inference-lane.high.request-topic=${LLM_HIGH_REQUEST_TOPIC:llm.requests.high}
-llm.inference-lane.high.reply-topic=${LLM_HIGH_REPLY_TOPIC:llm.replies.high}
-llm.inference-lane.high.endpoint=${LLM_HIGH_ENDPOINT:}
-llm.inference-lane.high.api-key=${LLM_HIGH_API_KEY:}
+When topic provisioning is enabled, missing lane request topics are created with partitions equal to lane parallelism. Existing request topics are not silently expanded; they must already have at least `lane.parallelism()` partitions or startup fails clearly. Reply topics remain single-partition in the current single-orchestrator topology.
+
+Lane-wide FIFO ordering is not guaranteed when `parallelism > 1`. Ordering is preserved only for jobs with the same Kafka partition key. The default partition key strategy is `AGENT_RUN`, with fallback:
+
+```text
+agentRunId -> missionId -> jobId
 ```
 
-If a lane endpoint or key is blank, the shared OpenAI-compatible fallback is used:
+Other strategies are:
 
-```properties
-llm.openai.base-url=${LLM_OPENAI_BASE_URL:${OPENAI_BASE_URL:http://localhost:8000/v1}}
-llm.openai.api-key=${LLM_OPENAI_API_KEY:${OPENAI_API_KEY:not-needed}}
-llm.openai.model=${LLM_OPENAI_MODEL:${OPENAI_MODEL:qwen-36-27b}}
+```text
+MISSION: missionId -> agentRunId -> jobId
+JOB:     jobId
 ```
 
-### MCP Servers And Persona Tokens
+Request messages use the selected partition key as the Kafka key. Reply messages continue to use `jobId` as the Kafka key and are correlated in memory by `jobId`.
 
-MCP servers are optional. If a server URL or persona token is blank, that MCP client is skipped.
+Current topology assumption: the request/reply implementation assumes one active orchestrator/runtime instance owns the in-memory LLM reply waiters. Lane worker parallelism is supported within that topology. Horizontally scaled orchestrator instances require reply-to routing or durable reply storage and are out of scope for this mode.
 
-Only streamable HTTP MCP transport is supported. The `*_MCP_TRANSPORT_TYPE` environment variables default to `streamableHttp`; non-streamable values are ignored with a warning.
+### Local worker verification
+
+By default, `direct:llm` assumes a local single-process runtime. Before queueing an LLM request, it verifies that the selected lane has a local worker route and a local reply-consumer route available.
+
+For an API process that queues jobs while another process runs the workers, disable the local worker check:
+
+```bash
+export LLM_WORKER_ENABLED=false
+export LLM_LOCAL_WORKER_ROUTE_VERIFICATION_ENABLED=false
+```
+
+This skips the selected lane worker-route verification only. The local response consumer is still required because the current API remains synchronous request/reply.
+
+## MCP configuration
+
+MCP servers are optional. Framework code builds clients from generic `McpServerDefinition` entries attached to the active `ToolProfile`. The bundled example profiles define Mattermost, Gitea, and Plane servers; adopters can add other servers by adding a `McpServerDefinition` through `ToolProfile.builder(...).mcpServer(...)`, without editing `McpClientFactory` or defining LangChain4j MCP server beans. `ToolProfile.server(...)` only declares a logical server id for allow/deny/default-argument rules; it does not create a buildable MCP client by itself.
+
+If a server URL or persona token is blank, that MCP client is skipped.
 
 ```bash
 export MATTERMOST_MCP_URL=http://localhost:8001/mcp
@@ -437,95 +491,85 @@ export ETHAN_PLANE_TOKEN=...
 export MILES_PLANE_TOKEN=...
 ```
 
-A template is available at [docs/local-agent-identities.env.example](docs/local-agent-identities.env.example).
+Additional identity configuration examples are available in `docs/local-agent-identities.env.example` and `docs/local-mcp-agent-identities.md`.
 
-## Running The Bundled Scenario
+## Workspace API
 
-Start the app:
+The workspace API is intended for local development and debugging.
 
-```bash
-./mvnw quarkus:dev
-```
+| Endpoint           | Method | Purpose                                    |
+| ------------------ | ------ | ------------------------------------------ |
+| `/goals`           | `POST` | Accept and schedule a new mission.         |
+| `/workspace/view`  | `GET`  | Inspect catalog and agent-run projections. |
+| `/workspace/reset` | `POST` | Reset local workspace state.               |
 
-Submit a mission:
+`POST /goals` returns `202 Accepted` after mission/root-run creation and scheduling. The root routine continues asynchronously. Later routine failures are visible through workspace projection state and normal logs, not as a delayed HTTP response.
 
-```bash
-curl -s -X POST http://localhost:8080/goals \
-  -H 'content-type: application/json' \
-  --data '{
-    "goal": "Build a small parking lot manager app. The team should clarify scope, coordinate work, and start one implementation path."
-  }' | jq
-```
+The projection includes mission IDs, agent-run IDs, persona/routine metadata, primitive state, runtime/lane information, latest results, timeline entries, and thought-stack snapshots.
 
-Expected response:
+## Project layout
 
-```json
-{
-  "missionId": "mission-...",
-  "status": "accepted",
-  "projection": "run-..."
-}
-```
+| Path                                        | Purpose                                             |
+| ------------------------------------------- | --------------------------------------------------- |
+| `src/main/java/us/nusun/llmshare/framework` | Reusable framework code.                            |
+| `src/main/java/us/nusun/llmshare/example`   | Bundled software-team example catalog and routines. |
+| `src/main/resources/schemas`                | JSON schemas used by primitives and examples.       |
+| `docs/architecture.md`                      | Additional architecture notes.                      |
+| `docs/local-agent-identities.env.example`   | Local persona identity template.                    |
+| `docs/local-mcp-agent-identities.md`        | MCP identity setup notes.                           |
 
-Inspect the workspace and catalog:
+## Development
 
-```bash
-curl -s http://localhost:8080/workspace/view | jq
-```
-
-Reset between runs:
-
-```bash
-curl -s -X POST http://localhost:8080/workspace/reset | jq
-```
-
-## Example Scenario Flow
-
-```text
-POST /goals
-  -> direct:submit-user-goal
-  -> direct:start-mission
-  -> initial AgentRun from configured persona/routine IDs
-  -> bundled default: Noah runs software-team Director
-  -> Director uses direct:create with an explicit Simple-composed catalog prompt
-  -> create result contains generic StartAgentRunCommand objects
-  -> each child starts through direct:start-agent-run
-  -> PM / PO / Developer routines use direct:act, direct:decide, direct:create
-  -> projections update at framework boundaries
-```
-
-Component tests exercise this flow with fake LLM/tool responses at the Camel route boundary. They do not require live vLLM, Kafka, Plane, Gitea, Mattermost, or MCP servers.
-
-## Boundary Rules
-
-Keep framework and namespace responsibilities separate:
-
-```text
-Framework core:
-  StartAgentRunCommand
-  direct:start-agent-run
-  direct:act / direct:decide / direct:create
-  ThoughtStack
-  AgentRunProjection
-  ExecutionRuntime / InferenceLane
-  ToolProfile / ProfiledMcpClient
-
-Example or user namespace:
-  personas
-  routines
-  schemas/prompts
-  tool-profile choices
-  orchestration patterns such as Director
-```
-
-Do not put software-team assumptions into framework core. Do not put concrete tool operational knowledge into persona traits; keep that in routines and tool profiles.
-
-## Tests
-
-Run all tests:
+Run tests:
 
 ```bash
 ./mvnw test
 ```
 
-Tests should fake LLM and MCP interactions with Camel test wiring, route advice, or direct primitive fixtures. There is no production mock mode.
+Run with coverage:
+
+```bash
+./mvnw verify
+```
+
+Component tests should fake LLM and MCP behavior at route boundaries. They should not require live vLLM, Kafka, Plane, Gitea, Mattermost, or MCP servers unless they are explicitly integration tests.
+
+## Design boundaries
+
+Keep reusable framework behavior separate from example-team behavior.
+
+Framework code owns:
+
+* `StartAgentRunCommand`
+* `direct:start-agent-run`
+* `direct:act`, `direct:decide`, and `direct:create`
+* `ThoughtStack`
+* `AgentRunProjection`
+* inference lanes and execution runtimes
+* tool-profile enforcement and MCP client wrapping
+
+Example or application namespaces own:
+
+* personas
+* routines
+* prompts and schemas
+* tool-profile choices
+* domain orchestration patterns such as the bundled Director routine
+
+## Troubleshooting
+
+### A mission fails before the first LLM call
+
+Check that `AGENT_FRAMEWORK_INITIAL_AGENT_RUN_PERSONA_ID` and `AGENT_FRAMEWORK_INITIAL_AGENT_RUN_ROUTINE_ID` point to catalog entries that exist at startup.
+
+### `direct:llm` says a lane route is not available
+
+In local mode, the selected lane must have both a worker route and a response-consumer route running. Check `LLM_WORKER_ENABLED`, `LLM_LOCAL_WORKER_ROUTE_VERIFICATION_ENABLED`, and the configured inference lanes.
+
+### MCP tools do not appear
+
+Confirm that the MCP server URL is set, the persona has a token for that server, and the selected `ToolProfile` includes the server/tool.
+
+### Tool results are truncated
+
+Tool result size is bounded by the selected `ToolProfile.maxResultCharacters` when set, otherwise by `AGENT_MCP_MAX_TOOL_RESULT_CHARACTERS`. Set a profile-specific limit when one workflow needs more context than the global default.

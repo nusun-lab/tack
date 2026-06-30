@@ -14,9 +14,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BoundedMcpToolResultExtractorBoundaryTest {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-    private static final String SUPPRESSED_MESSAGE =
-            "Tool result suppressed by policy because it exceeded the maximum allowed size. "
-                    + "Make a more precise tool call with a smaller result.";
 
     @Test
     void delegatesTextExtractionAndJoinsMultipleFragmentsWhenWithinLimit() {
@@ -49,13 +46,13 @@ class BoundedMcpToolResultExtractorBoundaryTest {
     }
 
     @Test
-    void suppressesResultTextBeyondConfiguredLimitAndMarksItAsError() {
-        BoundedMcpToolResultExtractor extractor = new BoundedMcpToolResultExtractor(10);
+    void truncatesResultTextBeyondConfiguredLimitAndPreservesErrorFlag() {
+        BoundedMcpToolResultExtractor extractor = new BoundedMcpToolResultExtractor(40);
 
-        ToolExecutionResult result = extractor.extract(textContent("01234567890"), false);
+        ToolExecutionResult result = extractor.extract(textContent("x".repeat(41)), false);
 
-        assertTrue(result.isError());
-        assertEquals(SUPPRESSED_MESSAGE, result.resultText());
+        assertFalse(result.isError());
+        assertEquals("xxxxxxx...(truncated, original 41 chars)", result.resultText());
     }
 
     @Test
@@ -64,8 +61,8 @@ class BoundedMcpToolResultExtractorBoundaryTest {
 
         ToolExecutionResult result = extractor.extract(textContent("12345", "67890"), false);
 
-        assertTrue(result.isError());
-        assertEquals(SUPPRESSED_MESSAGE, result.resultText());
+        assertFalse(result.isError());
+        assertEquals("...(trunca", result.resultText());
     }
 
     @Test
@@ -73,12 +70,13 @@ class BoundedMcpToolResultExtractorBoundaryTest {
         BoundedMcpToolResultExtractor extractor = new BoundedMcpToolResultExtractor(0);
 
         ToolExecutionResult allowed = extractor.extract(textContent("x".repeat(1000)), false);
-        ToolExecutionResult suppressed = extractor.extract(textContent("x".repeat(1001)), false);
+        ToolExecutionResult truncated = extractor.extract(textContent("x".repeat(1001)), false);
 
         assertFalse(allowed.isError());
         assertEquals(1000, allowed.resultText().length());
-        assertTrue(suppressed.isError());
-        assertEquals(SUPPRESSED_MESSAGE, suppressed.resultText());
+        assertFalse(truncated.isError());
+        assertTrue(truncated.resultText().endsWith("...(truncated, original 1001 chars)"));
+        assertEquals(1000, truncated.resultText().length());
     }
 
     @Test

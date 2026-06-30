@@ -5,14 +5,16 @@ This wiring is for local development.
 Personas declare external identities. MCP clients are created from:
 
 ```text
-Persona identity + ToolProfile server + MCP server config
+Persona identity + ToolProfile server + McpServerDefinition
 ```
 
 The token config path and token environment variable are person-named. Routine roles do not own identity tokens.
 
+Mattermost, Gitea, and Plane are bundled example MCP server definitions declared by the example tool profiles. Framework adopters can add different servers in their own `ToolProfile` entries without changing `McpClientFactory`.
+
 ## Required MCP Server Variables
 
-Start from [docs/local-agent-identities.env.example](/home/aphelio/Code/llm-share-camel-kafka/docs/local-agent-identities.env.example).
+Start from `docs/local-agent-identities.env.example`.
 
 Endpoint variables:
 
@@ -82,16 +84,20 @@ The global `OPENAI_API_KEY` remains a fallback when a lane-specific token is not
 The persona is the source of truth for external identity mappings:
 
 ```java
-.identity("gitea", "agent.identity.owen.gitea.token", "OWEN_GITEA_TOKEN", "owen-agent")
+@ConfigProperty(name = "agent.identity.owen.gitea.token", defaultValue = "")
+String giteaToken = "";
+
+// ...
+.identity("gitea", giteaToken, "owen-agent")
 ```
 
-The handle is a tool-facing hint. The mandatory values are the token config key and token environment variable.
+The handle is a tool-facing hint. The token is a concrete value supplied by the adopter's provider, usually from whatever config property or secret mapping that application chooses. Blank tokens skip that persona/server MCP client.
 
 ## Plane Header Behavior
 
 The Plane MCP client sends:
 
-- configured auth header containing the persona Plane token
+- configured auth header containing the persona Plane token. The application default is `Authorization: Bearer <token>`.
 - `x-workspace-slug: <PLANE_WORKSPACE_SLUG>` when configured
 
 ## MCP Logging

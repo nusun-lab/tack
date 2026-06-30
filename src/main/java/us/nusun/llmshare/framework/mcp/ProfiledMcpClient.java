@@ -24,17 +24,23 @@ public class ProfiledMcpClient implements McpClient {
     private final ToolProfile profile;
     private final Persona persona;
     private final LogTokens logTokens;
+    private final int globalMaxResultCharacters;
 
     public ProfiledMcpClient(McpClient delegate, String server, ToolProfile profile) {
-        this(delegate, server, profile, null, null);
+        this(delegate, server, profile, null, null, McpToolResultLimiter.DISABLED);
     }
 
     public ProfiledMcpClient(McpClient delegate, String server, ToolProfile profile, Persona persona, LogTokens logTokens) {
+        this(delegate, server, profile, persona, logTokens, McpToolResultLimiter.DISABLED);
+    }
+
+    public ProfiledMcpClient(McpClient delegate, String server, ToolProfile profile, Persona persona, LogTokens logTokens, int globalMaxResultCharacters) {
         this.delegate = delegate;
         this.server = server;
         this.profile = profile;
         this.persona = persona;
         this.logTokens = logTokens;
+        this.globalMaxResultCharacters = globalMaxResultCharacters;
     }
 
     @Override public String key() { return delegate.key(); }
@@ -95,15 +101,9 @@ public class ProfiledMcpClient implements McpClient {
     }
 
     private ToolExecutionResult limitResult(ToolExecutionResult result) {
-        int max = profile.maxResultCharacters();
-        String text = resultText(result);
-        if (max <= 0 || text == null || text.length() <= max) {
-            return result;
-        }
-        return ToolExecutionResult.builder()
-                .isError(result.isError())
-                .resultText(text.substring(0, Math.max(0, max - 15)) + "...(truncated)")
-                .build();
+        return McpToolResultLimiter.limit(
+                result,
+                McpToolResultLimiter.effectiveLimit(profile.maxResultCharacters(), globalMaxResultCharacters));
     }
 
     private void logDim(String message) {
@@ -121,11 +121,7 @@ public class ProfiledMcpClient implements McpClient {
     }
 
     private static String resultText(ToolExecutionResult result) {
-        try {
-            return result.resultText();
-        } catch (Exception ignored) {
-            return String.valueOf(result);
-        }
+        return McpToolResultLimiter.resultText(result);
     }
 
     private static String abbreviate(Object value) {

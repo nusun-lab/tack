@@ -36,6 +36,15 @@ public class ExecutionRuntimeRegistry {
                 throw new IllegalArgumentException("Duplicate inference lane id: " + lane.id());
             }
         }
+        LinkedHashMap<String, String> requestTopicOwners = new LinkedHashMap<>();
+        for (InferenceLaneDefinition lane : laneRows.values()) {
+            String previousLaneId = requestTopicOwners.putIfAbsent(lane.requestTopic(), lane.id());
+            if (previousLaneId != null) {
+                throw new IllegalArgumentException("Duplicate inference lane request topic '" + lane.requestTopic()
+                        + "' used by lanes '" + previousLaneId + "' and '" + lane.id()
+                        + "'. Each inference lane must use a unique request topic to avoid duplicate LLM execution.");
+            }
+        }
         LinkedHashMap<String, ExecutionRuntimeDefinition> runtimeRows = new LinkedHashMap<>();
         for (ExecutionRuntimeDefinition runtime : runtimes) {
             if (!laneRows.containsKey(runtime.laneId())) {
@@ -45,8 +54,8 @@ public class ExecutionRuntimeRegistry {
                 throw new IllegalArgumentException("Duplicate execution runtime id: " + runtime.id());
             }
         }
-        this.lanes = Map.copyOf(laneRows);
-        this.runtimes = Map.copyOf(runtimeRows);
+        this.lanes = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(laneRows));
+        this.runtimes = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(runtimeRows));
     }
 
     public ExecutionRuntimeDefinition getRequired(String id) {

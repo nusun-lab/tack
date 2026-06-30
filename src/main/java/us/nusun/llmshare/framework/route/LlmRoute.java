@@ -9,22 +9,22 @@ import org.apache.camel.ServiceStatus;
 import org.apache.camel.ValidationException;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.jackson.JacksonDataFormat;
+import org.apache.camel.component.kafka.KafkaConstants;
 import org.apache.camel.component.jsonvalidator.JsonValidationException;
 import org.apache.camel.component.langchain4j.agent.api.AiAgentBody;
 import us.nusun.llmshare.framework.inventory.PersonaCatalog;
 import us.nusun.llmshare.framework.llm.InFlightReplyManager;
+import us.nusun.llmshare.framework.llm.LlmDeadLetterFactory;
+import us.nusun.llmshare.framework.llm.LlmJobFactory;
+import us.nusun.llmshare.framework.model.ExecutionRuntimeDefinition;
+import us.nusun.llmshare.framework.inventory.ExecutionRuntimeRegistry;
+import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
 import us.nusun.llmshare.framework.model.LlmJobDeadLetter;
 import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.LlmJobRequest;
 import us.nusun.llmshare.framework.model.LlmJobResult;
-import us.nusun.llmshare.framework.model.Persona;
-import us.nusun.llmshare.framework.model.ExecutionRuntimeDefinition;
-import us.nusun.llmshare.framework.inventory.ExecutionRuntimeRegistry;
-import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
 
 import java.time.Instant;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.UUID;
 
 @ApplicationScoped
@@ -40,6 +40,8 @@ public class LlmRoute extends RouteBuilder {
     @Inject ExecutionRuntimeRegistry runtimes;
     @Inject PersonaCatalog personas;
     @Inject InFlightReplyManager inFlightReplyManager;
+    @Inject LlmJobFactory jobFactory;
+    @Inject LlmDeadLetterFactory deadLetterFactory;
 
     @Override
     public void configure() {
@@ -59,7 +61,8 @@ public class LlmRoute extends RouteBuilder {
                 .onWhen(exchangeProperty("llmQueueFailureHandling").isEqualTo(true))
                 .onFailureOnly()
                 .setProperty("llmFailureMessage", simple("${exception.message}"))
-                .log(LoggingLevel.WARN, "LLM queue failure: jobId=${exchangeProperty.llmJobId} laneId=${exchangeProperty.inferenceLane.id} runtimeId=${exchangeProperty.executionRuntimeId} agentName=${exchangeProperty.executionRuntime.agentName} model={{llm.openai.model:unknown}} reason=${exchangeProperty.llmFailureMessage}")
+                .setProperty("llmFailureContext", method(this, "contextSummary"))
+                .log(LoggingLevel.WARN, "LLM queue failure: ${exchangeProperty.llmFailureContext} reason=${exchangeProperty.llmFailureMessage}")
                 .bean("inFlightReplyManager", "discard(${exchangeProperty.llmJobId})")
                 .choice()
                     .when(exchangeProperty("llmJob").isNotNull())
@@ -74,8 +77,8 @@ public class LlmRoute extends RouteBuilder {
                 .log(LoggingLevel.INFO, "PROMPT ${body.prompt}")
                 .bean(this, "verifySelectedLlmRoutesAvailable")
                 .marshal(jacksonDataFormat(LlmJobEnvelope.class))
-                .setProperty("laneRequestKafkaUri", simple("kafka:${exchangeProperty.laneRequestTopic}?key=${exchangeProperty.llmJobId}"))
-                .recipientList(exchangeProperty("laneRequestKafkaUri"))
+                .setHeader(KafkaConstants.KEY, method(this, "requestKafkaKey"))
+                .toD("language:simple:kafka:${exchangeProperty.laneRequestTopic}")
                 .bean(this, "awaitLlmReply")
                 .log(LoggingLevel.INFO, "RESPONSE ${body.content}")
                 .choice()
@@ -104,7 +107,8 @@ public class LlmRoute extends RouteBuilder {
                 .setBody(method(this, "failedQueuedJobDeadLetter"))
                 .log(LoggingLevel.WARN, "Publishing failed LLM job to DLQ: jobId=${body.jobId} lane=${body.laneId} runtime=${body.runtimeId} reason=${body.failureMessage}")
                 .marshal(jacksonDataFormat(LlmJobDeadLetter.class))
-                .toD("kafka:{{llm.topic.dead-letter:llm.dead-letter}}?key=${exchangeProperty.llmJobId}");
+                .setHeader(KafkaConstants.KEY, method(this, "jobIdKafkaKey"))
+                .toD("kafka:{{llm.topic.dead-letter:llm.dead-letter}}");
 
         from("direct:call-llm-agent")
                 .routeId("call-llm-agent")
@@ -135,9 +139,10 @@ public class LlmRoute extends RouteBuilder {
         String requestTopic = lane.requestTopic();
         String replyTopic = lane.responseTopic();
         String routeSuffix = laneId.replaceAll("[^A-Za-z0-9_-]", "-");
+        String groupSuffix = routeSuffix.isBlank() ? "lane" : routeSuffix;
         from("kafka:" + requestTopic
-                + "?groupId={{llm.consumer.group}}-" + laneId
-                + "&consumersCount=1"
+                + "?groupId={{llm.consumer.group:llm-workers}}." + groupSuffix
+                + "&consumersCount=" + lane.parallelism()
                 + "&maxPollRecords=1"
                 + "&maxPollIntervalMs=900000"
                 + "&autoOffsetReset=earliest")
@@ -155,7 +160,8 @@ public class LlmRoute extends RouteBuilder {
                     .to("direct:build-failed-llm-result")
                 .end()
                 .marshal(jacksonDataFormat(LlmJobResult.class))
-                .toD("kafka:" + replyTopic + "?key=${exchangeProperty.llmJob.jobId}");
+                .setHeader(KafkaConstants.KEY, method(this, "jobIdKafkaKey"))
+                .to("kafka:" + replyTopic);
 
         from("kafka:" + replyTopic
                 + "?groupId={{llm.response.consumer.group}}-" + laneId
@@ -173,39 +179,12 @@ public class LlmRoute extends RouteBuilder {
     }
 
     public void prepareLlmJob(Exchange exchange) {
-        Object body = exchange.getIn().getBody();
-        UUID overrideJobId = exchange.getProperty("llmJobId", UUID.class);
-        UUID headerJobId = readJobId(exchange.getIn().getHeader("jobId", String.class));
-        UUID jobId = overrideJobId != null ? overrideJobId : headerJobId;
-        String runtimeId = firstNonBlank(
-                exchange.getIn().getHeader("executionRuntime", String.class),
-                exchange.getProperty("executionRuntimeId", String.class),
-                exchange.getContext().resolvePropertyPlaceholders("{{agent.framework.default-synthesis-runtime:synthesis-low}}"));
-
-        LlmJobRequest request = body instanceof LlmJobRequest existing
-                ? normalize(existing, jobId, runtimeId)
-                : LlmJobRequest.fromPrompt(
-                        jobId,
-                        runtimeId,
-                        exchange.getIn().getHeader("role", String.class),
-                        body == null ? null : body.toString(),
-                        exchange.getIn().getHeader("systemPrompt", String.class),
-                        exchange.getIn().getHeader("responseSchema", String.class))
-                        .normalized()
-                        .ensureJsonOnlyResponse();
-
-        ExecutionRuntimeDefinition runtime = runtimes.getRequired(request.requester());
-        InferenceLaneDefinition lane = runtimes.laneRequired(runtime.laneId());
-        request = withRouteMetadata(request, exchange, runtime, lane);
-        exchange.setProperty("executionRuntime", runtime);
-        exchange.setProperty("executionRuntimeId", runtime.id());
-        exchange.setProperty("inferenceLane", lane);
-        exchange.setProperty("laneRequestTopic", lane.requestTopic());
-        exchange.setProperty("laneReplyTopic", lane.responseTopic());
-        applyLogPersona(exchange, runtime.id());
-        exchange.setProperty("llmJobId", request.jobId());
-        exchange.setProperty("llmJob", LlmJobEnvelope.queued(request));
-        exchange.getIn().setBody(exchange.getProperty("llmJob", LlmJobEnvelope.class));
+        jobs().prepare(
+                exchange,
+                runtimes,
+                personas,
+                exchange.getContext().resolvePropertyPlaceholders("{{agent.framework.default-synthesis-runtime:synthesis-low}}"),
+                globalModelFallback(exchange));
     }
 
     public ExecutionRuntimeDefinition requiredRuntime(String runtimeId) {
@@ -234,16 +213,12 @@ public class LlmRoute extends RouteBuilder {
     public LlmJobResult succeededLlmResult(Exchange exchange) {
         LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
         Instant startedAt = exchange.getProperty("llmStartedAt", Instant.class);
-        String model = exchange.getContext().resolvePropertyPlaceholders("{{llm.openai.model}}");
         String rawResponse = exchange.getIn().getBody(String.class);
-        return LlmJobResult.succeeded(job, model, rawResponse, rawResponse, startedAt);
+        return LlmJobResult.succeeded(job, modelId(exchange), rawResponse, rawResponse, startedAt);
     }
 
     public LlmJobResult failedLlmResult(Exchange exchange) {
-        Exception failure = exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class);
-        LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
-        String message = failure == null ? "Unknown LLM worker failure" : failure.getMessage();
-        return LlmJobResult.failed(job, "unknown", message, null, Instant.now());
+        return deadLetters().failedLlmResult(exchange, globalModelFallback(exchange));
     }
 
     public LlmJobResult awaitLlmReply(Exchange exchange) throws Exception {
@@ -258,90 +233,28 @@ public class LlmRoute extends RouteBuilder {
     }
 
     public LlmJobDeadLetter failedQueuedJobDeadLetter(Exchange exchange) {
-        LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
-        if (job == null) {
-            throw new IllegalStateException("Cannot publish LLM DLQ entry without llmJob exchange property");
-        }
-        exchange.setProperty("llmJobId", job.jobId());
-        return new LlmJobDeadLetter(
-                job.jobId(),
-                firstNonBlank(exchange.getProperty("inferenceLane", String.class), metadataValue(job, "inferenceLane")),
-                firstNonBlank(exchange.getProperty("executionRuntimeId", String.class), metadataValue(job, "executionRuntime"), job.requester()),
-                job.requester(),
-                job.role(),
-                job.metadata() == null ? Map.of() : Map.copyOf(job.metadata()),
-                firstNonBlank(exchange.getProperty("llmFailureMessage", String.class), "Unknown LLM queue failure"),
-                Instant.now());
+        return deadLetters().failedQueuedJobDeadLetter(exchange, globalModelFallback(exchange));
     }
 
     public void restoreFrameworkMetadata(Exchange exchange) {
-        restoreFrameworkMetadata(exchange, exchange.getProperty("llmJob", LlmJobEnvelope.class));
+        jobs().restoreFrameworkMetadata(exchange);
     }
 
-    private void applyLogPersona(Exchange exchange, String fallbackLabel) {
-        String personaId = exchange.getProperty("personaId", String.class);
-        if (personaId == null || personaId.isBlank()) {
-            exchange.setProperty("agentLabel", fallbackLabel);
-            exchange.removeProperty("agentLogColor");
-            return;
-        }
-        Persona persona = personas.getRequired(personaId);
-        exchange.setProperty("agentLabel", firstNonBlank(persona.label(), persona.name(), fallbackLabel));
-        exchange.setProperty("agentLogColor", persona.color());
-    }
-
-    private LlmJobRequest withRouteMetadata(LlmJobRequest request, Exchange exchange, ExecutionRuntimeDefinition runtime, InferenceLaneDefinition lane) {
-        LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
-        if (request.metadata() != null) {
-            metadata.putAll(request.metadata());
-        }
-        putIfPresent(metadata, "executionRuntime", runtime.id());
-        putIfPresent(metadata, "inferenceLane", lane.id());
-        putIfPresent(metadata, "personaId", exchange.getProperty("personaId", String.class));
-        putIfPresent(metadata, "toolProfile", exchange.getProperty("toolProfile", String.class));
-        return new LlmJobRequest(request.jobId(), request.requester(), request.role(), request.priority(), request.prompt(), request.systemPrompt(), request.responseSchema(), Map.copyOf(metadata), request.requestedAt());
-    }
-
+    @SuppressWarnings("unused")
     private void restoreFrameworkMetadata(Exchange exchange, LlmJobEnvelope job) {
-        if (job == null || job.metadata() == null) {
-            return;
-        }
-        job.metadata().forEach((key, value) -> {
-            if (value != null) {
-                exchange.setProperty(key, String.valueOf(value));
-            }
-        });
-        putMetadataAlias(exchange, job, "executionRuntime", "executionRuntimeId");
-        putMetadataAlias(exchange, job, "primitive", "currentPrimitive");
-        putMetadataAlias(exchange, job, "primitiveId", "currentPrimitiveId");
+        jobs().restoreFrameworkMetadata(exchange, job);
     }
 
-    private static void putMetadataAlias(Exchange exchange, LlmJobEnvelope job, String from, String to) {
-        Object value = job.metadata().get(from);
-        if (value != null) {
-            exchange.setProperty(to, String.valueOf(value));
-        }
+    public String partitionKey(LlmJobRequest request, Exchange exchange, InferenceLaneDefinition lane) {
+        return jobs().partitionKey(request, exchange, lane);
     }
 
-    private static void putIfPresent(Map<String, Object> metadata, String key, String value) {
-        if (value != null && !value.isBlank()) {
-            metadata.put(key, value);
-        }
+    public String requestKafkaKey(Exchange exchange) {
+        return jobs().requestKafkaKey(exchange);
     }
 
-    private static LlmJobRequest normalize(LlmJobRequest request, UUID overrideJobId, String runtimeId) {
-        LlmJobRequest normalized = overrideJobId == null ? request : request.withJobId(overrideJobId);
-        if (normalized.requester() == null || normalized.requester().isBlank() || "anonymous".equals(normalized.requester())) {
-            normalized = new LlmJobRequest(normalized.jobId(), runtimeId, normalized.role(), normalized.priority(), normalized.prompt(), normalized.systemPrompt(), normalized.responseSchema(), normalized.metadata(), normalized.requestedAt());
-        }
-        return normalized.normalized().ensureJsonOnlyResponse();
-    }
-
-    private static UUID readJobId(String rawJobId) {
-        if (rawJobId == null || rawJobId.isBlank()) {
-            return null;
-        }
-        return UUID.fromString(rawJobId);
+    public UUID jobIdKafkaKey(Exchange exchange) {
+        return jobs().jobIdKafkaKey(exchange);
     }
 
     public boolean shouldApplyProviderSchema(Exchange exchange) {
@@ -368,7 +281,9 @@ public class LlmRoute extends RouteBuilder {
                     + " reason=missing inferenceLane exchange property");
         }
         String routeSuffix = lane.id().replaceAll("[^A-Za-z0-9_-]", "-");
-        verifyRouteStarted(exchange, "llm-worker-" + routeSuffix);
+        if (localWorkerRouteVerificationEnabled(exchange)) {
+            verifyRouteStarted(exchange, "llm-worker-" + routeSuffix);
+        }
         verifyRouteStarted(exchange, "llm-response-consumer-" + routeSuffix);
     }
 
@@ -380,24 +295,16 @@ public class LlmRoute extends RouteBuilder {
         }
     }
 
-    private String contextSummary(Exchange exchange) {
-        LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
-        ExecutionRuntimeDefinition runtime = exchange.getProperty("executionRuntime", ExecutionRuntimeDefinition.class);
-        InferenceLaneDefinition lane = exchange.getProperty("inferenceLane", InferenceLaneDefinition.class);
-        String model = resolveOptionalPlaceholder(exchange, "{{llm.openai.model:}}");
-        return "jobId=" + firstNonBlank(exchange.getProperty("llmJobId", String.class), job == null ? null : String.valueOf(job.jobId()))
-                + " laneId=" + firstNonBlank(lane == null ? null : lane.id(), metadataValue(job, "inferenceLane"))
-                + " runtimeId=" + firstNonBlank(exchange.getProperty("executionRuntimeId", String.class), runtime == null ? null : runtime.id(), job == null ? null : job.requester())
-                + " agentName=" + (runtime == null ? null : runtime.agentName())
-                + " model=" + firstNonBlank(model, "unknown");
+    public String contextSummary(Exchange exchange) {
+        return deadLetters().contextSummary(exchange, globalModelFallback(exchange));
     }
 
-    private static String metadataValue(LlmJobEnvelope job, String key) {
-        if (job == null || job.metadata() == null) {
-            return null;
-        }
-        Object value = job.metadata().get(key);
-        return value == null ? null : String.valueOf(value);
+    private String modelId(Exchange exchange) {
+        return deadLetters().modelId(exchange, globalModelFallback(exchange));
+    }
+
+    private boolean localWorkerRouteVerificationEnabled(Exchange exchange) {
+        return Boolean.parseBoolean(exchange.getContext().resolvePropertyPlaceholders("{{llm.local-worker-route-verification.enabled:true}}"));
     }
 
     private static String resolveOptionalPlaceholder(Exchange exchange, String placeholder) {
@@ -415,5 +322,23 @@ public class LlmRoute extends RouteBuilder {
             }
         }
         return null;
+    }
+
+    private String globalModelFallback(Exchange exchange) {
+        return resolveOptionalPlaceholder(exchange, "{{llm.openai.model:}}");
+    }
+
+    private LlmJobFactory jobs() {
+        if (jobFactory == null) {
+            jobFactory = new LlmJobFactory();
+        }
+        return jobFactory;
+    }
+
+    private LlmDeadLetterFactory deadLetters() {
+        if (deadLetterFactory == null) {
+            deadLetterFactory = new LlmDeadLetterFactory();
+        }
+        return deadLetterFactory;
     }
 }

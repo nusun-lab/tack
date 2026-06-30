@@ -14,6 +14,9 @@ import java.util.Map;
 @ApplicationScoped
 @Named("toolProfileCatalog")
 public class ToolProfileRegistry {
+    public static final String NONE_ID = "none";
+    public static final ToolProfile NONE = ToolProfile.builder(NONE_ID).build();
+
     private final Map<String, ToolProfile> profiles;
     private final CatalogJson json;
 
@@ -29,6 +32,9 @@ public class ToolProfileRegistry {
     public ToolProfileRegistry(List<ToolProfile> profiles, ObjectMapper objectMapper) {
         LinkedHashMap<String, ToolProfile> rows = new LinkedHashMap<>();
         for (ToolProfile profile : profiles) {
+            if (NONE_ID.equals(profile.id())) {
+                throw new IllegalArgumentException("Tool profile id 'none' is reserved by the framework");
+            }
             if (rows.put(profile.id(), profile) != null) {
                 throw new IllegalArgumentException("Duplicate tool profile id: " + profile.id());
             }
@@ -38,7 +44,10 @@ public class ToolProfileRegistry {
     }
 
     public ToolProfile getRequired(String id) {
-        String key = id == null || id.isBlank() ? "none" : id;
+        String key = id == null || id.isBlank() ? NONE_ID : id;
+        if (NONE_ID.equals(key)) {
+            return NONE;
+        }
         ToolProfile profile = profiles.get(key);
         if (profile == null) {
             throw new IllegalArgumentException("Unknown tool profile: " + key);

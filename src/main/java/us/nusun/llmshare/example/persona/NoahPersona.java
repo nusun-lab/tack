@@ -1,6 +1,7 @@
 package us.nusun.llmshare.example.persona;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import us.nusun.llmshare.framework.inventory.PersonaProvider;
 import us.nusun.llmshare.framework.model.Persona;
 
@@ -9,6 +10,15 @@ import java.util.List;
 @ApplicationScoped
 public class NoahPersona implements PersonaProvider {
     public static final String ID = "software-team/noah";
+
+    @ConfigProperty(name = "agent.identity.noah.mattermost.token", defaultValue = "")
+    String mattermostToken = "";
+
+    @ConfigProperty(name = "agent.identity.noah.gitea.token", defaultValue = "")
+    String giteaToken = "";
+
+    @ConfigProperty(name = "agent.identity.noah.plane.token", defaultValue = "")
+    String planeToken = "";
 
     @Override
     public List<Persona> personas() {
@@ -27,9 +37,9 @@ public class NoahPersona implements PersonaProvider {
                 .label("DIR")
                 .color("38;2;64;224;255")
                 .agentRunStartAssignable(false)
-                .identity("mattermost", "agent.identity.noah.mattermost.token", "NOAH_MATTERMOST_TOKEN", "@noah-agent")
-                .identity("gitea", "agent.identity.noah.gitea.token", "NOAH_GITEA_TOKEN", "noah-agent")
-                .identity("plane", "agent.identity.noah.plane.token", "NOAH_PLANE_TOKEN", "Noah")
+                .identity("mattermost", mattermostToken, "@noah-agent")
+                .identity("gitea", giteaToken, "noah-agent")
+                .identity("plane", planeToken, "Noah")
                 .build();
     }
 }

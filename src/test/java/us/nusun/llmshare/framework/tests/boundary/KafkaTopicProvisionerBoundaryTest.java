@@ -4,12 +4,16 @@ import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.common.errors.TopicExistsException;
 import org.junit.jupiter.api.Test;
+import us.nusun.llmshare.framework.inventory.ExecutionRuntimeRegistry;
 import us.nusun.llmshare.framework.llm.KafkaTopicProvisioner;
+import us.nusun.llmshare.framework.model.ExecutionRuntimeDefinition;
+import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 
@@ -53,15 +57,21 @@ class KafkaTopicProvisionerBoundaryTest {
     }
 
     @Test
-    void configuredTopicsApplyPartitionAndReplicationSettingsToEveryTopic() {
-        KafkaTopicProvisioner provisioner = provisioner(true);
-        FrameworkFixtures.set(provisioner, "partitions", 3);
+    void configuredTopicsUseLaneParallelismForRequestsAndSinglePartitionReplies() {
+        KafkaTopicProvisioner provisioner = provisioner(true, registryWithLowLaneParallelism(3));
+        FrameworkFixtures.set(provisioner, "partitions", 4);
         FrameworkFixtures.set(provisioner, "replicationFactor", (short) 2);
 
         List<NewTopic> topics = provisioner.configuredTopics();
+        Map<String, Integer> partitionsByTopic = topics.stream()
+                .collect(java.util.stream.Collectors.toMap(NewTopic::name, NewTopic::numPartitions));
 
         assertEquals(Set.copyOf(provisioner.configuredTopicNames()), Set.copyOf(topics.stream().map(NewTopic::name).toList()));
-        assertTrue(topics.stream().allMatch(topic -> topic.numPartitions() == 3));
+        assertEquals(3, partitionsByTopic.get("llm.requests.low"));
+        assertEquals(1, partitionsByTopic.get("llm.replies.low"));
+        assertEquals(1, partitionsByTopic.get("llm.requests.high"));
+        assertEquals(1, partitionsByTopic.get("llm.replies.high"));
+        assertEquals(4, partitionsByTopic.get("llm.dead-letter"));
         assertTrue(topics.stream().allMatch(topic -> topic.replicationFactor() == 2));
     }
 
@@ -120,6 +130,22 @@ class KafkaTopicProvisionerBoundaryTest {
     }
 
     @Test
+    void ensureTopicsFailsClearlyWhenExistingRequestTopicHasTooFewPartitions() {
+        TestableProvisioner provisioner = provisionerWithExistingTopics(
+                Set.of("llm.requests.low"),
+                registryWithLowLaneParallelism(3));
+        provisioner.existingPartitions = Map.of("llm.requests.low", 1);
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class, provisioner::ensureTopics);
+
+        assertTrue(failure.getMessage().contains("llm.requests.low"));
+        assertTrue(failure.getMessage().contains("has 1 partitions"));
+        assertTrue(failure.getMessage().contains("requires at least 3"));
+        assertEquals(List.of(), provisioner.createdTopicNames());
+        assertEquals(1, provisioner.closeCount);
+    }
+
+    @Test
     void ensureTopicsIgnoresTopicExistsRaceDuringCreate() throws Exception {
         TestableProvisioner provisioner = provisionerWithExistingTopics(Set.of());
         provisioner.createFailure = new ExecutionException(new TopicExistsException("topic already exists"));
@@ -146,8 +172,12 @@ class KafkaTopicProvisionerBoundaryTest {
     }
 
     private static KafkaTopicProvisioner provisioner(boolean enabled) {
+        return provisioner(enabled, FrameworkFixtures.executionRuntimeRegistry());
+    }
+
+    private static KafkaTopicProvisioner provisioner(boolean enabled, ExecutionRuntimeRegistry registry) {
         KafkaTopicProvisioner provisioner = new KafkaTopicProvisioner();
-        FrameworkFixtures.set(provisioner, "runtimes", FrameworkFixtures.executionRuntimeRegistry());
+        FrameworkFixtures.set(provisioner, "runtimes", registry);
         FrameworkFixtures.set(provisioner, "deadLetterTopic", "llm.dead-letter");
         FrameworkFixtures.set(provisioner, "bootstrapServers", "localhost:9092");
         FrameworkFixtures.set(provisioner, "provisionTopics", enabled);
@@ -157,8 +187,12 @@ class KafkaTopicProvisionerBoundaryTest {
     }
 
     private static TestableProvisioner provisionerWithExistingTopics(Set<String> existingTopics) {
+        return provisionerWithExistingTopics(existingTopics, FrameworkFixtures.executionRuntimeRegistry());
+    }
+
+    private static TestableProvisioner provisionerWithExistingTopics(Set<String> existingTopics, ExecutionRuntimeRegistry registry) {
         TestableProvisioner provisioner = new TestableProvisioner(existingTopics);
-        FrameworkFixtures.set(provisioner, "runtimes", FrameworkFixtures.executionRuntimeRegistry());
+        FrameworkFixtures.set(provisioner, "runtimes", registry);
         FrameworkFixtures.set(provisioner, "deadLetterTopic", "llm.dead-letter");
         FrameworkFixtures.set(provisioner, "bootstrapServers", "localhost:9092");
         FrameworkFixtures.set(provisioner, "provisionTopics", true);
@@ -167,9 +201,34 @@ class KafkaTopicProvisionerBoundaryTest {
         return provisioner;
     }
 
+    private static ExecutionRuntimeRegistry registryWithLowLaneParallelism(int parallelism) {
+        return new ExecutionRuntimeRegistry(
+                List.of(
+                        InferenceLaneDefinition.builder("low-pass")
+                                .requestTopic("llm.requests.low")
+                                .responseTopic("llm.replies.low")
+                                .parallelism(parallelism)
+                                .build(),
+                        InferenceLaneDefinition.builder("high-pass")
+                                .requestTopic("llm.requests.high")
+                                .responseTopic("llm.replies.high")
+                                .parallelism(1)
+                                .build()),
+                List.of(
+                        ExecutionRuntimeDefinition.builder("tool-low")
+                                .lane("low-pass")
+                                .agentFactoryBeanName("executionRuntimeAgentFactory")
+                                .build(),
+                        ExecutionRuntimeDefinition.builder("tool-high")
+                                .lane("high-pass")
+                                .agentFactoryBeanName("executionRuntimeAgentFactory")
+                                .build()));
+    }
+
     private static class TestableProvisioner extends KafkaTopicProvisioner {
         private final Set<String> existingTopics;
         private final List<NewTopic> createdTopics = new ArrayList<>();
+        private Map<String, Integer> existingPartitions = Map.of();
         private ExecutionException createFailure;
         private int closeCount;
 
@@ -194,6 +253,12 @@ class KafkaTopicProvisionerBoundaryTest {
         @Override
         protected Set<String> existingTopicNames(Admin adminClient) {
             return existingTopics;
+        }
+
+        @Override
+        protected Map<String, Integer> existingTopicPartitions(Admin adminClient, Set<String> topicNames) {
+            return topicNames.stream()
+                    .collect(java.util.stream.Collectors.toMap(topic -> topic, topic -> existingPartitions.getOrDefault(topic, 1)));
         }
 
         @Override

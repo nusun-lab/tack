@@ -30,7 +30,7 @@ public class ApiRoute extends RouteBuilder {
                 .to("direct:start-mission")
                 .removeHeaders("*")
                 .marshal().json(JsonLibrary.Jackson)
-                .setHeader(Exchange.HTTP_RESPONSE_CODE, constant(200))
+                .setHeader(Exchange.HTTP_RESPONSE_CODE, constant(202))
                 .setHeader(Exchange.CONTENT_TYPE, constant("application/json"));
 
         from("direct:perform-llm-reset")

@@ -5,12 +5,12 @@ import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.framework.logging.LogTokens;
 import us.nusun.llmshare.framework.mcp.AgentIdentityConfig;
 import us.nusun.llmshare.framework.mcp.McpClientFactory;
+import us.nusun.llmshare.framework.model.McpServerDefinition;
 import us.nusun.llmshare.framework.model.Persona;
 import us.nusun.llmshare.framework.model.ToolProfile;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 
 import java.util.List;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -25,36 +25,97 @@ class McpClientFactoryBoundaryTest {
 
     @Test
     void missingUrlOrTokenDisablesConfiguredServerClient() {
-        McpClientFactory factory = factory(config(null, "http://gitea.example", null));
+        McpClientFactory factory = factory(config());
         Persona persona = Persona.builder("persona")
                 .name("Persona")
-                .identity("plane", "test.mcp.plane.token.missing", "MISSING_TOKEN_ENV", "@persona")
-                .identity("gitea", "test.mcp.gitea.token.missing", "MISSING_TOKEN_ENV", "@persona")
+                .identity("plane", "", "@persona")
+                .identity("gitea", "", "@persona")
                 .build();
-        ToolProfile profile = ToolProfile.builder("tools").allowAllTools("plane").allowAllTools("gitea").build();
+        ToolProfile profile = ToolProfile.builder("tools")
+                .mcpServer(server("plane", null))
+                .mcpServer(server("gitea", "http://gitea.example"))
+                .allowAllTools("plane")
+                .allowAllTools("gitea")
+                .build();
 
         assertEquals(List.of(), factory.clientsFor(persona, profile));
     }
 
     @Test
     void createsOnlyAllowedServerClientsWithPerPersonaLazyKeys() {
-        System.setProperty("test.mcp.plane.token", "plane-secret");
-        try {
-            McpClientFactory factory = factory(config("http://plane.example/mcp", "http://gitea.example/mcp", "workspace-a"));
-            Persona persona = Persona.builder("persona-a")
-                    .name("Persona A")
-                    .identity("plane", "test.mcp.plane.token", "MISSING_TOKEN_ENV", "@miles-agent")
-                    .identity("gitea", "test.mcp.gitea.token.missing", "MISSING_TOKEN_ENV", "@miles-agent")
-                    .build();
-            ToolProfile profile = ToolProfile.builder("project-management").allowAllTools("plane").build();
+        McpClientFactory factory = factory(config());
+        Persona persona = Persona.builder("persona-a")
+                .name("Persona A")
+                .identity("plane", "plane-secret", "@miles-agent")
+                .identity("gitea", "", "@miles-agent")
+                .build();
+        ToolProfile profile = ToolProfile.builder("project-management")
+                .mcpServer(server("plane", "http://plane.example/mcp"))
+                .mcpServer(server("gitea", "http://gitea.example/mcp"))
+                .allowAllTools("plane")
+                .build();
 
-            List<McpClient> clients = factory.clientsFor(persona, profile);
+        List<McpClient> clients = factory.clientsFor(persona, profile);
 
-            assertEquals(1, clients.size());
-            assertEquals("plane:persona-a", clients.getFirst().key());
-        } finally {
-            System.clearProperty("test.mcp.plane.token");
-        }
+        assertEquals(1, clients.size());
+        assertEquals("plane:persona-a", clients.getFirst().key());
+    }
+
+    @Test
+    void factoryBuildsCustomServerDefinitionWithoutCodeChanges() {
+        McpClientFactory factory = factory(config());
+        Persona persona = Persona.builder("persona-a")
+                .name("Persona A")
+                .identity("custom", "custom-secret", "@custom-agent")
+                .build();
+        ToolProfile profile = ToolProfile.builder("custom-tools")
+                .mcpServer(McpServerDefinition.builder("custom")
+                        .url("http://custom.example/mcp")
+                        .authHeaderName("X-Token")
+                        .authHeaderValueFormat("Token %s")
+                        .build())
+                .allowAllTools("custom")
+                .build();
+
+        List<McpClient> clients = factory.clientsFor(persona, profile);
+
+        assertEquals(1, clients.size());
+        assertEquals("custom:persona-a", clients.getFirst().key());
+    }
+
+    @Test
+    void toolProfileFilteringStillWorksByServerId() {
+        McpClientFactory factory = factory(config());
+        Persona persona = Persona.builder("persona-a")
+                .name("Persona A")
+                .identity("plane", "plane-secret", "@plane-agent")
+                .identity("custom", "custom-secret", "@custom-agent")
+                .build();
+        ToolProfile profile = ToolProfile.builder("project-management")
+                .mcpServer(server("plane", "http://plane.example/mcp"))
+                .allowAllTools("plane")
+                .build();
+
+        List<McpClient> clients = factory.clientsFor(persona, profile);
+
+        assertEquals(List.of("plane:persona-a"), clients.stream().map(McpClient::key).toList());
+    }
+
+    @Test
+    void profileServerDefinitionUsesConcreteRuntimeUrl() {
+        ToolProfile profile = ToolProfile.builder("source-control")
+                .mcpServer(McpServerDefinition.builder("gitea")
+                        .url("http://gitea.example/mcp")
+                        .authHeaderValueFormat("token %s")
+                        .build())
+                .allowAllTools("gitea")
+                .build();
+
+        McpServerDefinition server = profile.mcpServers().get("gitea");
+
+        assertEquals("gitea", server.id());
+        assertEquals("http://gitea.example/mcp", server.url());
+        assertEquals("token %s", server.authHeaderValueFormat());
     }
 
     private static McpClientFactory factory(AgentIdentityConfig config) {
@@ -64,25 +125,23 @@ class McpClientFactoryBoundaryTest {
         return factory;
     }
 
-    private static AgentIdentityConfig config(String planeUrl, String giteaUrl, String workspaceSlug) {
+    private static McpServerDefinition server(String id, String url) {
+        return McpServerDefinition.builder(id).url(url == null ? "" : url).build();
+    }
+
+    private static AgentIdentityConfig config() {
         return () -> new TestMcpConfig(
                 new TestLoggingConfig(),
                 1000,
                 500,
-                1000,
-                new TestServiceConfig(null, "streamableHttp", Optional.empty(), Optional.empty()),
-                new TestServiceConfig(giteaUrl, "streamableHttp", Optional.empty(), Optional.empty()),
-                new TestPlaneConfig(planeUrl, "streamableHttp", Optional.empty(), Optional.empty(), Optional.ofNullable(workspaceSlug)));
+                1000);
     }
 
     record TestMcpConfig(
             Logging logging,
             long transportTimeoutMs,
             long initializationTimeoutMs,
-            int maxToolResultCharacters,
-            Service mattermost,
-            Service gitea,
-            PlaneService plane
+            int maxToolResultCharacters
     ) implements AgentIdentityConfig.Mcp {
     }
 
@@ -92,22 +151,4 @@ class McpClientFactoryBoundaryTest {
         @Override public boolean transportResponses() { return false; }
     }
 
-    record TestServiceConfig(
-            String urlValue,
-            String transportType,
-            Optional<String> authHeaderName,
-            Optional<String> authHeaderValueFormat
-    ) implements AgentIdentityConfig.Mcp.Service {
-        @Override public Optional<String> url() { return Optional.ofNullable(urlValue); }
-    }
-
-    record TestPlaneConfig(
-            String urlValue,
-            String transportType,
-            Optional<String> authHeaderName,
-            Optional<String> authHeaderValueFormat,
-            Optional<String> workspaceSlug
-    ) implements AgentIdentityConfig.Mcp.PlaneService {
-        @Override public Optional<String> url() { return Optional.ofNullable(urlValue); }
-    }
 }

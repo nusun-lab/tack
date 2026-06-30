@@ -1,6 +1,7 @@
 package us.nusun.llmshare.example.persona;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import us.nusun.llmshare.framework.inventory.PersonaProvider;
 import us.nusun.llmshare.framework.model.Persona;
 
@@ -9,6 +10,15 @@ import java.util.List;
 @ApplicationScoped
 public class MilesPersona implements PersonaProvider {
     public static final String ID = "software-team/miles";
+
+    @ConfigProperty(name = "agent.identity.miles.mattermost.token", defaultValue = "")
+    String mattermostToken = "";
+
+    @ConfigProperty(name = "agent.identity.miles.gitea.token", defaultValue = "")
+    String giteaToken = "";
+
+    @ConfigProperty(name = "agent.identity.miles.plane.token", defaultValue = "")
+    String planeToken = "";
 
     @Override
     public List<Persona> personas() {
@@ -27,9 +37,9 @@ public class MilesPersona implements PersonaProvider {
                 .trait("He is technical, test-oriented, direct, and prefers verified repository/tool state over assumptions.")
                 .label("DEV")
                 .color("38;2;106;169;255")
-                .identity("mattermost", "agent.identity.miles.mattermost.token", "MILES_MATTERMOST_TOKEN", "@miles-agent")
-                .identity("gitea", "agent.identity.miles.gitea.token", "MILES_GITEA_TOKEN", "miles-agent")
-                .identity("plane", "agent.identity.miles.plane.token", "MILES_PLANE_TOKEN", "Miles")
+                .identity("mattermost", mattermostToken, "@miles-agent")
+                .identity("gitea", giteaToken, "miles-agent")
+                .identity("plane", planeToken, "Miles")
                 .build();
     }
 }

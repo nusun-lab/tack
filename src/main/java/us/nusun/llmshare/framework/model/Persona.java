@@ -52,13 +52,13 @@ public record Persona(
             this.agentRunStartAssignable = agentRunStartAssignable;
             return this;
         }
-        public Builder identity(String platform, String tokenConfigKey, String tokenEnvVariable) {
-            this.identities.put(platform, new ExternalIdentity(platform, tokenConfigKey, tokenEnvVariable, null));
+        public Builder identity(String platform, String token) {
+            this.identities.put(platform, new ExternalIdentity(platform, token, null));
             return this;
         }
 
-        public Builder identity(String platform, String tokenConfigKey, String tokenEnvVariable, String handle) {
-            this.identities.put(platform, new ExternalIdentity(platform, tokenConfigKey, tokenEnvVariable, handle));
+        public Builder identity(String platform, String token, String handle) {
+            this.identities.put(platform, new ExternalIdentity(platform, token, handle));
             return this;
         }
 

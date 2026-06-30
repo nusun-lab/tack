@@ -6,7 +6,11 @@ import org.apache.camel.ProducerTemplate;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.support.DefaultExchange;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
 import us.nusun.llmshare.framework.inventory.RoutineCatalog;
 import us.nusun.llmshare.framework.model.AgentRunProjection;
 import us.nusun.llmshare.framework.model.CreateResult;
@@ -40,6 +44,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class AgentRunIsolationRouteTest {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String PARENT_PERSONA_ID = "test/parent-persona";
@@ -51,249 +56,33 @@ class AgentRunIsolationRouteTest {
     private static final String CHILD_THOUGHT = "Child-only thought must stay on the child run.";
     private static final String GRANDCHILD_THOUGHT = "Grandchild-only thought must stay on the grandchild run.";
 
-    @Test
-    void childSuccessDoesNotInheritParentState() throws Exception {
-        ProjectionStore store = FrameworkFixtures.projectionStore();
-        AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
-        RoutineDefinition childRoutine = childRoutine("test/child-routine", "direct:test-child-routine");
-        RoutineCatalog routines = routines(childRoutine);
+    private ProjectionStore store;
+    private AgentRunProjectionManager manager;
+    private DefaultCamelContext context;
+    private ProducerTemplate template;
+    private final List<LlmJobRequest> capturedRequests = new ArrayList<>();
+
+    @BeforeAll
+    void startContext() throws Exception {
+        store = FrameworkFixtures.projectionStore();
+        manager = FrameworkFixtures.projectionManager(store);
+        RoutineCatalog routines = routines(
+                childRoutine("test/child-routine", "direct:test-child-routine"),
+                childRoutine("test/failing-child-routine", "direct:test-failing-child-routine"),
+                childRoutine("test/setup-child-routine", "direct:test-setup-child-routine"),
+                childRoutine("test/invalid-body-child-routine", "direct:test-invalid-body-child-routine"),
+                childRoutine("test/prompt-child-routine", "direct:test-prompt-child-routine"),
+                childRoutine("test/nested-child-routine", "direct:test-nested-child-routine"),
+                childRoutine("test/nested-grandchild-routine", "direct:test-nested-grandchild-routine"),
+                childRoutine("test/nested-child-failure-routine", "direct:test-nested-child-failure-routine"),
+                childRoutine("test/nested-grandchild-failure-routine", "direct:test-nested-grandchild-failure-routine"),
+                childRoutine("test/nested-child-setup-failure-routine", "direct:test-nested-child-setup-failure-routine"),
+                childRoutine("test/nested-grandchild-setup-failure-routine", "direct:test-nested-grandchild-setup-failure-routine"),
+                childRoutine("test/nested-child-invalid-command-routine", "direct:test-nested-child-invalid-command-routine"),
+                childRoutine("test/nested-grandchild-invalid-command-routine", "direct:test-nested-grandchild-invalid-command-routine"));
         FrameworkFixtures.set(manager, "routines", routines);
         FrameworkFixtures.set(manager, "personas", personas());
 
-        MissionRoute missionRoute = missionRoute(manager, routines);
-        AgentRun parentRun = parentRun("run-parent");
-        Mission mission = mission();
-        StartAgentRunCommand childRequest = childRequest(childRoutine.id(), "Implement the first vertical slice.");
-
-        try (DefaultCamelContext context = TestCamelContexts.quiet()) {
-            FrameworkFixtures.bindCatalogBeans(context);
-            context.addRoutes(missionRoute);
-            context.addRoutes(new RouteBuilder() {
-                @Override
-                public void configure() {
-                    from("direct:test-child-routine")
-                            .process(exchange -> {
-                                exchange.setProperty("childRoutineObservedRunId", exchange.getProperty("agentRun", AgentRun.class).id());
-                                exchange.setProperty("childInheritedThoughtStack", exchange.getProperty("thoughtStack"));
-                                exchange.setProperty("childInheritedCreatePrompt", exchange.getProperty("createPrompt"));
-                                exchange.setProperty("childInheritedToolProfile", exchange.getProperty("toolProfile"));
-                                exchange.setProperty("childInheritedLatestCreateResult", exchange.getProperty("latestCreateResult"));
-                            });
-                }
-            });
-            context.start();
-            ProducerTemplate template = context.createProducerTemplate();
-
-            Exchange result = template.send("direct:start-agent-run", exchange -> {
-                seedParentState(exchange, manager, mission, parentRun);
-                exchange.getIn().setBody(childRequest);
-            });
-
-            Object parentTimeline = result.getProperty("expectedParentProjectionTimeline");
-            StartAgentRunResult childResult = result.getIn().getBody(StartAgentRunResult.class);
-            assertParentStateRestored(result, parentRun, parentTimeline);
-            assertNull(result.getProperty("createdAgentRun"));
-            assertNotNull(childResult);
-            assertNotEquals(parentRun.id(), childResult.agentRunId());
-            assertEquals(parentRun.id(), childResult.parentAgentRunId());
-            assertEquals(childResult.agentRunId(), result.getProperty("childRoutineObservedRunId"));
-            assertNull(result.getProperty("childInheritedThoughtStack"));
-            assertNull(result.getProperty("childInheritedCreatePrompt"));
-            assertNull(result.getProperty("childInheritedToolProfile"));
-            assertNull(result.getProperty("childInheritedLatestCreateResult"));
-
-            AgentRunProjection childProjection = store.get(childResult.agentRunId());
-            assertNotNull(childProjection);
-            assertEquals(CHILD_PERSONA_ID, childProjection.persona().get("id"));
-            assertEquals(parentRun.id(), childProjection.parentAgentRunId());
-            assertEquals(childRoutine.id(), childProjection.routine().get("id"));
-            assertEquals(List.of("AGENT_RUN_STARTED", "AGENT_RUN_COMPLETED"), events(childProjection));
-            assertFalse(projectionContains(childProjection, PARENT_THOUGHT));
-            assertFalse(projectionContains(childProjection, PARENT_CREATE_PROMPT));
-            assertFalse(events(childProjection).contains("PARENT_EVENT"));
-
-            manager.record(result, "PARENT_AFTER_CHILD");
-            AgentRunProjection parentProjection = store.get(parentRun.id());
-            assertEquals(List.of("PARENT_EVENT", "PARENT_AFTER_CHILD"), events(parentProjection));
-            assertNotEquals(parentProjection.agentRunId(), childProjection.agentRunId());
-        }
-    }
-
-    @Test
-    void childRoutineFailureRestoresParentStateAndRecordsFailureOnly() throws Exception {
-        ProjectionStore store = FrameworkFixtures.projectionStore();
-        AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
-        RoutineDefinition childRoutine = childRoutine("test/failing-child-routine", "direct:test-failing-child-routine");
-        RoutineCatalog routines = routines(childRoutine);
-        FrameworkFixtures.set(manager, "routines", routines);
-        FrameworkFixtures.set(manager, "personas", personas());
-
-        MissionRoute missionRoute = missionRoute(manager, routines);
-        AgentRun parentRun = parentRun("run-parent-failure");
-        Mission mission = mission();
-        StartAgentRunCommand childRequest = childRequest(childRoutine.id(), "Exercise failure isolation.");
-
-        try (DefaultCamelContext context = TestCamelContexts.quiet()) {
-            FrameworkFixtures.bindCatalogBeans(context);
-            context.addRoutes(missionRoute);
-            context.addRoutes(new RouteBuilder() {
-                @Override
-                public void configure() {
-                    errorHandler(noErrorHandler());
-                    from("direct:test-failing-child-routine")
-                            .process(exchange -> exchange.setProperty("childRoutineObservedRunId", exchange.getProperty("agentRun", AgentRun.class).id()))
-                            .throwException(new IllegalStateException("child route failed"));
-                }
-            });
-            context.start();
-            ProducerTemplate template = context.createProducerTemplate();
-            Exchange exchange = new DefaultExchange(context);
-            seedParentState(exchange, manager, mission, parentRun);
-            Object parentTimeline = exchange.getProperty("expectedParentProjectionTimeline");
-            exchange.getIn().setBody(childRequest);
-
-            template.send("direct:start-agent-run", exchange);
-
-            StartAgentRunResult childResult = exchange.getIn().getBody(StartAgentRunResult.class);
-            assertParentStateRestored(exchange, parentRun, parentTimeline);
-            assertNull(exchange.getProperty("createdAgentRun"));
-            assertNotNull(childResult);
-            assertEquals(parentRun.id(), childResult.parentAgentRunId());
-            assertEquals("failed", childResult.status());
-            assertEquals(childResult.agentRunId(), exchange.getProperty("childRoutineObservedRunId"));
-
-            AgentRunProjection childProjection = store.get(childResult.agentRunId());
-            assertNotNull(childProjection);
-            assertEquals(parentRun.id(), childProjection.parentAgentRunId());
-            assertEquals(List.of("AGENT_RUN_STARTED", "AGENT_RUN_FAILED"), events(childProjection));
-            assertFalse(events(childProjection).contains("AGENT_RUN_COMPLETED"));
-            assertFalse(events(childProjection).contains("PARENT_EVENT"));
-            assertFalse(projectionContains(childProjection, PARENT_THOUGHT));
-            assertFalse(projectionContains(childProjection, PARENT_CREATE_PROMPT));
-
-            manager.record(exchange, "PARENT_AFTER_CHILD_FAILURE");
-            AgentRunProjection parentProjection = store.get(parentRun.id());
-            assertEquals(List.of("PARENT_EVENT", "PARENT_AFTER_CHILD_FAILURE"), events(parentProjection));
-            assertFalse(events(parentProjection).contains("AGENT_RUN_FAILED"));
-            assertFalse(events(parentProjection).contains("AGENT_RUN_COMPLETED"));
-        }
-    }
-
-    @Test
-    void childSetupFailureRestoresParentStateAndLeavesNoActiveChildScope() throws Exception {
-        ProjectionStore store = FrameworkFixtures.projectionStore();
-        AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
-        RoutineDefinition childRoutine = childRoutine("test/setup-child-routine", "direct:test-setup-child-routine");
-        RoutineCatalog routines = routines(childRoutine);
-        FrameworkFixtures.set(manager, "routines", routines);
-        FrameworkFixtures.set(manager, "personas", personas());
-
-        MissionRoute missionRoute = missionRoute(manager, routines);
-        AgentRun parentRun = parentRun("run-parent-setup-failure");
-        Mission mission = mission();
-        StartAgentRunCommand invalidChildRequest = new StartAgentRunCommand(
-                "mission-1",
-                "missing/persona",
-                childRoutine.id(),
-                null,
-                "Invalid persona should fail before child route invocation.",
-                Map.of());
-
-        try (DefaultCamelContext context = TestCamelContexts.quiet()) {
-            FrameworkFixtures.bindCatalogBeans(context);
-            context.addRoutes(missionRoute);
-            context.addRoutes(new RouteBuilder() {
-                @Override
-                public void configure() {
-                    from("direct:test-setup-child-routine")
-                            .process(exchange -> exchange.setProperty("childRoutineInvoked", true));
-                }
-            });
-            context.start();
-            ProducerTemplate template = context.createProducerTemplate();
-            Exchange exchange = new DefaultExchange(context);
-            seedParentState(exchange, manager, mission, parentRun);
-            Object parentTimeline = exchange.getProperty("expectedParentProjectionTimeline");
-            exchange.getIn().setBody(invalidChildRequest);
-
-            try {
-                template.send("direct:start-agent-run", exchange);
-            } catch (Exception ignored) {
-                // State restoration is the contract under test; the setup error may propagate.
-            }
-
-            assertParentStateRestored(exchange, parentRun, parentTimeline);
-            assertNull(exchange.getProperty("createdAgentRun"));
-            assertNull(exchange.getProperty("childRoutineInvoked"));
-            assertFalse(exchange.getProperties().containsKey("childAgentRunSetupComplete"));
-            assertFalse(exchange.getProperties().containsKey("childAgentRunFailure"));
-            assertFalse(exchange.getProperties().containsKey("agentRunExchangeScopeStack"));
-            assertEquals(List.of("PARENT_EVENT"), events(store.get(parentRun.id())));
-            assertEquals(1, store.all().size());
-        }
-    }
-
-    @Test
-    void invalidCommandBodySetupFailureDoesNotFailParentRun() throws Exception {
-        ProjectionStore store = FrameworkFixtures.projectionStore();
-        AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
-        RoutineDefinition childRoutine = childRoutine("test/invalid-body-child-routine", "direct:test-invalid-body-child-routine");
-        RoutineCatalog routines = routines(childRoutine);
-        FrameworkFixtures.set(manager, "routines", routines);
-        FrameworkFixtures.set(manager, "personas", personas());
-
-        MissionRoute missionRoute = missionRoute(manager, routines);
-        AgentRun parentRun = parentRun("run-parent-invalid-body");
-        Mission mission = mission();
-
-        try (DefaultCamelContext context = TestCamelContexts.quiet()) {
-            FrameworkFixtures.bindCatalogBeans(context);
-            context.addRoutes(missionRoute);
-            context.addRoutes(new RouteBuilder() {
-                @Override
-                public void configure() {
-                    from("direct:test-invalid-body-child-routine")
-                            .process(exchange -> exchange.setProperty("invalidBodyChildInvoked", true));
-                }
-            });
-            context.start();
-            ProducerTemplate template = context.createProducerTemplate();
-            Exchange exchange = new DefaultExchange(context);
-            seedParentState(exchange, manager, mission, parentRun);
-            Object parentTimeline = exchange.getProperty("expectedParentProjectionTimeline");
-            exchange.getIn().setBody("not a StartAgentRunCommand");
-
-            try {
-                template.send("direct:start-agent-run", exchange);
-            } catch (Exception ignored) {
-                // The invalid command may propagate; isolation is the contract under test.
-            }
-
-            assertParentStateRestored(exchange, parentRun, parentTimeline);
-            assertEquals("active", parentRun.status());
-            assertNull(exchange.getProperty("createdAgentRun"));
-            assertNull(exchange.getProperty("invalidBodyChildInvoked"));
-            assertFalse(exchange.getProperties().containsKey("agentRunExchangeScopeStack"));
-            assertFalse(exchange.getProperties().containsKey("childAgentRunSetupComplete"));
-            assertFalse(exchange.getProperties().containsKey("childAgentRunFailure"));
-
-            AgentRunProjection parentProjection = store.get(parentRun.id());
-            assertEquals(List.of("PARENT_EVENT"), events(parentProjection));
-            assertFalse(events(parentProjection).contains("AGENT_RUN_FAILED"));
-            assertEquals(1, store.all().size());
-        }
-    }
-
-    @Test
-    void childPromptAndProjectionDoNotSeeParentThought() throws Exception {
-        ProjectionStore store = FrameworkFixtures.projectionStore();
-        AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
-        RoutineDefinition childRoutine = childRoutine("test/prompt-child-routine", "direct:test-prompt-child-routine");
-        RoutineCatalog routines = routines(childRoutine);
-        FrameworkFixtures.set(manager, "routines", routines);
-        FrameworkFixtures.set(manager, "personas", personas());
-
-        MissionRoute missionRoute = missionRoute(manager, routines);
         PrimitiveSupport primitiveSupport = FrameworkFixtures.primitiveSupport();
         FrameworkFixtures.set(primitiveSupport, "personas", personas());
         FrameworkFixtures.set(primitiveSupport, "routines", routines);
@@ -301,398 +90,455 @@ class AgentRunIsolationRouteTest {
         PrimitiveRoute primitiveRoute = new PrimitiveRoute();
         FrameworkFixtures.set(primitiveRoute, "primitive", primitiveSupport);
 
+        context = TestCamelContexts.quiet();
+        FrameworkFixtures.bindCatalogBeans(context);
+        context.addRoutes(missionRoute(manager, routines));
+        context.addRoutes(primitiveRoute);
+        context.addRoutes(testRoutes());
+        context.start();
+        template = context.createProducerTemplate();
+    }
+
+    @BeforeEach
+    void resetState() {
+        store.clear();
+        capturedRequests.clear();
+    }
+
+    @AfterAll
+    void stopContext() throws Exception {
+        if (template != null) {
+            template.close();
+        }
+        if (context != null) {
+            context.close();
+        }
+    }
+
+    @Test
+    void childSuccessDoesNotInheritParentState() {
+        AgentRun parentRun = parentRun("run-parent");
+        Exchange result = sendChild(parentRun, childRequest("test/child-routine", "Implement the first vertical slice."));
+
+        Object parentTimeline = result.getProperty("expectedParentProjectionTimeline");
+        StartAgentRunResult childResult = result.getIn().getBody(StartAgentRunResult.class);
+        assertParentStateRestored(result, parentRun, parentTimeline);
+        assertNull(result.getProperty("createdAgentRun"));
+        assertNotNull(childResult);
+        assertNotEquals(parentRun.id(), childResult.agentRunId());
+        assertEquals(parentRun.id(), childResult.parentAgentRunId());
+        assertEquals(childResult.agentRunId(), result.getProperty("childRoutineObservedRunId"));
+        assertNull(result.getProperty("childInheritedThoughtStack"));
+        assertNull(result.getProperty("childInheritedCreatePrompt"));
+        assertNull(result.getProperty("childInheritedToolProfile"));
+        assertNull(result.getProperty("childInheritedLatestCreateResult"));
+
+        AgentRunProjection childProjection = store.get(childResult.agentRunId());
+        assertNotNull(childProjection);
+        assertEquals(CHILD_PERSONA_ID, childProjection.persona().get("id"));
+        assertEquals(parentRun.id(), childProjection.parentAgentRunId());
+        assertEquals("test/child-routine", childProjection.routine().get("id"));
+        assertEquals(List.of("AGENT_RUN_STARTED", "AGENT_RUN_COMPLETED"), events(childProjection));
+        assertFalse(projectionContains(childProjection, PARENT_THOUGHT));
+        assertFalse(projectionContains(childProjection, PARENT_CREATE_PROMPT));
+        assertFalse(events(childProjection).contains("PARENT_EVENT"));
+
+        manager.record(result, "PARENT_AFTER_CHILD");
+        AgentRunProjection parentProjection = store.get(parentRun.id());
+        assertEquals(List.of("PARENT_EVENT", "PARENT_AFTER_CHILD"), events(parentProjection));
+        assertNotEquals(parentProjection.agentRunId(), childProjection.agentRunId());
+    }
+
+    @Test
+    void childRoutineFailureRestoresParentStateAndRecordsFailureOnly() {
+        AgentRun parentRun = parentRun("run-parent-failure");
+        Exchange exchange = sendChild(parentRun, childRequest("test/failing-child-routine", "Exercise failure isolation."));
+
+        Object parentTimeline = exchange.getProperty("expectedParentProjectionTimeline");
+        StartAgentRunResult childResult = exchange.getIn().getBody(StartAgentRunResult.class);
+        assertParentStateRestored(exchange, parentRun, parentTimeline);
+        assertNull(exchange.getProperty("createdAgentRun"));
+        assertNotNull(childResult);
+        assertEquals(parentRun.id(), childResult.parentAgentRunId());
+        assertEquals("failed", childResult.status());
+        assertEquals(childResult.agentRunId(), exchange.getProperty("childRoutineObservedRunId"));
+
+        AgentRunProjection childProjection = store.get(childResult.agentRunId());
+        assertNotNull(childProjection);
+        assertEquals(parentRun.id(), childProjection.parentAgentRunId());
+        assertEquals(List.of("AGENT_RUN_STARTED", "AGENT_RUN_FAILED"), events(childProjection));
+        assertFalse(events(childProjection).contains("AGENT_RUN_COMPLETED"));
+        assertFalse(events(childProjection).contains("PARENT_EVENT"));
+        assertFalse(projectionContains(childProjection, PARENT_THOUGHT));
+        assertFalse(projectionContains(childProjection, PARENT_CREATE_PROMPT));
+
+        manager.record(exchange, "PARENT_AFTER_CHILD_FAILURE");
+        AgentRunProjection parentProjection = store.get(parentRun.id());
+        assertEquals(List.of("PARENT_EVENT", "PARENT_AFTER_CHILD_FAILURE"), events(parentProjection));
+        assertFalse(events(parentProjection).contains("AGENT_RUN_FAILED"));
+        assertFalse(events(parentProjection).contains("AGENT_RUN_COMPLETED"));
+    }
+
+    @Test
+    void childSetupFailureRestoresParentStateAndLeavesNoActiveChildScope() {
+        AgentRun parentRun = parentRun("run-parent-setup-failure");
+        StartAgentRunCommand invalidChildRequest = new StartAgentRunCommand(
+                "mission-1",
+                "missing/persona",
+                "test/setup-child-routine",
+                null,
+                "Invalid persona should fail before child route invocation.",
+                Map.of());
+        Exchange exchange = preparedExchange(parentRun, invalidChildRequest);
+
+        try {
+            template.send("direct:start-agent-run", exchange);
+        } catch (Exception ignored) {
+            // State restoration is the contract under test; the setup error may propagate.
+        }
+
+        assertParentStateRestored(exchange, parentRun, exchange.getProperty("expectedParentProjectionTimeline"));
+        assertNull(exchange.getProperty("createdAgentRun"));
+        assertNull(exchange.getProperty("childRoutineInvoked"));
+        assertFalse(exchange.getProperties().containsKey("childAgentRunSetupComplete"));
+        assertFalse(exchange.getProperties().containsKey("childAgentRunFailure"));
+        assertFalse(exchange.getProperties().containsKey("agentRunExchangeScopeStack"));
+        assertEquals(List.of("PARENT_EVENT"), events(store.get(parentRun.id())));
+        assertEquals(1, store.all().size());
+    }
+
+    @Test
+    void invalidCommandBodySetupFailureDoesNotFailParentRun() {
+        AgentRun parentRun = parentRun("run-parent-invalid-body");
+        Exchange exchange = preparedExchange(parentRun, "not a StartAgentRunCommand");
+
+        try {
+            template.send("direct:start-agent-run", exchange);
+        } catch (Exception ignored) {
+            // The invalid command may propagate; isolation is the contract under test.
+        }
+
+        assertParentStateRestored(exchange, parentRun, exchange.getProperty("expectedParentProjectionTimeline"));
+        assertEquals("active", parentRun.status());
+        assertNull(exchange.getProperty("createdAgentRun"));
+        assertNull(exchange.getProperty("invalidBodyChildInvoked"));
+        assertFalse(exchange.getProperties().containsKey("agentRunExchangeScopeStack"));
+        assertFalse(exchange.getProperties().containsKey("childAgentRunSetupComplete"));
+        assertFalse(exchange.getProperties().containsKey("childAgentRunFailure"));
+
+        AgentRunProjection parentProjection = store.get(parentRun.id());
+        assertEquals(List.of("PARENT_EVENT"), events(parentProjection));
+        assertFalse(events(parentProjection).contains("AGENT_RUN_FAILED"));
+        assertEquals(1, store.all().size());
+    }
+
+    @Test
+    void childPromptAndProjectionDoNotSeeParentThought() {
         AgentRun parentRun = parentRun("run-parent-prompt");
-        Mission mission = mission();
-        StartAgentRunCommand childRequest = childRequest(childRoutine.id(), "Capture child create prompt.");
-        List<LlmJobRequest> capturedRequests = new ArrayList<>();
+        Exchange exchange = sendChild(parentRun, childRequest("test/prompt-child-routine", "Capture child create prompt."));
 
-        try (DefaultCamelContext context = TestCamelContexts.quiet()) {
-            FrameworkFixtures.bindCatalogBeans(context);
-            context.addRoutes(missionRoute);
-            context.addRoutes(primitiveRoute);
-            context.addRoutes(new RouteBuilder() {
-                @Override
-                public void configure() {
-                    from("direct:test-prompt-child-routine")
-                            .process(exchange -> {
-                                ThoughtStack childStack = new ThoughtStack();
-                                childStack.push(new ThoughtFrame("child-thought", "Child context", 200, "Child-only thought content."));
-                                exchange.setProperty("thoughtStack", childStack);
-                                exchange.setProperty("createId", "child-create");
-                                exchange.setProperty("createPrompt", "Child create prompt.");
-                                exchange.setProperty("createSchemaJson", "{\"type\":\"object\"}");
-                            })
-                            .to("direct:create");
+        Object parentTimeline = exchange.getProperty("expectedParentProjectionTimeline");
+        StartAgentRunResult childResult = exchange.getIn().getBody(StartAgentRunResult.class);
+        assertParentStateRestored(exchange, parentRun, parentTimeline);
+        assertNull(exchange.getProperty("createdAgentRun"));
+        assertNotNull(childResult);
+        assertEquals(1, capturedRequests.size());
+        String prompt = capturedRequests.getFirst().prompt();
+        assertFalse(prompt.contains(PARENT_THOUGHT));
+        assertFalse(prompt.contains(PARENT_CREATE_PROMPT));
+        assertFalse(prompt.contains("Parent-only"));
+        assertFalse(prompt.contains("Parent create"));
+        assertFalse(prompt.contains("Available personas"));
+        assertFalse(prompt.contains("Available routines"));
+        assertTrue(prompt.contains("Child create prompt."));
+        assertTrue(prompt.contains("Child-only thought content."));
 
-                    from("direct:llm")
-                            .process(exchange -> {
-                                LlmJobRequest request = exchange.getIn().getBody(LlmJobRequest.class);
-                                capturedRequests.add(request);
-                                exchange.getIn().setBody(FrameworkFixtures.llmResult(request.requester(), "{}"));
-                            });
-                }
-            });
-            context.start();
-            ProducerTemplate template = context.createProducerTemplate();
-            Exchange exchange = new DefaultExchange(context);
-            seedParentState(exchange, manager, mission, parentRun);
-            Object parentTimeline = exchange.getProperty("expectedParentProjectionTimeline");
-            exchange.getIn().setBody(childRequest);
-
-            template.send("direct:start-agent-run", exchange);
-
-            StartAgentRunResult childResult = exchange.getIn().getBody(StartAgentRunResult.class);
-            assertParentStateRestored(exchange, parentRun, parentTimeline);
-            assertNull(exchange.getProperty("createdAgentRun"));
-            assertNotNull(childResult);
-            assertEquals(1, capturedRequests.size());
-            String prompt = capturedRequests.getFirst().prompt();
-            assertFalse(prompt.contains(PARENT_THOUGHT));
-            assertFalse(prompt.contains(PARENT_CREATE_PROMPT));
-            assertFalse(prompt.contains("Parent-only"));
-            assertFalse(prompt.contains("Parent create"));
-            assertFalse(prompt.contains("Available personas"));
-            assertFalse(prompt.contains("Available routines"));
-            assertTrue(prompt.contains("Child create prompt."));
-            assertTrue(prompt.contains("Child-only thought content."));
-
-            AgentRunProjection childProjection = store.get(childResult.agentRunId());
-            assertNotNull(childProjection);
-            assertFalse(projectionContains(childProjection, PARENT_THOUGHT));
-            assertFalse(projectionContains(childProjection, PARENT_CREATE_PROMPT));
-            assertEquals(List.of("AGENT_RUN_STARTED", "CREATE_STARTED", "SYNTHESIS_PASS_QUEUED", "SYNTHESIS_PASS_COMPLETED", "CREATE_COMPLETED", "AGENT_RUN_COMPLETED"), events(childProjection));
-        }
+        AgentRunProjection childProjection = store.get(childResult.agentRunId());
+        assertNotNull(childProjection);
+        assertFalse(projectionContains(childProjection, PARENT_THOUGHT));
+        assertFalse(projectionContains(childProjection, PARENT_CREATE_PROMPT));
+        assertEquals(List.of("AGENT_RUN_STARTED", "CREATE_STARTED", "SYNTHESIS_PASS_QUEUED", "SYNTHESIS_PASS_COMPLETED", "CREATE_COMPLETED", "AGENT_RUN_COMPLETED"), events(childProjection));
     }
 
     @Test
-    void nestedChildAndGrandchildSuccessRestoreEachScope() throws Exception {
-        ProjectionStore store = FrameworkFixtures.projectionStore();
-        AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
-        RoutineDefinition childRoutine = childRoutine("test/nested-child-routine", "direct:test-nested-child-routine");
-        RoutineDefinition grandchildRoutine = childRoutine("test/nested-grandchild-routine", "direct:test-nested-grandchild-routine");
-        RoutineCatalog routines = routines(childRoutine, grandchildRoutine);
-        FrameworkFixtures.set(manager, "routines", routines);
-        FrameworkFixtures.set(manager, "personas", personas());
-
-        MissionRoute missionRoute = missionRoute(manager, routines);
+    void nestedChildAndGrandchildSuccessRestoreEachScope() {
         AgentRun parentRun = parentRun("run-parent-nested");
-        Mission mission = mission();
-        StartAgentRunCommand childRequest = childRequest(childRoutine.id(), "Start nested child.");
+        Exchange exchange = sendChild(parentRun, childRequest("test/nested-child-routine", "Start nested child."));
 
-        try (DefaultCamelContext context = TestCamelContexts.quiet()) {
-            FrameworkFixtures.bindCatalogBeans(context);
-            context.addRoutes(missionRoute);
-            context.addRoutes(new RouteBuilder() {
-                @Override
-                public void configure() {
-                    from("direct:test-nested-child-routine")
-                            .process(exchange -> {
-                                AgentRun childRun = exchange.getProperty("agentRun", AgentRun.class);
-                                exchange.setProperty("observedChildRunId", childRun.id());
-                                exchange.setProperty("observedChildProjectionTimeline", exchange.getProperty("projectionTimeline"));
-                                seedChildState(exchange, "child-create-prompt");
-                                manager.record(exchange, "CHILD_EVENT");
-                                exchange.getIn().setBody(new StartAgentRunCommand(
-                                        "mission-1",
-                                        GRANDCHILD_PERSONA_ID,
-                                        grandchildRoutine.id(),
-                                        null,
-                                        "Start nested grandchild.",
-                                        Map.of()));
-                            })
-                            .to("direct:start-agent-run")
-                            .process(exchange -> {
-                                StartAgentRunResult grandchild = exchange.getIn().getBody(StartAgentRunResult.class);
-                                exchange.setProperty("observedGrandchildRunId", grandchild.agentRunId());
-                                assertEquals("complete", grandchild.status());
-                                assertChildStateRestored(exchange, "child-create-prompt");
-                                assertSame(exchange.getProperty("observedChildProjectionTimeline"), exchange.getProperty("projectionTimeline"));
-                                manager.record(exchange, "CHILD_AFTER_GRANDCHILD");
-                            });
+        Object parentTimeline = exchange.getProperty("expectedParentProjectionTimeline");
+        StartAgentRunResult childResult = exchange.getIn().getBody(StartAgentRunResult.class);
+        assertParentStateRestored(exchange, parentRun, parentTimeline);
+        assertNull(exchange.getProperty("createdAgentRun"));
+        assertEquals("complete", childResult.status());
+        assertEquals(childResult.agentRunId(), exchange.getProperty("observedChildRunId"));
+        assertNull(exchange.getProperty("grandchildInheritedThoughtStack"));
+        assertNull(exchange.getProperty("grandchildInheritedActPrompt"));
+        assertNull(exchange.getProperty("grandchildInheritedDecisionPrompt"));
+        assertNull(exchange.getProperty("grandchildInheritedCreatePrompt"));
+        assertFalse(exchange.getProperties().containsKey("agentRunExchangeScopeStack"));
 
-                    from("direct:test-nested-grandchild-routine")
-                            .process(exchange -> {
-                                exchange.setProperty("grandchildInheritedThoughtStack", exchange.getProperty("thoughtStack"));
-                                exchange.setProperty("grandchildInheritedActPrompt", exchange.getProperty("actPrompt"));
-                                exchange.setProperty("grandchildInheritedDecisionPrompt", exchange.getProperty("decisionPrompt"));
-                                exchange.setProperty("grandchildInheritedCreatePrompt", exchange.getProperty("createPrompt"));
-                                ThoughtStack grandchildStack = new ThoughtStack();
-                                grandchildStack.push(new ThoughtFrame("grandchild", "Grandchild context", 200, GRANDCHILD_THOUGHT));
-                                exchange.setProperty("thoughtStack", grandchildStack);
-                                manager.record(exchange, "GRANDCHILD_EVENT");
-                            });
-                }
-            });
-            context.start();
-            ProducerTemplate template = context.createProducerTemplate();
-            Exchange exchange = new DefaultExchange(context);
-            seedParentState(exchange, manager, mission, parentRun);
-            Object parentTimeline = exchange.getProperty("expectedParentProjectionTimeline");
-            exchange.getIn().setBody(childRequest);
-
-            template.send("direct:start-agent-run", exchange);
-
-            StartAgentRunResult childResult = exchange.getIn().getBody(StartAgentRunResult.class);
-            assertParentStateRestored(exchange, parentRun, parentTimeline);
-            assertNull(exchange.getProperty("createdAgentRun"));
-            assertEquals("complete", childResult.status());
-            assertEquals(childResult.agentRunId(), exchange.getProperty("observedChildRunId"));
-            assertNull(exchange.getProperty("grandchildInheritedThoughtStack"));
-            assertNull(exchange.getProperty("grandchildInheritedActPrompt"));
-            assertNull(exchange.getProperty("grandchildInheritedDecisionPrompt"));
-            assertNull(exchange.getProperty("grandchildInheritedCreatePrompt"));
-            assertFalse(exchange.getProperties().containsKey("agentRunExchangeScopeStack"));
-
-            AgentRunProjection parentProjection = store.get(parentRun.id());
-            AgentRunProjection childProjection = store.get(childResult.agentRunId());
-            AgentRunProjection grandchildProjection = store.get(exchange.getProperty("observedGrandchildRunId", String.class));
-            assertNotNull(parentProjection);
-            assertNotNull(childProjection);
-            assertNotNull(grandchildProjection);
-            assertNotEquals(parentProjection.agentRunId(), childProjection.agentRunId());
-            assertNotEquals(childProjection.agentRunId(), grandchildProjection.agentRunId());
-            assertEquals(List.of("PARENT_EVENT"), events(parentProjection));
-            assertEquals(List.of("AGENT_RUN_STARTED", "CHILD_EVENT", "CHILD_AFTER_GRANDCHILD", "AGENT_RUN_COMPLETED"), events(childProjection));
-            assertEquals(List.of("AGENT_RUN_STARTED", "GRANDCHILD_EVENT", "AGENT_RUN_COMPLETED"), events(grandchildProjection));
-            assertFalse(projectionContains(grandchildProjection, PARENT_THOUGHT));
-            assertFalse(projectionContains(grandchildProjection, CHILD_THOUGHT));
-            assertFalse(projectionContains(childProjection, PARENT_THOUGHT));
-            assertFalse(projectionContains(childProjection, GRANDCHILD_THOUGHT));
-        }
+        AgentRunProjection parentProjection = store.get(parentRun.id());
+        AgentRunProjection childProjection = store.get(childResult.agentRunId());
+        AgentRunProjection grandchildProjection = store.get(exchange.getProperty("observedGrandchildRunId", String.class));
+        assertNotNull(parentProjection);
+        assertNotNull(childProjection);
+        assertNotNull(grandchildProjection);
+        assertNotEquals(parentProjection.agentRunId(), childProjection.agentRunId());
+        assertNotEquals(childProjection.agentRunId(), grandchildProjection.agentRunId());
+        assertEquals(List.of("PARENT_EVENT"), events(parentProjection));
+        assertEquals(List.of("AGENT_RUN_STARTED", "CHILD_EVENT", "CHILD_AFTER_GRANDCHILD", "AGENT_RUN_COMPLETED"), events(childProjection));
+        assertEquals(List.of("AGENT_RUN_STARTED", "GRANDCHILD_EVENT", "AGENT_RUN_COMPLETED"), events(grandchildProjection));
+        assertFalse(projectionContains(grandchildProjection, PARENT_THOUGHT));
+        assertFalse(projectionContains(grandchildProjection, CHILD_THOUGHT));
+        assertFalse(projectionContains(childProjection, PARENT_THOUGHT));
+        assertFalse(projectionContains(childProjection, GRANDCHILD_THOUGHT));
     }
 
     @Test
-    void nestedGrandchildRoutineFailureRestoresChildAndParentScopes() throws Exception {
-        ProjectionStore store = FrameworkFixtures.projectionStore();
-        AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
-        RoutineDefinition childRoutine = childRoutine("test/nested-child-failure-routine", "direct:test-nested-child-failure-routine");
-        RoutineDefinition grandchildRoutine = childRoutine("test/nested-grandchild-failure-routine", "direct:test-nested-grandchild-failure-routine");
-        RoutineCatalog routines = routines(childRoutine, grandchildRoutine);
-        FrameworkFixtures.set(manager, "routines", routines);
-        FrameworkFixtures.set(manager, "personas", personas());
-
-        MissionRoute missionRoute = missionRoute(manager, routines);
+    void nestedGrandchildRoutineFailureRestoresChildAndParentScopes() {
         AgentRun parentRun = parentRun("run-parent-nested-failure");
-        Mission mission = mission();
-        StartAgentRunCommand childRequest = childRequest(childRoutine.id(), "Start nested child with failing grandchild.");
+        Exchange exchange = sendChild(parentRun, childRequest("test/nested-child-failure-routine", "Start nested child with failing grandchild."));
 
-        try (DefaultCamelContext context = TestCamelContexts.quiet()) {
-            FrameworkFixtures.bindCatalogBeans(context);
-            context.addRoutes(missionRoute);
-            context.addRoutes(new RouteBuilder() {
-                @Override
-                public void configure() {
-                    errorHandler(noErrorHandler());
-                    from("direct:test-nested-child-failure-routine")
-                            .process(exchange -> {
-                                exchange.setProperty("observedChildRunId", exchange.getProperty("agentRun", AgentRun.class).id());
-                                exchange.setProperty("observedChildProjectionTimeline", exchange.getProperty("projectionTimeline"));
-                                seedChildState(exchange, "child-failure-create-prompt");
-                                manager.record(exchange, "CHILD_EVENT");
-                                exchange.getIn().setBody(new StartAgentRunCommand(
-                                        "mission-1",
-                                        GRANDCHILD_PERSONA_ID,
-                                        grandchildRoutine.id(),
-                                        null,
-                                        "Start failing grandchild.",
-                                        Map.of()));
-                            })
-                            .to("direct:start-agent-run")
-                            .process(exchange -> {
-                                StartAgentRunResult grandchild = exchange.getIn().getBody(StartAgentRunResult.class);
-                                exchange.setProperty("observedGrandchildRunId", grandchild.agentRunId());
-                                assertEquals("failed", grandchild.status());
-                                assertChildStateRestored(exchange, "child-failure-create-prompt");
-                                assertSame(exchange.getProperty("observedChildProjectionTimeline"), exchange.getProperty("projectionTimeline"));
-                                manager.record(exchange, "CHILD_AFTER_GRANDCHILD_FAILURE");
-                            });
+        StartAgentRunResult childResult = exchange.getIn().getBody(StartAgentRunResult.class);
+        assertParentStateRestored(exchange, parentRun, exchange.getProperty("expectedParentProjectionTimeline"));
+        assertNull(exchange.getProperty("createdAgentRun"));
+        assertEquals("complete", childResult.status());
+        assertFalse(exchange.getProperties().containsKey("agentRunExchangeScopeStack"));
 
-                    from("direct:test-nested-grandchild-failure-routine")
-                            .process(exchange -> {
-                                ThoughtStack grandchildStack = new ThoughtStack();
-                                grandchildStack.push(new ThoughtFrame("grandchild", "Grandchild context", 200, GRANDCHILD_THOUGHT));
-                                exchange.setProperty("thoughtStack", grandchildStack);
-                                manager.record(exchange, "GRANDCHILD_EVENT");
-                            })
-                            .throwException(new IllegalStateException("grandchild route failed"));
-                }
-            });
-            context.start();
-            ProducerTemplate template = context.createProducerTemplate();
-            Exchange exchange = new DefaultExchange(context);
-            seedParentState(exchange, manager, mission, parentRun);
-            Object parentTimeline = exchange.getProperty("expectedParentProjectionTimeline");
-            exchange.getIn().setBody(childRequest);
-
-            template.send("direct:start-agent-run", exchange);
-
-            StartAgentRunResult childResult = exchange.getIn().getBody(StartAgentRunResult.class);
-            assertParentStateRestored(exchange, parentRun, parentTimeline);
-            assertNull(exchange.getProperty("createdAgentRun"));
-            assertEquals("complete", childResult.status());
-            assertFalse(exchange.getProperties().containsKey("agentRunExchangeScopeStack"));
-
-            AgentRunProjection parentProjection = store.get(parentRun.id());
-            AgentRunProjection childProjection = store.get(childResult.agentRunId());
-            AgentRunProjection grandchildProjection = store.get(exchange.getProperty("observedGrandchildRunId", String.class));
-            assertEquals(List.of("PARENT_EVENT"), events(parentProjection));
-            assertEquals(List.of("AGENT_RUN_STARTED", "CHILD_EVENT", "CHILD_AFTER_GRANDCHILD_FAILURE", "AGENT_RUN_COMPLETED"), events(childProjection));
-            assertEquals(List.of("AGENT_RUN_STARTED", "GRANDCHILD_EVENT", "AGENT_RUN_FAILED"), events(grandchildProjection));
-            assertFalse(events(grandchildProjection).contains("AGENT_RUN_COMPLETED"));
-            assertFalse(projectionContains(childProjection, GRANDCHILD_THOUGHT));
-            assertFalse(projectionContains(parentProjection, CHILD_THOUGHT));
-            assertFalse(projectionContains(parentProjection, GRANDCHILD_THOUGHT));
-        }
+        AgentRunProjection parentProjection = store.get(parentRun.id());
+        AgentRunProjection childProjection = store.get(childResult.agentRunId());
+        AgentRunProjection grandchildProjection = store.get(exchange.getProperty("observedGrandchildRunId", String.class));
+        assertEquals(List.of("PARENT_EVENT"), events(parentProjection));
+        assertEquals(List.of("AGENT_RUN_STARTED", "CHILD_EVENT", "CHILD_AFTER_GRANDCHILD_FAILURE", "AGENT_RUN_COMPLETED"), events(childProjection));
+        assertEquals(List.of("AGENT_RUN_STARTED", "GRANDCHILD_EVENT", "AGENT_RUN_FAILED"), events(grandchildProjection));
+        assertFalse(events(grandchildProjection).contains("AGENT_RUN_COMPLETED"));
+        assertFalse(projectionContains(childProjection, GRANDCHILD_THOUGHT));
+        assertFalse(projectionContains(parentProjection, CHILD_THOUGHT));
+        assertFalse(projectionContains(parentProjection, GRANDCHILD_THOUGHT));
     }
 
     @Test
-    void nestedGrandchildSetupFailureRestoresChildAndParentScopes() throws Exception {
-        ProjectionStore store = FrameworkFixtures.projectionStore();
-        AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
-        RoutineDefinition childRoutine = childRoutine("test/nested-child-setup-failure-routine", "direct:test-nested-child-setup-failure-routine");
-        RoutineDefinition grandchildRoutine = childRoutine("test/nested-grandchild-setup-failure-routine", "direct:test-nested-grandchild-setup-failure-routine");
-        RoutineCatalog routines = routines(childRoutine, grandchildRoutine);
-        FrameworkFixtures.set(manager, "routines", routines);
-        FrameworkFixtures.set(manager, "personas", personas());
-
-        MissionRoute missionRoute = missionRoute(manager, routines);
+    void nestedGrandchildSetupFailureRestoresChildAndParentScopes() {
         AgentRun parentRun = parentRun("run-parent-nested-setup-failure");
-        Mission mission = mission();
-        StartAgentRunCommand childRequest = childRequest(childRoutine.id(), "Start nested child with setup-failing grandchild.");
+        Exchange exchange = sendChild(parentRun, childRequest("test/nested-child-setup-failure-routine", "Start nested child with setup-failing grandchild."));
 
-        try (DefaultCamelContext context = TestCamelContexts.quiet()) {
-            FrameworkFixtures.bindCatalogBeans(context);
-            context.addRoutes(missionRoute);
-            context.addRoutes(new RouteBuilder() {
-                @Override
-                public void configure() {
-                    from("direct:test-nested-child-setup-failure-routine")
-                            .process(exchange -> {
-                                exchange.setProperty("observedChildRunId", exchange.getProperty("agentRun", AgentRun.class).id());
-                                exchange.setProperty("observedChildProjectionTimeline", exchange.getProperty("projectionTimeline"));
-                                seedChildState(exchange, "child-setup-failure-create-prompt");
-                                manager.record(exchange, "CHILD_EVENT");
-                                exchange.getIn().setBody(new StartAgentRunCommand(
-                                        "mission-1",
-                                        "missing/grandchild-persona",
-                                        grandchildRoutine.id(),
-                                        null,
-                                        "Grandchild setup must fail before route invocation.",
-                                        Map.of()));
-                            })
-                            .doTry()
-                                .to("direct:start-agent-run")
-                            .doCatch(Exception.class)
-                                .process(exchange -> {
-                                    exchange.setProperty("grandchildSetupFailureCaught", true);
-                                    assertChildStateRestored(exchange, "child-setup-failure-create-prompt");
-                                    assertSame(exchange.getProperty("observedChildProjectionTimeline"), exchange.getProperty("projectionTimeline"));
-                                    assertEquals(exchange.getProperty("observedChildRunId"), exchange.getProperty("createdAgentRun", AgentRun.class).id());
-                                    assertNull(exchange.getProperty("grandchildRouteInvoked"));
-                                    manager.record(exchange, "CHILD_AFTER_GRANDCHILD_SETUP_FAILURE");
-                                })
-                            .end();
+        StartAgentRunResult childResult = exchange.getIn().getBody(StartAgentRunResult.class);
+        assertParentStateRestored(exchange, parentRun, exchange.getProperty("expectedParentProjectionTimeline"));
+        assertNull(exchange.getProperty("createdAgentRun"));
+        assertEquals("complete", childResult.status());
+        assertEquals(Boolean.TRUE, exchange.getProperty("grandchildSetupFailureCaught"));
+        assertFalse(exchange.getProperties().containsKey("agentRunExchangeScopeStack"));
+        assertNull(exchange.getProperty("grandchildRouteInvoked"));
 
-                    from("direct:test-nested-grandchild-setup-failure-routine")
-                            .process(exchange -> exchange.setProperty("grandchildRouteInvoked", true));
-                }
-            });
-            context.start();
-            ProducerTemplate template = context.createProducerTemplate();
-            Exchange exchange = new DefaultExchange(context);
-            seedParentState(exchange, manager, mission, parentRun);
-            Object parentTimeline = exchange.getProperty("expectedParentProjectionTimeline");
-            exchange.getIn().setBody(childRequest);
-
-            template.send("direct:start-agent-run", exchange);
-
-            StartAgentRunResult childResult = exchange.getIn().getBody(StartAgentRunResult.class);
-            assertParentStateRestored(exchange, parentRun, parentTimeline);
-            assertNull(exchange.getProperty("createdAgentRun"));
-            assertEquals("complete", childResult.status());
-            assertEquals(Boolean.TRUE, exchange.getProperty("grandchildSetupFailureCaught"));
-            assertFalse(exchange.getProperties().containsKey("agentRunExchangeScopeStack"));
-            assertNull(exchange.getProperty("grandchildRouteInvoked"));
-
-            AgentRunProjection parentProjection = store.get(parentRun.id());
-            AgentRunProjection childProjection = store.get(childResult.agentRunId());
-            assertEquals(List.of("PARENT_EVENT"), events(parentProjection));
-            assertEquals(List.of("AGENT_RUN_STARTED", "CHILD_EVENT", "CHILD_AFTER_GRANDCHILD_SETUP_FAILURE", "AGENT_RUN_COMPLETED"), events(childProjection));
-            assertEquals(2, store.all().size());
-        }
+        AgentRunProjection parentProjection = store.get(parentRun.id());
+        AgentRunProjection childProjection = store.get(childResult.agentRunId());
+        assertEquals(List.of("PARENT_EVENT"), events(parentProjection));
+        assertEquals(List.of("AGENT_RUN_STARTED", "CHILD_EVENT", "CHILD_AFTER_GRANDCHILD_SETUP_FAILURE", "AGENT_RUN_COMPLETED"), events(childProjection));
+        assertEquals(2, store.all().size());
     }
 
     @Test
-    void nestedInvalidGrandchildCommandRestoresChildAndParentScopes() throws Exception {
-        ProjectionStore store = FrameworkFixtures.projectionStore();
-        AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
-        RoutineDefinition childRoutine = childRoutine("test/nested-child-invalid-command-routine", "direct:test-nested-child-invalid-command-routine");
-        RoutineDefinition grandchildRoutine = childRoutine("test/nested-grandchild-invalid-command-routine", "direct:test-nested-grandchild-invalid-command-routine");
-        RoutineCatalog routines = routines(childRoutine, grandchildRoutine);
-        FrameworkFixtures.set(manager, "routines", routines);
-        FrameworkFixtures.set(manager, "personas", personas());
-
-        MissionRoute missionRoute = missionRoute(manager, routines);
+    void nestedInvalidGrandchildCommandRestoresChildAndParentScopes() {
         AgentRun parentRun = parentRun("run-parent-nested-invalid-command");
-        Mission mission = mission();
-        StartAgentRunCommand childRequest = childRequest(childRoutine.id(), "Start nested child with invalid grandchild command.");
+        Exchange exchange = sendChild(parentRun, childRequest("test/nested-child-invalid-command-routine", "Start nested child with invalid grandchild command."));
 
-        try (DefaultCamelContext context = TestCamelContexts.quiet()) {
-            FrameworkFixtures.bindCatalogBeans(context);
-            context.addRoutes(missionRoute);
-            context.addRoutes(new RouteBuilder() {
-                @Override
-                public void configure() {
-                    from("direct:test-nested-child-invalid-command-routine")
+        StartAgentRunResult childResult = exchange.getIn().getBody(StartAgentRunResult.class);
+        assertParentStateRestored(exchange, parentRun, exchange.getProperty("expectedParentProjectionTimeline"));
+        assertNull(exchange.getProperty("createdAgentRun"));
+        assertEquals("complete", childResult.status());
+        assertEquals(Boolean.TRUE, exchange.getProperty("grandchildInvalidCommandCaught"));
+        assertFalse(exchange.getProperties().containsKey("agentRunExchangeScopeStack"));
+        assertNull(exchange.getProperty("grandchildInvalidCommandRouteInvoked"));
+
+        AgentRunProjection parentProjection = store.get(parentRun.id());
+        AgentRunProjection childProjection = store.get(childResult.agentRunId());
+        assertEquals(List.of("PARENT_EVENT"), events(parentProjection));
+        assertEquals(List.of("AGENT_RUN_STARTED", "CHILD_EVENT", "CHILD_AFTER_GRANDCHILD_INVALID_COMMAND", "AGENT_RUN_COMPLETED"), events(childProjection));
+        assertFalse(events(parentProjection).contains("AGENT_RUN_FAILED"));
+        assertFalse(events(childProjection).contains("AGENT_RUN_FAILED"));
+        assertEquals(2, store.all().size());
+    }
+
+    private Exchange sendChild(AgentRun parentRun, StartAgentRunCommand command) {
+        Exchange exchange = preparedExchange(parentRun, command);
+        return template.send("direct:start-agent-run", exchange);
+    }
+
+    private Exchange preparedExchange(AgentRun parentRun, Object body) {
+        Exchange exchange = new DefaultExchange(context);
+        seedParentState(exchange, manager, mission(), parentRun);
+        exchange.getIn().setBody(body);
+        return exchange;
+    }
+
+    private RouteBuilder testRoutes() {
+        return new RouteBuilder() {
+            @Override
+            public void configure() {
+                errorHandler(noErrorHandler());
+
+                from("direct:test-child-routine")
+                        .process(exchange -> {
+                            exchange.setProperty("childRoutineObservedRunId", exchange.getProperty("agentRun", AgentRun.class).id());
+                            exchange.setProperty("childInheritedThoughtStack", exchange.getProperty("thoughtStack"));
+                            exchange.setProperty("childInheritedCreatePrompt", exchange.getProperty("createPrompt"));
+                            exchange.setProperty("childInheritedToolProfile", exchange.getProperty("toolProfile"));
+                            exchange.setProperty("childInheritedLatestCreateResult", exchange.getProperty("latestCreateResult"));
+                        });
+
+                from("direct:test-failing-child-routine")
+                        .process(exchange -> exchange.setProperty("childRoutineObservedRunId", exchange.getProperty("agentRun", AgentRun.class).id()))
+                        .throwException(new IllegalStateException("child route failed"));
+
+                from("direct:test-setup-child-routine")
+                        .process(exchange -> exchange.setProperty("childRoutineInvoked", true));
+
+                from("direct:test-invalid-body-child-routine")
+                        .process(exchange -> exchange.setProperty("invalidBodyChildInvoked", true));
+
+                from("direct:test-prompt-child-routine")
+                        .process(exchange -> {
+                            ThoughtStack childStack = new ThoughtStack();
+                            childStack.push(new ThoughtFrame("child-thought", "Child context", 200, "Child-only thought content."));
+                            exchange.setProperty("thoughtStack", childStack);
+                            exchange.setProperty("createId", "child-create");
+                            exchange.setProperty("createPrompt", "Child create prompt.");
+                            exchange.setProperty("createSchemaJson", "{\"type\":\"object\"}");
+                        })
+                        .to("direct:create");
+
+                from("direct:llm")
+                        .process(exchange -> {
+                            LlmJobRequest request = exchange.getIn().getBody(LlmJobRequest.class);
+                            capturedRequests.add(request);
+                            exchange.getIn().setBody(FrameworkFixtures.llmResult(request.requester(), "{}"));
+                        });
+
+                from("direct:test-nested-child-routine")
+                        .process(exchange -> {
+                            AgentRun childRun = exchange.getProperty("agentRun", AgentRun.class);
+                            exchange.setProperty("observedChildRunId", childRun.id());
+                            exchange.setProperty("observedChildProjectionTimeline", exchange.getProperty("projectionTimeline"));
+                            seedChildState(exchange, "child-create-prompt");
+                            manager.record(exchange, "CHILD_EVENT");
+                            exchange.getIn().setBody(new StartAgentRunCommand(
+                                    "mission-1",
+                                    GRANDCHILD_PERSONA_ID,
+                                    "test/nested-grandchild-routine",
+                                    null,
+                                    "Start nested grandchild.",
+                                    Map.of()));
+                        })
+                        .to("direct:start-agent-run")
+                        .process(exchange -> {
+                            StartAgentRunResult grandchild = exchange.getIn().getBody(StartAgentRunResult.class);
+                            exchange.setProperty("observedGrandchildRunId", grandchild.agentRunId());
+                            assertEquals("complete", grandchild.status());
+                            assertChildStateRestored(exchange, "child-create-prompt");
+                            assertSame(exchange.getProperty("observedChildProjectionTimeline"), exchange.getProperty("projectionTimeline"));
+                            manager.record(exchange, "CHILD_AFTER_GRANDCHILD");
+                        });
+
+                from("direct:test-nested-grandchild-routine")
+                        .process(exchange -> {
+                            exchange.setProperty("grandchildInheritedThoughtStack", exchange.getProperty("thoughtStack"));
+                            exchange.setProperty("grandchildInheritedActPrompt", exchange.getProperty("actPrompt"));
+                            exchange.setProperty("grandchildInheritedDecisionPrompt", exchange.getProperty("decisionPrompt"));
+                            exchange.setProperty("grandchildInheritedCreatePrompt", exchange.getProperty("createPrompt"));
+                            ThoughtStack grandchildStack = new ThoughtStack();
+                            grandchildStack.push(new ThoughtFrame("grandchild", "Grandchild context", 200, GRANDCHILD_THOUGHT));
+                            exchange.setProperty("thoughtStack", grandchildStack);
+                            manager.record(exchange, "GRANDCHILD_EVENT");
+                        });
+
+                from("direct:test-nested-child-failure-routine")
+                        .process(exchange -> {
+                            exchange.setProperty("observedChildRunId", exchange.getProperty("agentRun", AgentRun.class).id());
+                            exchange.setProperty("observedChildProjectionTimeline", exchange.getProperty("projectionTimeline"));
+                            seedChildState(exchange, "child-failure-create-prompt");
+                            manager.record(exchange, "CHILD_EVENT");
+                            exchange.getIn().setBody(new StartAgentRunCommand(
+                                    "mission-1",
+                                    GRANDCHILD_PERSONA_ID,
+                                    "test/nested-grandchild-failure-routine",
+                                    null,
+                                    "Start failing grandchild.",
+                                    Map.of()));
+                        })
+                        .to("direct:start-agent-run")
+                        .process(exchange -> {
+                            StartAgentRunResult grandchild = exchange.getIn().getBody(StartAgentRunResult.class);
+                            exchange.setProperty("observedGrandchildRunId", grandchild.agentRunId());
+                            assertEquals("failed", grandchild.status());
+                            assertChildStateRestored(exchange, "child-failure-create-prompt");
+                            assertSame(exchange.getProperty("observedChildProjectionTimeline"), exchange.getProperty("projectionTimeline"));
+                            manager.record(exchange, "CHILD_AFTER_GRANDCHILD_FAILURE");
+                        });
+
+                from("direct:test-nested-grandchild-failure-routine")
+                        .process(exchange -> {
+                            ThoughtStack grandchildStack = new ThoughtStack();
+                            grandchildStack.push(new ThoughtFrame("grandchild", "Grandchild context", 200, GRANDCHILD_THOUGHT));
+                            exchange.setProperty("thoughtStack", grandchildStack);
+                            manager.record(exchange, "GRANDCHILD_EVENT");
+                        })
+                        .throwException(new IllegalStateException("grandchild route failed"));
+
+                from("direct:test-nested-child-setup-failure-routine")
+                        .process(exchange -> {
+                            exchange.setProperty("observedChildRunId", exchange.getProperty("agentRun", AgentRun.class).id());
+                            exchange.setProperty("observedChildProjectionTimeline", exchange.getProperty("projectionTimeline"));
+                            seedChildState(exchange, "child-setup-failure-create-prompt");
+                            manager.record(exchange, "CHILD_EVENT");
+                            exchange.getIn().setBody(new StartAgentRunCommand(
+                                    "mission-1",
+                                    "missing/grandchild-persona",
+                                    "test/nested-grandchild-setup-failure-routine",
+                                    null,
+                                    "Grandchild setup must fail before route invocation.",
+                                    Map.of()));
+                        })
+                        .doTry()
+                            .to("direct:start-agent-run")
+                        .doCatch(Exception.class)
                             .process(exchange -> {
-                                exchange.setProperty("observedChildRunId", exchange.getProperty("agentRun", AgentRun.class).id());
-                                exchange.setProperty("observedChildProjectionTimeline", exchange.getProperty("projectionTimeline"));
-                                seedChildState(exchange, "child-invalid-command-create-prompt");
-                                manager.record(exchange, "CHILD_EVENT");
-                                exchange.getIn().setBody("not a grandchild StartAgentRunCommand");
+                                exchange.setProperty("grandchildSetupFailureCaught", true);
+                                assertChildStateRestored(exchange, "child-setup-failure-create-prompt");
+                                assertSame(exchange.getProperty("observedChildProjectionTimeline"), exchange.getProperty("projectionTimeline"));
+                                assertEquals(exchange.getProperty("observedChildRunId"), exchange.getProperty("createdAgentRun", AgentRun.class).id());
+                                assertNull(exchange.getProperty("grandchildRouteInvoked"));
+                                manager.record(exchange, "CHILD_AFTER_GRANDCHILD_SETUP_FAILURE");
                             })
-                            .doTry()
-                                .to("direct:start-agent-run")
-                            .doCatch(Exception.class)
-                                .process(exchange -> {
-                                    exchange.setProperty("grandchildInvalidCommandCaught", true);
-                                    assertChildStateRestored(exchange, "child-invalid-command-create-prompt");
-                                    assertSame(exchange.getProperty("observedChildProjectionTimeline"), exchange.getProperty("projectionTimeline"));
-                                    assertEquals(exchange.getProperty("observedChildRunId"), exchange.getProperty("createdAgentRun", AgentRun.class).id());
-                                    assertNull(exchange.getProperty("grandchildInvalidCommandRouteInvoked"));
-                                    manager.record(exchange, "CHILD_AFTER_GRANDCHILD_INVALID_COMMAND");
-                                })
-                            .end();
+                        .end();
 
-                    from("direct:test-nested-grandchild-invalid-command-routine")
-                            .process(exchange -> exchange.setProperty("grandchildInvalidCommandRouteInvoked", true));
-                }
-            });
-            context.start();
-            ProducerTemplate template = context.createProducerTemplate();
-            Exchange exchange = new DefaultExchange(context);
-            seedParentState(exchange, manager, mission, parentRun);
-            Object parentTimeline = exchange.getProperty("expectedParentProjectionTimeline");
-            exchange.getIn().setBody(childRequest);
+                from("direct:test-nested-grandchild-setup-failure-routine")
+                        .process(exchange -> exchange.setProperty("grandchildRouteInvoked", true));
 
-            template.send("direct:start-agent-run", exchange);
+                from("direct:test-nested-child-invalid-command-routine")
+                        .process(exchange -> {
+                            exchange.setProperty("observedChildRunId", exchange.getProperty("agentRun", AgentRun.class).id());
+                            exchange.setProperty("observedChildProjectionTimeline", exchange.getProperty("projectionTimeline"));
+                            seedChildState(exchange, "child-invalid-command-create-prompt");
+                            manager.record(exchange, "CHILD_EVENT");
+                            exchange.getIn().setBody("not a grandchild StartAgentRunCommand");
+                        })
+                        .doTry()
+                            .to("direct:start-agent-run")
+                        .doCatch(Exception.class)
+                            .process(exchange -> {
+                                exchange.setProperty("grandchildInvalidCommandCaught", true);
+                                assertChildStateRestored(exchange, "child-invalid-command-create-prompt");
+                                assertSame(exchange.getProperty("observedChildProjectionTimeline"), exchange.getProperty("projectionTimeline"));
+                                assertEquals(exchange.getProperty("observedChildRunId"), exchange.getProperty("createdAgentRun", AgentRun.class).id());
+                                assertNull(exchange.getProperty("grandchildInvalidCommandRouteInvoked"));
+                                manager.record(exchange, "CHILD_AFTER_GRANDCHILD_INVALID_COMMAND");
+                            })
+                        .end();
 
-            StartAgentRunResult childResult = exchange.getIn().getBody(StartAgentRunResult.class);
-            assertParentStateRestored(exchange, parentRun, parentTimeline);
-            assertNull(exchange.getProperty("createdAgentRun"));
-            assertEquals("complete", childResult.status());
-            assertEquals(Boolean.TRUE, exchange.getProperty("grandchildInvalidCommandCaught"));
-            assertFalse(exchange.getProperties().containsKey("agentRunExchangeScopeStack"));
-            assertNull(exchange.getProperty("grandchildInvalidCommandRouteInvoked"));
-
-            AgentRunProjection parentProjection = store.get(parentRun.id());
-            AgentRunProjection childProjection = store.get(childResult.agentRunId());
-            assertEquals(List.of("PARENT_EVENT"), events(parentProjection));
-            assertEquals(List.of("AGENT_RUN_STARTED", "CHILD_EVENT", "CHILD_AFTER_GRANDCHILD_INVALID_COMMAND", "AGENT_RUN_COMPLETED"), events(childProjection));
-            assertFalse(events(parentProjection).contains("AGENT_RUN_FAILED"));
-            assertFalse(events(childProjection).contains("AGENT_RUN_FAILED"));
-            assertEquals(2, store.all().size());
-        }
+                from("direct:test-nested-grandchild-invalid-command-routine")
+                        .process(exchange -> exchange.setProperty("grandchildInvalidCommandRouteInvoked", true));
+            }
+        };
     }
 
     private static us.nusun.llmshare.framework.inventory.PersonaCatalog personas() {

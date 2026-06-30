@@ -8,10 +8,15 @@ import dev.langchain4j.invocation.InvocationContext;
 import dev.langchain4j.mcp.client.*;
 import dev.langchain4j.service.tool.ToolExecutionResult;
 import org.junit.jupiter.api.Test;
+import us.nusun.llmshare.framework.logging.LogTokens;
+import us.nusun.llmshare.framework.inventory.ToolProfileRegistry;
 import us.nusun.llmshare.framework.mcp.ProfiledMcpClient;
+import us.nusun.llmshare.framework.model.McpServerDefinition;
+import us.nusun.llmshare.framework.model.Persona;
 import us.nusun.llmshare.framework.model.ToolProfile;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -50,6 +55,21 @@ class ToolProfileSemanticsTest {
         assertEquals(5, arguments.get("limit").asInt());
         assertEquals("parking", arguments.get("query").asText());
         assertEquals("open", arguments.get("states").get(0).asText());
+    }
+
+    @Test
+    void serverDeclaresLogicalToolSurfaceButMcpServerDefinesBuildableClient() {
+        ToolProfile logicalOnly = ToolProfile.builder("logical-only")
+                .server("gitea")
+                .build();
+        ToolProfile buildable = ToolProfile.builder("buildable")
+                .mcpServer(McpServerDefinition.builder("gitea").url("http://gitea.example/mcp").build())
+                .build();
+
+        assertTrue(logicalOnly.allowsServer("gitea"));
+        assertTrue(logicalOnly.mcpServers().isEmpty());
+        assertTrue(buildable.allowsServer("gitea"));
+        assertEquals("http://gitea.example/mcp", buildable.mcpServers().get("gitea").url());
     }
 
     @Test
@@ -136,24 +156,70 @@ class ToolProfileSemanticsTest {
 
         ToolExecutionResult result = client.executeTool(ToolExecutionRequest.builder().id("1").name("get_pull_request").arguments("{}").build());
 
-        assertTrue(result.resultText().endsWith("...(truncated)"));
+        assertEquals("...(truncated, original ", result.resultText());
         assertTrue(result.resultText().length() <= 24);
     }
 
     @Test
-    void profileBudgetCanExceedOldGlobalExtractorDefault() {
+    void runtimePathAppliesGlobalLimitWhenProfileDoesNotOverrideIt() {
+        ToolProfile profile = ToolProfile.builder("global-limited")
+                .server("source-control")
+                .allowTool("source-control", "get_pull_request")
+                .build();
+        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient("abcdefghijklmnopqrstuvwxyz"), "source-control", profile, null, null, 20);
+
+        ToolExecutionResult result = client.executeTool(ToolExecutionRequest.builder().id("1").name("get_pull_request").arguments("{}").build());
+
+        assertEquals("...(truncated, origi", result.resultText());
+    }
+
+    @Test
+    void profileSpecificLimitOverridesGlobalDefault() {
         String longResult = "x".repeat(1500);
         ToolProfile profile = ToolProfile.builder("large")
                 .server("source-control")
                 .allowTool("source-control", "get_pull_request")
                 .maxResultCharacters(5000)
                 .build();
-        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient(longResult), "source-control", profile);
+        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient(longResult), "source-control", profile, null, null, 1000);
 
         ToolExecutionResult result = client.executeTool(ToolExecutionRequest.builder().id("1").name("get_pull_request").arguments("{}").build());
 
         assertEquals(1500, result.resultText().length());
         assertEquals(longResult, result.resultText());
+    }
+
+    @Test
+    void disabledGlobalLimitAllowsUnlimitedResultsWhenProfileDoesNotSetLimit() {
+        String longResult = "x".repeat(1500);
+        ToolProfile profile = ToolProfile.builder("unlimited")
+                .server("source-control")
+                .allowTool("source-control", "get_pull_request")
+                .build();
+        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient(longResult), "source-control", profile, null, null, 0);
+
+        ToolExecutionResult result = client.executeTool(ToolExecutionRequest.builder().id("1").name("get_pull_request").arguments("{}").build());
+
+        assertEquals(longResult, result.resultText());
+    }
+
+    @Test
+    void dimmedToolResponseLogUsesLimitedResultText() {
+        String hugeResult = "abcdefghijklmnopqrstuvwxyz0123456789";
+        ToolProfile profile = ToolProfile.builder("logged")
+                .server("source-control")
+                .allowTool("source-control", "get_pull_request")
+                .build();
+        CapturingLogTokens logs = new CapturingLogTokens();
+        Persona persona = FrameworkFixtures.personaCatalog().getRequired(FrameworkFixtures.PERSONA_A);
+        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient(hugeResult), "source-control", profile, persona, logs, 20);
+
+        ToolExecutionResult result = client.executeTool(ToolExecutionRequest.builder().id("1").name("get_pull_request").arguments("{}").build());
+
+        assertEquals("...(truncated, origi", result.resultText());
+        assertTrue(logs.messages.stream().anyMatch(message -> message.contains("RESPONSE")));
+        assertFalse(String.join("\n", logs.messages).contains(hugeResult));
+        assertTrue(String.join("\n", logs.messages).contains("...(truncated"));
     }
 
     @Test
@@ -165,6 +231,26 @@ class ToolProfileSemanticsTest {
         assertTrue(profile.allowsTool("plane", "create_issue"));
         assertFalse(profile.allowsTool("plane", "delete_project"));
         assertEquals("id,name,identifier", profile.defaultArguments("plane", "list_projects").get("fields").asText());
+    }
+
+    @Test
+    void noneProfileIsFrameworkBuiltInAndExcludedFromCatalogListings() {
+        ToolProfileRegistry registry = new ToolProfileRegistry(List.of(ToolProfile.builder("tools").server("gitea").build()));
+
+        assertTrue(registry.getRequired(null).none());
+        assertTrue(registry.getRequired("").none());
+        assertTrue(registry.getRequired("none").none());
+        assertEquals(List.of("tools"), registry.all().stream().map(ToolProfile::id).toList());
+        assertFalse(registry.allJson().contains("\"id\":\"none\""));
+    }
+
+    @Test
+    void userDefinedNoneProfileIsRejectedAsReservedFrameworkId() {
+        IllegalArgumentException failure = assertThrows(
+                IllegalArgumentException.class,
+                () -> new ToolProfileRegistry(List.of(ToolProfile.builder("none").build())));
+
+        assertEquals("Tool profile id 'none' is reserved by the framework", failure.getMessage());
     }
 
     static class FakeMcpClient implements McpClient {
@@ -200,5 +286,18 @@ class ToolProfileSemanticsTest {
         @Override public void checkHealth() {}
         @Override public void setRoots(List<McpRoot> roots) {}
         @Override public void close() {}
+    }
+
+    private static final class CapturingLogTokens extends LogTokens {
+        private final List<String> messages = new ArrayList<>();
+
+        private CapturingLogTokens() {
+            super(false);
+        }
+
+        @Override
+        public void print(String message) {
+            messages.add(message);
+        }
     }
 }

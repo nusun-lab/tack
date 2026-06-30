@@ -5,11 +5,14 @@ import dev.langchain4j.mcp.client.DefaultMcpToolResultExtractor;
 import dev.langchain4j.mcp.client.McpToolResultExtractor;
 import dev.langchain4j.service.tool.ToolExecutionResult;
 
+/**
+ * @deprecated Runtime MCP result limiting is enforced by {@link ProfiledMcpClient}.
+ * This extractor remains only as a compatibility wrapper for callers that still
+ * configure a LangChain4j extractor directly.
+ */
+@Deprecated(forRemoval = false)
 public final class BoundedMcpToolResultExtractor implements McpToolResultExtractor {
     static final int DEFAULT_MAX_CHARACTERS = 1000;
-    static final String SUPPRESSED_MESSAGE =
-            "Tool result suppressed by policy because it exceeded the maximum allowed size. "
-                    + "Make a more precise tool call with a smaller result.";
 
     private final int maxCharacters;
     private final DefaultMcpToolResultExtractor delegate = new DefaultMcpToolResultExtractor();
@@ -21,13 +24,6 @@ public final class BoundedMcpToolResultExtractor implements McpToolResultExtract
     @Override
     public ToolExecutionResult extract(JsonNode content, boolean isError) {
         ToolExecutionResult result = delegate.extract(content, isError);
-        String resultText = result.resultText();
-        if (resultText != null && resultText.length() > maxCharacters) {
-            return ToolExecutionResult.builder()
-                    .isError(true)
-                    .resultText(SUPPRESSED_MESSAGE)
-                    .build();
-        }
-        return result;
+        return McpToolResultLimiter.limit(result, maxCharacters);
     }
 }

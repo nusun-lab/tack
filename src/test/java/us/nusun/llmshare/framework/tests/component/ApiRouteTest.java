@@ -39,6 +39,7 @@ class ApiRouteTest {
                             """));
 
             String response = result.getIn().getBody(String.class);
+            assertEquals(202, result.getIn().getHeader(Exchange.HTTP_RESPONSE_CODE));
             org.junit.jupiter.api.Assertions.assertTrue(response.contains("\"requestId\":\"mission-1\""));
             org.junit.jupiter.api.Assertions.assertTrue(response.contains("\"goal\":\"Build a parking lot manager app.\""));
         }
