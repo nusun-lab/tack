@@ -18,6 +18,10 @@ import java.util.Map;
 public class LlmDeadLetterFactory {
     private static final int MAX_DLQ_METADATA_STRING_LENGTH = 512;
 
+    public LlmJobDeadLetter failedQueuedJobDeadLetter(Exchange exchange) {
+        return failedQueuedJobDeadLetter(exchange, globalModelFallback(exchange));
+    }
+
     public LlmJobDeadLetter failedQueuedJobDeadLetter(Exchange exchange, String globalModelFallback) {
         LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
         if (job == null) {
@@ -37,12 +41,20 @@ public class LlmDeadLetterFactory {
                 Instant.now());
     }
 
+    public LlmJobResult failedLlmResult(Exchange exchange) {
+        return failedLlmResult(exchange, globalModelFallback(exchange));
+    }
+
     public LlmJobResult failedLlmResult(Exchange exchange, String globalModelFallback) {
         Exception failure = exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class);
         LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
         String message = failureMessage(failure, "Unknown LLM worker failure");
         return LlmJobResult.failed(job, modelId(exchange, globalModelFallback), message, null,
                 firstInstant(exchange.getProperty("llmStartedAt", Instant.class), job == null ? null : job.requestedAt(), Instant.now()));
+    }
+
+    public String contextSummary(Exchange exchange) {
+        return contextSummary(exchange, globalModelFallback(exchange));
     }
 
     public String contextSummary(Exchange exchange, String globalModelFallback) {
@@ -53,6 +65,10 @@ public class LlmDeadLetterFactory {
                 + " runtimeId=" + runtimeId(exchange, job)
                 + " agentName=" + (runtime == null ? null : runtime.agentName())
                 + " model=" + modelId(exchange, globalModelFallback);
+    }
+
+    public String modelId(Exchange exchange) {
+        return modelId(exchange, globalModelFallback(exchange));
     }
 
     public String modelId(Exchange exchange, String globalModelFallback) {
@@ -193,6 +209,18 @@ public class LlmDeadLetterFactory {
             return text;
         }
         return null;
+    }
+
+    private static String resolveOptionalPlaceholder(Exchange exchange, String placeholder) {
+        try {
+            return exchange.getContext().resolvePropertyPlaceholders(placeholder);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static String globalModelFallback(Exchange exchange) {
+        return resolveOptionalPlaceholder(exchange, "{{llm.openai.model:}}");
     }
 
     private static String firstNonBlank(String... values) {

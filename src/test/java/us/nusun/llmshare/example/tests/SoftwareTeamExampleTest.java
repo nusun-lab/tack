@@ -96,7 +96,7 @@ class SoftwareTeamExampleTest {
     @Test
     void softwareTeamDirectorSchemaIsPackagedForDocumentationAndRuntimeUse() throws Exception {
         try (var input = Thread.currentThread().getContextClassLoader()
-                .getResourceAsStream("schemas/example/software-team/start-agent-run-commands-schema.json")) {
+                .getResourceAsStream("schemas/example/software-team/agent-run-requests-schema.json")) {
             assertNotNull(input);
             String schema = new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
             assertTrue(schema.contains("agentRuns"));

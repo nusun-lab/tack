@@ -6,16 +6,15 @@
       "items": {
         "type": "object",
         "properties": {
-          "missionId": { "type": "string" },
           "personaId": { "type": "string" },
           "routineId": { "type": "string" },
-          "parentAgentRunId": { "type": "string" },
-          "reason": { "type": "string" },
           "input": { "type": "object" }
         },
-        "required": ["personaId", "routineId", "reason"]
+        "required": ["personaId", "routineId"],
+        "additionalProperties": false
       }
     }
   },
-  "required": ["agentRuns"]
+  "required": ["agentRuns"],
+  "additionalProperties": false
 }

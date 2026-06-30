@@ -6,12 +6,12 @@ import org.apache.camel.Exchange;
 import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.support.DefaultExchange;
 import org.junit.jupiter.api.Test;
+import us.nusun.llmshare.framework.llm.LlmJobFactory;
 import us.nusun.llmshare.framework.mcp.McpClientFactory;
 import us.nusun.llmshare.framework.model.ToolProfile;
 import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.LlmJobRequest;
 import us.nusun.llmshare.framework.model.Persona;
-import us.nusun.llmshare.framework.route.LlmRoute;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 
 import java.lang.reflect.Constructor;
@@ -49,9 +49,7 @@ class LlmJobMetadataBoundaryTest {
         LlmJobEnvelope restoredEnvelope = mapper.readValue(json, LlmJobEnvelope.class);
         Exchange worker = new DefaultExchange(new DefaultCamelContext());
 
-        Method restore = LlmRoute.class.getDeclaredMethod("restoreFrameworkMetadata", Exchange.class, LlmJobEnvelope.class);
-        restore.setAccessible(true);
-        restore.invoke(new LlmRoute(), worker, restoredEnvelope);
+        new LlmJobFactory().restoreFrameworkMetadata(worker, restoredEnvelope);
 
         assertEquals("run-1", worker.getProperty("agentRunId"));
         assertEquals("mission-1", worker.getProperty("missionId"));

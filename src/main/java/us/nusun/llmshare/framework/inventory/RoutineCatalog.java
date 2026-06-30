@@ -50,22 +50,12 @@ public class RoutineCatalog {
         return routines.values().stream().sorted(Comparator.comparing(RoutineDefinition::id)).toList();
     }
 
-    public String startCommandPrompt() {
-        return all().stream()
-                .map(routine -> "- " + routine.id() + ": " + routine.description())
-                .collect(java.util.stream.Collectors.joining("\n"));
-    }
-
-    public List<RoutineDefinition> startable() {
-        return all();
-    }
-
     public String allJson() {
         return json(all());
     }
 
     public String startableJson() {
-        return json(startable());
+        return json(all());
     }
 
     private String json(Object value) {

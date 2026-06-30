@@ -14,6 +14,8 @@ import org.apache.camel.support.DefaultEndpoint;
 import org.apache.camel.support.DefaultProducer;
 import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.framework.llm.InFlightReplyManager;
+import us.nusun.llmshare.framework.llm.LlmDeadLetterFactory;
+import us.nusun.llmshare.framework.llm.LlmJobFactory;
 import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.LlmJobResult;
 import us.nusun.llmshare.framework.model.LlmJobStatus;
@@ -157,8 +159,9 @@ class LlmRouteFrameworkRouteTest {
         LlmRoute route = new LlmRoute();
         FrameworkFixtures.set(route, "camelContext", context);
         FrameworkFixtures.set(route, "runtimes", FrameworkFixtures.executionRuntimeRegistry());
-        FrameworkFixtures.set(route, "personas", FrameworkFixtures.personaCatalog());
         FrameworkFixtures.set(route, "inFlightReplyManager", replies);
+        FrameworkFixtures.set(route, "jobFactory", new LlmJobFactory(FrameworkFixtures.executionRuntimeRegistry(), FrameworkFixtures.personaCatalog()));
+        FrameworkFixtures.set(route, "deadLetterFactory", new LlmDeadLetterFactory());
         context.addRoutes(route);
         return context;
     }

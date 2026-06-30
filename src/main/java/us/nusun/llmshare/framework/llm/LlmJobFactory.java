@@ -1,6 +1,7 @@
 package us.nusun.llmshare.framework.llm;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
 import org.apache.camel.Exchange;
 import us.nusun.llmshare.framework.inventory.ExecutionRuntimeRegistry;
 import us.nusun.llmshare.framework.inventory.PersonaCatalog;
@@ -19,7 +20,27 @@ import java.util.UUID;
 
 @ApplicationScoped
 public class LlmJobFactory {
-    public void prepare(
+    @Inject ExecutionRuntimeRegistry runtimes;
+    @Inject PersonaCatalog personas;
+
+    public LlmJobFactory() {
+    }
+
+    public LlmJobFactory(ExecutionRuntimeRegistry runtimes, PersonaCatalog personas) {
+        this.runtimes = runtimes;
+        this.personas = personas;
+    }
+
+    public void prepare(Exchange exchange) {
+        prepareWithCatalogs(
+                exchange,
+                runtimes,
+                personas,
+                exchange.getContext().resolvePropertyPlaceholders("{{agent.framework.default-synthesis-runtime:synthesis-low}}"),
+                globalModelFallback(exchange));
+    }
+
+    private void prepareWithCatalogs(
             Exchange exchange,
             ExecutionRuntimeRegistry runtimes,
             PersonaCatalog personas,
@@ -213,5 +234,17 @@ public class LlmJobFactory {
             }
         }
         return null;
+    }
+
+    private static String resolveOptionalPlaceholder(Exchange exchange, String placeholder) {
+        try {
+            return exchange.getContext().resolvePropertyPlaceholders(placeholder);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static String globalModelFallback(Exchange exchange) {
+        return resolveOptionalPlaceholder(exchange, "{{llm.openai.model:}}");
     }
 }

@@ -52,8 +52,8 @@ public class McpClientFactory {
     private McpClient build(Persona persona, McpServerDefinition server) {
         ExternalIdentity identity = persona.identityFor(server.id());
         String handle = identity == null || blank(identity.handle()) ? persona.id() : identity.handle();
-        String token = token(identity);
-        String url = url(server);
+        String token = identity == null ? null : identity.token();
+        String url = server.url();
         if (blank(url) || blank(token)) {
             LOG.debug("Skipping MCP client server={} persona={} handle={} urlPresent={} tokenPresent={}",
                     server.id(),
@@ -63,15 +63,17 @@ public class McpClientFactory {
                     !blank(token));
             return null;
         }
+        String transportType = firstNonBlank(server.transportType(), "streamableHttp");
         LinkedHashMap<String, String> headers = new LinkedHashMap<>();
-        headers.put(authHeaderName(server), authHeaderValueFormat(server).formatted(token));
+        headers.put(firstNonBlank(server.authHeaderName(), "Authorization"),
+                firstNonBlank(server.authHeaderValueFormat(), "Bearer %s").formatted(token));
         headers.putAll(server.extraHeaders() == null ? Map.of() : server.extraHeaders());
         String key = server.id() + ":" + persona.id();
         return new LazyInitializingMcpClient(
                 key,
                 server.id(),
                 handle,
-                transportType(server),
+                transportType,
                 url,
                 config.mcp().transportTimeoutMs(),
                 config.mcp().initializationTimeoutMs(),
@@ -79,29 +81,9 @@ public class McpClientFactory {
                         .key(key)
                         .clientName("llm-share-camel-kafka")
                         .clientVersion("0.1.0-SNAPSHOT")
-                        .transport(transport(url, transportType(server), headers))
+                        .transport(transport(url, transportType, headers))
                         .initializationTimeout(Duration.ofMillis(config.mcp().initializationTimeoutMs()))
                 .build());
-    }
-
-    private String url(McpServerDefinition server) {
-        return server.url();
-    }
-
-    private String transportType(McpServerDefinition server) {
-        return firstNonBlank(server.transportType(), "streamableHttp");
-    }
-
-    private String authHeaderName(McpServerDefinition server) {
-        return firstNonBlank(server.authHeaderName(), "Authorization");
-    }
-
-    private String authHeaderValueFormat(McpServerDefinition server) {
-        return firstNonBlank(server.authHeaderValueFormat(), "Bearer %s");
-    }
-
-    private String token(ExternalIdentity identity) {
-        return identity == null ? null : identity.token();
     }
 
     private McpTransport transport(String url, String transportType, Map<String, String> headers) {

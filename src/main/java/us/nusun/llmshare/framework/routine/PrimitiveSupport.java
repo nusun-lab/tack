@@ -199,7 +199,7 @@ public class PrimitiveSupport {
         };
     }
 
-    public Processor applyCreateResult(boolean bodyIsObject) {
+    public Processor applyCreateResult() {
         return exchange -> {
             LlmJobResult llm = requireSucceeded(exchange, exchange.getIn().getBody(LlmJobResult.class), "create synthesis pass");
             JsonNode object = objectMapper.readTree(llm.content());
@@ -211,17 +211,13 @@ public class PrimitiveSupport {
             currentRun(exchange).apply(result);
             exchange.setProperty("creates." + result.createId(), result);
             exchange.setProperty("latestCreateResult", result);
-            exchange.getIn().setBody(bodyIsObject ? object : result);
+            exchange.getIn().setBody(object);
             projections.record(exchange, "CREATE_COMPLETED");
         };
     }
 
-    public LlmJobRequest llmRequest(Exchange exchange, String runtimeId, String role, String systemPrompt, String prompt, String schema) {
+    private LlmJobRequest llmRequest(Exchange exchange, String runtimeId, String role, String systemPrompt, String prompt, String schema) {
         return new LlmJobRequest(null, runtimeId, role, 0, prompt, systemPrompt, schema, frameworkMetadata(exchange, runtimeId), null);
-    }
-
-    public LlmJobRequest llmRequest(String runtimeId, String role, String systemPrompt, String prompt, String schema) {
-        return LlmJobRequest.fromPrompt(null, runtimeId, role, prompt, systemPrompt, schema);
     }
 
     private Map<String, Object> frameworkMetadata(Exchange exchange, String runtimeId) {

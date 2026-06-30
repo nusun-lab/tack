@@ -6,27 +6,23 @@ import org.apache.camel.LoggingLevel;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.model.dataformat.JsonLibrary;
 import org.apache.camel.support.processor.PredicateValidationException;
-import us.nusun.llmshare.framework.model.UserGoalRequest;
+import us.nusun.llmshare.framework.model.MissionRequest;
 
 @ApplicationScoped
 public class ApiRoute extends RouteBuilder {
     @Override
     public void configure() {
-        onException(PredicateValidationException.class)
+        onException(PredicateValidationException.class, IllegalArgumentException.class)
                 .handled(false)
                 .logStackTrace(false)
                 .logExhausted(false)
                 .log(LoggingLevel.DEBUG, "API request validation failed: ${exception.message}");
 
-        from("direct:submit-user-goal")
-                .routeId("submit-user-goal")
-                .unmarshal().json(JsonLibrary.Jackson, UserGoalRequest.class)
+        from("direct:submit-mission")
+                .routeId("submit-mission")
+                .unmarshal().json(JsonLibrary.Jackson, MissionRequest.class)
                 .validate(simple("${body.goal} != null && ${body.goal.trim()} != ''"))
-                .choice()
-                    .when(simple("${body.requestId} != null && ${body.requestId.trim()} != ''"))
-                        .setHeader("requestId", simple("${body.requestId.trim()}"))
-                .end()
-                .setBody(simple("${body.goal}"))
+                .validate(simple("${body.agentRuns} != null && ${body.agentRuns.size} > 0"))
                 .to("direct:start-mission")
                 .removeHeaders("*")
                 .marshal().json(JsonLibrary.Jackson)

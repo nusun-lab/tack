@@ -2,7 +2,7 @@ package us.nusun.llmshare.framework.route;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import org.apache.camel.builder.RouteBuilder;
-import us.nusun.llmshare.framework.model.UserGoalRequest;
+import us.nusun.llmshare.framework.model.MissionRequest;
 
 @ApplicationScoped
 public class HttpApiRoute extends RouteBuilder {
@@ -12,12 +12,19 @@ public class HttpApiRoute extends RouteBuilder {
                 .component("platform-http")
                 .dataFormatProperty("prettyPrint", "true");
 
+        rest("/missions")
+                .produces("application/json")
+                .consumes("application/json")
+                .post()
+                    .type(MissionRequest.class)
+                    .to("direct:submit-mission");
+
         rest("/goals")
                 .produces("application/json")
                 .consumes("application/json")
                 .post()
-                    .type(UserGoalRequest.class)
-                    .to("direct:submit-user-goal");
+                    .type(MissionRequest.class)
+                    .to("direct:submit-mission");
 
         rest("/workspace/reset")
                 .produces("application/json")

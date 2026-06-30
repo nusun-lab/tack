@@ -43,6 +43,6 @@ public class PrimitiveRoute extends RouteBuilder {
                 .process(primitive.projectionEvent("SYNTHESIS_PASS_QUEUED"))
                 .to("direct:llm")
                 .process(primitive.projectionEvent("SYNTHESIS_PASS_COMPLETED"))
-                .process(primitive.applyCreateResult(true));
+                .process(primitive.applyCreateResult());
     }
 }

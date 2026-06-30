@@ -68,16 +68,16 @@ class RoutineSupportTest {
                 "persona-b",
                 "routine-b");
 
-        support.create("initial-agent-runs")
+        support.create("planned-agent-runs")
                 .schemaId("agent-run-list")
-                .schema("classpath:schemas/framework/start-agent-run-commands-schema.json")
+                .schema("classpath:schemas/example/software-team/agent-run-requests-schema.json")
                 .prompt("Create the initial runs.")
                 .process(exchange);
 
-        assertEquals("initial-agent-runs", exchange.getProperty("createId"));
+        assertEquals("planned-agent-runs", exchange.getProperty("createId"));
         assertEquals("agent-run-list", exchange.getProperty("schemaId"));
         assertEquals(
-                "classpath:schemas/framework/start-agent-run-commands-schema.json",
+                "classpath:schemas/example/software-team/agent-run-requests-schema.json",
                 exchange.getProperty("createSchema"));
         assertEquals("Create the initial runs.", exchange.getProperty("createPrompt"));
     }
@@ -97,7 +97,7 @@ class RoutineSupportTest {
                     Map.of(),
                     Instant.now()));
 
-            support.create("initial-agent-runs")
+            support.create("planned-agent-runs")
                     .schemaJson("{\"type\":\"object\"}")
                     .prompt(simple("""
                             Mission:

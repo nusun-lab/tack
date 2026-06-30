@@ -18,15 +18,15 @@ The framework treats an agent run as application state, not as a single long-liv
 
 A mission moves through the framework in a small number of explicit steps:
 
-1. `POST /goals` accepts a user goal and creates the root `AgentRun` projection.
-2. The mission route schedules the configured initial persona and routine asynchronously.
-3. The selected routine runs outside the HTTP request thread as a normal Camel route.
-4. The routine calls framework primitives such as `direct:act`, `direct:decide`, `direct:create`, and `direct:start-agent-run`.
-5. LLM work is queued through Kafka by inference lane.
-6. Worker routes call the configured OpenAI-compatible model endpoint and optional MCP tools.
+1. `POST /missions` accepts a goal plus one or more explicit `AgentRunRequest` entries.
+2. The mission route creates a mission, schedules each requested `AgentRun`, and returns accepted handles quickly.
+3. Scheduled routines run outside the HTTP request thread as normal Camel routes.
+4. Routines call framework primitives such as `direct:act`, `direct:decide`, `direct:create`, and `direct:start-agent-run`.
+5. `direct:start-agent-run` schedules more agent runs and returns accepted handles immediately.
+6. LLM work is queued through Kafka by inference lane.
 7. Replies return through Kafka and update the agent run projection.
 
-At runtime, a mission starts one configured `AgentRun`. That run selects a persona and routine from the catalog. The routine composes framework primitives while the framework handles queueing, model invocation, MCP tool exposure, scoped state, and projection updates.
+At runtime, a mission is a goal/context container. An `AgentRun` is one persona/routine execution scheduled inside that mission. Parent/child agent runs are lineage only; no agent run synchronously waits for another agent run to complete.
 
 ## Requirements
 
@@ -63,10 +63,13 @@ Run the application:
 Submit a mission:
 
 ```bash
-curl -s -X POST http://localhost:8080/goals \
+curl -s -X POST http://localhost:8080/missions \
   -H 'content-type: application/json' \
   --data '{
-    "goal": "Build a small parking lot manager app. The team should clarify scope, coordinate work, and start one implementation path."
+    "goal": "Build a small parking lot manager app. The team should clarify scope, coordinate work, and start one implementation path.",
+    "agentRuns": [
+      { "personaId": "software-team/noah", "routineId": "software-team/director" }
+    ]
   }' | jq
 ```
 
@@ -76,8 +79,16 @@ Example response:
 {
   "missionId": "mission-...",
   "status": "accepted",
-  "rootAgentRunId": "run-...",
-  "projection": "run-..."
+  "agentRuns": [
+    {
+      "agentRunId": "run-...",
+      "missionId": "mission-...",
+      "parentAgentRunId": null,
+      "personaId": "software-team/noah",
+      "routineId": "software-team/director",
+      "status": "accepted"
+    }
+  ]
 }
 ```
 
@@ -104,29 +115,17 @@ The bundled `us.nusun.llmshare.example` package demonstrates a software-team cat
 | Ethan   | `software-team/ethan` | `software-team/product-owner`         | Clarifies scope and acceptance criteria.  |
 | Miles   | `software-team/miles` | `software-team/application-developer` | Implements and reports delivery progress. |
 
-The default mission starts Noah on the Director routine:
-
-```properties
-agent.framework.initial-agent-run.persona-id=${AGENT_FRAMEWORK_INITIAL_AGENT_RUN_PERSONA_ID:software-team/noah}
-agent.framework.initial-agent-run.routine-id=${AGENT_FRAMEWORK_INITIAL_AGENT_RUN_ROUTINE_ID:software-team/director}
-```
-
-Override those values to start a different catalog namespace:
-
-```bash
-export AGENT_FRAMEWORK_INITIAL_AGENT_RUN_PERSONA_ID=my-domain/coordinator
-export AGENT_FRAMEWORK_INITIAL_AGENT_RUN_ROUTINE_ID=my-domain/coordinator-routine
-```
+Mission requests explicitly choose which agent runs to schedule. There is no framework-level default, root, or initial persona/routine. To start the bundled example, submit Noah on the Director routine in the `agentRuns` array.
 
 ## Core concepts
 
 ### Mission
 
-A mission is the top-level user goal. It owns the mission ID, goal text, status, metadata, and the root agent run.
+A mission is the top-level goal/context container. It owns the mission ID, goal text, status, and metadata. It schedules one or more agent runs.
 
 ### AgentRun
 
-An `AgentRun` is one execution of one persona on one routine. It carries working state, current primitive state, thought-stack state, latest results, and projection data. Child agent runs are isolated from parent runs through exchange-scope capture and restore.
+An `AgentRun` is one execution of one persona on one routine. It carries working state, current primitive state, thought-stack state, latest results, and projection data. Agent runs may schedule more agent runs. Parent/child means lineage, not blocking. Starting an agent run returns an accepted handle immediately; output is eventual projection/result state.
 
 ### Persona
 
@@ -205,8 +204,8 @@ Use `direct:create` for schema-shaped JSON generation.
 `direct:create` is generic. It does not automatically inject catalog data. If a prompt needs catalog context, compose the prompt explicitly with Camel Simple expressions:
 
 ```java
-.process(routine.create("initial-agent-runs")
-        .schema("classpath:schemas/example/software-team/start-agent-run-commands-schema.json")
+.process(routine.create("planned-agent-runs")
+        .schema("classpath:schemas/example/software-team/agent-run-requests-schema.json")
         .prompt(simple("""
                 Given this mission, propose the initial software-team AgentRuns.
 
@@ -226,23 +225,19 @@ Use `direct:create` for schema-shaped JSON generation.
 
 ### `direct:start-agent-run`
 
-Use `direct:start-agent-run` to start a child or top-level agent run from a generic `StartAgentRunCommand`.
+Use `direct:start-agent-run` to schedule another agent run from the same `AgentRunRequest` shape used by mission requests.
 
 ```json
 {
-  "missionId": "mission-1",
   "personaId": "software-team/owen",
   "routineId": "software-team/project-manager",
-  "parentAgentRunId": "run-parent",
-  "reason": "Coordinate setup and delivery risks.",
   "input": {
-    "priority": "high",
-    "tags": ["planning", "delivery"]
+    "repo": "parking-lot-manager"
   }
 }
 ```
 
-The `input` object is preserved as structured working state for the child run.
+The framework supplies mission id, agent run id, parent lineage, status, timestamps, and lifecycle projection data. The route returns an accepted `AgentRunHandle` immediately and does not wait for the scheduled routine to complete. The `input` object is preserved as structured working state for the scheduled run.
 
 ## Defining catalog entries
 
@@ -265,7 +260,7 @@ At minimum, a framework adopter provides:
 * `RoutineProvider` for Camel routes those actors can run.
 * `InferenceLaneProvider` for queue topics, endpoint overrides, and optional lane model names.
 * `ExecutionRuntimeProvider` for runtime IDs that select lanes, tool-calling behavior, and optional runtime model overrides.
-* Initial persona/routine config through `agent.framework.initial-agent-run.persona-id` and `agent.framework.initial-agent-run.routine-id`.
+* Initial persona/routine selection in each `POST /missions` request through one or more `agentRuns` entries.
 
 Optional pieces:
 
@@ -499,11 +494,12 @@ The workspace API is intended for local development and debugging.
 
 | Endpoint           | Method | Purpose                                    |
 | ------------------ | ------ | ------------------------------------------ |
-| `/goals`           | `POST` | Accept and schedule a new mission.         |
+| `/missions`        | `POST` | Accept and schedule a new mission.         |
+| `/goals`           | `POST` | Deprecated alias for `/missions`.          |
 | `/workspace/view`  | `GET`  | Inspect catalog and agent-run projections. |
 | `/workspace/reset` | `POST` | Reset local workspace state.               |
 
-`POST /goals` returns `202 Accepted` after mission/root-run creation and scheduling. The root routine continues asynchronously. Later routine failures are visible through workspace projection state and normal logs, not as a delayed HTTP response.
+`POST /missions` returns `202 Accepted` after mission creation and agent-run scheduling. Scheduled routines continue asynchronously. Later routine failures are visible through workspace projection state and normal logs, not as a delayed HTTP response. `/goals` remains a deprecated compatibility alias and uses the same explicit request shape.
 
 The projection includes mission IDs, agent-run IDs, persona/routine metadata, primitive state, runtime/lane information, latest results, timeline entries, and thought-stack snapshots.
 
@@ -540,7 +536,7 @@ Keep reusable framework behavior separate from example-team behavior.
 
 Framework code owns:
 
-* `StartAgentRunCommand`
+* `AgentRunRequest` / `AgentRunHandle`
 * `direct:start-agent-run`
 * `direct:act`, `direct:decide`, and `direct:create`
 * `ThoughtStack`

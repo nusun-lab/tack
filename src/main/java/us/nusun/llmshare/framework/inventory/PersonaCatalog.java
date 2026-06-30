@@ -54,12 +54,6 @@ public class PersonaCatalog {
         return all().stream().filter(Persona::agentRunStartAssignable).toList();
     }
 
-    public String rosterPrompt() {
-        return agentRunStartAssignable().stream()
-                .map(persona -> "- " + persona.id() + " (" + persona.name() + "): " + persona.description())
-                .collect(java.util.stream.Collectors.joining("\n"));
-    }
-
     public String allJson() {
         return json(all());
     }

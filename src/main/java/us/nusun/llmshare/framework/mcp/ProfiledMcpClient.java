@@ -30,10 +30,6 @@ public class ProfiledMcpClient implements McpClient {
         this(delegate, server, profile, null, null, McpToolResultLimiter.DISABLED);
     }
 
-    public ProfiledMcpClient(McpClient delegate, String server, ToolProfile profile, Persona persona, LogTokens logTokens) {
-        this(delegate, server, profile, persona, logTokens, McpToolResultLimiter.DISABLED);
-    }
-
     public ProfiledMcpClient(McpClient delegate, String server, ToolProfile profile, Persona persona, LogTokens logTokens, int globalMaxResultCharacters) {
         this.delegate = delegate;
         this.server = server;

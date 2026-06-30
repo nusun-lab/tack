@@ -9,14 +9,16 @@ import us.nusun.llmshare.framework.route.ApiRoute;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 import us.nusun.llmshare.framework.tests.support.TestCamelContexts;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ApiRouteTest {
     @Test
-    void submitUserGoalUsesCamelJsonBindingValidationAndSimpleExpressions() throws Exception {
+    void submitMissionUsesExplicitAgentRunsAndReturnsAcceptedJson() throws Exception {
         try (DefaultCamelContext context = TestCamelContexts.quiet()) {
             FrameworkFixtures.bindCatalogBeans(context);
             bindApiDependencies(context);
@@ -26,27 +28,33 @@ class ApiRouteTest {
                 public void configure() {
                     from("direct:start-mission")
                             .process(exchange -> exchange.getIn().setBody(Map.of(
-                                    "requestId", exchange.getIn().getHeader("requestId", String.class),
-                                    "goal", exchange.getIn().getBody(String.class))));
+                                    "missionId", "mission-1",
+                                    "status", "accepted",
+                                    "agentRuns", List.of(Map.of(
+                                            "agentRunId", "run-1",
+                                            "missionId", "mission-1",
+                                            "personaId", "persona-a",
+                                            "routineId", "routine-a",
+                                            "status", "accepted")))));
                 }
             });
             context.start();
 
             Exchange result = context.createProducerTemplate().request(
-                    "direct:submit-user-goal",
+                    "direct:submit-mission",
                     exchange -> exchange.getIn().setBody("""
-                            {"goal":"Build a parking lot manager app.","requestId":"  mission-1  "}
+                            {"goal":"Build a parking lot manager app.","agentRuns":[{"personaId":"persona-a","routineId":"routine-a"}]}
                             """));
 
             String response = result.getIn().getBody(String.class);
             assertEquals(202, result.getIn().getHeader(Exchange.HTTP_RESPONSE_CODE));
-            org.junit.jupiter.api.Assertions.assertTrue(response.contains("\"requestId\":\"mission-1\""));
-            org.junit.jupiter.api.Assertions.assertTrue(response.contains("\"goal\":\"Build a parking lot manager app.\""));
+            assertTrue(response.contains("\"missionId\":\"mission-1\""));
+            assertTrue(response.contains("\"agentRunId\":\"run-1\""));
         }
     }
 
     @Test
-    void submitUserGoalRejectsBlankGoalWithCamelValidation() throws Exception {
+    void submitMissionRejectsBlankGoalWithCamelValidation() throws Exception {
         try (DefaultCamelContext context = TestCamelContexts.quiet()) {
             FrameworkFixtures.bindCatalogBeans(context);
             bindApiDependencies(context);
@@ -54,24 +62,47 @@ class ApiRouteTest {
             context.addRoutes(new RouteBuilder() {
                 @Override
                 public void configure() {
-                    from("direct:start-mission")
-                            .setBody(constant(Map.of()));
+                    from("direct:start-mission").setBody(constant(Map.of()));
                 }
             });
             context.start();
 
-            Exception failure = assertThrows(
-                    Exception.class,
-                    () -> context.createProducerTemplate().requestBody(
-                            "direct:submit-user-goal",
-                            "{\"goal\":\"   \"}"));
+            Exception failure = assertThrows(Exception.class, () -> context.createProducerTemplate().requestBody(
+                    "direct:submit-mission",
+                    "{\"goal\":\"   \",\"agentRuns\":[{\"personaId\":\"persona-a\",\"routineId\":\"routine-a\"}]}"));
 
-            Throwable current = failure;
-            while (current != null && !(current instanceof PredicateValidationException)) {
-                current = current.getCause();
-            }
-            assertEquals(PredicateValidationException.class, current == null ? null : current.getClass());
+            assertCausedBy(failure, PredicateValidationException.class);
         }
+    }
+
+    @Test
+    void submitMissionRejectsEmptyAgentRunsWithCamelValidation() throws Exception {
+        try (DefaultCamelContext context = TestCamelContexts.quiet()) {
+            FrameworkFixtures.bindCatalogBeans(context);
+            bindApiDependencies(context);
+            context.addRoutes(new ApiRoute());
+            context.addRoutes(new RouteBuilder() {
+                @Override
+                public void configure() {
+                    from("direct:start-mission").setBody(constant(Map.of()));
+                }
+            });
+            context.start();
+
+            Exception failure = assertThrows(Exception.class, () -> context.createProducerTemplate().requestBody(
+                    "direct:submit-mission",
+                    "{\"goal\":\"Build\",\"agentRuns\":[]}"));
+
+            assertCausedBy(failure, PredicateValidationException.class);
+        }
+    }
+
+    private static void assertCausedBy(Throwable failure, Class<?> type) {
+        Throwable current = failure;
+        while (current != null && !type.isInstance(current)) {
+            current = current.getCause();
+        }
+        assertEquals(type, current == null ? null : current.getClass());
     }
 
     private static void bindApiDependencies(DefaultCamelContext context) {

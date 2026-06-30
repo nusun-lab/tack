@@ -13,6 +13,10 @@ public final class AgentRunExchangeScope {
 
     private static final List<String> AGENT_RUN_LOCAL_PROPERTIES = List.of(
             "agentRun",
+            "agentRunRequest",
+            "scheduledAgentRunHandle",
+            "persona",
+            "routine",
             "projectionTimeline",
             "thoughtStack",
             "routineThoughtScopeNames",
@@ -37,11 +41,6 @@ public final class AgentRunExchangeScope {
             "latestStepResult",
             "latestDecisionResult",
             "latestCreateResult",
-            "createdAgentRun",
-            "childAgentRunSetupComplete",
-            "childAgentRunResponse",
-            "childAgentRunFailure",
-            "childAgentRunSetupFailure",
             "executionRuntimeId",
             "personaId",
             "thoughtUpdateDepth",

@@ -2,7 +2,7 @@ package us.nusun.llmshare.framework.tests.unit;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
-import us.nusun.llmshare.framework.model.StartAgentRunCommand;
+import us.nusun.llmshare.framework.model.AgentRunRequest;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -15,14 +15,14 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-class StartAgentRunCommandBindingTest {
+class AgentRunRequestBindingTest {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     @Test
-    void jsonCommandPreservesNestedInput() {
-        StartAgentRunCommand command = StartAgentRunCommand.fromJson(nestedCommandJson(), OBJECT_MAPPER);
+    void jsonRequestPreservesNestedInput() {
+        AgentRunRequest request = AgentRunRequest.fromJson(nestedRequestJson(), OBJECT_MAPPER);
 
-        Map<String, Object> input = command.input();
+        Map<String, Object> input = request.input();
         assertEquals("pm", input.get("role"));
         assertInstanceOf(String.class, input.get("role"));
         assertEquals(true, input.get("enabled"));
@@ -43,7 +43,7 @@ class StartAgentRunCommandBindingTest {
     }
 
     @Test
-    void mapCommandPreservesNestedInputAndUsesShallowImmutableInputMap() {
+    void mapRequestPreservesNestedInputAndUsesShallowImmutableInputMap() {
         LinkedHashMap<String, Object> limits = new LinkedHashMap<>();
         limits.put("maxTasks", 5);
         LinkedHashMap<String, Object> config = new LinkedHashMap<>();
@@ -58,40 +58,36 @@ class StartAgentRunCommandBindingTest {
         input.put("score", 0.87);
         input.put("optional", null);
         LinkedHashMap<String, Object> body = new LinkedHashMap<>();
-        body.put("missionId", "mission-1");
         body.put("personaId", "persona-a");
         body.put("routineId", "routine-a");
         body.put("input", input);
 
-        StartAgentRunCommand command = StartAgentRunCommand.fromMap(body, OBJECT_MAPPER);
+        AgentRunRequest request = AgentRunRequest.fromMap(body, OBJECT_MAPPER);
 
-        assertInstanceOf(Map.class, command.input().get("config"));
-        assertInstanceOf(List.class, command.input().get("tags"));
-        assertEquals(5, ((Number) ((Map<?, ?>) ((Map<?, ?>) command.input().get("config")).get("limits")).get("maxTasks")).intValue());
-        assertEquals(List.of("planning", "delivery"), command.input().get("tags"));
-        assertNull(command.input().get("optional"));
-        assertThrows(UnsupportedOperationException.class, () -> command.input().put("new", "value"));
+        assertInstanceOf(Map.class, request.input().get("config"));
+        assertInstanceOf(List.class, request.input().get("tags"));
+        assertEquals(5, ((Number) ((Map<?, ?>) ((Map<?, ?>) request.input().get("config")).get("limits")).get("maxTasks")).intValue());
+        assertEquals(List.of("planning", "delivery"), request.input().get("tags"));
+        assertNull(request.input().get("optional"));
+        assertThrows(UnsupportedOperationException.class, () -> request.input().put("new", "value"));
     }
 
     @Test
-    void jsonRoundTripPreservesStructuredInput() throws Exception {
-        StartAgentRunCommand original = StartAgentRunCommand.fromJson(nestedCommandJson(), OBJECT_MAPPER);
+    void jsonRoundTripPreservesStructuredInputAndNoOperationalFieldsAreRequired() throws Exception {
+        AgentRunRequest original = AgentRunRequest.fromJson(nestedRequestJson(), OBJECT_MAPPER);
         String json = OBJECT_MAPPER.writeValueAsString(original);
-        StartAgentRunCommand roundTripped = StartAgentRunCommand.fromJson(json, OBJECT_MAPPER);
+        AgentRunRequest roundTripped = AgentRunRequest.fromJson(json, OBJECT_MAPPER);
 
-        assertFalse(json.contains("\\\"limits\\\""));
+        assertFalse(json.contains("missionId"));
+        assertFalse(json.contains("parentAgentRunId"));
+        assertFalse(json.contains("status"));
         assertInstanceOf(Map.class, roundTripped.input().get("config"));
-        assertInstanceOf(List.class, roundTripped.input().get("tags"));
-        assertEquals(true, roundTripped.input().get("enabled"));
-        assertEquals(0.87, ((Number) roundTripped.input().get("score")).doubleValue(), 0.0001);
         assertEquals(5, ((Number) ((Map<?, ?>) ((Map<?, ?>) roundTripped.input().get("config")).get("limits")).get("maxTasks")).intValue());
-        assertNull(roundTripped.input().get("optional"));
     }
 
-    private static String nestedCommandJson() {
+    private static String nestedRequestJson() {
         return """
                 {
-                  "missionId": "mission-1",
                   "personaId": "persona-a",
                   "routineId": "routine-a",
                   "input": {

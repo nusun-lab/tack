@@ -153,14 +153,14 @@ class PrimitiveSemanticsTest {
         PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
         exchange.setProperty("resolvedSynthesisRuntime", "synthesis-low");
-        exchange.setProperty("createId", "initial-agent-runs");
+        exchange.setProperty("createId", "planned-agent-runs");
         exchange.setProperty("createPrompt", "Propose the initial agent runs.");
-        exchange.setProperty("createSchema", "classpath:schemas/framework/start-agent-run-commands-schema.json");
+        exchange.setProperty("createSchema", "classpath:schemas/example/software-team/agent-run-requests-schema.json");
 
         support.prepareCreatePrompt().process(exchange);
 
         LlmJobRequest request = exchange.getIn().getBody(LlmJobRequest.class);
-        assertEquals("classpath:schemas/framework/start-agent-run-commands-schema.json", request.responseSchema());
+        assertEquals("classpath:schemas/example/software-team/agent-run-requests-schema.json", request.responseSchema());
         assertTrue(exchange.getProperty("createSchemaJson", String.class).contains("agentRuns"));
         assertTrue(request.prompt().contains("\"agentRuns\""));
         assertTrue(request.prompt().contains("\"personaId\""));
@@ -174,7 +174,7 @@ class PrimitiveSemanticsTest {
         stack.push(new ThoughtFrame("mission", "Mission planning", 200, "Need PM, PO, and developer runs."));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
         exchange.setProperty("resolvedSynthesisRuntime", "synthesis-low");
-        exchange.setProperty("createId", "initial-agent-runs");
+        exchange.setProperty("createId", "planned-agent-runs");
         exchange.setProperty("createPrompt", "Propose the initial agent runs.");
         String schema = """
                 {"type":"object","required":["agentRuns"]}
@@ -223,7 +223,7 @@ class PrimitiveSemanticsTest {
         stack.push(new ThoughtFrame("mission", "Mission planning", 200, "Need PM, PO, and developer runs."));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
         exchange.setProperty("resolvedSynthesisRuntime", "synthesis-low");
-        exchange.setProperty("createId", "initial-agent-runs");
+        exchange.setProperty("createId", "planned-agent-runs");
         exchange.setProperty("createPrompt", "Propose the initial agent runs.\nPersonas:\n"
                 + FrameworkFixtures.personaCatalog().agentRunStartAssignableJson()
                 + "\nRoutines:\n"
@@ -345,11 +345,11 @@ class PrimitiveSemanticsTest {
     void createResultRejectsSchemaInvalidResponse() {
         PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
-        exchange.setProperty("createId", "initial-agent-runs");
+        exchange.setProperty("createId", "planned-agent-runs");
         exchange.setProperty("createSchemaJson", "{\"type\":\"object\",\"required\":[\"agentRuns\"]}");
         exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", "{\"wrong\":[]}"));
 
-        Exception failure = assertThrows(Exception.class, () -> support.applyCreateResult(true).process(exchange));
+        Exception failure = assertThrows(Exception.class, () -> support.applyCreateResult().process(exchange));
 
         assertTrue(failure.getMessage().contains("CreateResult schema validation failed"));
         assertTrue(failure.getMessage().contains("agentRuns"));
@@ -387,7 +387,7 @@ class PrimitiveSemanticsTest {
         valid.setProperty("createSchemaJson", schema);
         valid.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", "{\"status\":\"ready\",\"items\":[{\"name\":\"alpha\",\"score\":3}]}"));
 
-        support.applyCreateResult(true).process(valid);
+        support.applyCreateResult().process(valid);
 
         assertInstanceOf(JsonNode.class, valid.getIn().getBody());
 
@@ -416,16 +416,16 @@ class PrimitiveSemanticsTest {
     void createResultStoresSchemaShapedObjectAndCanExposeObjectAsBody() throws Exception {
         PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
-        exchange.setProperty("createId", "initial-agent-runs");
+        exchange.setProperty("createId", "planned-agent-runs");
         exchange.setProperty("schemaId", "agent-run-list");
         exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", """
                 {"agentRuns":[{"personaId":"routine-a","routineId":"routine-a","reason":"Implement the first vertical slice."}]}
                 """));
 
-        support.applyCreateResult(true).process(exchange);
+        support.applyCreateResult().process(exchange);
 
         JsonNode body = assertInstanceOf(JsonNode.class, exchange.getIn().getBody());
-        CreateResult result = exchange.getProperty("creates.initial-agent-runs", CreateResult.class);
+        CreateResult result = exchange.getProperty("creates.planned-agent-runs", CreateResult.class);
         AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
         assertEquals("agent-run-list", result.schemaId());
         assertEquals("routine-a", body.get("agentRuns").get(0).get("personaId").asText());
@@ -440,7 +440,7 @@ class PrimitiveSemanticsTest {
         exchange.setProperty("createSchemaJson", schema);
         exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", content));
 
-        Exception failure = assertThrows(Exception.class, () -> support.applyCreateResult(true).process(exchange));
+        Exception failure = assertThrows(Exception.class, () -> support.applyCreateResult().process(exchange));
 
         assertTrue(failure.getMessage().contains("CreateResult schema validation failed"));
         assertTrue(failure.getMessage().toLowerCase().contains(expectedMessagePart.toLowerCase()), failure.getMessage());

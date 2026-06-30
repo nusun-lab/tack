@@ -12,7 +12,6 @@ import org.apache.camel.component.jackson.JacksonDataFormat;
 import org.apache.camel.component.kafka.KafkaConstants;
 import org.apache.camel.component.jsonvalidator.JsonValidationException;
 import org.apache.camel.component.langchain4j.agent.api.AiAgentBody;
-import us.nusun.llmshare.framework.inventory.PersonaCatalog;
 import us.nusun.llmshare.framework.llm.InFlightReplyManager;
 import us.nusun.llmshare.framework.llm.LlmDeadLetterFactory;
 import us.nusun.llmshare.framework.llm.LlmJobFactory;
@@ -21,7 +20,6 @@ import us.nusun.llmshare.framework.inventory.ExecutionRuntimeRegistry;
 import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
 import us.nusun.llmshare.framework.model.LlmJobDeadLetter;
 import us.nusun.llmshare.framework.model.LlmJobEnvelope;
-import us.nusun.llmshare.framework.model.LlmJobRequest;
 import us.nusun.llmshare.framework.model.LlmJobResult;
 
 import java.time.Instant;
@@ -38,7 +36,6 @@ public class LlmRoute extends RouteBuilder {
 
     @Inject CamelContext camelContext;
     @Inject ExecutionRuntimeRegistry runtimes;
-    @Inject PersonaCatalog personas;
     @Inject InFlightReplyManager inFlightReplyManager;
     @Inject LlmJobFactory jobFactory;
     @Inject LlmDeadLetterFactory deadLetterFactory;
@@ -61,7 +58,7 @@ public class LlmRoute extends RouteBuilder {
                 .onWhen(exchangeProperty("llmQueueFailureHandling").isEqualTo(true))
                 .onFailureOnly()
                 .setProperty("llmFailureMessage", simple("${exception.message}"))
-                .setProperty("llmFailureContext", method(this, "contextSummary"))
+                .setProperty("llmFailureContext", method(deadLetterFactory, "contextSummary"))
                 .log(LoggingLevel.WARN, "LLM queue failure: ${exchangeProperty.llmFailureContext} reason=${exchangeProperty.llmFailureMessage}")
                 .bean("inFlightReplyManager", "discard(${exchangeProperty.llmJobId})")
                 .choice()
@@ -72,12 +69,12 @@ public class LlmRoute extends RouteBuilder {
         from("direct:llm")
                 .routeId("llm")
                 .setProperty("llmQueueFailureHandling", constant(true))
-                .bean(this, "prepareLlmJob")
+                .bean(jobFactory, "prepare")
                 .bean("inFlightReplyManager", "register")
                 .log(LoggingLevel.INFO, "PROMPT ${body.prompt}")
                 .bean(this, "verifySelectedLlmRoutesAvailable")
                 .marshal(jacksonDataFormat(LlmJobEnvelope.class))
-                .setHeader(KafkaConstants.KEY, method(this, "requestKafkaKey"))
+                .setHeader(KafkaConstants.KEY, method(jobFactory, "requestKafkaKey"))
                 .toD("language:simple:kafka:${exchangeProperty.laneRequestTopic}")
                 .bean(this, "awaitLlmReply")
                 .log(LoggingLevel.INFO, "RESPONSE ${body.content}")
@@ -104,15 +101,15 @@ public class LlmRoute extends RouteBuilder {
 
         from("direct:publish-failed-llm-job-dlq")
                 .routeId("publish-failed-llm-job-dlq")
-                .setBody(method(this, "failedQueuedJobDeadLetter"))
+                .setBody(method(deadLetterFactory, "failedQueuedJobDeadLetter"))
                 .log(LoggingLevel.WARN, "Publishing failed LLM job to DLQ: jobId=${body.jobId} lane=${body.laneId} runtime=${body.runtimeId} reason=${body.failureMessage}")
                 .marshal(jacksonDataFormat(LlmJobDeadLetter.class))
-                .setHeader(KafkaConstants.KEY, method(this, "jobIdKafkaKey"))
+                .setHeader(KafkaConstants.KEY, method(jobFactory, "jobIdKafkaKey"))
                 .toD("kafka:{{llm.topic.dead-letter:llm.dead-letter}}");
 
         from("direct:call-llm-agent")
                 .routeId("call-llm-agent")
-                .bean(this, "restoreFrameworkMetadata")
+                .bean(jobFactory, "restoreFrameworkMetadata")
                 .setProperty("executionRuntime", method(this, "requiredRuntime(${exchangeProperty.llmJob.requester})"))
                 .setProperty("executionRuntimeId", simple("${exchangeProperty.executionRuntime.id}"))
                 .setProperty("llmStartedAt", method(this, "now"))
@@ -130,7 +127,7 @@ public class LlmRoute extends RouteBuilder {
 
         from("direct:build-failed-llm-result")
                 .routeId("build-failed-llm-result")
-                .setBody(method(this, "failedLlmResult"));
+                .setBody(method(deadLetterFactory, "failedLlmResult"));
 
     }
 
@@ -150,7 +147,7 @@ public class LlmRoute extends RouteBuilder {
                 .autoStartup("{{llm.worker.enabled:true}}")
                 .unmarshal(jacksonDataFormat(LlmJobEnvelope.class))
                 .setProperty("llmJob", body())
-                .bean(this, "restoreFrameworkMetadata")
+                .bean(jobFactory, "restoreFrameworkMetadata")
                 .setProperty("agentLabel", simple("${body.requester}"))
                 .doTry()
                     .to("direct:call-llm-agent")
@@ -160,7 +157,7 @@ public class LlmRoute extends RouteBuilder {
                     .to("direct:build-failed-llm-result")
                 .end()
                 .marshal(jacksonDataFormat(LlmJobResult.class))
-                .setHeader(KafkaConstants.KEY, method(this, "jobIdKafkaKey"))
+                .setHeader(KafkaConstants.KEY, method(jobFactory, "jobIdKafkaKey"))
                 .to("kafka:" + replyTopic);
 
         from("kafka:" + replyTopic
@@ -176,15 +173,6 @@ public class LlmRoute extends RouteBuilder {
         JacksonDataFormat dataFormat = new JacksonDataFormat(type);
         dataFormat.setModuleClassNames("com.fasterxml.jackson.datatype.jsr310.JavaTimeModule");
         return dataFormat;
-    }
-
-    public void prepareLlmJob(Exchange exchange) {
-        jobs().prepare(
-                exchange,
-                runtimes,
-                personas,
-                exchange.getContext().resolvePropertyPlaceholders("{{agent.framework.default-synthesis-runtime:synthesis-low}}"),
-                globalModelFallback(exchange));
     }
 
     public ExecutionRuntimeDefinition requiredRuntime(String runtimeId) {
@@ -214,11 +202,7 @@ public class LlmRoute extends RouteBuilder {
         LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
         Instant startedAt = exchange.getProperty("llmStartedAt", Instant.class);
         String rawResponse = exchange.getIn().getBody(String.class);
-        return LlmJobResult.succeeded(job, modelId(exchange), rawResponse, rawResponse, startedAt);
-    }
-
-    public LlmJobResult failedLlmResult(Exchange exchange) {
-        return deadLetters().failedLlmResult(exchange, globalModelFallback(exchange));
+        return LlmJobResult.succeeded(job, deadLetterFactory.modelId(exchange), rawResponse, rawResponse, startedAt);
     }
 
     public LlmJobResult awaitLlmReply(Exchange exchange) throws Exception {
@@ -227,34 +211,9 @@ public class LlmRoute extends RouteBuilder {
         try {
             return inFlightReplyManager.await(jobId, timeoutMs);
         } catch (Exception failure) {
-            throw new LlmAvailabilityException("LLM reply failure: " + contextSummary(exchange)
+            throw new LlmAvailabilityException("LLM reply failure: " + deadLetterFactory.contextSummary(exchange)
                     + " reason=" + failure.getMessage(), failure);
         }
-    }
-
-    public LlmJobDeadLetter failedQueuedJobDeadLetter(Exchange exchange) {
-        return deadLetters().failedQueuedJobDeadLetter(exchange, globalModelFallback(exchange));
-    }
-
-    public void restoreFrameworkMetadata(Exchange exchange) {
-        jobs().restoreFrameworkMetadata(exchange);
-    }
-
-    @SuppressWarnings("unused")
-    private void restoreFrameworkMetadata(Exchange exchange, LlmJobEnvelope job) {
-        jobs().restoreFrameworkMetadata(exchange, job);
-    }
-
-    public String partitionKey(LlmJobRequest request, Exchange exchange, InferenceLaneDefinition lane) {
-        return jobs().partitionKey(request, exchange, lane);
-    }
-
-    public String requestKafkaKey(Exchange exchange) {
-        return jobs().requestKafkaKey(exchange);
-    }
-
-    public UUID jobIdKafkaKey(Exchange exchange) {
-        return jobs().jobIdKafkaKey(exchange);
     }
 
     public boolean shouldApplyProviderSchema(Exchange exchange) {
@@ -277,7 +236,7 @@ public class LlmRoute extends RouteBuilder {
     public void verifySelectedLlmRoutesAvailable(Exchange exchange) {
         InferenceLaneDefinition lane = exchange.getProperty("inferenceLane", InferenceLaneDefinition.class);
         if (lane == null) {
-            throw new LlmAvailabilityException("Selected LLM inference lane is unavailable: " + contextSummary(exchange)
+            throw new LlmAvailabilityException("Selected LLM inference lane is unavailable: " + deadLetterFactory.contextSummary(exchange)
                     + " reason=missing inferenceLane exchange property");
         }
         String routeSuffix = lane.id().replaceAll("[^A-Za-z0-9_-]", "-");
@@ -291,28 +250,12 @@ public class LlmRoute extends RouteBuilder {
         ServiceStatus status = camelContext.getRouteController().getRouteStatus(routeId);
         if (status == null || !status.isStarted()) {
             throw new LlmAvailabilityException("LLM route '" + routeId + "' is not running. Refusing to queue request: "
-                    + contextSummary(exchange) + " reason=route status is " + status);
+                    + deadLetterFactory.contextSummary(exchange) + " reason=route status is " + status);
         }
-    }
-
-    public String contextSummary(Exchange exchange) {
-        return deadLetters().contextSummary(exchange, globalModelFallback(exchange));
-    }
-
-    private String modelId(Exchange exchange) {
-        return deadLetters().modelId(exchange, globalModelFallback(exchange));
     }
 
     private boolean localWorkerRouteVerificationEnabled(Exchange exchange) {
         return Boolean.parseBoolean(exchange.getContext().resolvePropertyPlaceholders("{{llm.local-worker-route-verification.enabled:true}}"));
-    }
-
-    private static String resolveOptionalPlaceholder(Exchange exchange, String placeholder) {
-        try {
-            return exchange.getContext().resolvePropertyPlaceholders(placeholder);
-        } catch (Exception ignored) {
-            return null;
-        }
     }
 
     private static String firstNonBlank(String... values) {
@@ -324,21 +267,4 @@ public class LlmRoute extends RouteBuilder {
         return null;
     }
 
-    private String globalModelFallback(Exchange exchange) {
-        return resolveOptionalPlaceholder(exchange, "{{llm.openai.model:}}");
-    }
-
-    private LlmJobFactory jobs() {
-        if (jobFactory == null) {
-            jobFactory = new LlmJobFactory();
-        }
-        return jobFactory;
-    }
-
-    private LlmDeadLetterFactory deadLetters() {
-        if (deadLetterFactory == null) {
-            deadLetterFactory = new LlmDeadLetterFactory();
-        }
-        return deadLetterFactory;
-    }
 }

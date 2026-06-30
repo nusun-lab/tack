@@ -97,7 +97,6 @@ public record ToolProfile(
             }
             return this;
         }
-        public Builder allowedTool(String server, String toolName) { return allowTool(server, toolName); }
         public Builder allowTool(String server, String toolName) {
             this.servers.add(server);
             this.allowedTools.computeIfAbsent(server, ignored -> new LinkedHashSet<>()).add(toolName);
@@ -109,7 +108,6 @@ public record ToolProfile(
             }
             return this;
         }
-        public Builder deniedTool(String server, String toolName) { return denyTool(server, toolName); }
         public Builder denyTool(String server, String toolName) {
             this.servers.add(server);
             this.deniedTools.computeIfAbsent(server, ignored -> new LinkedHashSet<>()).add(toolName);

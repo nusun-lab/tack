@@ -1,6 +1,5 @@
 package us.nusun.llmshare.example.routine;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.builder.RouteBuilder;
@@ -47,13 +46,15 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         collaboration setup dependencies, blockers, and
                         orchestration state.
                         """, 900))
-                .process(routine.create("initial-agent-runs")
-                        .schemaId("start-agent-run-command-list")
-                        .schema("classpath:schemas/example/software-team/start-agent-run-commands-schema.json")
+                .process(routine.create("planned-agent-runs")
+                        .schemaId("agent-run-request-list")
+                        .schema("classpath:schemas/example/software-team/agent-run-requests-schema.json")
                         .prompt(simple("""
                                 Given the mission, propose the initial software-team
-                                agent runs to start as generic StartAgentRunCommand
-                                objects.
+                                agent runs to schedule as generic AgentRunRequest
+                                objects. Include only personaId, routineId, and
+                                optional input. The framework supplies mission id,
+                                agent run id, parent lineage, status, and timestamps.
 
                                 Mission:
                                 ${exchangeProperty.mission.goal}
@@ -69,20 +70,13 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
 
                                 Choose personas and routines from the catalog data above.
                                 Prefer a small set that makes concrete progress and respects
-                                setup dependencies. Return only schema-compliant JSON.
+                                setup dependencies. Scheduling is fire-and-forget; do not
+                                assume one agent waits for another. Return only schema-compliant JSON.
                                 """)))
                 .to("direct:create")
-                .split().method(DirectorRoutine.class, "agentRunItems")
+                .split().jsonpath("$.agentRuns[*]")
                     .to("direct:start-agent-run")
                 .end()
                 .process(routine.exitThought("director-planning"));
-    }
-
-    public static java.util.List<JsonNode> agentRunItems(JsonNode root) {
-        java.util.ArrayList<JsonNode> rows = new java.util.ArrayList<>();
-        if (root != null && root.has("agentRuns") && root.get("agentRuns").isArray()) {
-            root.get("agentRuns").forEach(rows::add);
-        }
-        return rows;
     }
 }

@@ -15,28 +15,12 @@ public class LogTokens {
         System.out.println(message);
     }
 
-    public String wrap(String label, String message) {
-        return wrap(label, null, false, message);
-    }
-
-    public String wrapDim(String label, String message) {
-        return wrap(label, null, true, message);
-    }
-
-    public String wrap(String label, String color, String message) {
-        return wrap(label, color, false, message);
-    }
-
     public String wrapDim(String label, String color, String message) {
-        return wrap(label, color, true, message);
-    }
-
-    private String wrap(String label, String color, boolean dim, String message) {
         String text = "[" + label + "] " + message;
         if (!ansiEnabled || color == null || color.isBlank()) {
             return text;
         }
-        String prefix = "\u001B[" + (dim ? dimColor(color) : color) + "m";
+        String prefix = "\u001B[" + dimColor(color) + "m";
         return prefix + text + "\u001B[0m";
     }
 
