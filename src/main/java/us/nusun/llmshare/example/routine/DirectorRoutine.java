@@ -4,13 +4,14 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.builder.RouteBuilder;
 import us.nusun.llmshare.framework.inventory.RoutineProvider;
+import org.apache.camel.model.dataformat.JsonLibrary;
+import us.nusun.llmshare.framework.model.MissionRequest;
 import us.nusun.llmshare.framework.model.RoutineDefinition;
 import us.nusun.llmshare.framework.routine.RoutineSupport;
 
 import java.util.List;
 
 import static org.apache.camel.builder.Builder.simple;
-
 
 @ApplicationScoped
 public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
@@ -31,7 +32,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         personas and routines, with explicit wiki/chat coordination.
                         """)
                 .routeUri("direct:example-software-team-director")
-                .defaultToolRuntime("tool-low")
+                .defaultToolRuntime("tool-high")
                 .defaultSynthesisRuntime("synthesis-low")
                 .build();
     }
@@ -51,9 +52,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         .schema("classpath:schemas/example/software-team/agent-run-requests-schema.json")
                         .prompt(simple("""
                                 Given the mission, propose software-team AgentRunRequest
-                                objects to schedule. Include only personaId, routineId,
-                                and optional input. The framework supplies mission id,
-                                agent run id, parent lineage, status, and timestamps.
+                                objects to schedule.
 
                                 Mission:
                                 ${exchangeProperty.mission.goal}
@@ -69,16 +68,12 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
 
                                 Choose personas and routines from the catalog data above.
                                 Prefer a small set that makes concrete progress and respects
-                                setup dependencies. If collaboration basics are uncertain,
-                                include the Project Manager so the wiki, chat, project board,
-                                and source repository can become the shared coordination base.
-                                Scheduling is fire-and-forget; do not assume one agent waits
-                                for another. Use input only for concise coordination hints,
-                                such as what wiki page or chat context each run should read.
-                                Return only schema-compliant JSON.
+                                setup dependencies.
                                 """)))
                 .to("direct:create")
-                .split().jsonpath("$.agentRuns[*]")
+                .marshal().json(JsonLibrary.Jackson)
+                .unmarshal().json(JsonLibrary.Jackson, MissionRequest.class)
+                .split().simple("${body.agentRuns}")
                     .to("direct:start-agent-run")
                 .end()
                 .process(routine.exitThought("director-planning"));

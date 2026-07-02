@@ -3,7 +3,6 @@ package us.nusun.llmshare.framework.tests.boundary;
 import dev.langchain4j.mcp.client.McpClient;
 import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.framework.logging.LogTokens;
-import us.nusun.llmshare.framework.inventory.AgentIdentityConfig;
 import us.nusun.llmshare.framework.mcp.McpClientFactory;
 import us.nusun.llmshare.framework.model.McpServerDefinition;
 import us.nusun.llmshare.framework.model.Persona;
@@ -25,7 +24,7 @@ class McpClientFactoryBoundaryTest {
 
     @Test
     void missingUrlOrTokenDisablesConfiguredServerClient() {
-        McpClientFactory factory = factory(config());
+        McpClientFactory factory = factory();
         Persona persona = Persona.builder("persona")
                 .name("Persona")
                 .identity("plane", "", "@persona")
@@ -43,7 +42,7 @@ class McpClientFactoryBoundaryTest {
 
     @Test
     void createsOnlyAllowedServerClientsWithPerPersonaLazyKeys() {
-        McpClientFactory factory = factory(config());
+        McpClientFactory factory = factory();
         Persona persona = Persona.builder("persona-a")
                 .name("Persona A")
                 .identity("plane", "plane-secret", "@miles-agent")
@@ -63,7 +62,7 @@ class McpClientFactoryBoundaryTest {
 
     @Test
     void factoryBuildsCustomServerDefinitionWithoutCodeChanges() {
-        McpClientFactory factory = factory(config());
+        McpClientFactory factory = factory();
         Persona persona = Persona.builder("persona-a")
                 .name("Persona A")
                 .identity("custom", "custom-secret", "@custom-agent")
@@ -85,7 +84,7 @@ class McpClientFactoryBoundaryTest {
 
     @Test
     void toolProfileFilteringStillWorksByServerId() {
-        McpClientFactory factory = factory(config());
+        McpClientFactory factory = factory();
         Persona persona = Persona.builder("persona-a")
                 .name("Persona A")
                 .identity("plane", "plane-secret", "@plane-agent")
@@ -118,9 +117,13 @@ class McpClientFactoryBoundaryTest {
         assertEquals("token %s", server.authHeaderValueFormat());
     }
 
-    private static McpClientFactory factory(AgentIdentityConfig config) {
+    private static McpClientFactory factory() {
         McpClientFactory factory = new McpClientFactory();
-        FrameworkFixtures.set(factory, "config", config);
+        FrameworkFixtures.set(factory, "transportTimeoutMs", 1000L);
+        FrameworkFixtures.set(factory, "initializationTimeoutMs", 500L);
+        FrameworkFixtures.set(factory, "maxToolResultCharacters", 1000);
+        FrameworkFixtures.set(factory, "logTransportRequests", false);
+        FrameworkFixtures.set(factory, "logTransportResponses", false);
         FrameworkFixtures.set(factory, "logTokens", new LogTokens(false));
         return factory;
     }
@@ -128,27 +131,4 @@ class McpClientFactoryBoundaryTest {
     private static McpServerDefinition server(String id, String url) {
         return McpServerDefinition.builder(id).url(url == null ? "" : url).build();
     }
-
-    private static AgentIdentityConfig config() {
-        return () -> new TestMcpConfig(
-                new TestLoggingConfig(),
-                1000,
-                500,
-                1000);
-    }
-
-    record TestMcpConfig(
-            Logging logging,
-            long transportTimeoutMs,
-            long initializationTimeoutMs,
-            int maxToolResultCharacters
-    ) implements AgentIdentityConfig.Mcp {
-    }
-
-    record TestLoggingConfig() implements AgentIdentityConfig.Mcp.Logging {
-        @Override public boolean enabled() { return false; }
-        @Override public boolean transportRequests() { return false; }
-        @Override public boolean transportResponses() { return false; }
-    }
-
 }

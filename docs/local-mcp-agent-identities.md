@@ -62,10 +62,10 @@ Token variables:
 Corresponding config paths:
 
 ```properties
-agent.identity.noah.mattermost.token=${NOAH_MATTERMOST_TOKEN:}
-agent.identity.owen.gitea.token=${OWEN_GITEA_TOKEN:}
-agent.identity.ethan.plane.token=${ETHAN_PLANE_TOKEN:}
-agent.identity.miles.plane.token=${MILES_PLANE_TOKEN:}
+persona.noah.identity.mattermost.token=${NOAH_MATTERMOST_TOKEN:}
+persona.owen.identity.gitea.token=${OWEN_GITEA_TOKEN:}
+persona.ethan.identity.plane.token=${ETHAN_PLANE_TOKEN:}
+persona.miles.identity.plane.token=${MILES_PLANE_TOKEN:}
 ```
 
 ## InferenceLane Tokens
@@ -84,7 +84,7 @@ export LLM_HIGH_API_KEY=...
 The persona is the source of truth for external identity mappings:
 
 ```java
-@ConfigProperty(name = "agent.identity.owen.gitea.token", defaultValue = "")
+@ConfigProperty(name = "persona.owen.identity.gitea.token", defaultValue = "")
 String giteaToken = "";
 
 // ...

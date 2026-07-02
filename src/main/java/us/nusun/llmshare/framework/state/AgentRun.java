@@ -72,13 +72,6 @@ public class AgentRun {
         latestObservation = result == null ? latestObservation : result.summary();
         if (result != null) {
             stepHistory.add(result);
-            status = switch (String.valueOf(result.status())) {
-                case "blocked" -> "blocked";
-                case "failed" -> STATUS_FAILED;
-                case "needs-coordinator" -> "needs-coordinator";
-                case "needs-human" -> "needs-human";
-                default -> STATUS_RUNNING;
-            };
         }
     }
 

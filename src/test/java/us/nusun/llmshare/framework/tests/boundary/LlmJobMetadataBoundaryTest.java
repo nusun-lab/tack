@@ -89,6 +89,28 @@ class LlmJobMetadataBoundaryTest {
         assertEquals("source-control", mcpFactory.profile.id());
     }
 
+    @Test
+    void workerExchangeRestoresPersonaLogLabelAndColorFromSerializedEnvelope() throws Exception {
+        LlmJobRequest request = new LlmJobRequest(
+                null,
+                "synthesis-low",
+                "Persona A",
+                0,
+                "prompt",
+                "system",
+                null,
+                Map.of("personaId", "persona-a"),
+                null).normalized();
+        LlmJobEnvelope envelope = LlmJobEnvelope.queued(request);
+        Exchange worker = new DefaultExchange(new DefaultCamelContext());
+
+        new LlmJobFactory(FrameworkFixtures.executionRuntimeRegistry(), FrameworkFixtures.personaCatalog())
+                .restoreFrameworkMetadata(worker, envelope);
+
+        assertEquals("PA", worker.getProperty("agentLabel"));
+        assertEquals("38;2;106;169;255", worker.getProperty("agentLogColor"));
+    }
+
     static class CapturingMcpClientFactory extends McpClientFactory {
         Persona persona;
         ToolProfile profile;

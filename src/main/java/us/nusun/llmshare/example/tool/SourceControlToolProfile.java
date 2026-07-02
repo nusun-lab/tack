@@ -12,16 +12,16 @@ import java.util.List;
 public class SourceControlToolProfile implements ToolProfileProvider {
     public static final String ID = "source-control";
 
-    @ConfigProperty(name = "agent.mcp.gitea.url", defaultValue = "")
+    @ConfigProperty(name = "agent.tool.mcp.gitea.url", defaultValue = "")
     String url = "";
 
-    @ConfigProperty(name = "agent.mcp.gitea.transport-type", defaultValue = "streamableHttp")
+    @ConfigProperty(name = "agent.tool.mcp.gitea.transport-type", defaultValue = "streamableHttp")
     String transportType = "streamableHttp";
 
-    @ConfigProperty(name = "agent.mcp.gitea.auth-header-name", defaultValue = "Authorization")
+    @ConfigProperty(name = "agent.tool.mcp.gitea.auth-header-name", defaultValue = "Authorization")
     String authHeaderName = "Authorization";
 
-    @ConfigProperty(name = "agent.mcp.gitea.auth-header-value-format", defaultValue = "token %s")
+    @ConfigProperty(name = "agent.tool.mcp.gitea.auth-header-value-format", defaultValue = "token %s")
     String authHeaderValueFormat = "token %s";
 
     @Override

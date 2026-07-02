@@ -9,6 +9,7 @@ import org.apache.camel.ExchangeProperty;
 import org.apache.camel.ServiceStatus;
 import org.apache.camel.component.langchain4j.agent.api.AiAgentBody;
 import us.nusun.llmshare.framework.inventory.ExecutionRuntimeRegistry;
+import us.nusun.llmshare.framework.logging.LogTokens;
 import us.nusun.llmshare.framework.model.ExecutionRuntimeDefinition;
 import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
 import us.nusun.llmshare.framework.model.LlmJobEnvelope;
@@ -30,6 +31,7 @@ public class LlmRouteSupport {
     @Inject ExecutionRuntimeRegistry runtimes;
     @Inject InFlightReplyManager inFlightReplyManager;
     @Inject LlmDeadLetterFactory deadLetterFactory;
+    @Inject LogTokens logTokens;
 
     public LlmRouteSupport() {
     }
@@ -39,10 +41,20 @@ public class LlmRouteSupport {
             ExecutionRuntimeRegistry runtimes,
             InFlightReplyManager inFlightReplyManager,
             LlmDeadLetterFactory deadLetterFactory) {
+        this(camelContext, runtimes, inFlightReplyManager, deadLetterFactory, new LogTokens(false));
+    }
+
+    public LlmRouteSupport(
+            CamelContext camelContext,
+            ExecutionRuntimeRegistry runtimes,
+            InFlightReplyManager inFlightReplyManager,
+            LlmDeadLetterFactory deadLetterFactory,
+            LogTokens logTokens) {
         this.camelContext = camelContext;
         this.runtimes = runtimes;
         this.inFlightReplyManager = inFlightReplyManager;
         this.deadLetterFactory = deadLetterFactory;
+        this.logTokens = logTokens;
     }
 
     public LlmJobResult awaitReply(@ExchangeProperty("llmJobId") UUID jobId, Exchange exchange) throws Exception {
@@ -62,6 +74,16 @@ public class LlmRouteSupport {
         exchange.setProperty("llmStartedAt", Instant.now());
         exchange.setProperty("agentInvocationUri", agentInvocationUri(runtime, job, exchange));
         exchange.getIn().setBody(new AiAgentBody<>(job.prompt(), firstNonBlank(job.systemPrompt(), DEFAULT_SYSTEM_PROMPT), job.jobId()));
+    }
+
+    public void logPrompt(@ExchangeProperty("llmJob") LlmJobEnvelope job, Exchange exchange) {
+        String prompt = job == null ? null : job.prompt();
+        logTokens().print(logTokens().wrapDim(agentLabel(exchange), agentLogColor(exchange), "PROMPT " + prompt));
+    }
+
+    public void logModelResponse(@Body LlmJobResult result, Exchange exchange) {
+        String content = result == null ? null : result.content();
+        logTokens().print(logTokens().wrap(agentLabel(exchange), agentLogColor(exchange), "RESPONSE " + content));
     }
 
     public LlmJobResult succeededResult(
@@ -90,9 +112,13 @@ public class LlmRouteSupport {
 
     private String agentInvocationUri(ExecutionRuntimeDefinition runtime, LlmJobEnvelope job, Exchange exchange) {
         String invocationUri = "langchain4j-agent:" + runtime.agentName() + agentConfigurationQuery(runtime);
-        return shouldApplyProviderSchema(exchange, job, runtime)
-                ? invocationUri + "&jsonSchema=" + job.responseSchema()
-                : invocationUri;
+        return usesAgentFactory(runtime) || !ProviderStructuredOutputSupport.shouldApplyProviderSchema(exchange, job)
+                ? invocationUri
+                : invocationUri + "&jsonSchema=" + job.responseSchema();
+    }
+
+    private boolean usesAgentFactory(ExecutionRuntimeDefinition runtime) {
+        return runtime.agentFactoryBeanName() != null && !runtime.agentFactoryBeanName().isBlank();
     }
 
     private String agentConfigurationQuery(ExecutionRuntimeDefinition runtime) {
@@ -105,16 +131,6 @@ public class LlmRouteSupport {
         throw new IllegalStateException("Execution runtime " + runtime.id() + " does not define an agent factory or agent configuration bean");
     }
 
-    private boolean shouldApplyProviderSchema(Exchange exchange, LlmJobEnvelope job, ExecutionRuntimeDefinition runtime) {
-        if (runtime.toolCalling() || job == null || job.responseSchema() == null || job.responseSchema().isBlank()) {
-            return false;
-        }
-        if (Boolean.TRUE.equals(exchange.getProperty("llmForceProviderSchema", Boolean.class))) {
-            return true;
-        }
-        return Boolean.parseBoolean(exchange.getContext().resolvePropertyPlaceholders("{{llm.runtime-default.structured-output.provider-schema-enabled:false}}"));
-    }
-
     private void verifyRouteStarted(Exchange exchange, String routeId) {
         ServiceStatus status = camelContext.getRouteController().getRouteStatus(routeId);
         if (status == null || !status.isStarted()) {
@@ -125,6 +141,26 @@ public class LlmRouteSupport {
 
     private boolean localWorkerRouteVerificationEnabled(Exchange exchange) {
         return Boolean.parseBoolean(exchange.getContext().resolvePropertyPlaceholders("{{llm.local-worker-route-verification.enabled:true}}"));
+    }
+
+    private LogTokens logTokens() {
+        if (logTokens == null) {
+            logTokens = new LogTokens(false);
+        }
+        return logTokens;
+    }
+
+    private static String agentLabel(Exchange exchange) {
+        String label = exchange.getProperty("agentLabel", String.class);
+        if (label != null && !label.isBlank()) {
+            return label;
+        }
+        LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
+        return job == null || job.requester() == null || job.requester().isBlank() ? "LLM" : job.requester();
+    }
+
+    private static String agentLogColor(Exchange exchange) {
+        return exchange.getProperty("agentLogColor", String.class);
     }
 
     private static String firstNonBlank(String... values) {

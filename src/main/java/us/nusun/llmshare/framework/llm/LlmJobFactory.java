@@ -3,6 +3,7 @@ package us.nusun.llmshare.framework.llm;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.Exchange;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import us.nusun.llmshare.framework.inventory.ExecutionRuntimeRegistry;
 import us.nusun.llmshare.framework.inventory.PersonaCatalog;
 import us.nusun.llmshare.framework.model.ExecutionRuntimeDefinition;
@@ -22,6 +23,8 @@ import java.util.UUID;
 public class LlmJobFactory {
     @Inject ExecutionRuntimeRegistry runtimes;
     @Inject PersonaCatalog personas;
+    @ConfigProperty(name = "agent.framework.default-synthesis-runtime", defaultValue = "synthesis-low")
+    String defaultSynthesisRuntime = "synthesis-low";
 
     public LlmJobFactory() {
     }
@@ -36,7 +39,7 @@ public class LlmJobFactory {
                 exchange,
                 runtimes,
                 personas,
-                exchange.getContext().resolvePropertyPlaceholders("{{agent.framework.default-synthesis-runtime:synthesis-low}}"),
+                firstNonBlank(defaultSynthesisRuntime, "synthesis-low"),
                 globalModelFallback(exchange));
     }
 
@@ -89,6 +92,7 @@ public class LlmJobFactory {
 
     public void restoreFrameworkMetadata(Exchange exchange, LlmJobEnvelope job) {
         restoreFrameworkMetadataFromEnvelope(exchange, job);
+        applyLogPersona(exchange, personas, job == null ? null : job.requester());
     }
 
     public String partitionKey(LlmJobRequest request, Exchange exchange, InferenceLaneDefinition lane) {
@@ -134,6 +138,9 @@ public class LlmJobFactory {
         putIfPresent(metadata, "partitionKeyStrategy", lane.partitionKeyStrategy().name());
         putIfPresent(metadata, "personaId", exchange.getProperty("personaId", String.class));
         putIfPresent(metadata, "toolProfile", exchange.getProperty("toolProfile", String.class));
+        putIfPresent(metadata, ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY,
+                firstPresent(exchange.getProperty(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY),
+                        exchange.getIn().getHeader(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY)));
         return new LlmJobRequest(request.jobId(), request.requester(), request.role(), request.priority(), request.prompt(), request.systemPrompt(), request.responseSchema(), Map.copyOf(metadata), request.requestedAt());
     }
 
@@ -143,8 +150,8 @@ public class LlmJobFactory {
 
     private static void applyLogPersona(Exchange exchange, PersonaCatalog personas, String fallbackLabel) {
         String personaId = exchange.getProperty("personaId", String.class);
-        if (personaId == null || personaId.isBlank()) {
-            exchange.setProperty("agentLabel", fallbackLabel);
+        if (personaId == null || personaId.isBlank() || personas == null) {
+            exchange.setProperty("agentLabel", firstNonBlank(fallbackLabel, "LLM"));
             exchange.removeProperty("agentLogColor");
             return;
         }
@@ -215,6 +222,21 @@ public class LlmJobFactory {
         if (value != null && !value.isBlank()) {
             metadata.put(key, value);
         }
+    }
+
+    private static void putIfPresent(Map<String, Object> metadata, String key, Object value) {
+        if (value != null) {
+            metadata.put(key, value);
+        }
+    }
+
+    private static Object firstPresent(Object... values) {
+        for (Object value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
     }
 
     private static String firstNonBlank(String... values) {

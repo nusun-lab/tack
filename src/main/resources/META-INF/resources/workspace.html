@@ -6,30 +6,44 @@
   <title>Agent Framework Workspace</title>
   <style>
     :root {
-      color-scheme: light;
-      --ink:#172018; --muted:#5e6d5e; --paper:#f5efe2; --panel:#fffaf0; --panel2:#fdf5df;
-      --line:#dacbb2; --accent:#286b50; --accent2:#b7791f; --danger:#a33f30; --shadow:rgba(50,42,25,.12);
-      --mono:#172018; --monoText:#f8f1dc;
+      color-scheme: dark;
+      --ink:#c9d1d9;
+      --muted:#8b949e;
+      --paper:#0d1117;
+      --paper2:#010409;
+      --panel:#161b22;
+      --panel2:#0d1117;
+      --line:#30363d;
+      --line2:#21262d;
+      --accent:#58a6ff;
+      --accent2:#1f6feb;
+      --success:#238636;
+      --danger:#da3633;
+      --warning:#d29922;
+      --shadow:rgba(1,4,9,.5);
+      --mono:#010409;
+      --monoText:#c9d1d9;
     }
     * { box-sizing:border-box; }
-    body { margin:0; font-family: ui-serif, Georgia, Cambria, serif; background: radial-gradient(circle at 12% -4%, #ffe6a3, transparent 28rem), radial-gradient(circle at 90% 8%, #c8ead9, transparent 26rem), linear-gradient(135deg, #eef5e8, var(--paper)); color:var(--ink); }
-    header { padding: 2.4rem clamp(1rem,4vw,4rem) 1.6rem; border-bottom:1px solid var(--line); }
-    h1 { margin:.1rem 0; font-size: clamp(2.3rem, 6vw, 5.6rem); letter-spacing:-.07em; line-height:.92; }
-    h2 { margin:.25rem 0 1rem; font-size:.82rem; text-transform:uppercase; letter-spacing:.14em; color:var(--accent); }
-    h3 { margin:.1rem 0 .4rem; font-size:1.1rem; }
-    h4 { margin:.7rem 0 .25rem; font-size:.78rem; text-transform:uppercase; letter-spacing:.11em; color:var(--muted); }
-    main { padding: 1.2rem clamp(1rem,4vw,4rem) 4rem; display:grid; gap:1rem; }
+    body { margin:0; font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:radial-gradient(circle at 16% -12%, rgba(88,166,255,.18), transparent 28rem), radial-gradient(circle at 88% 0, rgba(35,134,54,.12), transparent 24rem), linear-gradient(180deg, #0d1117 0%, #010409 100%); color:var(--ink); }
+    header { padding:1.8rem clamp(1rem,4vw,4rem) 1.2rem; border-bottom:1px solid var(--line); background:rgba(1,4,9,.62); backdrop-filter:blur(12px); position:sticky; top:0; z-index:5; }
+    h1 { margin:.1rem 0; font-size:clamp(2rem, 5vw, 4.7rem); letter-spacing:-.055em; line-height:.96; font-weight:800; }
+    h2 { margin:.25rem 0 1rem; font-size:.78rem; text-transform:uppercase; letter-spacing:.14em; color:var(--accent); }
+    h3 { margin:.1rem 0 .4rem; font-size:1.05rem; }
+    h4 { margin:.8rem 0 .3rem; font-size:.76rem; text-transform:uppercase; letter-spacing:.11em; color:var(--muted); }
+    main { padding:1rem clamp(1rem,4vw,4rem) 4rem; display:grid; gap:1rem; }
     .grid { display:grid; gap:1rem; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); }
+    .inventory-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); align-items:start; }
     .wide { grid-column: 1 / -1; }
-    section, .card { background: color-mix(in srgb, var(--panel) 92%, white); border:1px solid var(--line); border-radius:24px; padding:1rem; box-shadow:0 18px 52px var(--shadow); }
-    .hero { display:grid; grid-template-columns: minmax(0,1.4fr) minmax(260px,.6fr); gap:1rem; align-items:stretch; }
+    section, .card { background:linear-gradient(180deg, rgba(22,27,34,.96), rgba(13,17,23,.96)); border:1px solid var(--line); border-radius:14px; padding:1rem; box-shadow:0 18px 52px var(--shadow); }
+    .hero { display:grid; grid-template-columns:minmax(190px,.55fr) minmax(0,1.45fr); gap:1rem; align-items:center; }
     .muted { color:var(--muted); }
-    .label { display:inline-flex; align-items:center; gap:.35rem; padding:.15rem .5rem; border:1px solid var(--line); border-radius:999px; background:#fff7df; font-size:.76rem; color:var(--muted); }
-    .status { color:white; background:var(--accent); border:0; }
+    .label { display:inline-flex; align-items:center; gap:.35rem; padding:.15rem .55rem; border:1px solid var(--line); border-radius:999px; background:#21262d; font-size:.76rem; color:var(--muted); }
+    .status { color:#fff; background:var(--success); border:0; }
     .danger { background:var(--danger); }
-    .counts { display:grid; grid-template-columns:repeat(6,minmax(86px,1fr)); gap:.55rem; }
-    .count { border:1px solid var(--line); background:var(--panel2); border-radius:18px; padding:.75rem; }
-    .count b { display:block; font-size:1.65rem; line-height:1; }
+    .counts { display:grid; grid-template-columns:repeat(auto-fit,minmax(7rem,1fr)); gap:.55rem; min-width:0; }
+    .count { border:1px solid var(--line); background:linear-gradient(180deg, #21262d, #161b22); border-radius:12px; padding:.75rem; min-width:0; }
+    .count b { display:block; font-size:1.55rem; line-height:1; color:#f0f6fc; }
     .count span { color:var(--muted); font-size:.78rem; }
     .row { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; }
     .stack { display:grid; gap:.65rem; }
@@ -37,21 +51,40 @@
     .kv dt { color:var(--muted); }
     .kv dd { margin:0; min-width:0; overflow-wrap:anywhere; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    pre { white-space:pre-wrap; overflow:auto; background:var(--mono); color:var(--monoText); padding:.85rem; border-radius:16px; font-size:.82rem; line-height:1.42; }
-    button { border:1px solid var(--accent); color:var(--accent); background:#fffaf0; border-radius:999px; padding:.35rem .7rem; cursor:pointer; font:inherit; font-size:.82rem; }
-    button:hover { background:#e8f3e9; }
-    details { border:1px solid var(--line); border-radius:18px; padding:.7rem; background:#fff8e8; }
+    pre { white-space:pre-wrap; overflow:auto; background:var(--mono); color:var(--monoText); border:1px solid var(--line2); padding:.85rem; border-radius:10px; font-size:.82rem; line-height:1.42; }
+    button { border:1px solid var(--accent2); color:#f0f6fc; background:#1f6feb; border-radius:999px; padding:.38rem .78rem; cursor:pointer; font:inherit; font-size:.82rem; font-weight:600; }
+    button:hover { background:#388bfd; }
+    details { border:1px solid var(--line); border-radius:12px; padding:.7rem; background:#0d1117; }
+    details[open] { border-color:#3b434d; background:#161b22; }
     summary { cursor:pointer; font-weight:700; }
-    .thought { border-left:5px solid var(--accent); }
+    .thought { border-left:4px solid var(--accent); }
+    .agent-run-browser { display:grid; grid-template-columns:minmax(15rem, 20rem) minmax(0,1fr); gap:1rem; align-items:start; }
+    .agent-run-rail { display:grid; gap:.55rem; max-height:calc(100vh - 10rem); overflow:auto; position:sticky; top:7.5rem; }
+    .agent-run-preview { width:100%; text-align:left; border:1px solid var(--line); color:var(--ink); background:#0d1117; border-radius:12px; padding:.72rem; display:grid; gap:.45rem; box-shadow:none; }
+    .agent-run-preview:hover { background:#161b22; border-color:#3b434d; }
+    .agent-run-preview.selected { border-color:var(--accent); background:linear-gradient(180deg, rgba(31,111,235,.18), rgba(13,17,23,.98)); }
+    .agent-run-preview-title { display:flex; align-items:center; gap:.5rem; min-width:0; }
+    .agent-run-preview-title strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .agent-run-preview-meta { display:grid; gap:.18rem; color:var(--muted); font-size:.76rem; }
+    .agent-run-detail { min-width:0; }
     .timeline { max-height:18rem; overflow:auto; }
     .timeline li { margin:.2rem 0; }
-    .empty { padding:1.1rem; border:1px dashed var(--line); border-radius:18px; color:var(--muted); background:#fff8e8; }
-    .persona-dot { width:.85rem; height:.85rem; border-radius:50%; display:inline-block; border:1px solid rgba(0,0,0,.14); }
-    .inventory-title { display:flex; justify-content:space-between; gap:.8rem; align-items:flex-start; }
-    .inventory-title code { font-size:.78rem; }
+    .content-expander summary { color:var(--muted); font-weight:500; }
+    .content-expander[open] .truncated-text { display:none; }
+    .content-collapse-label { display:none; }
+    .content-expander[open] .content-expander-label { display:none; }
+    .content-expander[open] .content-collapse-label { display:inline; }
+    .truncated-text { display:block; white-space:pre-wrap; overflow-wrap:anywhere; color:var(--monoText); background:var(--mono); border:1px solid var(--line2); border-radius:10px; padding:.85rem; margin:.45rem 0; font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:.82rem; line-height:1.42; }
+    .empty { padding:1.1rem; border:1px dashed var(--line); border-radius:12px; color:var(--muted); background:#0d1117; }
+    .persona-dot { width:.85rem; height:.85rem; border-radius:50%; display:inline-block; border:1px solid rgba(255,255,255,.18); }
+    .inventory-title { display:flex; justify-content:space-between; gap:.8rem; align-items:flex-start; min-width:0; }
+    .inventory-title code { font-size:.78rem; overflow-wrap:anywhere; }
     .two { display:grid; gap:.7rem; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); }
+    .grid > *, .card, section { min-width:0; }
+    .card { overflow:hidden; }
     .actions { display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.65rem; }
-    @media (max-width: 820px) { .hero { grid-template-columns:1fr; } .counts { grid-template-columns:repeat(2,1fr); } .kv { grid-template-columns:1fr; } }
+    a { color:var(--accent); }
+    @media (max-width: 900px) { .hero, .agent-run-browser { grid-template-columns:1fr; } .agent-run-rail { position:static; max-height:none; } .counts { grid-template-columns:repeat(2,minmax(0,1fr)); } .kv { grid-template-columns:1fr; } header { position:static; } }
   </style>
 </head>
 <body>
@@ -63,7 +96,6 @@
     <section class="wide hero">
       <div>
         <h2>Live Framework</h2>
-        <p>An agent is a persona running a routine for a mission. Routines use <code>direct:act</code>, <code>direct:decide</code>, and <code>direct:create</code>. ExecutionRuntimes select InferenceLanes; ToolProfiles shape MCP clients.</p>
         <div class="actions">
           <button onclick="refresh()">Refresh now</button>
           <button onclick="toggleAllThoughts(true)">Expand all thoughts</button>
@@ -80,7 +112,7 @@
 
     <section class="wide">
       <h2>Framework Inventory</h2>
-      <div class="grid">
+      <div class="grid inventory-grid">
         <div><h3>Personas</h3><div id="personas" class="stack">Loading...</div></div>
         <div><h3>Routines</h3><div id="routines" class="stack">Loading...</div></div>
         <div><h3>ExecutionRuntimes</h3><div id="runtimes" class="stack">Loading...</div></div>
@@ -91,10 +123,62 @@
   </main>
   <script>
     let latest = {};
+    let selectedAgentRunId = localStorage.getItem('agent-workspace:selected-agent-run') || '';
+    const TIMELINE_LIMIT = 10;
+    const TEXT_TRUNCATE_LIMIT = 900;
+    const DETAILS_STORAGE_KEY = 'agent-workspace:open-details';
+    const dateTimeFormat = new Intl.DateTimeFormat(undefined, { dateStyle:'medium', timeStyle:'medium' });
     const esc = value => String(value ?? '').replace(/[&<>'"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]));
     const json = value => esc(JSON.stringify(value ?? {}, null, 2));
     const arr = value => Array.isArray(value) ? value : [];
     const obj = value => value && typeof value === 'object' ? value : {};
+    const openDetailKeys = loadOpenDetailKeys();
+
+    function formatTime(value) {
+      if (!value) return '';
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? String(value) : dateTimeFormat.format(date);
+    }
+
+    function timeTag(value) {
+      const text = formatTime(value);
+      return text ? `<time datetime="${esc(value)}" title="${esc(value)}">${esc(text)}</time>` : '';
+    }
+
+    function truncateText(value, limit = TEXT_TRUNCATE_LIMIT) {
+      const text = String(value ?? '');
+      return text.length <= limit ? text : `${text.slice(0, Math.max(0, limit - 16)).trimEnd()}... [truncated]`;
+    }
+
+    function loadOpenDetailKeys() {
+      try { return new Set(JSON.parse(localStorage.getItem(DETAILS_STORAGE_KEY) || '[]')); }
+      catch { return new Set(); }
+    }
+
+    function saveOpenDetailKeys() {
+      try { localStorage.setItem(DETAILS_STORAGE_KEY, JSON.stringify([...openDetailKeys])); }
+      catch {}
+    }
+
+    function detailAttrs(key) {
+      return `data-detail-key="${esc(key)}"${openDetailKeys.has(key) ? ' open' : ''}`;
+    }
+
+    document.addEventListener('toggle', event => {
+      const el = event.target;
+      if (!el || el.tagName !== 'DETAILS') return;
+      const key = el.dataset.detailKey;
+      if (!key) return;
+      if (el.open) openDetailKeys.add(key);
+      else openDetailKeys.delete(key);
+      saveOpenDetailKeys();
+    }, true);
+
+    document.addEventListener('click', event => {
+      const el = event.target.closest('[data-agent-run-select]');
+      if (!el) return;
+      selectAgentRun(el.dataset.agentRunSelect);
+    });
 
     async function refresh() {
       latest = await fetch('/workspace/view').then(r => r.json());
@@ -122,50 +206,97 @@
     function renderProjections(projections) {
       const root = document.getElementById('projections');
       if (!projections.length) { root.innerHTML = '<div class="empty">No AgentRunProjections yet. Submit a mission to watch live exchange state become dashboard-safe projection state.</div>'; return; }
-      root.innerHTML = projections.map(p => {
-        const current = obj(p.current);
-        const latestResult = obj(p.latestResult);
-        const thoughts = arr(p.thoughtStack);
-        const timeline = arr(p.timeline);
-        return `<article class="card">
-          <div class="inventory-title">
-            <div>
-              <h3>${esc(obj(p.persona).name || obj(p.persona).id || 'AgentRun')} <span class="muted">running</span> ${esc(obj(p.routine).name || obj(p.routine).id || '')}</h3>
-              <div class="row"><span class="label status ${p.status === 'failed' || p.status === 'blocked' ? 'danger' : ''}">${esc(p.status)}</span><span class="label mono">${esc(p.agentRunId)}</span><span class="label mono">mission ${esc(p.missionId)}</span></div>
-            </div>
-            <code>${esc(p.updatedAt)}</code>
-          </div>
-          <div class="two">
-            <dl class="kv">
-              <dt>Current</dt><dd>${esc(current.primitive)} / ${esc(current.id)}</dd>
-              <dt>Prompt</dt><dd>${esc(current.promptSummary)}</dd>
-              <dt>ToolProfile</dt><dd class="mono">${esc(p.toolProfile || 'none')}</dd>
-              <dt>Runtimes</dt><dd><pre>${json(p.runtimes)}</pre></dd>
-              <dt>InferenceLanes</dt><dd><pre>${json(p.lanes)}</pre></dd>
-            </dl>
-            <div>
-              <h4>Latest Result</h4><pre>${json(latestResult)}</pre>
-              <h4>Timeline</h4><ol class="timeline">${timeline.map(t => `<li><span class="mono">${esc(t.type)}</span> <span class="muted">${esc(t.at)}</span></li>`).join('')}</ol>
-            </div>
-          </div>
-          <h4>ThoughtStack (${thoughts.length})</h4>
-          ${thoughts.length ? thoughts.map(renderThought).join('') : '<div class="empty">No active ThoughtFrames on this projection.</div>'}
-        </article>`;
-      }).join('');
+      if (!projections.some(p => p.agentRunId === selectedAgentRunId)) {
+        selectedAgentRunId = projections[0].agentRunId;
+        localStorage.setItem('agent-workspace:selected-agent-run', selectedAgentRunId);
+      }
+      const selected = projections.find(p => p.agentRunId === selectedAgentRunId) || projections[0];
+      root.innerHTML = `<div class="agent-run-browser">
+        <aside class="agent-run-rail" aria-label="Agent runs">${projections.map(renderAgentRunPreview).join('')}</aside>
+        <div class="agent-run-detail">${renderAgentRunDetail(selected)}</div>
+      </div>`;
     }
 
-    function renderThought(t, index) {
+    function selectAgentRun(agentRunId) {
+      selectedAgentRunId = agentRunId;
+      localStorage.setItem('agent-workspace:selected-agent-run', selectedAgentRunId);
+      renderProjections(arr(latest.agentRunProjections));
+    }
+
+    function renderAgentRunPreview(p) {
+      const persona = obj(p.persona);
+      const routine = obj(p.routine);
+      const selected = p.agentRunId === selectedAgentRunId;
+      return `<button type="button" class="agent-run-preview ${selected ? 'selected' : ''}" data-agent-run-select="${esc(p.agentRunId)}">
+        <span class="agent-run-preview-title"><span class="persona-dot" style="background:${ansiToCss(persona.color)}"></span><strong>${esc(persona.name || persona.id || 'AgentRun')}</strong></span>
+        <span class="agent-run-preview-meta">
+          <span>${esc(routine.name || routine.id || '')}</span>
+          <span><span class="label status ${p.status === 'failed' ? 'danger' : ''}">${esc(p.status)}</span></span>
+          <span>${timeTag(p.updatedAt)}</span>
+        </span>
+      </button>`;
+    }
+
+    function renderAgentRunDetail(p) {
+      const persona = obj(p.persona);
+      const routine = obj(p.routine);
+      const current = obj(p.current);
+      const latestResult = obj(p.latestResult);
+      const thoughts = arr(p.thoughtStack);
+      const fullTimeline = arr(p.timeline);
+      const timeline = fullTimeline.slice(-TIMELINE_LIMIT);
+      return `<article class="card">
+        <div class="inventory-title">
+          <div>
+            <h3><span class="persona-dot" style="background:${ansiToCss(persona.color)}"></span> ${esc(persona.name || persona.id || 'AgentRun')} <span class="muted">/</span> ${esc(routine.name || routine.id || '')}</h3>
+            <div class="row"><span class="label status ${p.status === 'failed' ? 'danger' : ''}">${esc(p.status)}</span><span class="label mono">${esc(p.agentRunId)}</span><span class="label mono">mission ${esc(p.missionId)}</span></div>
+          </div>
+          <code>${timeTag(p.updatedAt)}</code>
+        </div>
+        <div class="two">
+          <dl class="kv">
+            <dt>Current</dt><dd>${esc(current.primitive)} / ${esc(current.id)}</dd>
+            <dt>Prompt</dt><dd>${esc(current.promptSummary)}</dd>
+            <dt>ToolProfile</dt><dd class="mono">${esc(p.toolProfile || 'none')}</dd>
+            <dt>Runtimes</dt><dd><pre>${json(p.runtimes)}</pre></dd>
+            <dt>InferenceLanes</dt><dd><pre>${json(p.lanes)}</pre></dd>
+          </dl>
+          <div>
+            <h4>Latest Result</h4><pre>${json(latestResult)}</pre>
+            <h4>Timeline <span class="muted">last ${timeline.length}${fullTimeline.length > timeline.length ? ` of ${fullTimeline.length}` : ''}</span></h4><ol class="timeline">${timeline.map(t => `<li><span class="mono">${esc(t.type)}</span> <span class="muted">${timeTag(t.at)}</span></li>`).join('')}</ol>
+          </div>
+        </div>
+        <h4>ThoughtStack (${thoughts.length})</h4>
+        ${thoughts.length ? thoughts.map((thought, index) => renderThought(p.agentRunId, thought, index)).join('') : '<div class="empty">No active ThoughtFrames on this projection.</div>'}
+      </article>`;
+    }
+
+    function renderThought(agentRunId, t, index) {
       const content = t.content ?? '';
-      return `<details class="thought" data-thought>
-        <summary>${esc(t.id)} · ${esc(t.context)} · ${esc(t.approxTokens)} approx tokens</summary>
+      const context = t.context ?? '';
+      const contentIsDuplicateContext = content.trim() && content.trim() === context.trim();
+      const hasUsefulContent = content.trim() && !contentIsDuplicateContext;
+      const usefulApproxTokens = hasUsefulContent ? t.approxTokens : 0;
+      const key = `projection:${agentRunId}:thought:${t.id || index}`;
+      return `<details class="thought" data-thought ${detailAttrs(key)}>
+        <summary>${esc(t.id)} · ${esc(usefulApproxTokens)} content tokens</summary>
         <dl class="kv">
-          <dt>Context</dt><dd>${esc(t.context)}</dd>
+          <dt>Context</dt><dd>${esc(context)}</dd>
           <dt>Max tokens</dt><dd>${esc(t.maxTokens)}</dd>
-          <dt>Approx tokens</dt><dd>${esc(t.approxTokens)}</dd>
-          <dt>Preview</dt><dd>${esc(t.contentPreview ?? content)}</dd>
+          <dt>Content tokens</dt><dd>${esc(usefulApproxTokens)}</dd>
         </dl>
-        <h4>Full ThoughtFrame Content</h4>
-        <pre>${esc(content)}</pre>
+        ${hasUsefulContent ? `<h4>Content</h4>${renderExpandableText(`${key}:content`, content)}` : '<div class="empty">No synthesized thought content beyond the static context yet.</div>'}
+      </details>`;
+    }
+
+    function renderExpandableText(key, content) {
+      const text = String(content ?? '');
+      if (text.length <= TEXT_TRUNCATE_LIMIT) {
+        return `<pre>${esc(text)}</pre>`;
+      }
+      return `<details class="content-expander" ${detailAttrs(key)}>
+        <summary><span class="truncated-text">${esc(truncateText(text))}</span><span class="content-expander-label">Show full content</span><span class="content-collapse-label">Hide full content</span></summary>
+        <pre>${esc(text)}</pre>
       </details>`;
     }
 
@@ -175,7 +306,7 @@
         <div class="row"><span class="label">${esc(p.label)}</span><span class="label">agentRunStartAssignable=${esc(p.agentRunStartAssignable)}</span></div>
         <p>${esc(p.description)}</p>
         <h4>Traits</h4><ul>${arr(p.traits).map(x => `<li>${esc(x)}</li>`).join('')}</ul>
-        <details><summary>External identities</summary><pre>${json(p.identities)}</pre></details>
+        <details ${detailAttrs(`persona:${p.id}:identities`)}><summary>External identities</summary><pre>${json(p.identities)}</pre></details>
       </article>`).join('') || '<div class="empty">No personas registered.</div>';
     }
 
@@ -214,7 +345,12 @@
     }
 
     function toggleAllThoughts(open) {
-      document.querySelectorAll('[data-thought]').forEach(el => el.open = open);
+      document.querySelectorAll('[data-thought][data-detail-key]').forEach(el => {
+        el.open = open;
+        if (open) openDetailKeys.add(el.dataset.detailKey);
+        else openDetailKeys.delete(el.dataset.detailKey);
+      });
+      saveOpenDetailKeys();
     }
 
     refresh();

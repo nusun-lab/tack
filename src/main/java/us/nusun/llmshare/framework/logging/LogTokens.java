@@ -15,12 +15,20 @@ public class LogTokens {
         System.out.println(message);
     }
 
+    public String wrap(String label, String color, String message) {
+        return wrapWithColor(label, color, message, false);
+    }
+
     public String wrapDim(String label, String color, String message) {
+        return wrapWithColor(label, color, message, true);
+    }
+
+    private String wrapWithColor(String label, String color, String message, boolean dim) {
         String text = "[" + label + "] " + message;
         if (!ansiEnabled || color == null || color.isBlank()) {
             return text;
         }
-        String prefix = "\u001B[" + dimColor(color) + "m";
+        String prefix = "\u001B[" + (dim ? dimColor(color) : color) + "m";
         return prefix + text + "\u001B[0m";
     }
 
@@ -29,10 +37,14 @@ public class LogTokens {
         if (parts.length != 5 || !"38".equals(parts[0]) || !"2".equals(parts[1])) {
             return color;
         }
-        return "38;2;"
-                + darken(Integer.parseInt(parts[2])) + ";"
-                + darken(Integer.parseInt(parts[3])) + ";"
-                + darken(Integer.parseInt(parts[4]));
+        try {
+            return "38;2;"
+                    + darken(Integer.parseInt(parts[2])) + ";"
+                    + darken(Integer.parseInt(parts[3])) + ";"
+                    + darken(Integer.parseInt(parts[4]));
+        } catch (NumberFormatException ignored) {
+            return color;
+        }
     }
 
     private static int darken(int value) {

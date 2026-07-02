@@ -9,6 +9,7 @@ import us.nusun.llmshare.framework.model.DecisionResult;
 import us.nusun.llmshare.framework.model.LlmJobRequest;
 import us.nusun.llmshare.framework.model.StepResult;
 import us.nusun.llmshare.framework.model.ThoughtFrame;
+import us.nusun.llmshare.framework.llm.ProviderStructuredOutputSupport;
 import us.nusun.llmshare.framework.routine.PrimitiveSupport;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 import us.nusun.llmshare.framework.state.ThoughtStack;
@@ -99,6 +100,7 @@ class PrimitiveSemanticsTest {
         assertEquals("low-pass", request.metadata().get("inferenceLane"));
         assertEquals("run-1", request.metadata().get("agentRunId"));
         assertEquals("mission-1", request.metadata().get("missionId"));
+        assertFalse(request.metadata().containsKey(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY));
     }
 
     @Test
@@ -123,6 +125,75 @@ class PrimitiveSemanticsTest {
         assertTrue(request.prompt().contains("Confirm the target source repository."));
     }
 
+    @Test
+    void stepSynthesisRequestForcesProviderSchema() throws Exception {
+        PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
+        Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
+        ThoughtStack stack = new ThoughtStack();
+        stack.push(new ThoughtFrame("developer", "Developer context", 100, "Need current work summary."));
+        exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
+        exchange.setProperty("resolvedSynthesisRuntime", "synthesis-low");
+        exchange.setProperty("actId", "chat-kickoff");
+        exchange.setProperty("actPrompt", "Post implementation focus if stale.");
+        exchange.setProperty("toolPassResult", "No stale focus post found.");
+
+        support.prepareStepSynthesisPrompt().process(exchange);
+
+        LlmJobRequest request = exchange.getIn().getBody(LlmJobRequest.class);
+        assertEquals("classpath:schemas/step-result-schema.json", request.responseSchema());
+        assertEquals(true, request.metadata().get(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY));
+    }
+
+    @Test
+    void stepSynthesisPromptOnlyExposesWritableThoughtsForUpdates() throws Exception {
+        PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
+        Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
+        ThoughtStack stack = new ThoughtStack();
+        stack.push(new ThoughtFrame("readonly-thought", "Read-only context", 100, "Older stable context."));
+        stack.push(new ThoughtFrame("writable-thought", "Writable context", 100, ""));
+        exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
+        exchange.setProperty("resolvedSynthesisRuntime", "synthesis-low");
+        exchange.setProperty("thoughtUpdateDepth", 1);
+        exchange.setProperty("actId", "chat-kickoff");
+        exchange.setProperty("actPrompt", "Post implementation focus if stale.");
+        exchange.setProperty("toolPassResult", "No stale focus post found.");
+
+        support.prepareStepSynthesisPrompt().process(exchange);
+
+        LlmJobRequest request = exchange.getIn().getBody(LlmJobRequest.class);
+        String prompt = request.prompt();
+        int writableStart = prompt.indexOf("Writable thoughts:");
+        assertFalse(prompt.contains("Active thoughts:"));
+        assertTrue(writableStart >= 0);
+        String writableSection = prompt.substring(writableStart);
+        assertTrue(writableSection.contains("writable-thought"));
+        assertFalse(writableSection.contains("readonly-thought"));
+        assertFalse(writableSection.contains("writable:"));
+        assertTrue(prompt.contains("include only rewritten content for the writable thought ids above"));
+        assertTrue(prompt.contains("Do not copy a thought's static context into content"));
+    }
+
+    @Test
+    void stepSynthesisPromptExposesRoutineAndLoopThoughtsByDefault() throws Exception {
+        PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
+        Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
+        ThoughtStack stack = new ThoughtStack();
+        stack.push(new ThoughtFrame("routine-thought", "Routine context", 100, "Broad state."));
+        stack.push(new ThoughtFrame("loop-thought", "Loop context", 100, "Local state."));
+        exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
+        exchange.setProperty("resolvedSynthesisRuntime", "synthesis-low");
+        exchange.setProperty("actId", "loop-closeout");
+        exchange.setProperty("actPrompt", "Close out the current loop.");
+        exchange.setProperty("toolPassResult", "Loop status was updated.");
+
+        support.prepareStepSynthesisPrompt().process(exchange);
+
+        String prompt = exchange.getIn().getBody(LlmJobRequest.class).prompt();
+        String writableSection = prompt.substring(prompt.indexOf("Writable thoughts:"));
+        assertTrue(writableSection.contains("routine-thought"));
+        assertTrue(writableSection.contains("loop-thought"));
+    }
+
 
     @Test
     void decisionPromptReadsThoughtStackAndLatestStepWithoutOpeningToolProfile() throws Exception {
@@ -142,6 +213,7 @@ class PrimitiveSemanticsTest {
         LlmJobRequest request = exchange.getIn().getBody(LlmJobRequest.class);
         assertEquals("synthesis-high", request.requester());
         assertEquals("classpath:schemas/decision-result-schema.json", request.responseSchema());
+        assertEquals(true, request.metadata().get(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY));
         assertTrue(request.prompt().contains("Need repository name before coding."));
         assertTrue(request.prompt().contains("Repository is missing."));
         assertTrue(request.prompt().contains("Return a boolean result"));
@@ -161,6 +233,7 @@ class PrimitiveSemanticsTest {
 
         LlmJobRequest request = exchange.getIn().getBody(LlmJobRequest.class);
         assertEquals("classpath:schemas/example/software-team/agent-run-requests-schema.json", request.responseSchema());
+        assertEquals(true, request.metadata().get(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY));
         assertTrue(exchange.getProperty("createSchemaJson", String.class).contains("agentRuns"));
         assertTrue(request.prompt().contains("\"agentRuns\""));
         assertTrue(request.prompt().contains("\"personaId\""));
@@ -249,7 +322,7 @@ class PrimitiveSemanticsTest {
     }
 
     @Test
-    void stepResultRewritesOnlyWritableTopThoughtByDefaultAndUpdatesAgentRun() throws Exception {
+    void stepResultRewritesRoutineAndLoopThoughtsByDefaultAndUpdatesAgentRun() throws Exception {
         PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
         ThoughtStack stack = new ThoughtStack();
@@ -257,7 +330,7 @@ class PrimitiveSemanticsTest {
         stack.push(new ThoughtFrame("child", "Child", 100, "old child"));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
         exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", """
-                {"actId":"work-item-review","status":"complete","summary":"done","observations":[],"actions":[],"artifacts":[],"requestedActions":[],"thoughts":[{"id":"child","content":"new child"}],"nextStepRecommendation":"continue"}
+                {"actId":"work-item-review","status":"complete","summary":"done","observations":[],"actions":[],"artifacts":[],"requestedActions":[],"thoughts":[{"id":"parent","content":"new parent"},{"id":"child","content":"new child"}],"nextStepRecommendation":"continue"}
                 """));
 
         support.applyStepResult().process(exchange);
@@ -265,7 +338,7 @@ class PrimitiveSemanticsTest {
         StepResult result = exchange.getIn().getBody(StepResult.class);
         AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
         assertEquals("work-item-review", result.actId());
-        assertEquals("old parent", stack.frames().get(0).content());
+        assertEquals("new parent", stack.frames().get(0).content());
         assertEquals("new child", stack.frames().get(1).content());
         assertSame(result, exchange.getProperty("latestStepResult"));
         assertSame(result, run.latestStepResult());
@@ -275,7 +348,7 @@ class PrimitiveSemanticsTest {
 
 
     @Test
-    void stepResultStatusControlsAgentRunStatus() throws Exception {
+    void stepResultStatusDoesNotControlAgentLifecycleStatus() throws Exception {
         PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
         exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", """
@@ -284,7 +357,9 @@ class PrimitiveSemanticsTest {
 
         support.applyStepResult().process(exchange);
 
-        assertEquals("needs-coordinator", exchange.getProperty("agentRun", AgentRun.class).status());
+        AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
+        assertEquals(AgentRun.STATUS_RUNNING, run.status());
+        assertEquals("needs-coordinator", run.latestStepResult().status());
     }
 
     @Test
@@ -314,6 +389,7 @@ class PrimitiveSemanticsTest {
         stack.push(new ThoughtFrame("parent", "Parent", 100, "old parent"));
         stack.push(new ThoughtFrame("child", "Child", 100, "old child"));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
+        exchange.setProperty("thoughtUpdateDepth", 1);
         exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", """
                 {"actId":"work-item-review","status":"complete","summary":"done","observations":[],"actions":[],"artifacts":[],"requestedActions":[],"thoughts":[{"id":"parent","content":"bad update"}],"nextStepRecommendation":"continue"}
                 """));

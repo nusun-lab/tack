@@ -9,6 +9,7 @@ import us.nusun.llmshare.framework.routine.RoutineSupport;
 
 import java.util.List;
 
+import static org.apache.camel.builder.PredicateBuilder.and;
 
 @ApplicationScoped
 public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvider {
@@ -29,7 +30,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         sequencing, wiki coordination state, status, risks, and PM closeout.
                         """)
                 .routeUri("direct:example-software-team-project-manager")
-                .defaultToolRuntime("tool-low")
+                .defaultToolRuntime("tool-high")
                 .defaultSynthesisRuntime("synthesis-low")
                 .build();
     }
@@ -54,15 +55,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                 """))
                 .to("direct:decide")
                 .choice()
-                    .when(simple("""
-                            ${exchangeProperty[decision.collaboration-setup-complete.result]}
-                            != true
-                            """))
-                        .loopDoWhile(simple("""
-                                ${exchangeProperty[decision.collaboration-setup-complete.result]}
-                                != true
-                                && ${exchangeProperty.collaborationSetupAttempt} < 3
-                                """))
+                    .when(exchangeProperty("decision.collaboration-setup-complete.result").isNotEqualTo(true))
+                        .loopDoWhile(and(
+                                exchangeProperty("decision.collaboration-setup-complete.result").isNotEqualTo(true),
+                                exchangeProperty("collaborationSetupAttempt").isLessThan(3)))
                             .setProperty("collaborationSetupAttempt", simple("${exchangeProperty.collaborationSetupAttempt++}"))
                             .process(routine.enterThought("collaboration-setup-attempt", """
                                     Collaboration setup context: exact team chat channel,
@@ -155,10 +151,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         .end()
                 .end()
                 .setProperty("projectManagerCycle", constant(0))
-                .loopDoWhile(simple("""
-                        ${exchangeProperty[decision.project-manager-done.result]} != true
-                        && ${exchangeProperty.projectManagerCycle} < 3
-                        """))
+                .loopDoWhile(and(
+                        exchangeProperty("decision.project-manager-done.result").isNotEqualTo(true),
+                        exchangeProperty("projectManagerCycle").isLessThan(3)))
                     .setProperty("projectManagerCycle", simple("${exchangeProperty.projectManagerCycle++}"))
                     .process(routine.enterThought("project-manager-cycle", """
                             Project Manager loop context: current project management

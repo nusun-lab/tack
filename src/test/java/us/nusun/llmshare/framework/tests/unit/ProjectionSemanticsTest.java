@@ -44,8 +44,10 @@ class ProjectionSemanticsTest {
         AgentRunProjection projection = store.get(run.id());
         assertNotNull(projection);
         assertEquals(run.id(), projection.agentRunId());
-        assertEquals("blocked", projection.status());
+        assertEquals(AgentRun.STATUS_RUNNING, projection.status());
         assertEquals(FrameworkFixtures.PERSONA_A, projection.persona().get("id"));
+        assertEquals("PA", projection.persona().get("label"));
+        assertEquals("38;2;106;169;255", projection.persona().get("color"));
         assertEquals(FrameworkFixtures.ROUTINE_A, projection.routine().get("id"));
         assertEquals("act", projection.current().get("primitive"));
         assertEquals("work-item-review", projection.current().get("id"));
@@ -55,6 +57,7 @@ class ProjectionSemanticsTest {
         assertEquals("low-pass", projection.lanes().get("toolLane"));
         assertEquals("high-pass", projection.lanes().get("synthesisLane"));
         assertEquals("step", projection.latestResult().get("type"));
+        assertEquals("blocked", projection.latestResult().get("status"));
         assertEquals("Project membership is missing.", projection.latestResult().get("summary"));
         assertEquals("ACT_COMPLETED", projection.timeline().getFirst().get("type"));
         assertTrue(Boolean.TRUE.equals(projection.thoughtStack().getFirst().get("truncated")));
@@ -126,6 +129,24 @@ class ProjectionSemanticsTest {
     }
 
     @Test
+    void projectionTimelineKeepsOnlyTheTenMostRecentEvents() {
+        ProjectionStore store = FrameworkFixtures.projectionStore();
+        AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
+        Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
+        AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
+
+        for (int i = 0; i < 12; i++) {
+            manager.record(exchange, "EVENT_" + i);
+        }
+
+        AgentRunProjection projection = store.get(run.id());
+        assertNotNull(projection);
+        assertEquals(10, projection.timeline().size());
+        assertEquals("EVENT_2", projection.timeline().getFirst().get("type"));
+        assertEquals("EVENT_11", projection.timeline().getLast().get("type"));
+    }
+
+    @Test
     void thoughtPushAndPopUpdateProjectionAutomatically() throws Exception {
         ProjectionStore store = FrameworkFixtures.projectionStore();
         AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
@@ -140,6 +161,7 @@ class ProjectionSemanticsTest {
         assertEquals("THOUGHT_PUSHED", pushed.timeline().getFirst().get("type"));
         assertEquals(1, pushed.thoughtStack().size());
         assertEquals("Project manager scoped context.", pushed.thoughtStack().getFirst().get("context"));
+        assertEquals(0, pushed.thoughtStack().getFirst().get("approxTokens"));
 
         thoughts.pop().process(exchange);
         AgentRunProjection popped = store.get(run.id());

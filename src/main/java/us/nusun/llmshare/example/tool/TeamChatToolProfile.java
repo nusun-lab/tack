@@ -12,16 +12,16 @@ import java.util.List;
 public class TeamChatToolProfile implements ToolProfileProvider {
     public static final String ID = "team-chat";
 
-    @ConfigProperty(name = "agent.mcp.mattermost.url", defaultValue = "")
+    @ConfigProperty(name = "agent.tool.mcp.mattermost.url", defaultValue = "")
     String url = "";
 
-    @ConfigProperty(name = "agent.mcp.mattermost.transport-type", defaultValue = "streamableHttp")
+    @ConfigProperty(name = "agent.tool.mcp.mattermost.transport-type", defaultValue = "streamableHttp")
     String transportType = "streamableHttp";
 
-    @ConfigProperty(name = "agent.mcp.mattermost.auth-header-name", defaultValue = "Authorization")
+    @ConfigProperty(name = "agent.tool.mcp.mattermost.auth-header-name", defaultValue = "Authorization")
     String authHeaderName = "Authorization";
 
-    @ConfigProperty(name = "agent.mcp.mattermost.auth-header-value-format", defaultValue = "Bearer %s")
+    @ConfigProperty(name = "agent.tool.mcp.mattermost.auth-header-value-format", defaultValue = "Bearer %s")
     String authHeaderValueFormat = "Bearer %s";
 
     @Override

@@ -9,6 +9,7 @@ import us.nusun.llmshare.framework.routine.RoutineSupport;
 
 import java.util.List;
 
+import static org.apache.camel.builder.PredicateBuilder.and;
 
 @ApplicationScoped
 public class ApplicationDeveloperRoutine extends RouteBuilder implements RoutineProvider {
@@ -29,7 +30,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                         wiki context, delivery, change-review readiness, and closeout notes.
                         """)
                 .routeUri("direct:example-software-team-application-developer")
-                .defaultToolRuntime("tool-low")
+                .defaultToolRuntime("tool-high")
                 .defaultSynthesisRuntime("synthesis-low")
                 .build();
     }
@@ -45,10 +46,9 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                         and technical blockers.
                         """, 1100))
                 .setProperty("applicationDeveloperCycle", constant(0))
-                .loopDoWhile(simple("""
-                        ${exchangeProperty[decision.application-developer-done.result]} != true
-                        && ${exchangeProperty.applicationDeveloperCycle} < 3
-                        """))
+                .loopDoWhile(and(
+                        exchangeProperty("decision.application-developer-done.result").isNotEqualTo(true),
+                        exchangeProperty("applicationDeveloperCycle").isLessThan(3)))
                     .setProperty("applicationDeveloperCycle", simple("${exchangeProperty.applicationDeveloperCycle++}"))
                     .process(routine.enterThought("application-developer-cycle", """
                             Developer loop context: current assigned task, source

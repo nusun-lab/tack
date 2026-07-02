@@ -9,6 +9,7 @@ import us.nusun.llmshare.framework.routine.RoutineSupport;
 
 import java.util.List;
 
+import static org.apache.camel.builder.PredicateBuilder.and;
 
 @ApplicationScoped
 public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider {
@@ -30,7 +31,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         decisions, and closeout.
                         """)
                 .routeUri("direct:example-software-team-product-owner")
-                .defaultToolRuntime("tool-low")
+                .defaultToolRuntime("tool-high")
                 .defaultSynthesisRuntime("synthesis-low")
                 .build();
     }
@@ -46,10 +47,9 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         open questions, and PM dependencies.
                         """, 900))
                 .setProperty("productOwnerCycle", constant(0))
-                .loopDoWhile(simple("""
-                        ${exchangeProperty[decision.product-owner-done.result]} != true
-                        && ${exchangeProperty.productOwnerCycle} < 3
-                        """))
+                .loopDoWhile(and(
+                        exchangeProperty("decision.product-owner-done.result").isNotEqualTo(true),
+                        exchangeProperty("productOwnerCycle").isLessThan(3)))
                     .setProperty("productOwnerCycle", simple("${exchangeProperty.productOwnerCycle++}"))
                     .process(routine.enterThought("product-owner-cycle", """
                             Product Owner loop context: current product focus,

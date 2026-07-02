@@ -22,6 +22,8 @@ import java.util.Map;
 
 @ApplicationScoped
 public class AgentRunProjectionManager {
+    private static final int MAX_TIMELINE_ENTRIES = 10;
+
     @Inject ProjectionStore store;
     @Inject PersonaCatalog personas;
     @Inject RoutineCatalog routines;
@@ -48,7 +50,7 @@ public class AgentRunProjectionManager {
                 run.missionId(),
                 run.parentAgentRunId(),
                 run.status(),
-                Map.of("id", persona.id(), "name", persona.name()),
+                personaSummary(persona),
                 Map.of("id", routine.id(), "name", routine.name()),
                 current(run, exchange),
                 exchange.getProperty("toolProfile", String.class),
@@ -65,6 +67,15 @@ public class AgentRunProjectionManager {
             return null;
         }
         return runtimes.getRequired(runtimeId).laneId();
+    }
+
+    private static Map<String, Object> personaSummary(Persona persona) {
+        LinkedHashMap<String, Object> summary = new LinkedHashMap<>();
+        summary.put("id", persona.id());
+        summary.put("name", persona.name());
+        if (persona.label() != null) summary.put("label", persona.label());
+        if (persona.color() != null) summary.put("color", persona.color());
+        return summary;
     }
 
     private static Map<String, Object> current(AgentRun run, Exchange exchange) {
@@ -108,7 +119,7 @@ public class AgentRunProjectionManager {
         row.put("id", frame.id());
         row.put("context", frame.context());
         row.put("maxTokens", frame.maxTokens());
-        row.put("approxTokens", Math.max(1, content.length() / 4));
+        row.put("approxTokens", content.isBlank() ? 0 : Math.max(1, content.length() / 4));
         row.put("contentPreview", content.length() <= 240 ? content : content.substring(0, 230) + " [truncated]");
         row.put("content", content);
         row.put("truncated", content.length() > 240);
@@ -149,13 +160,21 @@ public class AgentRunProjectionManager {
         ProjectionTimeline(List<Map<String, Object>> existing) {
             if (existing != null) {
                 entries.addAll(existing);
+                trim();
             }
         }
         void add(String type) {
             entries.add(Map.of("type", type, "at", Instant.now().toString()));
+            trim();
         }
         List<Map<String, Object>> entries() {
             return List.copyOf(entries);
+        }
+
+        private void trim() {
+            while (entries.size() > MAX_TIMELINE_ENTRIES) {
+                entries.remove(0);
+            }
         }
     }
 }

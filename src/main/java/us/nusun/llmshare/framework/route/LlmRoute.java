@@ -55,13 +55,13 @@ public class LlmRoute extends RouteBuilder {
                 .setProperty("llmQueueFailureHandling", constant(true))
                 .bean(jobFactory, "prepare")
                 .bean("inFlightReplyManager", "register")
-                .log(LoggingLevel.INFO, "PROMPT ${body.prompt}")
+                .bean(routeSupport, "logPrompt")
                 .bean(routeSupport, "verifySelectedRoutesAvailable")
                 .marshal(llmJson(LlmJobEnvelope.class))
                 .setHeader(KafkaConstants.KEY, method(jobFactory, "requestKafkaKey"))
-                .toD("language:simple:kafka:${exchangeProperty.laneRequestTopic}")
+                .recipientList(simple("kafka:${exchangeProperty.laneRequestTopic}"))
                 .bean(routeSupport, "awaitReply")
-                .log(LoggingLevel.INFO, "RESPONSE ${body.content}")
+                .bean(routeSupport, "logModelResponse")
                 .choice()
                     .when(simple("${body.status} == 'SUCCEEDED' && ${body.content} != null && ${body.content} != '' && ${exchangeProperty.llmJob.responseSchema} != null && ${exchangeProperty.llmJob.responseSchema} != ''"))
                         .setProperty("llmResult", body())
@@ -107,6 +107,7 @@ public class LlmRoute extends RouteBuilder {
         String replyTopic = lane.responseTopic();
         String routeSuffix = LlmRouteSupport.routeSuffix(laneId);
         String groupSuffix = routeSuffix.isBlank() ? "lane" : routeSuffix;
+        String publishReplyUri = "direct:publish-llm-result-" + routeSuffix;
         from("kafka:" + requestTopic
                 + "?groupId={{llm.consumer.group:llm-workers}}." + groupSuffix
                 + "&consumersCount=" + lane.parallelism()
@@ -118,14 +119,18 @@ public class LlmRoute extends RouteBuilder {
                 .unmarshal(llmJson(LlmJobEnvelope.class))
                 .setProperty("llmJob", body())
                 .bean(jobFactory, "restoreFrameworkMetadata")
-                .setProperty("agentLabel", simple("${body.requester}"))
                 .doTry()
                     .to("direct:call-llm-agent")
+                    .to(publishReplyUri)
                 .doCatch(Exception.class)
                     .setProperty("llmFailureMessage", simple("${exception.message}"))
                     .wireTap("direct:publish-failed-llm-job-dlq")
                     .setBody(method(deadLetterFactory, "failedLlmResult"))
-                .end()
+                    .to(publishReplyUri)
+                .end();
+
+        from(publishReplyUri)
+                .routeId("publish-llm-result-" + routeSuffix)
                 .marshal(llmJson(LlmJobResult.class))
                 .setHeader(KafkaConstants.KEY, method(jobFactory, "jobIdKafkaKey"))
                 .to("kafka:" + replyTopic);

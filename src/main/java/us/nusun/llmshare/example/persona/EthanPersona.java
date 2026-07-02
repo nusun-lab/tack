@@ -11,13 +11,13 @@ import java.util.List;
 public class EthanPersona implements PersonaProvider {
     public static final String ID = "software-team/ethan";
 
-    @ConfigProperty(name = "agent.identity.ethan.mattermost.token", defaultValue = "")
+    @ConfigProperty(name = "persona.ethan.identity.mattermost.token", defaultValue = "")
     String mattermostToken = "";
 
-    @ConfigProperty(name = "agent.identity.ethan.gitea.token", defaultValue = "")
+    @ConfigProperty(name = "persona.ethan.identity.gitea.token", defaultValue = "")
     String giteaToken = "";
 
-    @ConfigProperty(name = "agent.identity.ethan.plane.token", defaultValue = "")
+    @ConfigProperty(name = "persona.ethan.identity.plane.token", defaultValue = "")
     String planeToken = "";
 
     @Override

@@ -283,7 +283,7 @@ Optional pieces:
 ```java
 @ApplicationScoped
 public class CoordinatorPersona implements PersonaProvider {
-    @ConfigProperty(name = "agent.identity.coordinator.gitea.token", defaultValue = "")
+    @ConfigProperty(name = "persona.coordinator.identity.gitea.token", defaultValue = "")
     String giteaToken = "";
 
     @Override
@@ -339,7 +339,7 @@ public class CoordinatorRoutine extends RouteBuilder implements RoutineProvider 
 ```java
 @ApplicationScoped
 public class SourceToolProfile implements ToolProfileProvider {
-    @ConfigProperty(name = "agent.mcp.gitea.url", defaultValue = "")
+    @ConfigProperty(name = "agent.tool.mcp.gitea.url", defaultValue = "")
     String giteaUrl = "";
 
     @Override

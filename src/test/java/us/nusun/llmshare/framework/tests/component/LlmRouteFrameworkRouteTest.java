@@ -1,7 +1,12 @@
 package us.nusun.llmshare.framework.tests.component;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import org.apache.camel.CamelContext;
 import org.apache.camel.CamelExecutionException;
 import org.apache.camel.Exchange;
+import org.apache.camel.component.langchain4j.agent.api.Agent;
+import org.apache.camel.component.langchain4j.agent.api.AgentFactory;
 import org.apache.camel.component.kafka.KafkaConstants;
 import org.apache.camel.impl.DefaultCamelContext;
 import org.junit.jupiter.api.Test;
@@ -10,6 +15,7 @@ import us.nusun.llmshare.framework.llm.LlmDeadLetterFactory;
 import us.nusun.llmshare.framework.llm.LlmJobFactory;
 import us.nusun.llmshare.framework.llm.LlmRouteSupport;
 import us.nusun.llmshare.framework.model.LlmJobEnvelope;
+import us.nusun.llmshare.framework.model.LlmJobRequest;
 import us.nusun.llmshare.framework.model.LlmJobResult;
 import us.nusun.llmshare.framework.model.LlmJobStatus;
 import us.nusun.llmshare.framework.route.LlmRoute;
@@ -69,10 +75,12 @@ class LlmRouteFrameworkRouteTest {
                     .filter(value -> value.contains("kafka:${exchangeProperty.laneRequestTopic}"))
                     .findFirst()
                     .orElse("");
-            String replyInput = context.getRouteDefinition("llm-worker-low-pass").getOutputs().toString();
+            String replyInput = context.getRouteDefinition("publish-llm-result-low-pass").getOutputs().toString();
             String deadLetterOutput = context.getRouteDefinition("publish-failed-llm-job-dlq").getOutputs().toString();
 
+            assertTrue(requestUri.contains("RecipientList"));
             assertTrue(requestUri.contains("kafka:${exchangeProperty.laneRequestTopic}"));
+            assertTrue(!requestUri.contains("language:simple"));
             assertTrue(replyInput.contains("kafka:llm.replies.low"));
             assertTrue(deadLetterOutput.contains("kafka:{{llm.topic.dead-letter:llm.dead-letter}}"));
             assertTrue(!requestUri.contains("?key="));
@@ -134,6 +142,37 @@ class LlmRouteFrameworkRouteTest {
         }
     }
 
+    @Test
+    void llmWorkerPublishesSuccessfulAgentResultToReplyTopic() throws Exception {
+        InFlightReplyManager replies = new InFlightReplyManager();
+        StubKafkaComponent kafka = new StubKafkaComponent();
+
+        try (DefaultCamelContext context = context(replies, kafka)) {
+            context.start();
+            LlmJobEnvelope queued = LlmJobEnvelope.queued(new LlmJobRequest(
+                    UUID.randomUUID(),
+                    "synthesis-low",
+                    "synthesis-low",
+                    0,
+                    "Return JSON.",
+                    "Return only JSON.",
+                    null,
+                    Map.of(),
+                    null).normalized());
+            String json = new ObjectMapper()
+                    .registerModule(new JavaTimeModule())
+                    .writeValueAsString(queued);
+
+            kafka.emit("llm.requests.low", json);
+
+            await(() -> kafka.sentTopics().contains("llm.replies.low"));
+            String replyJson = kafka.sentTo("llm.replies.low").getFirst().getIn().getBody(String.class);
+            assertTrue(replyJson.contains("\"jobId\":\"" + queued.jobId() + "\""));
+            assertTrue(replyJson.contains("\"status\":\"SUCCEEDED\""));
+            assertTrue(replyJson.contains("\"content\":\"{\\\"result\\\":\\\"worker-ok\\\"}\""));
+        }
+    }
+
     private static DefaultCamelContext context(InFlightReplyManager replies, StubKafkaComponent kafka) throws Exception {
         DefaultCamelContext context = TestCamelContexts.quiet();
         context.setAutowiredEnabled(false);
@@ -147,7 +186,7 @@ class LlmRouteFrameworkRouteTest {
         context.getPropertiesComponent().setOverrideProperties(properties);
         context.addComponent("kafka", kafka);
         context.getRegistry().bind("inFlightReplyManager", replies);
-        context.getRegistry().bind("executionRuntimeAgentFactory", new Object());
+        context.getRegistry().bind("executionRuntimeAgentFactory", fakeAgentFactory());
         FrameworkFixtures.bindCatalogBeans(context);
         LlmRoute route = new LlmRoute();
         FrameworkFixtures.set(route, "runtimes", FrameworkFixtures.executionRuntimeRegistry());
@@ -161,6 +200,27 @@ class LlmRouteFrameworkRouteTest {
                 deadLetters));
         context.addRoutes(route);
         return context;
+    }
+
+    private static AgentFactory fakeAgentFactory() {
+        return new AgentFactory() {
+            private CamelContext camelContext;
+
+            @Override
+            public Agent createAgent(Exchange exchange) {
+                return (aiAgentBody, toolProvider) -> "{\"result\":\"worker-ok\"}";
+            }
+
+            @Override
+            public CamelContext getCamelContext() {
+                return camelContext;
+            }
+
+            @Override
+            public void setCamelContext(CamelContext camelContext) {
+                this.camelContext = camelContext;
+            }
+        };
     }
 
     private static void await(BooleanSupplier condition) throws Exception {

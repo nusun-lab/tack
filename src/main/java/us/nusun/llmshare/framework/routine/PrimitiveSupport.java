@@ -11,6 +11,7 @@ import org.apache.camel.Exchange;
 import org.apache.camel.Processor;
 import us.nusun.llmshare.framework.inventory.PersonaCatalog;
 import us.nusun.llmshare.framework.inventory.RoutineCatalog;
+import us.nusun.llmshare.framework.llm.ProviderStructuredOutputSupport;
 import us.nusun.llmshare.framework.model.*;
 import us.nusun.llmshare.framework.projection.AgentRunProjectionManager;
 import us.nusun.llmshare.framework.inventory.ExecutionRuntimeRegistry;
@@ -26,6 +27,8 @@ import java.util.stream.Collectors;
 
 @ApplicationScoped
 public class PrimitiveSupport {
+    private static final int DEFAULT_THOUGHT_UPDATE_DEPTH = 2;
+
     @Inject ObjectMapper objectMapper;
     @Inject ThoughtStackSupport thoughts;
     @Inject PersonaCatalog personas;
@@ -88,7 +91,7 @@ public class PrimitiveSupport {
                     runtimeId,
                     persona.name(),
                     renderSystem(persona),
-                    "Mission:\n" + mission.goal() + "\n\nActive thoughts:\n" + renderThoughts(exchange, 0) + "\n\nAct prompt:\n" + prompt + "\n\nDo the requested work using available tools when useful. Return a concise factual pass result.",
+                    "Mission:\n" + mission.goal() + "\n\nActive thoughts:\n" + renderThoughts(exchange) + "\n\nAct prompt:\n" + prompt + "\n\nDo the requested work using available tools when useful. Return a concise factual pass result.",
                     null));
         };
     }
@@ -105,7 +108,7 @@ public class PrimitiveSupport {
         return exchange -> {
             AgentRun run = currentRun(exchange);
             Persona persona = personas.getRequired(run.personaId());
-            int depth = exchange.getProperty("thoughtUpdateDepth", 1, Integer.class);
+            int depth = exchange.getProperty("thoughtUpdateDepth", DEFAULT_THOUGHT_UPDATE_DEPTH, Integer.class);
             String runtimeId = exchange.getProperty("resolvedSynthesisRuntime", String.class);
             exchange.setProperty("executionRuntimeId", runtimeId);
             exchange.getIn().setBody(llmRequest(
@@ -116,9 +119,8 @@ public class PrimitiveSupport {
                     "Act id: " + exchange.getProperty("actId", String.class)
                             + "\nAct prompt: " + exchange.getProperty("actPrompt", String.class)
                             + "\nTool/action pass result:\n" + exchange.getProperty("toolPassResult", String.class)
-                            + "\n\nActive thoughts:\n" + renderThoughts(exchange, 0)
-                            + "\n\nWritable thoughts:\n" + renderThoughts(exchange, depth)
-                            + "\n\nReturn one universal StepResult. Include rewritten content for each writable thought that should change.",
+                            + "\n\nWritable thoughts:\n" + renderWritableThoughts(exchange, depth)
+                            + "\n\nReturn one universal StepResult. In `thoughts`, include only rewritten content for the writable thought ids above that should change; use [] when no thought should change. Do not copy a thought's static context into content; content should be concrete updated state.",
                     "classpath:schemas/step-result-schema.json"));
         };
     }
@@ -154,7 +156,7 @@ public class PrimitiveSupport {
                     "You answer narrow routine control-flow questions. Return only a DecisionResult JSON object.",
                     "Decision id: " + exchange.getProperty("decisionId", String.class)
                             + "\nQuestion: " + exchange.getProperty("decisionPrompt", String.class)
-                            + "\nActive thoughts:\n" + renderThoughts(exchange, 0)
+                            + "\nActive thoughts:\n" + renderThoughts(exchange)
                             + "\nLatest step result:\n" + asJson(run.latestStepResult())
                             + "\nReturn a boolean result with confidence, reason, and evidence.",
                     "classpath:schemas/decision-result-schema.json"));
@@ -193,7 +195,7 @@ public class PrimitiveSupport {
                     "Create id: " + exchange.getProperty("createId", String.class)
                             + "\nPrompt:\n" + exchange.getProperty("createPrompt", String.class)
                             + "\nMission:\n" + exchange.getProperty("mission", Mission.class).goal()
-                            + "\nActive thoughts:\n" + renderThoughts(exchange, 0)
+                            + "\nActive thoughts:\n" + renderThoughts(exchange)
                             + "\nCaller JSON schema:\n" + schema.json(),
                     schema.uri()));
         };
@@ -217,10 +219,10 @@ public class PrimitiveSupport {
     }
 
     private LlmJobRequest llmRequest(Exchange exchange, String runtimeId, String role, String systemPrompt, String prompt, String schema) {
-        return new LlmJobRequest(null, runtimeId, role, 0, prompt, systemPrompt, schema, frameworkMetadata(exchange, runtimeId), null);
+        return new LlmJobRequest(null, runtimeId, role, 0, prompt, systemPrompt, schema, frameworkMetadata(exchange, runtimeId, schema), null);
     }
 
-    private Map<String, Object> frameworkMetadata(Exchange exchange, String runtimeId) {
+    private Map<String, Object> frameworkMetadata(Exchange exchange, String runtimeId, String schema) {
         LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
         AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
         Mission mission = exchange.getProperty("mission", Mission.class);
@@ -240,6 +242,9 @@ public class PrimitiveSupport {
         putIfPresent(metadata, "executionRuntimeId", runtimeId);
         if (runtimeId != null && !runtimeId.isBlank()) {
             putIfPresent(metadata, "inferenceLane", runtimes.getRequired(runtimeId).laneId());
+        }
+        if (schema != null && !schema.isBlank()) {
+            metadata.put(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY, true);
         }
         return Map.copyOf(metadata);
     }
@@ -268,7 +273,7 @@ public class PrimitiveSupport {
 
     private void validateThoughtUpdates(Exchange exchange, List<ThoughtUpdate> updates) {
         ThoughtStack stack = thoughts.stack(exchange);
-        int depth = exchange.getProperty("thoughtUpdateDepth", 1, Integer.class);
+        int depth = exchange.getProperty("thoughtUpdateDepth", DEFAULT_THOUGHT_UPDATE_DEPTH, Integer.class);
         List<String> writable = stack.writable(depth).stream().map(ThoughtFrame::id).toList();
         for (ThoughtUpdate update : updates) {
             if (!stack.contains(update.id())) throw new IllegalArgumentException("StepResult updated unknown thought: " + update.id());
@@ -276,18 +281,30 @@ public class PrimitiveSupport {
         }
     }
 
-    private String renderThoughts(Exchange exchange, int writableDepth) {
-        ThoughtStack stack = thoughts.stack(exchange);
-        List<String> writable = writableDepth <= 0 ? List.of() : stack.writable(writableDepth).stream().map(ThoughtFrame::id).toList();
+    private String renderThoughts(Exchange exchange) {
+        return renderThoughtFrames(thoughts.stack(exchange).frames());
+    }
+
+    private String renderWritableThoughts(Exchange exchange, int writableDepth) {
+        return renderThoughtFrames(thoughts.stack(exchange).writable(writableDepth));
+    }
+
+    private static String renderThoughtFrames(List<ThoughtFrame> frames) {
+        if (frames.isEmpty()) {
+            return "(none)";
+        }
         StringBuilder out = new StringBuilder();
-        for (ThoughtFrame frame : stack.frames()) {
-            out.append("- id: ").append(frame.id()).append('\n');
-            out.append("  context: ").append(frame.context()).append('\n');
-            out.append("  maxTokens: ").append(frame.maxTokens()).append('\n');
-            out.append("  writable: ").append(writable.contains(frame.id())).append('\n');
-            out.append("  content: ").append(frame.content() == null || frame.content().isBlank() ? "(empty)" : frame.content()).append("\n");
+        for (ThoughtFrame frame : frames) {
+            appendThought(out, frame);
         }
         return out.toString();
+    }
+
+    private static void appendThought(StringBuilder out, ThoughtFrame frame) {
+        out.append("- id: ").append(frame.id()).append('\n');
+        out.append("  context: ").append(frame.context()).append('\n');
+        out.append("  maxTokens: ").append(frame.maxTokens()).append('\n');
+        out.append("  content: ").append(frame.content() == null || frame.content().isBlank() ? "(empty)" : frame.content()).append("\n");
     }
 
     private String renderSystem(Persona persona) {

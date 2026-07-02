@@ -12,19 +12,19 @@ import java.util.List;
 public class ProjectManagementToolProfile implements ToolProfileProvider {
     public static final String ID = "project-management";
 
-    @ConfigProperty(name = "agent.mcp.plane.workspace-slug", defaultValue = "")
+    @ConfigProperty(name = "agent.tool.mcp.plane.workspace-slug", defaultValue = "")
     String workspaceSlug = "";
 
-    @ConfigProperty(name = "agent.mcp.plane.url", defaultValue = "")
+    @ConfigProperty(name = "agent.tool.mcp.plane.url", defaultValue = "")
     String url = "";
 
-    @ConfigProperty(name = "agent.mcp.plane.transport-type", defaultValue = "streamableHttp")
+    @ConfigProperty(name = "agent.tool.mcp.plane.transport-type", defaultValue = "streamableHttp")
     String transportType = "streamableHttp";
 
-    @ConfigProperty(name = "agent.mcp.plane.auth-header-name", defaultValue = "Authorization")
+    @ConfigProperty(name = "agent.tool.mcp.plane.auth-header-name", defaultValue = "Authorization")
     String authHeaderName = "Authorization";
 
-    @ConfigProperty(name = "agent.mcp.plane.auth-header-value-format", defaultValue = "Bearer %s")
+    @ConfigProperty(name = "agent.tool.mcp.plane.auth-header-value-format", defaultValue = "Bearer %s")
     String authHeaderValueFormat = "Bearer %s";
 
     @Override

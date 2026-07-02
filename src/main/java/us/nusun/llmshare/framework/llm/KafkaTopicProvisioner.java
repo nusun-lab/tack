@@ -7,7 +7,9 @@ import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.admin.RecordsToDelete;
 import org.apache.kafka.clients.admin.TopicDescription;
+import org.apache.kafka.common.TopicPartition;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 import us.nusun.llmshare.framework.inventory.ExecutionRuntimeRegistry;
@@ -99,6 +101,35 @@ public class KafkaTopicProvisioner {
         }
     }
 
+    public List<String> purgeConfiguredTopics() throws Exception {
+        if (bootstrapServers == null || bootstrapServers.isBlank()) {
+            throw new IllegalStateException("kafka.bootstrap.servers is required to purge Kafka topics during reset");
+        }
+        try (Admin adminClient = adminClient()) {
+            Set<String> existingTopics = existingTopicNames(adminClient);
+            List<String> purgeTopics = configuredTopicNames().stream()
+                    .filter(existingTopics::contains)
+                    .toList();
+            if (purgeTopics.isEmpty()) {
+                return List.of();
+            }
+
+            Map<String, Integer> partitionsByTopic = existingTopicPartitions(adminClient, Set.copyOf(purgeTopics));
+            LinkedHashMap<TopicPartition, RecordsToDelete> recordsToDelete = new LinkedHashMap<>();
+            for (String topic : purgeTopics) {
+                int topicPartitions = partitionsByTopic.getOrDefault(topic, 0);
+                for (int partition = 0; partition < topicPartitions; partition++) {
+                    recordsToDelete.put(new TopicPartition(topic, partition), RecordsToDelete.beforeOffset(-1));
+                }
+            }
+            if (!recordsToDelete.isEmpty()) {
+                deleteRecords(adminClient, recordsToDelete);
+            }
+            LOG.infof("Purged Kafka topics during reset: %s", purgeTopics);
+            return purgeTopics;
+        }
+    }
+
     protected Set<String> existingTopicNames(Admin adminClient) throws Exception {
         return adminClient.listTopics().names().get();
     }
@@ -115,6 +146,10 @@ public class KafkaTopicProvisioner {
 
     protected void createTopics(Admin adminClient, List<NewTopic> topics) throws Exception {
         adminClient.createTopics(topics).all().get();
+    }
+
+    protected void deleteRecords(Admin adminClient, Map<TopicPartition, RecordsToDelete> recordsToDelete) throws Exception {
+        adminClient.deleteRecords(recordsToDelete).all().get();
     }
 
     protected Admin adminClient() {

@@ -2,7 +2,9 @@ package us.nusun.llmshare.framework.tests.boundary;
 
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.admin.RecordsToDelete;
 import org.apache.kafka.common.errors.TopicExistsException;
+import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.framework.inventory.ExecutionRuntimeRegistry;
 import us.nusun.llmshare.framework.llm.KafkaTopicProvisioner;
@@ -175,6 +177,42 @@ class KafkaTopicProvisionerBoundaryTest {
         assertEquals(1, provisioner.closeCount);
     }
 
+    @Test
+    void purgeConfiguredTopicsDeletesRecordsToHighWatermarkForExistingConfiguredPartitions() throws Exception {
+        TestableProvisioner provisioner = provisionerWithExistingTopics(Set.of(
+                "llm.requests.low",
+                "llm.replies.high",
+                "agent-runs.scheduled",
+                "not-configured"));
+        provisioner.existingPartitions = Map.of(
+                "llm.requests.low", 2,
+                "llm.replies.high", 1,
+                "agent-runs.scheduled", 3,
+                "not-configured", 5);
+
+        List<String> purged = provisioner.purgeConfiguredTopics();
+
+        assertEquals(Set.of("llm.requests.low", "llm.replies.high", "agent-runs.scheduled"), Set.copyOf(purged));
+        assertEquals(6, provisioner.deletedRecords.size());
+        assertEquals(RecordsToDelete.beforeOffset(-1), provisioner.deletedRecords.get(new TopicPartition("llm.requests.low", 0)));
+        assertEquals(RecordsToDelete.beforeOffset(-1), provisioner.deletedRecords.get(new TopicPartition("llm.requests.low", 1)));
+        assertEquals(RecordsToDelete.beforeOffset(-1), provisioner.deletedRecords.get(new TopicPartition("llm.replies.high", 0)));
+        assertEquals(RecordsToDelete.beforeOffset(-1), provisioner.deletedRecords.get(new TopicPartition("agent-runs.scheduled", 2)));
+        assertTrue(provisioner.deletedRecords.keySet().stream().noneMatch(partition -> "not-configured".equals(partition.topic())));
+        assertEquals(1, provisioner.closeCount);
+    }
+
+    @Test
+    void purgeConfiguredTopicsNoopsWhenNoConfiguredTopicsExist() throws Exception {
+        TestableProvisioner provisioner = provisionerWithExistingTopics(Set.of("unrelated"));
+
+        List<String> purged = provisioner.purgeConfiguredTopics();
+
+        assertEquals(List.of(), purged);
+        assertEquals(Map.of(), provisioner.deletedRecords);
+        assertEquals(1, provisioner.closeCount);
+    }
+
     private static KafkaTopicProvisioner provisioner(boolean enabled) {
         return provisioner(enabled, FrameworkFixtures.executionRuntimeRegistry());
     }
@@ -234,6 +272,7 @@ class KafkaTopicProvisionerBoundaryTest {
     private static class TestableProvisioner extends KafkaTopicProvisioner {
         private final Set<String> existingTopics;
         private final List<NewTopic> createdTopics = new ArrayList<>();
+        private final Map<TopicPartition, RecordsToDelete> deletedRecords = new java.util.LinkedHashMap<>();
         private Map<String, Integer> existingPartitions = Map.of();
         private ExecutionException createFailure;
         private int closeCount;
@@ -273,6 +312,11 @@ class KafkaTopicProvisionerBoundaryTest {
             if (createFailure != null) {
                 throw createFailure;
             }
+        }
+
+        @Override
+        protected void deleteRecords(Admin adminClient, Map<TopicPartition, RecordsToDelete> recordsToDelete) {
+            deletedRecords.putAll(recordsToDelete);
         }
 
         private List<String> createdTopicNames() {

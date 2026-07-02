@@ -7,9 +7,9 @@ import dev.langchain4j.mcp.client.transport.McpTransport;
 import dev.langchain4j.mcp.client.transport.http.StreamableHttpMcpTransport;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import us.nusun.llmshare.framework.inventory.AgentIdentityConfig;
 import us.nusun.llmshare.framework.logging.LogTokens;
 import us.nusun.llmshare.framework.model.ExternalIdentity;
 import us.nusun.llmshare.framework.model.McpServerDefinition;
@@ -26,8 +26,21 @@ import java.util.Map;
 public class McpClientFactory {
     private static final Logger LOG = LoggerFactory.getLogger(McpClientFactory.class);
 
-    @Inject
-    AgentIdentityConfig config;
+    @ConfigProperty(name = "agent.mcp.transport-timeout-ms", defaultValue = "60000")
+    long transportTimeoutMs = 60000;
+
+    @ConfigProperty(name = "agent.mcp.initialization-timeout-ms", defaultValue = "30000")
+    long initializationTimeoutMs = 30000;
+
+    @ConfigProperty(name = "agent.mcp.max-tool-result-characters", defaultValue = "1000")
+    int maxToolResultCharacters = 1000;
+
+    @ConfigProperty(name = "agent.mcp.logging.transport-requests", defaultValue = "false")
+    boolean logTransportRequests;
+
+    @ConfigProperty(name = "agent.mcp.logging.transport-responses", defaultValue = "false")
+    boolean logTransportResponses;
+
     @Inject LogTokens logTokens;
 
     public List<McpClient> clientsFor(Persona persona, ToolProfile profile) {
@@ -47,7 +60,7 @@ public class McpClientFactory {
         }
         McpClient client = build(persona, server);
         if (client != null) {
-            clients.add(new ProfiledMcpClient(client, server.id(), profile, persona, logTokens, config.mcp().maxToolResultCharacters()));
+            clients.add(new ProfiledMcpClient(client, server.id(), profile, persona, logTokens, maxToolResultCharacters));
         }
     }
 
@@ -77,14 +90,14 @@ public class McpClientFactory {
                 handle,
                 transportType,
                 url,
-                config.mcp().transportTimeoutMs(),
-                config.mcp().initializationTimeoutMs(),
+                transportTimeoutMs,
+                initializationTimeoutMs,
                 () -> DefaultMcpClient.builder()
                         .key(key)
                         .clientName("llm-share-camel-kafka")
                         .clientVersion("0.1.0-SNAPSHOT")
                         .transport(transport(url, transportType, headers))
-                        .initializationTimeout(Duration.ofMillis(config.mcp().initializationTimeoutMs()))
+                        .initializationTimeout(Duration.ofMillis(initializationTimeoutMs))
                 .build());
     }
 
@@ -94,9 +107,9 @@ public class McpClientFactory {
         return StreamableHttpMcpTransport.builder()
                 .url(url)
                 .customHeaders(headersSupplier)
-                .timeout(Duration.ofMillis(config.mcp().transportTimeoutMs()))
-                .logRequests(config.mcp().logging().transportRequests())
-                .logResponses(config.mcp().logging().transportResponses())
+                .timeout(Duration.ofMillis(transportTimeoutMs))
+                .logRequests(logTransportRequests)
+                .logResponses(logTransportResponses)
                 .build();
     }
 

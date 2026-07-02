@@ -2,6 +2,7 @@ package us.nusun.llmshare.framework.workspace;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.inject.Named;
 import us.nusun.llmshare.framework.inventory.PersonaCatalog;
 import us.nusun.llmshare.framework.inventory.RoutineCatalog;
 import us.nusun.llmshare.framework.inventory.ToolProfileRegistry;
@@ -12,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 @ApplicationScoped
+@Named("workspaceViewService")
 public class WorkspaceViewService {
     @Inject PersonaCatalog personas;
     @Inject RoutineCatalog routines;
