@@ -62,4 +62,17 @@ public class ToolProfileRegistry {
     public String allJson() {
         return json.write(all(), "tool profile");
     }
+
+    public String promptJson() {
+        return json.write(all().stream().map(ToolProfilePromptView::from).toList(), "tool profile prompt");
+    }
+
+    public record ToolProfilePromptView(String id, String promptGuidance, java.util.List<String> capabilityIds) {
+        private static ToolProfilePromptView from(ToolProfile profile) {
+            return new ToolProfilePromptView(
+                    profile.id(),
+                    profile.promptGuidance(),
+                    profile.servers().stream().sorted().toList());
+        }
+    }
 }

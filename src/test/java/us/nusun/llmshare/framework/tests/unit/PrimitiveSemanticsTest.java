@@ -108,7 +108,7 @@ class PrimitiveSemanticsTest {
         PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
         ThoughtStack stack = new ThoughtStack();
-        stack.push(new ThoughtFrame("routine", "Developer context", 100, "Repository is not confirmed yet."));
+        stack.push(new ThoughtFrame("routine", "dev-selection", "Developer context", 100, "Repository is not confirmed yet."));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
         exchange.setProperty("resolvedToolRuntime", "tool-low");
         exchange.setProperty("toolProfile", "source-control");
@@ -120,9 +120,30 @@ class PrimitiveSemanticsTest {
         assertEquals("tool-low", request.requester());
         assertEquals("Persona A", request.role());
         assertTrue(request.systemPrompt().contains("Traits:"));
+        assertTrue(request.systemPrompt().contains("Builds framework test scenarios"));
+        assertTrue(request.systemPrompt().contains("tool-backed work"));
         assertTrue(request.prompt().contains("Test mission"));
+        assertTrue(request.prompt().contains("Test run input"));
+        assertTrue(request.prompt().contains("Act id:"));
+        assertTrue(request.prompt().contains("Routine context:"));
+        assertTrue(request.prompt().contains("id: routine-a"));
+        assertTrue(request.prompt().contains("Team roster:"));
+        assertTrue(request.prompt().contains("@persona-a"));
+        assertTrue(request.prompt().contains("\"self"));
+        assertTrue(request.prompt().contains("Credentials/tokens are never shown"));
+        assertFalse(request.prompt().contains("mattermost-token"));
+        assertFalse(request.prompt().contains("gitea-token"));
+        assertFalse(request.prompt().contains("plane-token"));
+        assertTrue(request.prompt().contains("Tool profile: source-control"));
+        assertTrue(request.prompt().contains("Read before writing and avoid duplicate branches or pull requests."));
+        assertTrue(request.prompt().contains("name: dev-selection"));
+        assertTrue(request.prompt().contains("purpose: Developer context"));
+        assertTrue(request.prompt().contains("maxTokens: 100"));
         assertTrue(request.prompt().contains("Repository is not confirmed yet."));
         assertTrue(request.prompt().contains("Confirm the target source repository."));
+        assertTrue(request.prompt().contains("Outcome:"));
+        assertTrue(request.prompt().contains("Evidence / links / ids:"));
+        assertFalse(request.prompt().contains("Return a concise factual pass result"));
     }
 
     @Test
@@ -142,6 +163,9 @@ class PrimitiveSemanticsTest {
         LlmJobRequest request = exchange.getIn().getBody(LlmJobRequest.class);
         assertEquals("classpath:schemas/step-result-schema.json", request.responseSchema());
         assertEquals(true, request.metadata().get(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY));
+        assertTrue(request.systemPrompt().contains("Builds framework test scenarios"));
+        assertTrue(request.systemPrompt().contains("StepResult JSON object"));
+        assertTrue(request.prompt().contains("Test run input"));
     }
 
     @Test
@@ -162,17 +186,33 @@ class PrimitiveSemanticsTest {
 
         LlmJobRequest request = exchange.getIn().getBody(LlmJobRequest.class);
         String prompt = request.prompt();
-        int writableStart = prompt.indexOf("Writable thoughts:");
+        int writableStart = prompt.indexOf("Writable thoughts (only these ids may be changed):");
         assertFalse(prompt.contains("Active thoughts:"));
+        assertTrue(prompt.contains("Read-only active thoughts (context only; do not include these ids in StepResult.thoughts):"));
+        assertTrue(prompt.contains("readonly-thought"));
         assertTrue(writableStart >= 0);
         String writableSection = prompt.substring(writableStart);
         assertTrue(writableSection.contains("writable-thought"));
         assertFalse(writableSection.contains("readonly-thought"));
         assertFalse(writableSection.contains("writable:"));
-        assertTrue(prompt.contains("rewrite the whole content by compacting prior content plus new important facts"));
-        assertTrue(prompt.contains("Do not replace durable prior notes with only this step's result"));
+        assertTrue(prompt.contains("rewritten as the whole compact current memory"));
+        assertTrue(prompt.contains("Preserve useful mission facts"));
         assertTrue(prompt.contains("Stay within each thought's maxTokens budget"));
-        assertTrue(prompt.contains("Do not copy a thought's static context into content"));
+        assertTrue(prompt.contains("content must be non-empty, useful"));
+        assertTrue(prompt.contains("plain-text pass result is not durable memory"));
+        assertTrue(prompt.contains("shared documentation or wiki URLs"));
+        assertTrue(prompt.contains("source repository URLs or clone URLs"));
+        assertTrue(prompt.contains("team chat or collaboration channel names/links"));
+        assertTrue(prompt.contains("project tracker or work item tracker workspace/item ids"));
+        assertTrue(prompt.contains("canonical documentation page paths"));
+        assertTrue(prompt.contains("selected tasks/product items/work items"));
+        assertTrue(prompt.contains("blocker owners"));
+        assertTrue(prompt.contains("Where to write: put current local scope details in the most-specific thought"));
+        assertTrue(prompt.contains("Promotion: before a local scope ends"));
+        assertFalse(prompt.contains("Gitea"));
+        assertFalse(prompt.contains("Mattermost"));
+        assertFalse(prompt.contains("Plane"));
+        assertTrue(prompt.contains("Do not copy a thought's static purpose into content"));
     }
 
     @Test
@@ -191,7 +231,7 @@ class PrimitiveSemanticsTest {
         support.prepareStepSynthesisPrompt().process(exchange);
 
         String prompt = exchange.getIn().getBody(LlmJobRequest.class).prompt();
-        String writableSection = prompt.substring(prompt.indexOf("Writable thoughts:"));
+        String writableSection = prompt.substring(prompt.indexOf("Writable thoughts (only these ids may be changed):"));
         assertTrue(writableSection.contains("routine-thought"));
         assertTrue(writableSection.contains("loop-thought"));
     }
@@ -216,6 +256,9 @@ class PrimitiveSemanticsTest {
         assertEquals("synthesis-high", request.requester());
         assertEquals("classpath:schemas/decision-result-schema.json", request.responseSchema());
         assertEquals(true, request.metadata().get(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY));
+        assertTrue(request.systemPrompt().contains("Builds framework test scenarios"));
+        assertTrue(request.systemPrompt().contains("DecisionResult JSON object"));
+        assertTrue(request.prompt().contains("Test run input"));
         assertTrue(request.prompt().contains("Need repository name before coding."));
         assertTrue(request.prompt().contains("Repository is missing."));
         assertTrue(request.prompt().contains("Return only decisionId, result, confidence, and reason."));
@@ -236,6 +279,9 @@ class PrimitiveSemanticsTest {
         LlmJobRequest request = exchange.getIn().getBody(LlmJobRequest.class);
         assertEquals("classpath:schemas/example/software-team/agent-run-requests-schema.json", request.responseSchema());
         assertEquals(true, request.metadata().get(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY));
+        assertTrue(request.systemPrompt().contains("Builds framework test scenarios"));
+        assertTrue(request.systemPrompt().contains("caller-schema-shaped JSON"));
+        assertTrue(request.prompt().contains("Test run input"));
         assertTrue(exchange.getProperty("createSchemaJson", String.class).contains("agentRuns"));
         assertTrue(request.prompt().contains("\"agentRuns\""));
         assertTrue(request.prompt().contains("\"personaId\""));
@@ -265,8 +311,9 @@ class PrimitiveSemanticsTest {
         assertTrue(request.prompt().contains("Test mission"));
         assertFalse(request.prompt().contains("Available personas"));
         assertFalse(request.prompt().contains("Available routines"));
-        assertFalse(request.prompt().contains("routine-a"));
-        assertFalse(request.prompt().contains("routine-a"));
+        assertTrue(request.prompt().contains("Routine context:"));
+        assertTrue(request.prompt().contains("id: routine-a"));
+        assertFalse(request.prompt().contains("routine-b"));
         assertTrue(request.prompt().contains("Need PM, PO, and developer runs."));
         assertTrue(request.prompt().contains("Caller JSON schema"));
     }
@@ -285,8 +332,9 @@ class PrimitiveSemanticsTest {
         LlmJobRequest request = exchange.getIn().getBody(LlmJobRequest.class);
         assertFalse(request.prompt().contains("Available personas"));
         assertFalse(request.prompt().contains("Available routines"));
-        assertFalse(request.prompt().contains("routine-a"));
-        assertFalse(request.prompt().contains("routine-a"));
+        assertTrue(request.prompt().contains("Routine context:"));
+        assertTrue(request.prompt().contains("id: routine-a"));
+        assertFalse(request.prompt().contains("routine-b"));
         assertTrue(request.prompt().contains("Create a generic object."));
     }
 
@@ -300,11 +348,11 @@ class PrimitiveSemanticsTest {
         exchange.setProperty("resolvedSynthesisRuntime", "synthesis-low");
         exchange.setProperty("createId", "planned-agent-runs");
         exchange.setProperty("createPrompt", "Propose the initial agent runs.\nPersonas:\n"
-                + FrameworkFixtures.personaCatalog().agentRunStartAssignableJson()
+                + FrameworkFixtures.personaCatalog().agentRunStartAssignablePromptJson()
                 + "\nRoutines:\n"
                 + FrameworkFixtures.routineCatalog().startableJson()
                 + "\nTool profiles:\n"
-                + FrameworkFixtures.toolProfileRegistry().allJson());
+                + FrameworkFixtures.toolProfileRegistry().promptJson());
         String schema = """
                 {"type":"object","required":["agentRuns"]}
                 """.strip();
@@ -381,6 +429,24 @@ class PrimitiveSemanticsTest {
 
         assertEquals("new parent", stack.frames().get(0).content());
         assertEquals("new child", stack.frames().get(1).content());
+    }
+
+    @Test
+    void stepResultRejectsBlankThoughtUpdateWithoutWipingExistingContent() {
+        PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
+        Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
+        ThoughtStack stack = new ThoughtStack();
+        stack.push(new ThoughtFrame("child", "Child", 100, "old child"));
+        exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
+        exchange.setProperty("thoughtUpdateDepth", 1);
+        exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", """
+                {"actId":"work-item-review","summary":"done","artifacts":[],"thoughts":[{"id":"child","content":"   "}]}
+                """));
+
+        Exception failure = assertThrows(Exception.class, () -> support.applyStepResult().process(exchange));
+
+        assertTrue(failure.getMessage().contains("blank content"));
+        assertEquals("old child", stack.frames().getFirst().content());
     }
 
     @Test

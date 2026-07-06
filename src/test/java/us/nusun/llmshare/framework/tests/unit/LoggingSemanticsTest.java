@@ -41,7 +41,7 @@ class LoggingSemanticsTest {
         support.logModelResponse(LlmJobResult.succeeded(job, "model", "{\"ok\":true}", "{\"ok\":true}", Instant.now()), exchange);
 
         assertEquals(2, logs.messages.size());
-        assertTrue(logs.messages.get(0).startsWith("\u001B[38;2;55;28;6m[DEV] PROMPT prompt"));
+        assertTrue(logs.messages.get(0).startsWith("\u001B[38;2;55;28;6m[DEV] SYSTEM system\nPROMPT prompt"));
         assertTrue(logs.messages.get(1).startsWith("\u001B[38;2;100;50;10m[DEV] RESPONSE {\"ok\":true}"));
     }
 
@@ -49,7 +49,7 @@ class LoggingSemanticsTest {
     void nonAnsiLoggingStillUsesPersonaLabel() {
         LogTokens logs = new LogTokens(false);
 
-        assertEquals("[DEV] PROMPT text", logs.wrapDim("DEV", "38;2;100;50;10", "PROMPT text"));
+        assertEquals("[DEV] SYSTEM system\nPROMPT text", logs.wrapDim("DEV", "38;2;100;50;10", "SYSTEM system\nPROMPT text"));
         assertEquals("[DEV] RESPONSE text", logs.wrap("DEV", "38;2;100;50;10", "RESPONSE text"));
     }
 

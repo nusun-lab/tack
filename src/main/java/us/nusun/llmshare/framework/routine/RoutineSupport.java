@@ -45,7 +45,7 @@ public class RoutineSupport {
             List<String> names = thoughtScopeNames(exchange);
             names.add(thoughtName.value);
             try {
-                thoughts.push(thought.context, thought.maxTokens).process(exchange);
+                thoughts.push(thoughtName.value, thought.context, thought.maxTokens).process(exchange);
             } catch (Exception e) {
                 names.removeLast();
                 throw e;
@@ -92,6 +92,8 @@ public class RoutineSupport {
     private static void setOptionalProperty(Exchange exchange, String name, Object value) {
         if (value != null) {
             exchange.setProperty(name, value);
+        } else {
+            exchange.removeProperty(name);
         }
     }
 

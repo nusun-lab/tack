@@ -7,10 +7,12 @@ import com.networknt.schema.SchemaRegistry;
 import com.networknt.schema.SpecificationVersion;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.inject.Named;
 import org.apache.camel.Exchange;
 import org.apache.camel.Processor;
 import us.nusun.llmshare.framework.inventory.PersonaCatalog;
 import us.nusun.llmshare.framework.inventory.RoutineCatalog;
+import us.nusun.llmshare.framework.inventory.ToolProfileRegistry;
 import us.nusun.llmshare.framework.llm.ProviderStructuredOutputSupport;
 import us.nusun.llmshare.framework.model.*;
 import us.nusun.llmshare.framework.projection.AgentRunProjectionManager;
@@ -26,6 +28,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @ApplicationScoped
+@Named("primitiveSupport")
 public class PrimitiveSupport {
     private static final int DEFAULT_THOUGHT_UPDATE_DEPTH = 2;
 
@@ -33,6 +36,7 @@ public class PrimitiveSupport {
     @Inject ThoughtStackSupport thoughts;
     @Inject PersonaCatalog personas;
     @Inject RoutineCatalog routines;
+    @Inject ToolProfileRegistry toolProfiles;
     @Inject ExecutionRuntimeRegistry runtimes;
     @Inject AgentRunProjectionManager projections;
 
@@ -77,12 +81,17 @@ public class PrimitiveSupport {
         };
     }
 
+    public Processor prepareToolPassPromptContext() {
+        return this::prepareToolPassContext;
+    }
+
     public Processor prepareToolPassPrompt() {
         return exchange -> {
+            if (!hasPrimitivePrompt(exchange)) {
+                prepareToolPassContext(exchange);
+            }
             AgentRun run = currentRun(exchange);
-            Mission mission = exchange.getProperty("mission", Mission.class);
             Persona persona = personas.getRequired(run.personaId());
-            String prompt = exchange.getProperty("actPrompt", String.class);
             String runtimeId = exchange.getProperty("resolvedToolRuntime", String.class);
             exchange.setProperty("executionRuntimeId", runtimeId);
             exchange.setProperty("personaId", persona.id());
@@ -90,8 +99,8 @@ public class PrimitiveSupport {
                     exchange,
                     runtimeId,
                     persona.name(),
-                    renderSystem(persona),
-                    "Mission:\n" + mission.goal() + "\n\nActive thoughts:\n" + renderThoughts(exchange) + "\n\nAct prompt:\n" + prompt + "\n\nDo the requested work using available tools when useful. Return a concise factual pass result.",
+                    primitiveSystemPrompt(exchange, "tool"),
+                    primitivePrompt(exchange, this::renderToolPassPrompt),
                     null));
         };
     }
@@ -104,30 +113,25 @@ public class PrimitiveSupport {
         };
     }
 
+    public Processor prepareStepSynthesisPromptContext() {
+        return this::prepareStepSynthesisContext;
+    }
+
     public Processor prepareStepSynthesisPrompt() {
         return exchange -> {
+            if (!hasPrimitivePrompt(exchange)) {
+                prepareStepSynthesisContext(exchange);
+            }
             AgentRun run = currentRun(exchange);
             Persona persona = personas.getRequired(run.personaId());
-            int depth = exchange.getProperty("thoughtUpdateDepth", DEFAULT_THOUGHT_UPDATE_DEPTH, Integer.class);
             String runtimeId = exchange.getProperty("resolvedSynthesisRuntime", String.class);
             exchange.setProperty("executionRuntimeId", runtimeId);
             exchange.getIn().setBody(llmRequest(
                     exchange,
                     runtimeId,
                     persona.name(),
-                    "You synthesize framework action results. Return only a StepResult JSON object that matches the supplied schema. Thought content is a compact running notebook, not hidden chain-of-thought.",
-                    "Act id: " + exchange.getProperty("actId", String.class)
-                            + "\nAct prompt: " + exchange.getProperty("actPrompt", String.class)
-                            + "\nTool/action pass result:\n" + exchange.getProperty("toolPassResult", String.class)
-                            + "\n\nWritable thoughts:\n" + renderWritableThoughts(exchange, depth)
-                            + "\n\nReturn one universal StepResult."
-                            + "\nThought update rules:"
-                            + "\n- In `thoughts`, include only writable thought ids that should change; use [] when nothing important changed."
-                            + "\n- For each changed thought, rewrite the whole content by compacting prior content plus new important facts. Do not replace durable prior notes with only this step's result."
-                            + "\n- Preserve useful mission facts, decisions, blockers, owners, links, artifact evidence, and next actions that still matter."
-                            + "\n- Drop stale, duplicate, speculative, low-signal, or overly detailed notes. Prefer compact bullets or short phrases."
-                            + "\n- Stay within each thought's maxTokens budget shown above."
-                            + "\n- Do not copy a thought's static context into content; content should be concrete accumulated state.",
+                    primitiveSystemPrompt(exchange, "synthesis"),
+                    primitivePrompt(exchange, this::renderStepSynthesisPrompt),
                     "classpath:schemas/step-result-schema.json"));
         };
     }
@@ -150,8 +154,15 @@ public class PrimitiveSupport {
         };
     }
 
+    public Processor prepareDecisionPromptContext() {
+        return this::prepareDecisionContext;
+    }
+
     public Processor prepareDecisionPrompt() {
         return exchange -> {
+            if (!hasPrimitivePrompt(exchange)) {
+                prepareDecisionContext(exchange);
+            }
             AgentRun run = currentRun(exchange);
             Persona persona = personas.getRequired(run.personaId());
             String runtimeId = exchange.getProperty("resolvedSynthesisRuntime", String.class);
@@ -160,12 +171,8 @@ public class PrimitiveSupport {
                     exchange,
                     runtimeId,
                     persona.name(),
-                    "You answer narrow routine control-flow questions. Return only a DecisionResult JSON object.",
-                    "Decision id: " + exchange.getProperty("decisionId", String.class)
-                            + "\nQuestion: " + exchange.getProperty("decisionPrompt", String.class)
-                            + "\nActive thoughts:\n" + renderThoughts(exchange)
-                            + "\nLatest step result:\n" + asJson(run.latestStepResult())
-                            + "\nReturn only decisionId, result, confidence, and reason.",
+                    primitiveSystemPrompt(exchange, "decision"),
+                    primitivePrompt(exchange, this::renderDecisionPrompt),
                     "classpath:schemas/decision-result-schema.json"));
         };
     }
@@ -184,27 +191,26 @@ public class PrimitiveSupport {
         };
     }
 
+    public Processor prepareCreatePromptContext() {
+        return this::prepareCreateContext;
+    }
+
     public Processor prepareCreatePrompt() {
         return exchange -> {
+            if (!hasPrimitivePrompt(exchange) || exchange.getProperty("createSchemaJson", String.class) == null) {
+                prepareCreateContext(exchange);
+            }
             AgentRun run = currentRun(exchange);
             Persona persona = personas.getRequired(run.personaId());
-            ResolvedSchema schema = resolveCreateSchema(exchange);
-            exchange.setProperty("createSchemaRaw", schema.raw());
-            exchange.setProperty("createSchemaJson", schema.json());
-            exchange.setProperty("createSchemaUri", schema.uri());
             String runtimeId = exchange.getProperty("resolvedSynthesisRuntime", String.class);
             exchange.setProperty("executionRuntimeId", runtimeId);
             exchange.getIn().setBody(llmRequest(
                     exchange,
                     runtimeId,
                     persona.name(),
-                    "You create caller-schema-shaped JSON. Return only a JSON object matching the caller schema.",
-                    "Create id: " + exchange.getProperty("createId", String.class)
-                            + "\nPrompt:\n" + exchange.getProperty("createPrompt", String.class)
-                            + "\nMission:\n" + exchange.getProperty("mission", Mission.class).goal()
-                            + "\nActive thoughts:\n" + renderThoughts(exchange)
-                            + "\nCaller JSON schema:\n" + schema.json(),
-                    schema.uri()));
+                    primitiveSystemPrompt(exchange, "create"),
+                    primitivePrompt(exchange, this::renderCreatePrompt),
+                    exchange.getProperty("createSchemaUri", String.class)));
         };
     }
 
@@ -285,6 +291,9 @@ public class PrimitiveSupport {
         for (ThoughtUpdate update : updates) {
             if (!stack.contains(update.id())) throw new IllegalArgumentException("StepResult updated unknown thought: " + update.id());
             if (!writable.contains(update.id())) throw new IllegalArgumentException("StepResult updated non-writable thought: " + update.id());
+            if (update.content() == null || update.content().isBlank()) {
+                throw new IllegalArgumentException("StepResult updated thought with blank content: " + update.id());
+            }
         }
     }
 
@@ -294,6 +303,14 @@ public class PrimitiveSupport {
 
     private String renderWritableThoughts(Exchange exchange, int writableDepth) {
         return renderThoughtFrames(thoughts.stack(exchange).writable(writableDepth));
+    }
+
+    private String renderReadOnlyThoughts(Exchange exchange, int writableDepth) {
+        List<String> writableIds = thoughts.stack(exchange).writable(writableDepth).stream().map(ThoughtFrame::id).toList();
+        List<ThoughtFrame> readOnly = thoughts.stack(exchange).frames().stream()
+                .filter(frame -> !writableIds.contains(frame.id()))
+                .toList();
+        return renderThoughtFrames(readOnly);
     }
 
     private static String renderThoughtFrames(List<ThoughtFrame> frames) {
@@ -309,15 +326,196 @@ public class PrimitiveSupport {
 
     private static void appendThought(StringBuilder out, ThoughtFrame frame) {
         out.append("- id: ").append(frame.id()).append('\n');
-        out.append("  context: ").append(frame.context()).append('\n');
+        out.append("  name: ").append(frame.name()).append('\n');
+        out.append("  purpose: ").append(frame.context()).append('\n');
         out.append("  maxTokens: ").append(frame.maxTokens()).append('\n');
         out.append("  content: ").append(frame.content() == null || frame.content().isBlank() ? "(empty)" : frame.content()).append("\n");
     }
 
-    private String renderSystem(Persona persona) {
-        return "You are " + persona.name() + ". " + persona.description()
-                + "\nTraits: " + String.join("; ", persona.traits())
-                + "\nUse available tools when relevant. Do not claim external state unless tool-backed.";
+    private void prepareCommonPromptContext(Exchange exchange) {
+        AgentRun run = currentRun(exchange);
+        Mission mission = exchange.getProperty("mission", Mission.class);
+        RoutineDefinition routine = currentRoutine(exchange);
+        exchange.setProperty("missionGoal", mission == null ? "(none)" : safeText(mission.goal()));
+        exchange.setProperty("agentRunInput", renderAgentRunInput(run));
+        exchange.setProperty("routineSummary", renderRoutineSummary(routine));
+        exchange.setProperty("teamRoster", personas.teamRosterPromptJson(run.personaId()));
+        exchange.setProperty("activeThoughts", renderThoughts(exchange));
+    }
+
+    private void prepareToolPassContext(Exchange exchange) {
+        prepareCommonPromptContext(exchange);
+        String profileId = firstNonBlank(exchange.getProperty("toolProfile", String.class), ToolProfileRegistry.NONE_ID);
+        ToolProfile profile = toolProfiles().getRequired(profileId);
+        exchange.setProperty("toolProfileId", profile.id());
+        exchange.setProperty("toolProfileGuidance", profile.promptGuidance().isBlank() ? "(none)" : profile.promptGuidance());
+    }
+
+    private void prepareStepSynthesisContext(Exchange exchange) {
+        prepareCommonPromptContext(exchange);
+        int depth = exchange.getProperty("thoughtUpdateDepth", DEFAULT_THOUGHT_UPDATE_DEPTH, Integer.class);
+        exchange.setProperty("writableThoughts", renderWritableThoughts(exchange, depth));
+        exchange.setProperty("readOnlyThoughts", renderReadOnlyThoughts(exchange, depth));
+    }
+
+    private void prepareDecisionContext(Exchange exchange) {
+        prepareCommonPromptContext(exchange);
+        exchange.setProperty("latestStepResultJson", asJson(currentRun(exchange).latestStepResult()));
+    }
+
+    private void prepareCreateContext(Exchange exchange) throws Exception {
+        prepareCommonPromptContext(exchange);
+        ResolvedSchema schema = resolveCreateSchema(exchange);
+        exchange.setProperty("createSchemaRaw", schema.raw());
+        exchange.setProperty("createSchemaJson", schema.json());
+        exchange.setProperty("createSchemaUri", schema.uri());
+    }
+
+    private String primitivePrompt(Exchange exchange, PromptFallback fallback) {
+        String prompt = exchange.getProperty("primitivePrompt", String.class);
+        return prompt == null || prompt.isBlank() ? fallback.render(exchange) : prompt;
+    }
+
+    private boolean hasPrimitivePrompt(Exchange exchange) {
+        String prompt = exchange.getProperty("primitivePrompt", String.class);
+        return prompt != null && !prompt.isBlank();
+    }
+
+    private String primitiveSystemPrompt(Exchange exchange, String primitive) {
+        Persona persona = personas.getRequired(currentRun(exchange).personaId());
+        return renderPersonaBehavior(persona) + "\n" + switch (primitive) {
+            case "tool" -> "Contract: Do tool-backed work using available tools when useful. Do not claim external state unless tool-backed. Return only a compact plain-text pass report.";
+            case "synthesis" -> "Contract: Synthesize framework action results. Return only a StepResult JSON object that matches the supplied schema. Thought content is a compact running notebook, not hidden chain-of-thought.";
+            case "decision" -> "Contract: Answer a narrow routine control-flow question. Return only a DecisionResult JSON object.";
+            case "create" -> "Contract: Create caller-schema-shaped JSON. Return only a JSON object matching the caller schema.";
+            default -> throw new IllegalArgumentException("Unknown primitive system contract: " + primitive);
+        };
+    }
+
+    private String renderPersonaBehavior(Persona persona) {
+        return "You are " + safeText(persona.name()) + ". " + safeText(persona.description())
+                + "\nTraits: " + (persona.traits().isEmpty() ? "(none)" : String.join("; ", persona.traits()));
+    }
+
+    private String renderToolPassPrompt(Exchange exchange) {
+        return "Mission:\n" + exchange.getProperty("missionGoal", String.class)
+                + "\n\nAgent-run input:\n" + exchange.getProperty("agentRunInput", String.class)
+                + "\n\nRoutine context:\n" + exchange.getProperty("routineSummary", String.class)
+                + "\n\nTeam roster:\n" + exchange.getProperty("teamRoster", String.class)
+                + "\nTeammate handles are for coordination. Credentials/tokens are never shown and should never be requested, guessed, or printed."
+                + "\n\nAct id: " + safeText(exchange.getProperty("actId", String.class))
+                + "\nTool profile: " + exchange.getProperty("toolProfileId", String.class)
+                + "\nTool-profile guidance:\n" + exchange.getProperty("toolProfileGuidance", String.class)
+                + "\n\nActive thoughts:\n" + exchange.getProperty("activeThoughts", String.class)
+                + "\n\nAct prompt:\n" + safeText(exchange.getProperty("actPrompt", String.class))
+                + "\n\nDo the requested work using available tools when useful. Return a compact pass report in this shape:"
+                + passReportShape();
+    }
+
+    private String renderStepSynthesisPrompt(Exchange exchange) {
+        return "Mission:\n" + exchange.getProperty("missionGoal", String.class)
+                + "\n\nAgent-run input:\n" + exchange.getProperty("agentRunInput", String.class)
+                + "\n\nRoutine context:\n" + exchange.getProperty("routineSummary", String.class)
+                + "\n\nTeam roster:\n" + exchange.getProperty("teamRoster", String.class)
+                + "\nTeammate handles are for coordination. Credentials/tokens are never shown and should never be requested, guessed, or printed."
+                + "\n\nAct id: " + safeText(exchange.getProperty("actId", String.class))
+                + "\nAct prompt: " + safeText(exchange.getProperty("actPrompt", String.class))
+                + "\nTool/action pass result:\n" + safeText(exchange.getProperty("toolPassResult", String.class))
+                + "\n\nRead-only active thoughts (context only; do not include these ids in StepResult.thoughts):\n" + exchange.getProperty("readOnlyThoughts", String.class)
+                + "\n\nWritable thoughts (only these ids may be changed):\n" + exchange.getProperty("writableThoughts", String.class)
+                + stepResultRules();
+    }
+
+    private String renderDecisionPrompt(Exchange exchange) {
+        return "Mission:\n" + exchange.getProperty("missionGoal", String.class)
+                + "\n\nAgent-run input:\n" + exchange.getProperty("agentRunInput", String.class)
+                + "\n\nRoutine context:\n" + exchange.getProperty("routineSummary", String.class)
+                + "\n\nDecision id: " + safeText(exchange.getProperty("decisionId", String.class))
+                + "\nQuestion: " + safeText(exchange.getProperty("decisionPrompt", String.class))
+                + "\nActive thoughts:\n" + exchange.getProperty("activeThoughts", String.class)
+                + "\nLatest step result:\n" + exchange.getProperty("latestStepResultJson", String.class)
+                + "\nReturn only decisionId, result, confidence, and reason.";
+    }
+
+    private String renderCreatePrompt(Exchange exchange) {
+        return "Create id: " + safeText(exchange.getProperty("createId", String.class))
+                + "\nPrompt:\n" + safeText(exchange.getProperty("createPrompt", String.class))
+                + "\nMission:\n" + exchange.getProperty("missionGoal", String.class)
+                + "\nAgent-run input:\n" + exchange.getProperty("agentRunInput", String.class)
+                + "\nRoutine context:\n" + exchange.getProperty("routineSummary", String.class)
+                + "\nActive thoughts:\n" + exchange.getProperty("activeThoughts", String.class)
+                + "\nCaller JSON schema:\n" + exchange.getProperty("createSchemaJson", String.class);
+    }
+
+    public String passReportShape() {
+        return "\nOutcome:"
+                + "\nActions taken:"
+                + "\nEvidence / links / ids:"
+                + "\nState changed:"
+                + "\nBlockers:"
+                + "\nNext useful action:";
+    }
+
+    public String stepResultRules() {
+        return "\n\nReturn one universal StepResult."
+                + "\nThought update rules:"
+                + "\n- In `thoughts`, include only writable thought ids listed above; use [] only for a true no-op pass where no durable working context was confirmed or changed."
+                + "\n- If a thought id is included, content must be non-empty, useful, and rewritten as the whole compact current memory for that thought."
+                + "\n- The plain-text pass result is not durable memory; facts needed by later steps must be compacted into writable thoughts."
+                + "\n- Update thoughts whenever the pass confirms or changes durable working context, including shared documentation or wiki URLs, documentation repositories, important page paths, source repository URLs or clone URLs, branches, commits, change requests, team chat or collaboration channel names/links, project tracker or work item tracker workspace/item ids, URLs, status, owner, priority, canonical documentation page paths for work items, selected tasks/product items/work items, blockers, blocker owners, unblock conditions, and next useful actions."
+                + "\n- Where to write: put current local scope details in the most-specific thought; put facts needed by later sibling scopes in a parent thought; put durable project anchors and persistent blockers in the root/routine thought."
+                + "\n- Promotion: before a local scope ends, promote important facts needed later into a parent or root thought when that parent/root id is writable."
+                + "\n- Preserve useful mission facts, decisions, blockers, owners, durable artifact links, external system ids/URLs, and next actions that still matter."
+                + "\n- Drop stale, duplicate, speculative, low-signal, or overly detailed notes. Prefer compact bullets or short phrases."
+                + "\n- Stay within each thought's maxTokens budget shown above."
+                + "\n- Do not copy a thought's static purpose into content; content should be concrete accumulated state.";
+    }
+
+    private String renderAgentRunInput(AgentRun run) {
+        Object input = run == null ? null : run.workingState().get("input");
+        if (isEmptyInput(input)) {
+            return "(empty)";
+        }
+        return asJson(input);
+    }
+
+    private static boolean isEmptyInput(Object input) {
+        if (input == null) return true;
+        if (input instanceof String text) return text.isBlank();
+        if (input instanceof Map<?, ?> map) return map.isEmpty();
+        if (input instanceof Iterable<?> iterable) return !iterable.iterator().hasNext();
+        return false;
+    }
+
+    private static String renderRoutineSummary(RoutineDefinition routine) {
+        StringBuilder out = new StringBuilder();
+        out.append("id: ").append(safeText(routine.id()));
+        if (routine.name() != null && !routine.name().isBlank()) {
+            out.append("\nname: ").append(safeText(routine.name()));
+        }
+        String description = compact(routine.description());
+        if (description != null && description.length() <= 240) {
+            out.append("\ndescription: ").append(description);
+        }
+        return out.toString();
+    }
+
+    private ToolProfileRegistry toolProfiles() {
+        return toolProfiles == null ? new ToolProfileRegistry(List.of()) : toolProfiles;
+    }
+
+    private static String safeText(String value) {
+        return value == null || value.isBlank() ? "(none)" : value;
+    }
+
+    private static String compact(String value) {
+        if (value == null || value.isBlank()) return null;
+        return value.strip().replaceAll("\\s+", " ");
+    }
+
+    @FunctionalInterface
+    private interface PromptFallback {
+        String render(Exchange exchange);
     }
 
     private ResolvedSchema resolveCreateSchema(Exchange exchange) throws Exception {

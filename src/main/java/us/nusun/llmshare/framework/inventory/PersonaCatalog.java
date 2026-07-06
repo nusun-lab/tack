@@ -5,6 +5,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
+import us.nusun.llmshare.framework.model.ExternalIdentity;
 import us.nusun.llmshare.framework.model.Persona;
 
 import java.util.Comparator;
@@ -62,7 +63,63 @@ public class PersonaCatalog {
         return json(agentRunStartAssignable());
     }
 
+    public String allPromptJson() {
+        return json(all().stream().map(persona -> promptView(persona, null)).toList());
+    }
+
+    public String agentRunStartAssignablePromptJson() {
+        return json(agentRunStartAssignable().stream().map(persona -> promptView(persona, null)).toList());
+    }
+
+    public String teamRosterPromptJson() {
+        return teamRosterPromptJson(null);
+    }
+
+    public String teamRosterPromptJson(String selfPersonaId) {
+        return json(all().stream().map(persona -> promptView(persona, selfPersonaId)).toList());
+    }
+
+    private static PersonaPromptView promptView(Persona persona, String selfPersonaId) {
+        return new PersonaPromptView(
+                persona.id(),
+                persona.name(),
+                persona.label(),
+                persona.description(),
+                persona.traits(),
+                persona.agentRunStartAssignable(),
+                persona.id() != null && persona.id().equals(selfPersonaId),
+                promptIdentities(persona));
+    }
+
+    private static Map<String, IdentityPromptView> promptIdentities(Persona persona) {
+        LinkedHashMap<String, IdentityPromptView> safe = new LinkedHashMap<>();
+        persona.identities().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(entry -> {
+                    ExternalIdentity identity = entry.getValue();
+                    String handle = identity == null ? null : identity.handle();
+                    if (handle != null && !handle.isBlank()) {
+                        String platform = identity.platform() == null || identity.platform().isBlank() ? entry.getKey() : identity.platform();
+                        safe.put(entry.getKey(), new IdentityPromptView(platform, handle));
+                    }
+                });
+        return Map.copyOf(safe);
+    }
+
     private String json(Object value) {
         return json.write(value, "persona");
     }
+
+    public record PersonaPromptView(
+            String id,
+            String name,
+            String label,
+            String description,
+            List<String> traits,
+            boolean agentRunStartAssignable,
+            boolean self,
+            Map<String, IdentityPromptView> identities
+    ) {}
+
+    public record IdentityPromptView(String platform, String handle) {}
 }

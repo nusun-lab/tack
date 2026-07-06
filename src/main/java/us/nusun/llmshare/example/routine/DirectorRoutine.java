@@ -55,13 +55,13 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                                 ${exchangeProperty.mission.goal}
 
                                 Personas:
-                                ${bean:personaCatalog.agentRunStartAssignableJson}
+                                ${bean:personaCatalog.agentRunStartAssignablePromptJson}
 
                                 Routines:
                                 ${bean:routineCatalog.startableJson}
 
                                 Tool profiles:
-                                ${bean:toolProfileCatalog.allJson}
+                                ${bean:toolProfileCatalog.promptJson}
 
                                 Choose personas and routines from the catalog data above.
                                 - Choose only roles that directly help the mission.

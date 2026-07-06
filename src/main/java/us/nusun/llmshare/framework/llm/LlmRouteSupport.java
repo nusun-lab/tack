@@ -77,8 +77,10 @@ public class LlmRouteSupport {
     }
 
     public void logPrompt(@ExchangeProperty("llmJob") LlmJobEnvelope job, Exchange exchange) {
+        String systemPrompt = job == null ? null : job.systemPrompt();
         String prompt = job == null ? null : job.prompt();
-        logTokens().print(logTokens().wrapDim(agentLabel(exchange), agentLogColor(exchange), "PROMPT " + prompt));
+        logTokens().print(logTokens().wrapDim(agentLabel(exchange), agentLogColor(exchange),
+                "SYSTEM " + firstNonBlank(systemPrompt, "(default system prompt)") + "\nPROMPT " + prompt));
     }
 
     public void logModelResponse(@Body LlmJobResult result, Exchange exchange) {

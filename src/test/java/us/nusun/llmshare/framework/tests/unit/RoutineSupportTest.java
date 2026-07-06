@@ -45,6 +45,26 @@ class RoutineSupportTest {
     }
 
     @Test
+    void actHelperClearsOptionalPrimitivePropertiesWhenUnset() throws Exception {
+        RoutineSupport support = new RoutineSupport();
+        Exchange exchange = FrameworkFixtures.exchangeWithRun("persona-a", "routine-a");
+
+        support.act("first")
+                .prompt("First.")
+                .toolRuntime("tool-high")
+                .synthesisRuntime("synthesis-high")
+                .thoughtUpdateDepth(2)
+                .process(exchange);
+        support.act("second")
+                .prompt("Second.")
+                .process(exchange);
+
+        assertEquals(null, exchange.getProperty("toolRuntime"));
+        assertEquals(null, exchange.getProperty("synthesisRuntime"));
+        assertEquals(null, exchange.getProperty("thoughtUpdateDepth"));
+    }
+
+    @Test
     void decideHelperWritesConventionalCamelProperties() throws Exception {
         RoutineSupport support = new RoutineSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(
@@ -104,13 +124,13 @@ class RoutineSupportTest {
                             ${exchangeProperty.mission.goal}
 
                             Personas:
-                            ${bean:personaCatalog.agentRunStartAssignableJson}
+                            ${bean:personaCatalog.agentRunStartAssignablePromptJson}
 
                             Routines:
                             ${bean:routineCatalog.startableJson}
 
                             Tool profiles:
-                            ${bean:toolProfileCatalog.allJson}
+                            ${bean:toolProfileCatalog.promptJson}
                             """))
                     .process(exchange);
 
@@ -165,6 +185,8 @@ class RoutineSupportTest {
                 "routine-a");
 
         support.enterThought("routine", "Routine context.", 300).process(exchange);
+        ThoughtStack namedStack = exchange.getProperty(ThoughtStackSupport.STACK_PROPERTY, ThoughtStack.class);
+        assertEquals("routine", namedStack.frames().getFirst().name());
         support.enterThought("loop", "Loop context.", 100).process(exchange);
 
         Exception failure = assertThrows(

@@ -39,6 +39,13 @@ public class ProjectManagementToolProfile implements ToolProfileProvider {
         }
         return List.of(ToolProfile.builder(ID)
                 .mcpServer(plane.build())
+                .promptGuidance("""
+                        - find existing projects and work items before creating anything
+                        - avoid duplicates
+                        - record blockers plainly with owner, evidence, and next action
+                        - no single work item should be too long
+                        - strive to break large work items down into small tasks
+                        - when breaking items into smaller pieces, make sure the parent item summarizes instead of duplicating the content of its children""")
                 .denyTools("plane", "delete_project", "delete_work_item")
                 .defaultArgument("plane", "list_projects", "fields", "id,name,identifier")
                 .defaultArgument("plane", "list_work_items", "fields", "id,name,sequence_id,state,priority,assignees")

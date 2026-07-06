@@ -12,6 +12,11 @@ import java.util.List;
 @ApplicationScoped
 public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvider {
     public static final String ID = "software-team/project-manager";
+    public static final String PROJECT_MANAGER_ROUTINE_THOUGHT = "Durable PM project anchors: documentation index URL/path, project-basics/current-work pages, team chat channel, project tracking workspace, source repo, roster, persistent setup blockers.";
+    public static final String PM_BOOTSTRAP_THOUGHT = "Current bootstrap checklist: documentation workspace, team chat, project tracking workspace, source repo, roster, blocker owner, next bootstrap action. Promote final URLs/blockers to project-manager-routine before bootstrap exits.";
+    public static final String PM_CYCLE_THOUGHT = "Current PM pass: selected product handoff, selected developer task, status movement, owners, blockers, risks, next team action.";
+    public static final String PM_INTAKE_THOUGHT = "One product handoff under review: work item id/link, owner, priority, canonical acceptance page, readiness/blocker. Promote selected handoff to pm-cycle before intake exits.";
+    public static final String PM_PLANNING_THOUGHT = "One developer task being planned: task id/link, assignee, repo, canonical documentation page, acceptance, next code step, blocker. Promote created/updated task to pm-cycle before planning exits.";
 
     @Inject RoutineSupport routine;
 
@@ -37,7 +42,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
     public void configure() {
         from("direct:example-software-team-project-manager")
                 .routeId("example-software-team-project-manager")
-                .process(routine.enterThought("project-manager-routine", "pm logistics", 500))
+                .process(routine.enterThought("project-manager-routine", PROJECT_MANAGER_ROUTINE_THOUGHT, 500))
                 .process(routine.act("pm-wiki-basics-read")
                         .prompt("""
                                 Open the wiki index only; follow project-basics and current-work links if needed.
@@ -45,7 +50,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                 PM project, source repo, roster, current work, blockers, and page map.
                                 Do not scan the whole wiki; missing navigation is a setup blocker.
                                 """)
-                        .toolProfile("source-control"))
+                        .toolProfile("source-control")
+                        .thoughtUpdateDepth(2))
                 .to("direct:act")
                 .process(routine.decide("collaboration-setup-complete")
                         .prompt("""
@@ -66,7 +72,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .setProperty("collaborationSetupAttempt", constant(0))
                 .loopDoWhile(exchangeProperty("decision.collaboration-setup-complete.result").isNotEqualTo(true))
                     .setProperty("collaborationSetupAttempt", simple("${exchangeProperty.collaborationSetupAttempt++}"))
-                    .process(routine.enterThought("pm-bootstrap", "bootstrap basics", 300))
+                    .process(routine.enterThought("pm-bootstrap", PM_BOOTSTRAP_THOUGHT, 300))
                     .process(routine.act("wiki-repo-setup")
                             .prompt("""
                                     Create or confirm one shared markdown wiki repository under Git organization
@@ -75,21 +81,24 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     If an agent-workspace wiki exists, reuse it and preserve existing useful pages.
                                     If agent-workspace is inaccessible, record the blocker and owner.
                                     """)
-                            .toolProfile("source-control"))
+                            .toolProfile("source-control")
+                            .thoughtUpdateDepth(2))
                     .to("direct:act")
                     .process(routine.act("chat-channel-setup")
                             .prompt("""
                                     Create or confirm one private project chat channel.
                                     Invite the team and David Gordon (@aphelio). Never duplicate.
                                     """)
-                            .toolProfile("team-chat"))
+                            .toolProfile("team-chat")
+                            .thoughtUpdateDepth(2))
                     .to("direct:act")
                     .process(routine.act("project-management-setup")
                             .prompt("""
                                     Create or confirm one private PM project.
                                     Invite the team and David Gordon (@aphelio). Never duplicate.
                                     """)
-                            .toolProfile("project-management"))
+                            .toolProfile("project-management")
+                            .thoughtUpdateDepth(2))
                     .to("direct:act")
                     .process(routine.act("source-repository-plan")
                             .prompt("""
@@ -97,7 +106,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     agent-workspace only. Never create project repos in a personal namespace.
                                     Never duplicate; record blockers if the agent-workspace repo cannot be confirmed.
                                     """)
-                            .toolProfile("source-control"))
+                            .toolProfile("source-control")
+                            .thoughtUpdateDepth(2))
                     .to("direct:act")
                     .process(routine.act("wiki-project-index")
                             .prompt("""
@@ -109,7 +119,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     Current-work: active PM items, owners, canonical item pages, next actions.
                                     Keep pages small. Every work item needs one canonical wiki page.
                                     """)
-                            .toolProfile("source-control"))
+                            .toolProfile("source-control")
+                            .thoughtUpdateDepth(2))
                     .to("direct:act")
                     .process(routine.act("wiki-bootstrap-audit")
                             .prompt("""
@@ -118,7 +129,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     Confirm wiki and source repos are under agent-workspace, not a personal namespace.
                                     If anything is missing, update project-basics with the blocker and next owner.
                                     """)
-                            .toolProfile("source-control"))
+                            .toolProfile("source-control")
+                            .thoughtUpdateDepth(2))
                     .to("direct:act")
                     .process(routine.act("project-basics-announcement")
                             .prompt("""
@@ -153,7 +165,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .setProperty("decision.project-manager-done.result", constant(false))
                 .loopDoWhile(exchangeProperty("decision.project-manager-done.result").isNotEqualTo(true))
                     .setProperty("projectManagerCycle", simple("${exchangeProperty.projectManagerCycle++}"))
-                    .process(routine.enterThought("pm-cycle", "pm cycle", 300))
+                    .process(routine.enterThought("pm-cycle", PM_CYCLE_THOUGHT, 300))
                     .to("direct:pm-wiki-status-sync")
                     .to("direct:pm-work-intake-loop")
                     .to("direct:pm-task-planning-loop")
@@ -176,7 +188,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                 Capture owners, blockers, PM item links, canonical wiki pages,
                                 agent-workspace repo links, and broken navigation.
                                 """)
-                        .toolProfile("source-control"))
+                        .toolProfile("source-control")
+                        .thoughtUpdateDepth(2))
                 .to("direct:act");
 
         from("direct:pm-work-intake-loop")
@@ -185,14 +198,15 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .setProperty("decision.pm-work-intake-done.result", constant(false))
                 .loopDoWhile(exchangeProperty("decision.pm-work-intake-done.result").isNotEqualTo(true))
                     .setProperty("pmWorkIntakeCycle", simple("${exchangeProperty.pmWorkIntakeCycle++}"))
-                    .process(routine.enterThought("pm-intake", "work intake", 250))
+                    .process(routine.enterThought("pm-intake", PM_INTAKE_THOUGHT, 250))
                     .process(routine.act("pm-po-item-review")
                             .prompt("""
                                     In the PM project from the wiki, review one PO item marked ready for PM breakdown
                                     or explicitly waiting on PM. Capture status, priority, product owner, blocker,
                                     canonical acceptance wiki page, and requested handoff.
                                     """)
-                            .toolProfile("project-management"))
+                            .toolProfile("project-management")
+                            .thoughtUpdateDepth(2))
                     .to("direct:act")
                     .process(routine.act("pm-readiness-status")
                             .prompt("""
@@ -201,7 +215,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     ready for planning. If not, leave status or mark blocked only if that state exists.
                                     Do not start developer work in this intake step.
                                     """)
-                            .toolProfile("project-management"))
+                            .toolProfile("project-management")
+                            .thoughtUpdateDepth(2))
                     .to("direct:act")
                     .process(routine.decide("pm-work-intake-done")
                             .prompt("""
@@ -218,7 +233,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .setProperty("decision.pm-task-planning-done.result", constant(false))
                 .loopDoWhile(exchangeProperty("decision.pm-task-planning-done.result").isNotEqualTo(true))
                     .setProperty("pmTaskPlanningCycle", simple("${exchangeProperty.pmTaskPlanningCycle++}"))
-                    .process(routine.enterThought("pm-planning", "task planning", 250))
+                    .process(routine.enterThought("pm-planning", PM_PLANNING_THOUGHT, 250))
                     .process(routine.act("pm-task-breakdown")
                             .prompt("""
                                     Create or update one small developer implementation task from a ready PO item.
@@ -226,7 +241,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     priority, source repo under agent-workspace, canonical wiki page,
                                     acceptance, and next action.
                                     """)
-                            .toolProfile("project-management"))
+                            .toolProfile("project-management")
+                            .thoughtUpdateDepth(2))
                     .to("direct:act")
                     .process(routine.act("pm-task-sequencing")
                             .prompt("""
@@ -234,7 +250,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     PM owns assignment, to-do readiness, and blocked planning states.
                                     DEV owns to-do -> in-progress and in-progress -> review/done transitions.
                                     """)
-                            .toolProfile("project-management"))
+                            .toolProfile("project-management")
+                            .thoughtUpdateDepth(2))
                     .to("direct:act")
                     .process(routine.act("pm-actionability-check")
                             .prompt("""
@@ -242,7 +259,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     canonical wiki page, and blockers.
                                     Annotate the task; move to blocked only if the exact workflow state exists.
                                     """)
-                            .toolProfile("project-management"))
+                            .toolProfile("project-management")
+                            .thoughtUpdateDepth(2))
                     .to("direct:act")
                     .process(routine.decide("pm-task-planning-done")
                             .prompt("""

@@ -24,10 +24,11 @@ class ThoughtStackSemanticsTest {
     @Test
     void rewriteUpdatesExistingFrameAndBoundsContentToTokenBudget() {
         ThoughtStack stack = new ThoughtStack();
-        stack.push(new ThoughtFrame("t1", "Tiny frame", 2, "old"));
+        stack.push(new ThoughtFrame("t1", "scope-name", "Tiny frame", 2, "old"));
 
         stack.rewrite("t1", "abcdefghijklmnopqrstuvwxyz");
 
+        assertEquals("scope-name", stack.frames().getFirst().name());
         String content = stack.frames().getFirst().content();
         assertTrue(content.endsWith("[truncated]"));
         assertTrue(content.length() <= 20);

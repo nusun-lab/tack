@@ -26,6 +26,18 @@ class ToolProfileSemanticsTest {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     @Test
+    void promptGuidanceIsAvailableFromBuilderAndExampleProfiles() {
+        ToolProfile custom = ToolProfile.builder("guided")
+                .promptGuidance("Read first; avoid duplicates.")
+                .build();
+
+        assertEquals("Read first; avoid duplicates.", custom.promptGuidance());
+        assertTrue(FrameworkFixtures.toolProfileRegistry().getRequired("source-control").promptGuidance().contains("Read before writing"));
+        assertTrue(FrameworkFixtures.toolProfileRegistry().getRequired("project-management").promptGuidance().contains("Find existing work"));
+        assertTrue(FrameworkFixtures.toolProfileRegistry().getRequired("team-chat").promptGuidance().contains("Read recent context"));
+    }
+
+    @Test
     void configuredDefaultArgumentsAreAppliedBeforeToolExecution() throws Exception {
         ToolProfile profile = FrameworkFixtures.toolProfileRegistry().getRequired("project-management");
         ProfiledMcpClient client = new ProfiledMcpClient(null, "plane", profile);

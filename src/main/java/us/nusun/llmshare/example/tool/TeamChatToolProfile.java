@@ -33,6 +33,12 @@ public class TeamChatToolProfile implements ToolProfileProvider {
                         .authHeaderName(authHeaderName)
                         .authHeaderValueFormat(authHeaderValueFormat)
                         .build())
+                .promptGuidance("""
+                        - read recent channel context before posting
+                        - avoid generic spam
+                        - prefer links to durable artifacts, work items, repository evidence, or wiki notes
+                        - do not read entire channels, stick to recent messages
+                        """)
                 .denyTools("mattermost", "delete_channel", "delete_post")
                 .maxResultCharacters(3000)
                 .build());
