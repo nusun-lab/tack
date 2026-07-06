@@ -41,7 +41,7 @@ public class ProjectManagementToolProfile implements ToolProfileProvider {
                 .mcpServer(plane.build())
                 .denyTools("plane", "delete_project", "delete_work_item")
                 .defaultArgument("plane", "list_projects", "fields", "id,name,identifier")
-                .defaultArgument("plane", "list_work_items", "fields", "id,name,sequence_id,state,priority")
+                .defaultArgument("plane", "list_work_items", "fields", "id,name,sequence_id,state,priority,assignees")
                 .maxResultCharacters(5000)
                 .build());
     }

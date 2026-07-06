@@ -10,6 +10,7 @@ import us.nusun.llmshare.framework.model.AgentRunProjection;
 import us.nusun.llmshare.framework.projection.AgentRunProjectionManager;
 import us.nusun.llmshare.framework.projection.ProjectionStore;
 import us.nusun.llmshare.framework.routine.PrimitiveSupport;
+import us.nusun.llmshare.framework.routine.RoutineSupport;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 import us.nusun.llmshare.framework.state.ThoughtStack;
 import us.nusun.llmshare.framework.routine.ThoughtStackSupport;
@@ -30,7 +31,7 @@ class ProjectionSemanticsTest {
         AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
         run.currentPrimitive("act");
         run.currentId("work-item-review");
-        run.apply(new StepResult("work-item-review", "blocked", "Project membership is missing.", List.of(), List.of(), List.of(), List.of(), List.of(), "needs-coordinator"));
+        run.apply(new StepResult("work-item-review", "Project membership is missing.", List.of(), List.of()));
         exchange.setProperty("toolProfile", "project-management");
         exchange.setProperty("actPrompt", "Review one current item in the project management system.");
         exchange.setProperty("resolvedToolRuntime", "tool-low");
@@ -38,6 +39,7 @@ class ProjectionSemanticsTest {
         ThoughtStack stack = new ThoughtStack();
         stack.push(new ThoughtFrame("pm", "Project Manager routine context", 900, "Current state: ".repeat(120)));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
+        exchange.setProperty(RoutineSupport.THOUGHT_SCOPE_NAMES_PROPERTY, List.of("pm-cycle"));
 
         manager.record(exchange, "ACT_COMPLETED");
 
@@ -57,10 +59,10 @@ class ProjectionSemanticsTest {
         assertEquals("low-pass", projection.lanes().get("toolLane"));
         assertEquals("high-pass", projection.lanes().get("synthesisLane"));
         assertEquals("step", projection.latestResult().get("type"));
-        assertEquals("blocked", projection.latestResult().get("status"));
         assertEquals("Project membership is missing.", projection.latestResult().get("summary"));
         assertEquals("ACT_COMPLETED", projection.timeline().getFirst().get("type"));
-        assertTrue(Boolean.TRUE.equals(projection.thoughtStack().getFirst().get("truncated")));
+        assertEquals(Boolean.TRUE, projection.thoughtStack().getFirst().get("truncated"));
+        assertEquals("pm-cycle", projection.thoughtStack().getFirst().get("displayId"));
         assertTrue(String.valueOf(projection.thoughtStack().getFirst().get("contentPreview")).endsWith("[truncated]"));
         assertTrue(String.valueOf(projection.thoughtStack().getFirst().get("content")).length() > 1200);
     }
@@ -170,6 +172,27 @@ class ProjectionSemanticsTest {
     }
 
     @Test
+    void namedThoughtPushProjectionUsesDslNameAsDisplayId() throws Exception {
+        ProjectionStore store = FrameworkFixtures.projectionStore();
+        AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
+        ThoughtStackSupport thoughts = new ThoughtStackSupport();
+        FrameworkFixtures.set(thoughts, "projections", manager);
+        RoutineSupport routine = new RoutineSupport();
+        FrameworkFixtures.set(routine, "thoughts", thoughts);
+        Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
+        AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
+
+        routine.enterThought("pm-cycle", "PM cycle.", 300).process(exchange);
+
+        AgentRunProjection pushed = store.get(run.id());
+        assertNotNull(pushed);
+        assertEquals("THOUGHT_PUSHED", pushed.timeline().getFirst().get("type"));
+        assertEquals("pm-cycle", pushed.thoughtStack().getFirst().get("name"));
+        assertEquals("pm-cycle", pushed.thoughtStack().getFirst().get("displayId"));
+        assertTrue(String.valueOf(pushed.thoughtStack().getFirst().get("id")).startsWith("t_"));
+    }
+
+    @Test
     void projectionIncludesFullThoughtContentButOmitsSecretsAndRawToolPayloads() throws Exception {
         ProjectionStore store = FrameworkFixtures.projectionStore();
         AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
@@ -184,7 +207,7 @@ class ProjectionSemanticsTest {
         exchange.setProperty("toolPassResult", "RAW_TOOL_PAYLOAD_" + "x".repeat(5000) + "_SECRET_TOKEN");
         run.currentPrimitive("act");
         run.currentId("inspect-delivery-state");
-        run.apply(new StepResult("inspect-delivery-state", "complete", "Delivery state summarized.", List.of(), List.of(), List.of(), List.of(), List.of(), "continue"));
+        run.apply(new StepResult("inspect-delivery-state", "Delivery state summarized.", List.of(), List.of()));
 
         manager.record(exchange, "STEP_RESULT_APPLIED");
 

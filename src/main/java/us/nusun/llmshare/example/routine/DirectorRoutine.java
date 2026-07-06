@@ -42,11 +42,8 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:example-software-team-director")
                 .routeId("example-software-team-director")
                 .process(routine.enterThought("director-planning", """
-                        Director planning context: mission interpretation,
-                        useful software-team personas, routine choices,
-                        collaboration setup dependencies, blockers, and
-                        orchestration state.
-                        """, 900))
+                        mission orchestration
+                        """, 500))
                 .process(routine.create("planned-agent-runs")
                         .schemaId("agent-run-request-list")
                         .schema("classpath:schemas/example/software-team/agent-run-requests-schema.json")
@@ -67,8 +64,10 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                                 ${bean:toolProfileCatalog.allJson}
 
                                 Choose personas and routines from the catalog data above.
-                                Prefer a small set that makes concrete progress and respects
-                                setup dependencies.
+                                - Choose only roles that directly help the mission.
+                                - Make the mission clear in each run input when useful.
+                                - It helps to include short team introductions
+
                                 """)))
                 .to("direct:create")
                 .marshal().json(JsonLibrary.Jackson)

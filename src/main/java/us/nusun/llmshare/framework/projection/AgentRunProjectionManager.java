@@ -11,6 +11,7 @@ import us.nusun.llmshare.framework.model.Persona;
 import us.nusun.llmshare.framework.model.RoutineDefinition;
 import us.nusun.llmshare.framework.model.ThoughtFrame;
 import us.nusun.llmshare.framework.inventory.ExecutionRuntimeRegistry;
+import us.nusun.llmshare.framework.routine.RoutineSupport;
 import us.nusun.llmshare.framework.state.ThoughtStack;
 import us.nusun.llmshare.framework.routine.ThoughtStackSupport;
 
@@ -56,7 +57,7 @@ public class AgentRunProjectionManager {
                 exchange.getProperty("toolProfile", String.class),
                 compactMap("toolRuntime", toolRuntime, "synthesisRuntime", synthesisRuntime),
                 compactMap("toolLane", lane(toolRuntime), "synthesisLane", lane(synthesisRuntime)),
-                thoughtFrames(stack),
+                thoughtFrames(exchange, stack),
                 latest(exchange, run),
                 timeline == null ? List.of() : timeline,
                 Instant.now());
@@ -95,7 +96,7 @@ public class AgentRunProjectionManager {
             return Map.of("type", "failure", "summary", failure);
         }
         if (run.latestStepResult() != null) {
-            return Map.of("type", "step", "status", run.latestStepResult().status(), "summary", run.latestStepResult().summary());
+            return Map.of("type", "step", "summary", run.latestStepResult().summary());
         }
         if (run.latestDecisionResult() != null) {
             return Map.of("type", "decision", "result", run.latestDecisionResult().result(), "reason", run.latestDecisionResult().reason());
@@ -106,17 +107,29 @@ public class AgentRunProjectionManager {
         return Map.of();
     }
 
-    private static List<Map<String, Object>> thoughtFrames(ThoughtStack stack) {
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> thoughtFrames(Exchange exchange, ThoughtStack stack) {
         if (stack == null) {
             return List.of();
         }
-        return stack.frames().stream().map(AgentRunProjectionManager::thoughtFrame).toList();
+        List<String> names = exchange.getProperty(RoutineSupport.THOUGHT_SCOPE_NAMES_PROPERTY, List.class);
+        List<ThoughtFrame> frames = stack.frames();
+        ArrayList<Map<String, Object>> rows = new ArrayList<>(frames.size());
+        for (int i = 0; i < frames.size(); i++) {
+            String name = names == null || i >= names.size() ? null : names.get(i);
+            rows.add(thoughtFrame(frames.get(i), name));
+        }
+        return List.copyOf(rows);
     }
 
-    private static Map<String, Object> thoughtFrame(ThoughtFrame frame) {
+    private static Map<String, Object> thoughtFrame(ThoughtFrame frame, String name) {
         String content = frame.content() == null ? "" : frame.content();
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("id", frame.id());
+        if (name != null && !name.isBlank()) {
+            row.put("name", name);
+            row.put("displayId", name);
+        }
         row.put("context", frame.context());
         row.put("maxTokens", frame.maxTokens());
         row.put("approxTokens", content.isBlank() ? 0 : Math.max(1, content.length() / 4));

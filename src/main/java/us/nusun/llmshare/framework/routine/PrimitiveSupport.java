@@ -115,12 +115,19 @@ public class PrimitiveSupport {
                     exchange,
                     runtimeId,
                     persona.name(),
-                    "You synthesize framework action results. Return only a StepResult JSON object that matches the supplied schema. Thought content is synthesized working context, not hidden chain-of-thought.",
+                    "You synthesize framework action results. Return only a StepResult JSON object that matches the supplied schema. Thought content is a compact running notebook, not hidden chain-of-thought.",
                     "Act id: " + exchange.getProperty("actId", String.class)
                             + "\nAct prompt: " + exchange.getProperty("actPrompt", String.class)
                             + "\nTool/action pass result:\n" + exchange.getProperty("toolPassResult", String.class)
                             + "\n\nWritable thoughts:\n" + renderWritableThoughts(exchange, depth)
-                            + "\n\nReturn one universal StepResult. In `thoughts`, include only rewritten content for the writable thought ids above that should change; use [] when no thought should change. Do not copy a thought's static context into content; content should be concrete updated state.",
+                            + "\n\nReturn one universal StepResult."
+                            + "\nThought update rules:"
+                            + "\n- In `thoughts`, include only writable thought ids that should change; use [] when nothing important changed."
+                            + "\n- For each changed thought, rewrite the whole content by compacting prior content plus new important facts. Do not replace durable prior notes with only this step's result."
+                            + "\n- Preserve useful mission facts, decisions, blockers, owners, links, artifact evidence, and next actions that still matter."
+                            + "\n- Drop stale, duplicate, speculative, low-signal, or overly detailed notes. Prefer compact bullets or short phrases."
+                            + "\n- Stay within each thought's maxTokens budget shown above."
+                            + "\n- Do not copy a thought's static context into content; content should be concrete accumulated state.",
                     "classpath:schemas/step-result-schema.json"));
         };
     }
@@ -158,7 +165,7 @@ public class PrimitiveSupport {
                             + "\nQuestion: " + exchange.getProperty("decisionPrompt", String.class)
                             + "\nActive thoughts:\n" + renderThoughts(exchange)
                             + "\nLatest step result:\n" + asJson(run.latestStepResult())
-                            + "\nReturn a boolean result with confidence, reason, and evidence.",
+                            + "\nReturn only decisionId, result, confidence, and reason.",
                     "classpath:schemas/decision-result-schema.json"));
         };
     }

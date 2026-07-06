@@ -82,7 +82,7 @@ class SoftwareTeamExampleTest {
         assertTrue(projectManagement.allowsTool("plane", "list_projects"));
         assertTrue(projectManagement.allowsTool("plane", "list_work_items"));
         assertFalse(projectManagement.allowsTool("plane", "delete_project"));
-        assertEquals("id,name,sequence_id,state,priority", projectManagement.defaultArguments("plane", "list_work_items").get("fields").asText());
+        assertEquals("id,name,sequence_id,state,priority,assignees", projectManagement.defaultArguments("plane", "list_work_items").get("fields").asText());
         assertTrue(toolProfile(toolProfiles, SourceControlToolProfile.ID).allowsTool("gitea", "get_repository"));
         assertTrue(toolProfile(toolProfiles, TeamChatToolProfile.ID).allowsTool("mattermost", "create_post"));
         assertEquals(Set.of(TeamChatToolProfile.ID, ProjectManagementToolProfile.ID, SourceControlToolProfile.ID),

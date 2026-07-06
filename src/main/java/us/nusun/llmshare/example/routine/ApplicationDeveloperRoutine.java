@@ -9,8 +9,6 @@ import us.nusun.llmshare.framework.routine.RoutineSupport;
 
 import java.util.List;
 
-import static org.apache.camel.builder.PredicateBuilder.and;
-
 @ApplicationScoped
 public class ApplicationDeveloperRoutine extends RouteBuilder implements RoutineProvider {
     public static final String ID = "software-team/application-developer";
@@ -26,8 +24,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         return RoutineDefinition.builder(ID)
                 .name("Application Developer")
                 .description("""
-                        Drive implementation through assignment review, source readiness,
-                        wiki context, delivery, change-review readiness, and closeout notes.
+                        Drive implementation through wiki-backed assignment selection,
+                        incremental source patches, explicit status movement, review evidence, and closeout.
                         """)
                 .routeUri("direct:example-software-team-application-developer")
                 .defaultToolRuntime("tool-high")
@@ -39,150 +37,277 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
     public void configure() {
         from("direct:example-software-team-application-developer")
                 .routeId("example-software-team-application-developer")
-                .process(routine.enterThought("application-developer-routine", """
-                        Developer working context: assigned work, target source
-                        repository, wiki engineering notes, recent team chat, tests,
-                        implementation decisions, change-review readiness, tool evidence,
-                        and technical blockers.
-                        """, 1100))
-                .setProperty("applicationDeveloperCycle", constant(0))
-                .loopDoWhile(and(
-                        exchangeProperty("decision.application-developer-done.result").isNotEqualTo(true),
-                        exchangeProperty("applicationDeveloperCycle").isLessThan(3)))
-                    .setProperty("applicationDeveloperCycle", simple("${exchangeProperty.applicationDeveloperCycle++}"))
-                    .process(routine.enterThought("application-developer-cycle", """
-                            Developer loop context: current assigned task, source
-                            repository readiness, wiki engineering context,
-                            implementation/test action, change-review readiness,
-                            project management updates, recent team chat, and closeout
-                            evidence for this cycle.
-                            """, 600))
-                    .process(routine.act("chat-kickoff")
+                .process(routine.enterThought("application-developer-routine", "developer logistics", 500))
+                .to("direct:dev-project-basics-loop")
+                .to("direct:dev-delivery-loop")
+                .process(routine.exitThought("application-developer-routine"));
+
+        from("direct:dev-project-basics-loop")
+                .routeId("dev-project-basics-loop")
+                .setProperty("developerProjectBasicsCycle", constant(0))
+                .setProperty("decision.developer-has-project-basics.result", constant(false))
+                .loopDoWhile(exchangeProperty("decision.developer-has-project-basics.result").isNotEqualTo(true))
+                    .setProperty("developerProjectBasicsCycle", simple("${exchangeProperty.developerProjectBasicsCycle++}"))
+                    .process(routine.enterThought("dev-basics", "project basics", 300))
+                    .process(routine.act("dev-wiki-basics-read")
                             .prompt("""
-                                    Read recent messages in the shared chat channel for
-                                    PM setup notes, product clarifications, and developer
-                                    blockers. Post the current implementation focus only
-                                    if it is missing or stale. Use verified project basics
-                                    and do not invent channels.
-                                    """)
-                            .toolProfile("team-chat"))
-                    .to("direct:act")
-                    .process(routine.act("collaboration-sync")
-                            .prompt("""
-                                    Read the latest shared chat context, then ask one
-                                    focused implementation question or give one focused
-                                    implementation status update only if it unblocks work.
-                                    """)
-                            .toolProfile("team-chat"))
-                    .to("direct:act")
-                    .process(routine.act("assignment-review")
-                            .prompt("""
-                                    Review one assigned task in the project management
-                                    system. Capture assignment, objective, blocker state,
-                                    and next technical action.
-                                    """)
-                            .toolProfile("project-management"))
-                    .to("direct:act")
-                    .process(routine.act("status-review")
-                            .prompt("""
-                                    Check the current status field for one assigned task
-                                    in the project management system. Report whether it
-                                    matches the observed delivery state.
-                                    """)
-                            .toolProfile("project-management"))
-                    .to("direct:act")
-                    .process(routine.act("service-context-check")
-                            .prompt("""
-                                    Read current service, architecture, setup, or repository
-                                    context from the shared markdown wiki repository and
-                                    source repository notes. If context is missing, report
-                                    the specific missing note or repository blocker plainly.
+                                    Open the wiki index only; follow project-basics, current-work, and engineering links if needed.
+                                    Capture bootstrap status, Git organization agent-workspace, wiki URL,
+                                    PM project, chat, source repo, current work, blockers, and engineering page map.
+                                    Do not scan the whole wiki; missing navigation blocks development work.
                                     """)
                             .toolProfile("source-control"))
                     .to("direct:act")
-                    .process(routine.act("wiki-engineering-context-read")
+                    .process(routine.decide("developer-has-project-basics")
                             .prompt("""
-                                    Read the most relevant current engineering note in
-                                    the shared markdown wiki repository. Report missing
-                                    repository or note blockers plainly.
-                                    """)
-                            .toolProfile("source-control"))
-                    .to("direct:act")
-                    .process(routine.act("implementation-intake")
-                            .prompt("""
-                                    Update or annotate the assigned project-management task
-                                    with one small implementation action. Include expected
-                                    files, tests, and prerequisite repository or wiki state
-                                    needed before changing code.
-                                    """)
-                            .toolProfile("project-management"))
-                    .to("direct:act")
-                    .process(routine.act("source-repository-readiness")
-                            .prompt("""
-                                    Confirm the target application source repository from
-                                    project basics. If named, create or confirm it in
-                                    source control. If missing, report the blocker.
-                                    """)
-                            .toolProfile("source-control"))
-                    .to("direct:act")
-                    .process(routine.act("delivery-start")
-                            .prompt("""
-                                    Start one small delivery action for the current task.
-                                    Prefer a test-first step when appropriate and report
-                                    exact artifacts touched or why delivery cannot start.
-                                    """)
-                            .toolProfile("source-control"))
-                    .to("direct:act")
-                    .process(routine.act("change-review-readiness")
-                            .prompt("""
-                                    Check one change-review readiness condition for the
-                                    current task, including branch state, tests,
-                                    reviewability, or missing implementation evidence.
-                                    """)
-                            .toolProfile("source-control"))
-                    .to("direct:act")
-                    .process(routine.act("work-item-update")
-                            .prompt("""
-                                    Update one project management field for the current
-                                    task if needed. Only change state supported by the
-                                    observed delivery evidence.
-                                    """)
-                            .toolProfile("project-management"))
-                    .to("direct:act")
-                    .process(routine.act("work-item-note-update")
-                            .prompt("""
-                                    Write one small delivery note in the project
-                                    management system if needed, including blocker,
-                                    artifact, change review, or next step details.
-                                    """)
-                            .toolProfile("project-management"))
-                    .to("direct:act")
-                    .process(routine.act("delivery-wrap-up")
-                            .prompt("""
-                                    Read recent team chat before posting. If there is a
-                                    current blocker or confirmed delivery outcome that
-                                    affects PM or product work, post one concise status
-                                    message and whether Director or PM attention is needed.
-                                    """)
-                            .toolProfile("team-chat"))
-                    .to("direct:act")
-                    .process(routine.act("wiki-closeout")
-                            .prompt("""
-                                    Write one small engineering note in the shared
-                                    markdown wiki repository if needed. Keep it factual
-                                    and tied to verified delivery state.
-                                    """)
-                            .toolProfile("source-control"))
-                    .to("direct:act")
-                    .process(routine.decide("application-developer-done")
-                            .prompt("""
-                                    Is the application developer routine complete for this
-                                    pass, with either a concrete delivery outcome or a
-                                    clearly reported blocker?
+                                    Are project basics present and linked in the wiki enough to do development:
+                                    bootstrap status, Git organization agent-workspace, PM project,
+                                    source repo under agent-workspace, chat channel, current work, blockers,
+                                    and dev navigation?
                                     """))
                     .to("direct:decide")
-                    .process(routine.exitThought("application-developer-cycle"))
-                .end()
-                .process(routine.exitThought("application-developer-routine"));
+                    .choice()
+                        .when(exchangeProperty("decision.developer-has-project-basics.result").isNotEqualTo(true))
+                            .to("direct:dev-project-basics-blocker")
+                    .end()
+                    .process(routine.exitThought("dev-basics"))
+                .end();
+
+        from("direct:dev-project-basics-blocker")
+                .routeId("dev-project-basics-blocker")
+                .process(routine.act("dev-project-basics-blocker")
+                        .prompt("""
+                                Read the last 20 messages in the default or project channel.
+                                If PM/setup discussion exists, respond there only when a specific technical/setup
+                                answer is useful. Otherwise post one blocker asking PM to finish wiki project basics
+                                only if no current blocker exists. Include the wiki link if known.
+                                Do not start development work; keep rechecking project basics in the next loop.
+                                """)
+                        .toolProfile("team-chat"))
+                .to("direct:act");
+
+        from("direct:dev-delivery-loop")
+                .routeId("dev-delivery-loop")
+                .setProperty("applicationDeveloperCycle", constant(0))
+                .setProperty("decision.application-developer-done.result", constant(false))
+                .loopDoWhile(exchangeProperty("decision.application-developer-done.result").isNotEqualTo(true))
+                    .setProperty("applicationDeveloperCycle", simple("${exchangeProperty.applicationDeveloperCycle++}"))
+                    .process(routine.enterThought("dev-cycle", "dev cycle", 300))
+                    .setProperty("decision.developer-has-work.result", constant(false))
+                    .to("direct:dev-team-chat-sync")
+                    .to("direct:dev-work-selection-loop")
+                    .choice()
+                        .when(exchangeProperty("decision.developer-has-work.result").isEqualTo(true))
+                            .to("direct:dev-implementation-loop")
+                            .to("direct:dev-work-closeout")
+                        .otherwise()
+                            .to("direct:dev-no-work-closeout")
+                    .end()
+                    .process(routine.decide("application-developer-done")
+                            .prompt("""
+                                    Is this DEV pass complete because one assigned task reached review/done/blocked
+                                    with evidence, or because no eligible assigned work exists and PM was asked?
+                                    Do not finish merely because one small code step landed while a clear next
+                                    implementation patch remains.
+                                    """))
+                    .to("direct:decide")
+                    .process(routine.exitThought("dev-cycle"))
+                .end();
+
+        from("direct:dev-team-chat-sync")
+                .routeId("dev-team-chat-sync")
+                .process(routine.act("dev-team-chat-sync")
+                        .prompt("""
+                                Read the last 20 project chat messages from the wiki link. Reply first to a direct
+                                technical question, blocker, review request, or handoff. If blocked, ask at most one
+                                named question. Do not volunteer for unassigned work or repeat PM/wiki data.
+                                """)
+                        .toolProfile("team-chat"))
+                .to("direct:act");
+
+        from("direct:dev-work-selection-loop")
+                .routeId("dev-work-selection-loop")
+                .setProperty("developerWorkSelectionCycle", constant(0))
+                .setProperty("decision.developer-work-selection-done.result", constant(false))
+                .loopDoWhile(exchangeProperty("decision.developer-work-selection-done.result").isNotEqualTo(true))
+                    .setProperty("developerWorkSelectionCycle", simple("${exchangeProperty.developerWorkSelectionCycle++}"))
+                    .process(routine.enterThought("dev-selection", "work selection", 250))
+                    .process(routine.act("dev-in-progress-review")
+                            .prompt("""
+                                    In the PM project from the wiki, review only in-progress tasks assigned to this developer.
+                                    Choose the highest-priority task with a source-control next step.
+                                    Do not take new to-do work while assigned in-progress work can still move.
+                                    """)
+                            .toolProfile("project-management"))
+                    .to("direct:act")
+                    .process(routine.decide("developer-has-work")
+                            .prompt("""
+                                    Is an in-progress task assigned to this developer selected for implementation now?
+                                    """))
+                    .to("direct:decide")
+                    .choice()
+                        .when(exchangeProperty("decision.developer-has-work.result").isNotEqualTo(true))
+                            .process(routine.act("dev-to-do-review")
+                                    .prompt("""
+                                            Review one task assigned to this developer in to-do status only.
+                                            Ignore unassigned tasks, backlog/product items, and tasks assigned to others.
+                                            Select only actionable implementation work with canonical wiki page,
+                                            acceptance criteria, source repo under agent-workspace, priority,
+                                            and next code step.
+                                            """)
+                                    .toolProfile("project-management"))
+                            .to("direct:act")
+                            .process(routine.act("dev-start-to-do-status")
+                                    .prompt("""
+                                            If the selected task is assigned to this developer, currently to-do,
+                                            and has a canonical wiki page, move exactly that task to in-progress.
+                                            Otherwise do not move it; add a blocker note instead.
+                                            """)
+                                    .toolProfile("project-management"))
+                            .to("direct:act")
+                            .process(routine.decide("developer-has-work")
+                                    .prompt("""
+                                            Is there now a selected task assigned to this developer that was already
+                                            in-progress or moved from to-do to in-progress?
+                                            """))
+                            .to("direct:decide")
+                    .end()
+                    .process(routine.decide("developer-work-selection-done")
+                            .prompt("""
+                                    Stop selection if assigned active work is selected or no assigned ready to-do remains.
+                                    Do not browse or claim backlog work.
+                                    """))
+                    .to("direct:decide")
+                    .process(routine.exitThought("dev-selection"))
+                .end();
+
+        from("direct:dev-implementation-loop")
+                .routeId("dev-implementation-loop")
+                .setProperty("developerImplementationCycle", constant(0))
+                .setProperty("decision.developer-implementation-complete.result", constant(false))
+                .loopDoWhile(exchangeProperty("decision.developer-implementation-complete.result").isNotEqualTo(true))
+                    .setProperty("developerImplementationCycle", simple("${exchangeProperty.developerImplementationCycle++}"))
+                    .process(routine.enterThought("dev-implementation", "implementation step", 250))
+                    .process(routine.act("dev-task-context-read")
+                            .prompt("""
+                                    Read the selected PM task only. Verify current status, objective, blocker,
+                                    assignee is this developer, canonical wiki page, acceptance criteria,
+                                    source repo under agent-workspace, and expected review evidence.
+                                    """)
+                            .toolProfile("project-management"))
+                    .to("direct:act")
+                    .process(routine.act("dev-wiki-engineering-read")
+                            .prompt("""
+                                    Read only the wiki index, current-work, canonical item page, and direct engineering links.
+                                    Do not scan the whole wiki; report missing navigation links.
+                                    """)
+                            .toolProfile("source-control"))
+                    .to("direct:act")
+                    .process(routine.act("dev-source-repository-readiness")
+                            .prompt("""
+                                    Use the source repo from the wiki. Inspect only files relevant to the selected task.
+                                    The repo must be owned by Git organization agent-workspace; do not create or use
+                                    repositories in personal namespaces.
+                                    If repo access is missing, record the blocker. If the task branch is missing,
+                                    create or plan it if supported by the source-control tools.
+                                    """)
+                            .toolProfile("source-control"))
+                    .to("direct:act")
+                    .process(routine.act("dev-patch-plan")
+                            .prompt("""
+                                    Inspect only the files needed for the selected task.
+                                    Decide the next coherent patch: production files, tests, docs/config if needed,
+                                    acceptance target, and validation evidence. If the repo is greenfield,
+                                    plan the smallest runnable skeleton needed for the task. Do not touch unrelated files.
+                                    """)
+                            .toolProfile("source-control"))
+                    .to("direct:act")
+                    .process(routine.act("dev-delivery-step")
+                            .prompt("""
+                                    Apply the next coherent source-control patch for the selected task.
+                                    Prefer production code plus a matching test/update over wiki or chat notes.
+                                    Use or create a task branch and commit if supported by the source-control tools.
+                                    If no code change is possible, record the exact blocker and owner.
+                                    """)
+                            .toolProfile("source-control"))
+                    .to("direct:act")
+                    .process(routine.act("dev-validation-step")
+                            .prompt("""
+                                    Check available validation evidence for the patch: tests, CI/status,
+                                    changed-file review, or why validation cannot run with the current tools.
+                                    Do not claim tests passed unless the tool result shows it.
+                                    """)
+                            .toolProfile("source-control"))
+                    .to("direct:act")
+                    .process(routine.act("dev-review-readiness")
+                            .prompt("""
+                                    Check review readiness in source control: changed files, branch, commit,
+                                    PR/review link if supported, and validation status if available.
+                                    No review-ready status without a code diff or explicit source-control blocker.
+                                    """)
+                            .toolProfile("source-control"))
+                    .to("direct:act")
+                    .to("direct:dev-status-transition")
+                    .process(routine.decide("developer-implementation-complete")
+                            .prompt("""
+                                    Is the selected task review-ready/done with code diff, branch or commit,
+                                    and validation evidence, or blocked with exact missing owner?
+                                    Return false if there is an obvious next production-code or test patch to make.
+                                    """))
+                    .to("direct:decide")
+                    .process(routine.exitThought("dev-implementation"))
+                .end();
+
+        from("direct:dev-status-transition")
+                .routeId("dev-status-transition")
+                .process(routine.act("dev-status-update")
+                        .prompt("""
+                                Verify current status and assignee before changing the selected PM task.
+                                Move to-do -> in-progress only for a selected task assigned to this developer.
+                                Move in-progress -> review only with branch, commit or diff plus validation evidence.
+                                Move to done only if the workflow permits it and acceptance evidence is recorded.
+                                Otherwise keep in-progress and add the next patch or blocker.
+                                """)
+                        .toolProfile("project-management"))
+                .to("direct:act")
+                .process(routine.act("dev-work-item-note")
+                        .prompt("""
+                                Add one compact PM note with source-control evidence, branch/commit/PR or diff,
+                                validation status, blocker, next step, canonical wiki page, and engineering note link.
+                                Keep status and evidence consistent.
+                                """)
+                        .toolProfile("project-management"))
+                .to("direct:act");
+
+        from("direct:dev-work-closeout")
+                .routeId("dev-work-closeout")
+                .process(routine.act("dev-wiki-closeout")
+                        .prompt("""
+                                Update one focused engineering note if needed: changed files, code outcome,
+                                tests or validation gaps, review evidence, and next step.
+                                Link source-control evidence from the canonical item page and engineering index.
+                                The wiki summarizes durable code knowledge; it does not replace source changes.
+                                """)
+                        .toolProfile("source-control"))
+                .to("direct:act")
+                .process(routine.act("dev-team-chat-closeout")
+                        .prompt("""
+                                Read the last 20 messages in the project chat from the wiki.
+                                Post only if delivery evidence changed, a blocker needs a named owner, or a teammate is waiting.
+                                Include PM item and canonical wiki links; otherwise stay quiet.
+                                """)
+                        .toolProfile("team-chat"))
+                .to("direct:act");
+
+        from("direct:dev-no-work-closeout")
+                .routeId("dev-no-work-closeout")
+                .process(routine.act("dev-no-work-note")
+                        .prompt("""
+                                Read the last 20 messages in the project chat from the wiki.
+                                If no in-progress or assigned ready to-do work exists, reply to an existing PM thread if present.
+                                Otherwise ask PM once for one assigned actionable to-do. Include the wiki index link.
+                                """)
+                        .toolProfile("team-chat"))
+                .to("direct:act");
     }
 }

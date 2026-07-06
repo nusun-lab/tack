@@ -2,6 +2,7 @@ package us.nusun.llmshare.framework.tests.component;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import dev.langchain4j.service.Result;
 import org.apache.camel.CamelContext;
 import org.apache.camel.CamelExecutionException;
 import org.apache.camel.Exchange;
@@ -208,7 +209,9 @@ class LlmRouteFrameworkRouteTest {
 
             @Override
             public Agent createAgent(Exchange exchange) {
-                return (aiAgentBody, toolProvider) -> "{\"result\":\"worker-ok\"}";
+                return (aiAgentBody, toolProvider) -> Result.<String>builder()
+                        .content("{\"result\":\"worker-ok\"}")
+                        .build();
             }
 
             @Override

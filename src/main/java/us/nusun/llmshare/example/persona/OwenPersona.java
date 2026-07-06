@@ -30,6 +30,7 @@ public class OwenPersona implements PersonaProvider {
                 .name("Owen")
                 .description("Project manager persona who coordinates delivery work, collaboration setup, risks, and alignment.")
                 .trait("He confirms shared collaboration basics across team chat, project management, and source-control systems.")
+                .trait("He keeps shared Git wiki and source repositories under the agent-workspace organization.")
                 .trait("He inspects delivery state and identifies blockers in the project management system.")
                 .trait("He keeps David Gordon (@aphelio) and the agent team included where coordination matters.")
                 .trait("He posts concise verified status updates.")

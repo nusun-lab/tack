@@ -274,13 +274,15 @@
     function renderThought(agentRunId, t, index) {
       const content = t.content ?? '';
       const context = t.context ?? '';
+      const displayId = t.displayId || t.name || t.id || `thought-${index + 1}`;
       const contentIsDuplicateContext = content.trim() && content.trim() === context.trim();
       const hasUsefulContent = content.trim() && !contentIsDuplicateContext;
       const usefulApproxTokens = hasUsefulContent ? t.approxTokens : 0;
       const key = `projection:${agentRunId}:thought:${t.id || index}`;
       return `<details class="thought" data-thought ${detailAttrs(key)}>
-        <summary>${esc(t.id)} · ${esc(usefulApproxTokens)} content tokens</summary>
+        <summary>${esc(displayId)} · ${esc(usefulApproxTokens)} content tokens</summary>
         <dl class="kv">
+          ${t.id && displayId !== t.id ? `<dt>Internal id</dt><dd class="mono">${esc(t.id)}</dd>` : ''}
           <dt>Context</dt><dd>${esc(context)}</dd>
           <dt>Max tokens</dt><dd>${esc(t.maxTokens)}</dd>
           <dt>Content tokens</dt><dd>${esc(usefulApproxTokens)}</dd>

@@ -118,6 +118,15 @@ The bundled `us.nusun.llmshare.example` package demonstrates a software-team cat
 
 Mission requests explicitly choose which `AgentRunRequest` objects to schedule. To start the bundled example, submit Noah on the Director routine in the `agentRuns` array.
 
+### Bundled Git organization
+
+The bundled software-team example expects all shared Git work to live under the `agent-workspace` organization.
+
+* The PM bootstrap routine records `agent-workspace` as a project basic in the wiki.
+* The shared wiki repository and target source repository should be created or reused under `agent-workspace`.
+* Agents should not create project repositories in their personal Git namespaces.
+* If an agent cannot access `agent-workspace`, it should record a setup blocker instead of creating a duplicate repository elsewhere.
+
 ## Core concepts
 
 ### Mission

@@ -169,7 +169,9 @@ class PrimitiveSemanticsTest {
         assertTrue(writableSection.contains("writable-thought"));
         assertFalse(writableSection.contains("readonly-thought"));
         assertFalse(writableSection.contains("writable:"));
-        assertTrue(prompt.contains("include only rewritten content for the writable thought ids above"));
+        assertTrue(prompt.contains("rewrite the whole content by compacting prior content plus new important facts"));
+        assertTrue(prompt.contains("Do not replace durable prior notes with only this step's result"));
+        assertTrue(prompt.contains("Stay within each thought's maxTokens budget"));
         assertTrue(prompt.contains("Do not copy a thought's static context into content"));
     }
 
@@ -200,7 +202,7 @@ class PrimitiveSemanticsTest {
         PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
         AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
-        run.apply(new StepResult("delivery-start", "blocked", "Repository is missing.", java.util.List.of(), java.util.List.of(), java.util.List.of(), java.util.List.of(), java.util.List.of(), "needs-coordinator"));
+        run.apply(new StepResult("delivery-start", "Repository is missing.", java.util.List.of(), java.util.List.of()));
         ThoughtStack stack = new ThoughtStack();
         stack.push(new ThoughtFrame("developer", "Developer context", 100, "Need repository name before coding."));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
@@ -216,7 +218,7 @@ class PrimitiveSemanticsTest {
         assertEquals(true, request.metadata().get(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY));
         assertTrue(request.prompt().contains("Need repository name before coding."));
         assertTrue(request.prompt().contains("Repository is missing."));
-        assertTrue(request.prompt().contains("Return a boolean result"));
+        assertTrue(request.prompt().contains("Return only decisionId, result, confidence, and reason."));
     }
 
 
@@ -330,7 +332,7 @@ class PrimitiveSemanticsTest {
         stack.push(new ThoughtFrame("child", "Child", 100, "old child"));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
         exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", """
-                {"actId":"work-item-review","status":"complete","summary":"done","observations":[],"actions":[],"artifacts":[],"requestedActions":[],"thoughts":[{"id":"parent","content":"new parent"},{"id":"child","content":"new child"}],"nextStepRecommendation":"continue"}
+                {"actId":"work-item-review","summary":"done","artifacts":[],"thoughts":[{"id":"parent","content":"new parent"},{"id":"child","content":"new child"}]}
                 """));
 
         support.applyStepResult().process(exchange);
@@ -348,18 +350,18 @@ class PrimitiveSemanticsTest {
 
 
     @Test
-    void stepResultStatusDoesNotControlAgentLifecycleStatus() throws Exception {
+    void stepResultDoesNotControlAgentLifecycleStatus() throws Exception {
         PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
         exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", """
-                {"actId":"work-item-review","status":"needs-coordinator","summary":"decision needed","observations":[],"actions":[],"artifacts":[],"requestedActions":[],"thoughts":[],"nextStepRecommendation":"pause"}
+                {"actId":"work-item-review","summary":"decision needed","artifacts":[],"thoughts":[]}
                 """));
 
         support.applyStepResult().process(exchange);
 
         AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
         assertEquals(AgentRun.STATUS_RUNNING, run.status());
-        assertEquals("needs-coordinator", run.latestStepResult().status());
+        assertEquals("decision needed", run.latestStepResult().summary());
     }
 
     @Test
@@ -372,7 +374,7 @@ class PrimitiveSemanticsTest {
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
         exchange.setProperty("thoughtUpdateDepth", 2);
         exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", """
-                {"actId":"release-checkpoint","status":"complete","summary":"done","observations":[],"actions":[],"artifacts":[],"requestedActions":[],"thoughts":[{"id":"parent","content":"new parent"},{"id":"child","content":"new child"}],"nextStepRecommendation":"continue"}
+                {"actId":"release-checkpoint","summary":"done","artifacts":[],"thoughts":[{"id":"parent","content":"new parent"},{"id":"child","content":"new child"}]}
                 """));
 
         support.applyStepResult().process(exchange);
@@ -391,7 +393,7 @@ class PrimitiveSemanticsTest {
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
         exchange.setProperty("thoughtUpdateDepth", 1);
         exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", """
-                {"actId":"work-item-review","status":"complete","summary":"done","observations":[],"actions":[],"artifacts":[],"requestedActions":[],"thoughts":[{"id":"parent","content":"bad update"}],"nextStepRecommendation":"continue"}
+                {"actId":"work-item-review","summary":"done","artifacts":[],"thoughts":[{"id":"parent","content":"bad update"}]}
                 """));
 
         Exception failure = assertThrows(Exception.class, () -> support.applyStepResult().process(exchange));
@@ -403,7 +405,7 @@ class PrimitiveSemanticsTest {
         PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
         exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", """
-                {"decisionId":"application-developer-done","result":true,"confidence":0.91,"reason":"delivery state is represented","evidence":["repo found"]}
+                {"decisionId":"application-developer-done","result":true,"confidence":0.91,"reason":"delivery state is represented"}
                 """));
 
         support.applyDecisionResult().process(exchange);

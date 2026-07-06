@@ -1,1 +1,43 @@
-{"type":"object","properties":{"actId":{"type":"string"},"status":{"type":"string","enum":["complete","blocked","failed","needs-coordinator","needs-human"]},"summary":{"type":"string"},"observations":{"type":"array","items":{"type":"object"}},"actions":{"type":"array","items":{"type":"object"}},"artifacts":{"type":"array","items":{"type":"object"}},"requestedActions":{"type":"array","items":{"type":"object"}},"thoughts":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"content":{"type":"string"}},"required":["id","content"]}},"nextStepRecommendation":{"type":"string"}},"required":["actId","status","summary","observations","actions","artifacts","requestedActions","thoughts","nextStepRecommendation"]}
+{
+  "type": "object",
+  "properties": {
+    "actId": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "string"
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "thoughts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "content"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "actId",
+    "summary",
+    "artifacts",
+    "thoughts"
+  ],
+  "additionalProperties": false
+}

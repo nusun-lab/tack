@@ -42,8 +42,14 @@ public class RoutineSupport {
         ThoughtName thoughtName = new ThoughtName(name);
         Thought thought = new Thought(context, maxTokens);
         return exchange -> {
-            thoughts.push(thought.context, thought.maxTokens).process(exchange);
-            thoughtScopeNames(exchange).add(thoughtName.value);
+            List<String> names = thoughtScopeNames(exchange);
+            names.add(thoughtName.value);
+            try {
+                thoughts.push(thought.context, thought.maxTokens).process(exchange);
+            } catch (Exception e) {
+                names.removeLast();
+                throw e;
+            }
         };
     }
 
