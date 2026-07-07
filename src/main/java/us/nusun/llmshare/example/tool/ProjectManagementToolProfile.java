@@ -45,7 +45,9 @@ public class ProjectManagementToolProfile implements ToolProfileProvider {
                         - record blockers plainly with owner, evidence, and next action
                         - no single work item should be too long
                         - strive to break large work items down into small tasks
-                        - when breaking items into smaller pieces, make sure the parent item summarizes instead of duplicating the content of its children""")
+                        - when breaking items into smaller pieces, make sure the parent item summarizes instead of duplicating the content of its children
+                        - workspace members are automatically members of public projects
+                        - do not attempt to add members to public projects membership is opt-in""")
                 .denyTools("plane", "delete_project", "delete_work_item")
                 .defaultArgument("plane", "list_projects", "fields", "id,name,identifier")
                 .defaultArgument("plane", "list_work_items", "fields", "id,name,sequence_id,state,priority,assignees")

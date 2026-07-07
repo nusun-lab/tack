@@ -34,7 +34,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         """)
                 .routeUri("direct:example-software-team-project-manager")
                 .defaultToolRuntime("tool-high")
-                .defaultSynthesisRuntime("synthesis-low")
+                .defaultSynthesisRuntime("synthesis-high")
                 .build();
     }
 
@@ -47,17 +47,16 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         .prompt("""
                                 Open the wiki index only; follow project-basics and current-work links if needed.
                                 Capture wiki URL, bootstrap status, Git organization agent-workspace, chat,
-                                PM project, source repo, roster, current work, blockers, and page map.
+                                PM project, source repo, and roster.
                                 Do not scan the whole wiki; missing navigation is a setup blocker.
                                 """)
-                        .toolProfile("source-control")
-                        .thoughtUpdateDepth(2))
+                        .toolProfile("source-control"))
                 .to("direct:act")
                 .process(routine.decide("collaboration-setup-complete")
                         .prompt("""
                                 Are project basics present, marked current, and linked in the wiki, with
                                 Git organization agent-workspace and a working link or explicit blocker owner
-                                for chat, PM project, wiki, source repo, roster, current work, and blockers?
+                                for chat, PM project, wiki, source repo, roster.
                                 """))
                 .to("direct:decide")
                 .choice()
@@ -78,27 +77,28 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     Create or confirm one shared markdown wiki repository under Git organization
                                     agent-workspace only. Never create it in a personal namespace.
                                     Never duplicate. Keep the wiki URL available for every later update.
-                                    If an agent-workspace wiki exists, reuse it and preserve existing useful pages.
-                                    If agent-workspace is inaccessible, record the blocker and owner.
+                                    If an agent-workspace wiki exists for the project, reuse it and preserve
+                                    existing useful pages. If agent-workspace is inaccessible, record the blocker and owner.
                                     """)
-                            .toolProfile("source-control")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("source-control"))
                     .to("direct:act")
                     .process(routine.act("chat-channel-setup")
                             .prompt("""
                                     Create or confirm one private project chat channel.
-                                    Invite the team and David Gordon (@aphelio). Never duplicate.
+                                    Invite the team and David Gordon (@aphelio).
+                                    Never create a duplicate channel.
+                                    Do not post setup status yet.
                                     """)
-                            .toolProfile("team-chat")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("team-chat"))
                     .to("direct:act")
                     .process(routine.act("project-management-setup")
                             .prompt("""
-                                    Create or confirm one private PM project.
-                                    Invite the team and David Gordon (@aphelio). Never duplicate.
+                                    Create or confirm one public PM project.
+                                    Never duplicate a project if one exists for the mission already.
+                                    Do not attempt to add members, membership is opt-in.
+                                    Do not start creating content. Provision the project only.
                                     """)
-                            .toolProfile("project-management")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("project-management"))
                     .to("direct:act")
                     .process(routine.act("source-repository-plan")
                             .prompt("""
@@ -106,44 +106,41 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     agent-workspace only. Never create project repos in a personal namespace.
                                     Never duplicate; record blockers if the agent-workspace repo cannot be confirmed.
                                     """)
-                            .toolProfile("source-control")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("source-control"))
                     .to("direct:act")
                     .process(routine.act("wiki-project-index")
                             .prompt("""
                                     Create or update the wiki bootstrap pages.
-                                    Index: navigation only, linking project-basics, current-work, product,
-                                    engineering, decisions, status, and roster.
+                                    Index: navigation only, linking project-basics
                                     Project-basics: mission, Git organization agent-workspace, wiki URL, chat,
-                                    PM project, source repo, roles, bootstrap status, and setup blockers.
-                                    Current-work: active PM items, owners, canonical item pages, next actions.
-                                    Keep pages small. Every work item needs one canonical wiki page.
+                                    PM project, source repo, roster and roles.
+                                    Before marking any project basic missing, search active thoughts for a verified
+                                    current-mission anchor for that artifact.
                                     """)
-                            .toolProfile("source-control")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("source-control"))
                     .to("direct:act")
                     .process(routine.act("wiki-bootstrap-audit")
                             .prompt("""
-                                    Read only the wiki index, project-basics, current-work, and roster/status links.
-                                    Verify every project basic has a working link or an explicit blocker.
+                                    Read only the wiki index and project-basics
+                                    Verify every project basic has a working link
                                     Confirm wiki and source repos are under agent-workspace, not a personal namespace.
-                                    If anything is missing, update project-basics with the blocker and next owner.
+                                    Before marking any project basic missing, search active thoughts for a verified
+                                    current-mission anchor for that artifact.
                                     """)
-                            .toolProfile("source-control")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("source-control"))
                     .to("direct:act")
                     .process(routine.act("project-basics-announcement")
                             .prompt("""
                                     Read the last 20 messages in the project channel, or default channel if absent.
                                     If someone asked about setup, answer that message. Otherwise post only if basics
                                     are missing or stale. Keep chat to a pointer; the wiki index is source of truth.
-                                    Include the project-basics link and call out any bootstrap blocker owner.
+                                    Include the project-basics link and call out any bootstrap blockers.
                                     """)
                             .toolProfile("team-chat"))
                     .to("direct:act")
                     .process(routine.act("collaboration-setup-gap")
                             .prompt("""
-                                    If setup is incomplete, respond to the latest relevant setup question or post one blocker.
+                                    If setup is incomplete, respond to the latest relevant setup question or post the blockers.
                                     Name the missing project, repo, invitation, permission, or wiki link. Do not repeat basics.
                                     """)
                             .toolProfile("team-chat"))
@@ -151,9 +148,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .process(routine.decide("collaboration-setup-complete")
                             .prompt("""
                                     After this bootstrap pass, does the wiki index and project-basics page link
-                                    Git organization agent-workspace, chat, PM project, wiki, source repo, roster,
-                                    current work, blockers, and bootstrap status, with every missing basic assigned
-                                    to an explicit blocker owner?
+                                    Git organization agent-workspace, chat, PM project, wiki, source repo, and roster?
                                     """))
                     .to("direct:decide")
                     .process(routine.exitThought("pm-bootstrap"))
@@ -188,8 +183,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                 Capture owners, blockers, PM item links, canonical wiki pages,
                                 agent-workspace repo links, and broken navigation.
                                 """)
-                        .toolProfile("source-control")
-                        .thoughtUpdateDepth(2))
+                        .toolProfile("source-control"))
                 .to("direct:act");
 
         from("direct:pm-work-intake-loop")
@@ -205,8 +199,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     or explicitly waiting on PM. Capture status, priority, product owner, blocker,
                                     canonical acceptance wiki page, and requested handoff.
                                     """)
-                            .toolProfile("project-management")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("project-management"))
                     .to("direct:act")
                     .process(routine.act("pm-readiness-status")
                             .prompt("""
@@ -215,8 +208,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     ready for planning. If not, leave status or mark blocked only if that state exists.
                                     Do not start developer work in this intake step.
                                     """)
-                            .toolProfile("project-management")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("project-management"))
                     .to("direct:act")
                     .process(routine.decide("pm-work-intake-done")
                             .prompt("""
@@ -241,8 +233,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     priority, source repo under agent-workspace, canonical wiki page,
                                     acceptance, and next action.
                                     """)
-                            .toolProfile("project-management")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("project-management"))
                     .to("direct:act")
                     .process(routine.act("pm-task-sequencing")
                             .prompt("""
@@ -250,8 +241,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     PM owns assignment, to-do readiness, and blocked planning states.
                                     DEV owns to-do -> in-progress and in-progress -> review/done transitions.
                                     """)
-                            .toolProfile("project-management")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("project-management"))
                     .to("direct:act")
                     .process(routine.act("pm-actionability-check")
                             .prompt("""
@@ -259,8 +249,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     canonical wiki page, and blockers.
                                     Annotate the task; move to blocked only if the exact workflow state exists.
                                     """)
-                            .toolProfile("project-management")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("project-management"))
                     .to("direct:act")
                     .process(routine.decide("pm-task-planning-done")
                             .prompt("""

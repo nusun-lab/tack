@@ -28,15 +28,15 @@ class PromptSafeCatalogTest {
     }
 
     @Test
-    void teamRosterPromptJsonIncludesHandlesAndSelfMarkerButNoTokens() {
-        String json = FrameworkFixtures.personaCatalog().teamRosterPromptJson(FrameworkFixtures.PERSONA_A);
+    void personaInventoryPromptJsonIncludesHandlesButNoTokensOrRosterSelfMarker() {
+        String json = FrameworkFixtures.personaCatalog().personaInventoryPromptJson();
 
         assertTrue(json.contains("persona-a"));
         assertTrue(json.contains("Persona A"));
         assertTrue(json.contains("PA"));
         assertTrue(json.contains("Synthetic framework persona A"));
         assertTrue(json.contains("@persona-a"));
-        assertTrue(json.contains("\"self\" : true"));
+        assertFalse(json.contains("\"self\" : true"));
         assertFalse(json.contains("mattermost-token"));
         assertFalse(json.contains("gitea-token"));
         assertFalse(json.contains("plane-token"));

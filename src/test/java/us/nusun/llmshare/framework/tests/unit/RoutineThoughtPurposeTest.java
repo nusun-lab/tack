@@ -5,6 +5,11 @@ import us.nusun.llmshare.example.routine.ApplicationDeveloperRoutine;
 import us.nusun.llmshare.example.routine.ProductOwnerRoutine;
 import us.nusun.llmshare.example.routine.ProjectManagerRoutine;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RoutineThoughtPurposeTest {
@@ -34,5 +39,17 @@ class RoutineThoughtPurposeTest {
         assertTrue(ApplicationDeveloperRoutine.DEV_CYCLE_THOUGHT.contains("selected assigned task"));
         assertTrue(ApplicationDeveloperRoutine.DEV_SELECTION_THOUGHT.contains("Promote selected task to dev-cycle"));
         assertTrue(ApplicationDeveloperRoutine.DEV_IMPLEMENTATION_THOUGHT.contains("Promote branch/commit/validation/blocker to dev-cycle"));
+    }
+
+    @Test
+    void exampleRoutinesDoNotOverrideThoughtUpdateDepth() throws Exception {
+        for (String routine : List.of(
+                "DirectorRoutine.java",
+                "ProjectManagerRoutine.java",
+                "ProductOwnerRoutine.java",
+                "ApplicationDeveloperRoutine.java")) {
+            String source = Files.readString(Path.of("src/main/java/us/nusun/llmshare/example/routine/" + routine));
+            assertFalse(source.contains(".thoughtUpdateDepth("), routine + " should rely on default writable depth and pop carry-forward");
+        }
     }
 }

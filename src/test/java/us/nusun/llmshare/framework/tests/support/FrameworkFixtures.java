@@ -19,8 +19,10 @@ import us.nusun.llmshare.framework.model.ToolProfile;
 import us.nusun.llmshare.framework.projection.AgentRunProjectionManager;
 import us.nusun.llmshare.framework.projection.ProjectionStore;
 import us.nusun.llmshare.framework.routine.PrimitiveSupport;
+import us.nusun.llmshare.framework.service.MissionRosterService;
 import us.nusun.llmshare.framework.routine.ThoughtStackSupport;
 import us.nusun.llmshare.framework.state.AgentRun;
+import us.nusun.llmshare.framework.state.AgentRunStore;
 
 import java.lang.reflect.Field;
 import java.time.Instant;
@@ -158,15 +160,34 @@ public final class FrameworkFixtures {
     }
 
     public static PrimitiveSupport primitiveSupport() {
+        return primitiveSupport(defaultAgentRunStore());
+    }
+
+    public static PrimitiveSupport primitiveSupport(AgentRunStore agentRuns) {
+        ObjectMapper objectMapper = new ObjectMapper();
+        PersonaCatalog personas = personaCatalog();
+        RoutineCatalog routines = routineCatalog();
         PrimitiveSupport support = new PrimitiveSupport();
-        set(support, "objectMapper", new ObjectMapper());
+        set(support, "objectMapper", objectMapper);
         set(support, "thoughts", new ThoughtStackSupport());
-        set(support, "personas", personaCatalog());
-        set(support, "routines", routineCatalog());
+        set(support, "personas", personas);
+        set(support, "routines", routines);
         set(support, "toolProfiles", toolProfileRegistry());
+        set(support, "missionRoster", missionRosterService(agentRuns, personas, routines, objectMapper));
         set(support, "runtimes", executionRuntimeRegistry());
         set(support, "projections", new NoopProjectionManager());
         return support;
+    }
+
+    public static AgentRunStore defaultAgentRunStore() {
+        AgentRunStore store = new AgentRunStore();
+        store.putMission(new Mission("mission-1", "Test mission", List.of(), "active", Map.of(), Instant.now()));
+        store.putRun(new AgentRun("run-1", "mission-1", PERSONA_A, ROUTINE_A, Map.of("input", Map.of("brief", "Test run input"))));
+        return store;
+    }
+
+    public static MissionRosterService missionRosterService(AgentRunStore agentRuns, PersonaCatalog personas, RoutineCatalog routines, ObjectMapper objectMapper) {
+        return new MissionRosterService(agentRuns, personas, routines, objectMapper);
     }
 
     public static void bindCatalogBeans(DefaultCamelContext context) {

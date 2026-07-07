@@ -38,8 +38,8 @@ public class EthanPersona implements PersonaProvider {
                 .trait("He is customer-focused, specific, skeptical of vague scope, and clear about assumptions and missing decisions.")
                 .label("PO")
                 .color("38;2;114;209;163")
-                .identity("mattermost", mattermostToken, "@ethan-agent")
-                .identity("gitea", giteaToken, "ethan-agent")
+                .identity("mattermost", mattermostToken, "@product-owner-agent")
+                .identity("gitea", giteaToken, "product-owner-agent")
                 .identity("plane", planeToken, "Ethan")
                 .build();
     }

@@ -63,20 +63,16 @@ public class PersonaCatalog {
         return json(agentRunStartAssignable());
     }
 
-    public String allPromptJson() {
+    public String personaInventoryPromptJson() {
         return json(all().stream().map(persona -> promptView(persona, null)).toList());
+    }
+
+    public String allPromptJson() {
+        return personaInventoryPromptJson();
     }
 
     public String agentRunStartAssignablePromptJson() {
         return json(agentRunStartAssignable().stream().map(persona -> promptView(persona, null)).toList());
-    }
-
-    public String teamRosterPromptJson() {
-        return teamRosterPromptJson(null);
-    }
-
-    public String teamRosterPromptJson(String selfPersonaId) {
-        return json(all().stream().map(persona -> promptView(persona, selfPersonaId)).toList());
     }
 
     private static PersonaPromptView promptView(Persona persona, String selfPersonaId) {
@@ -91,7 +87,7 @@ public class PersonaCatalog {
                 promptIdentities(persona));
     }
 
-    private static Map<String, IdentityPromptView> promptIdentities(Persona persona) {
+    public static Map<String, IdentityPromptView> promptIdentities(Persona persona) {
         LinkedHashMap<String, IdentityPromptView> safe = new LinkedHashMap<>();
         persona.identities().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())

@@ -33,7 +33,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         """)
                 .routeUri("direct:example-software-team-director")
                 .defaultToolRuntime("tool-high")
-                .defaultSynthesisRuntime("synthesis-low")
+                .defaultSynthesisRuntime("synthesis-high")
                 .build();
     }
 
@@ -54,7 +54,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                                 Mission:
                                 ${exchangeProperty.mission.goal}
 
-                                Personas:
+                                Assignable personas:
                                 ${bean:personaCatalog.agentRunStartAssignablePromptJson}
 
                                 Routines:
@@ -72,9 +72,8 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                 .to("direct:create")
                 .marshal().json(JsonLibrary.Jackson)
                 .unmarshal().json(JsonLibrary.Jackson, MissionRequest.class)
-                .split().simple("${body.agentRuns}")
-                    .to("direct:start-agent-run")
-                .end()
+                .setBody(simple("${body.agentRuns}"))
+                .to("direct:start-agent-runs")
                 .process(routine.exitThought("director-planning"));
     }
 }

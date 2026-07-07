@@ -37,9 +37,8 @@ class ProjectionSemanticsTest {
         exchange.setProperty("resolvedToolRuntime", "tool-low");
         exchange.setProperty("resolvedSynthesisRuntime", "synthesis-high");
         ThoughtStack stack = new ThoughtStack();
-        stack.push(new ThoughtFrame("pm", "Project Manager routine context", 900, "Current state: ".repeat(120)));
+        stack.push(new ThoughtFrame("pm", "pm-cycle", "Project Manager routine context", 900, "Current state: ".repeat(120)));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
-        exchange.setProperty(RoutineSupport.THOUGHT_SCOPE_NAMES_PROPERTY, List.of("pm-cycle"));
 
         manager.record(exchange, "ACT_COMPLETED");
 
@@ -62,7 +61,9 @@ class ProjectionSemanticsTest {
         assertEquals("Project membership is missing.", projection.latestResult().get("summary"));
         assertEquals("ACT_COMPLETED", projection.timeline().getFirst().get("type"));
         assertEquals(Boolean.TRUE, projection.thoughtStack().getFirst().get("truncated"));
+        assertEquals("pm-cycle", projection.thoughtStack().getFirst().get("name"));
         assertEquals("pm-cycle", projection.thoughtStack().getFirst().get("displayId"));
+        assertNotNull(projection.thoughtStack().getFirst().get("updatedAt"));
         assertTrue(String.valueOf(projection.thoughtStack().getFirst().get("contentPreview")).endsWith("[truncated]"));
         assertTrue(String.valueOf(projection.thoughtStack().getFirst().get("content")).length() > 1200);
     }

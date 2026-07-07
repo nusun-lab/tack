@@ -37,12 +37,25 @@ public class AgentRunAdmissionService {
             @ExchangeProperty("mission") Mission mission,
             @ExchangeProperty("agentRun") AgentRun parent,
             Exchange exchange) {
+        return admitAll(List.of(request), mission, parent, exchange).getFirst();
+    }
+
+    public List<AgentRunAdmission> admitAll(
+            @Body List<AgentRunRequest> requests,
+            @ExchangeProperty("mission") Mission mission,
+            @ExchangeProperty("agentRun") AgentRun parent,
+            Exchange exchange) {
         if (mission == null) {
             throw new IllegalArgumentException("AgentRun admission requires mission exchange property");
         }
+        if (requests == null || requests.isEmpty()) {
+            throw new IllegalArgumentException("AgentRun admission requires at least one AgentRunRequest");
+        }
 
-        PreparedAgentRun prepared = prepareAgentRun(mission, parent, request);
-        return commitPrepared(exchange, mission, List.of(prepared)).getFirst();
+        List<PreparedAgentRun> prepared = requests.stream()
+                .map(request -> prepareAgentRun(mission, parent, request))
+                .toList();
+        return commitPrepared(exchange, mission, prepared);
     }
 
     public MissionAdmissionPlan prepareMission(@Body MissionRequest request, @Header("requestId") String requestedId) {

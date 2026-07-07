@@ -35,7 +35,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         """)
                 .routeUri("direct:example-software-team-product-owner")
                 .defaultToolRuntime("tool-high")
-                .defaultSynthesisRuntime("synthesis-low")
+                .defaultSynthesisRuntime("synthesis-high")
                 .build();
     }
 
@@ -62,8 +62,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                                     PM project, source repo, current work, blockers, and product page map.
                                     Do not scan the whole wiki; missing navigation blocks product work.
                                     """)
-                            .toolProfile("source-control")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("source-control"))
                     .to("direct:act")
                     .process(routine.decide("product-owner-has-project-basics")
                             .prompt("""
@@ -137,16 +136,14 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                                     needing scope or acceptance. Do not select developer implementation tasks.
                                     Capture priority, status, owner, blocker, and canonical wiki page.
                                     """)
-                            .toolProfile("project-management")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("project-management"))
                     .to("direct:act")
                     .process(routine.act("po-product-context-read")
                             .prompt("""
                                     Read only the wiki index, current-work, the selected item page, and direct product links.
                                     Report missing or stale navigation instead of reading the whole wiki.
                                     """)
-                            .toolProfile("source-control")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("source-control"))
                     .to("direct:act")
                     .process(routine.decide("po-backlog-selection-done")
                             .prompt("""
@@ -170,8 +167,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                                     goal, users, in-scope, out-of-scope, acceptance, decisions, and open questions.
                                     Keep it small and linked from current-work and the product index.
                                     """)
-                            .toolProfile("source-control")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("source-control"))
                     .to("direct:act")
                     .process(routine.act("po-gherkin-update")
                             .prompt("""
@@ -185,8 +181,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                                     Record one product decision or open question on the canonical item page,
                                     or on a focused decisions page linked from that item.
                                     """)
-                            .toolProfile("source-control")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("source-control"))
                     .to("direct:act")
                     .process(routine.decide("po-acceptance-done")
                             .prompt("""
@@ -209,8 +204,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                                     If acceptance is ready, move or annotate it as ready for PM breakdown only
                                     if that workflow state exists. Do not create, assign, or start developer tasks.
                                     """)
-                            .toolProfile("project-management")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("project-management"))
                     .to("direct:act")
                     .process(routine.act("po-pm-note-update")
                             .prompt("""
@@ -218,8 +212,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                                     acceptance summary, remaining questions, and requested PM action.
                                     Do not move developer tasks to to-do, in-progress, or done.
                                     """)
-                            .toolProfile("project-management")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("project-management"))
                     .to("direct:act")
                     .process(routine.decide("po-priority-status-done")
                             .prompt("""

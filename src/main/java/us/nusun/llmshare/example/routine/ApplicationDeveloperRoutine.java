@@ -34,7 +34,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                         """)
                 .routeUri("direct:example-software-team-application-developer")
                 .defaultToolRuntime("tool-high")
-                .defaultSynthesisRuntime("synthesis-low")
+                .defaultSynthesisRuntime("synthesis-high")
                 .build();
     }
 
@@ -61,8 +61,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                     PM project, chat, source repo, current work, blockers, and engineering page map.
                                     Do not scan the whole wiki; missing navigation blocks development work.
                                     """)
-                            .toolProfile("source-control")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("source-control"))
                     .to("direct:act")
                     .process(routine.decide("developer-has-project-basics")
                             .prompt("""
@@ -144,8 +143,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                     Choose the highest-priority task with a source-control next step.
                                     Do not take new to-do work while assigned in-progress work can still move.
                                     """)
-                            .toolProfile("project-management")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("project-management"))
                     .to("direct:act")
                     .process(routine.decide("developer-has-work")
                             .prompt("""
@@ -162,8 +160,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                             acceptance criteria, source repo under agent-workspace, priority,
                                             and next code step.
                                             """)
-                                    .toolProfile("project-management")
-                                    .thoughtUpdateDepth(2))
+                                    .toolProfile("project-management"))
                             .to("direct:act")
                             .process(routine.act("dev-start-to-do-status")
                                     .prompt("""
@@ -171,8 +168,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                             and has a canonical wiki page, move exactly that task to in-progress.
                                             Otherwise do not move it; add a blocker note instead.
                                             """)
-                                    .toolProfile("project-management")
-                                    .thoughtUpdateDepth(2))
+                                    .toolProfile("project-management"))
                             .to("direct:act")
                             .process(routine.decide("developer-has-work")
                                     .prompt("""
@@ -203,16 +199,14 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                     assignee is this developer, canonical wiki page, acceptance criteria,
                                     source repo under agent-workspace, and expected review evidence.
                                     """)
-                            .toolProfile("project-management")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("project-management"))
                     .to("direct:act")
                     .process(routine.act("dev-wiki-engineering-read")
                             .prompt("""
                                     Read only the wiki index, current-work, canonical item page, and direct engineering links.
                                     Do not scan the whole wiki; report missing navigation links.
                                     """)
-                            .toolProfile("source-control")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("source-control"))
                     .to("direct:act")
                     .process(routine.act("dev-source-repository-readiness")
                             .prompt("""
@@ -222,8 +216,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                     If repo access is missing, record the blocker. If the task branch is missing,
                                     create or plan it if supported by the source-control tools.
                                     """)
-                            .toolProfile("source-control")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("source-control"))
                     .to("direct:act")
                     .process(routine.act("dev-patch-plan")
                             .prompt("""
@@ -232,8 +225,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                     acceptance target, and validation evidence. If the repo is greenfield,
                                     plan the smallest runnable skeleton needed for the task. Do not touch unrelated files.
                                     """)
-                            .toolProfile("source-control")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("source-control"))
                     .to("direct:act")
                     .process(routine.act("dev-delivery-step")
                             .prompt("""
@@ -242,8 +234,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                     Use or create a task branch and commit if supported by the source-control tools.
                                     If no code change is possible, record the exact blocker and owner.
                                     """)
-                            .toolProfile("source-control")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("source-control"))
                     .to("direct:act")
                     .process(routine.act("dev-validation-step")
                             .prompt("""
@@ -251,8 +242,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                     changed-file review, or why validation cannot run with the current tools.
                                     Do not claim tests passed unless the tool result shows it.
                                     """)
-                            .toolProfile("source-control")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("source-control"))
                     .to("direct:act")
                     .process(routine.act("dev-review-readiness")
                             .prompt("""
@@ -260,8 +250,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                     PR/review link if supported, and validation status if available.
                                     No review-ready status without a code diff or explicit source-control blocker.
                                     """)
-                            .toolProfile("source-control")
-                            .thoughtUpdateDepth(2))
+                            .toolProfile("source-control"))
                     .to("direct:act")
                     .to("direct:dev-status-transition")
                     .process(routine.decide("developer-implementation-complete")

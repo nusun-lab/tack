@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -184,6 +185,51 @@ class AgentRunIsolationRouteTest {
         }
     }
 
+
+    @Test
+    void startAgentRunsBatchCommitsAllChildrenBeforePublishingAnyScheduledEvent() throws Exception {
+        ProjectionStore store = FrameworkFixtures.projectionStore();
+        AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
+        AgentRunStore agentRuns = new AgentRunStore();
+        AtomicInteger publishesSeen = new AtomicInteger();
+        StubKafkaComponent kafka = new StubKafkaComponent((topic, exchange) -> {
+            if (SCHEDULED_TOPIC.equals(topic)) {
+                publishesSeen.incrementAndGet();
+                assertEquals(2, agentRuns.runs().size(), "all child runs should be committed before first schedule publish");
+            }
+        });
+        RoutineCatalog routines = new RoutineCatalog(List.of(
+                routine("test/parent", "direct:test-parent"),
+                routine("test/child-a", "direct:test-child-a"),
+                routine("test/child-b", "direct:test-child-b")));
+        FrameworkFixtures.set(manager, "routines", routines);
+
+        try (DefaultCamelContext context = context(manager, routines, agentRuns, kafka, "agent-run-isolation-test")) {
+            context.addRoutes(new RouteBuilder() {
+                @Override
+                public void configure() {
+                    from("direct:test-child-a").setBody(constant("ok-a"));
+                    from("direct:test-child-b").setBody(constant("ok-b"));
+                }
+            });
+            context.start();
+            AgentRun parent = parentRun();
+            Exchange exchange = preparedExchange(context, parent, List.of(
+                    new AgentRunRequest(FrameworkFixtures.PERSONA_A, "test/child-a", Map.of()),
+                    new AgentRunRequest(FrameworkFixtures.PERSONA_A, "test/child-b", Map.of())));
+
+            context.createProducerTemplate().send("direct:start-agent-runs", exchange);
+
+            @SuppressWarnings("unchecked")
+            List<AgentRunHandle> handles = exchange.getIn().getBody(List.class);
+            assertEquals(2, handles.size());
+            assertEquals(2, agentRuns.runs().size());
+            assertEquals(2, kafka.sentTo(SCHEDULED_TOPIC).size());
+            assertEquals(2, publishesSeen.get());
+            assertParentStateRestored(exchange, parent);
+        }
+    }
+
     @Test
     void schedulingValidationFailureRestoresParentState() throws Exception {
         ProjectionStore store = FrameworkFixtures.projectionStore();
@@ -225,7 +271,7 @@ class AgentRunIsolationRouteTest {
         }
     }
 
-    private static Exchange preparedExchange(DefaultCamelContext context, AgentRun parent, AgentRunRequest request) {
+    private static Exchange preparedExchange(DefaultCamelContext context, AgentRun parent, Object request) {
         Exchange exchange = new DefaultExchange(context);
         Mission mission = new Mission("mission-1", "Build", List.of(), "active", Map.of(), Instant.now());
         exchange.setProperty("mission", mission);

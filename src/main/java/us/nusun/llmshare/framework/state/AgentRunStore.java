@@ -40,6 +40,16 @@ public class AgentRunStore {
         return List.copyOf(runs.values());
     }
 
+    public List<AgentRun> runsByMission(String missionId) {
+        if (missionId == null || missionId.isBlank()) {
+            return List.of();
+        }
+        return runs.values().stream()
+                .filter(run -> missionId.equals(run.missionId()))
+                .sorted(java.util.Comparator.comparing(AgentRun::id))
+                .toList();
+    }
+
     public Mission requireMission(String missionId) {
         Mission mission = getMission(missionId);
         if (mission == null) {

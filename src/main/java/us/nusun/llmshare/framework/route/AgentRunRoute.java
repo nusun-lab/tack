@@ -19,6 +19,7 @@ import us.nusun.llmshare.framework.service.AgentRunAdmissionService;
 import us.nusun.llmshare.framework.state.AgentRun;
 import us.nusun.llmshare.framework.state.AgentRunStore;
 
+import java.util.List;
 import java.util.Map;
 
 @ApplicationScoped
@@ -47,6 +48,21 @@ public class AgentRunRoute extends RouteBuilder {
                 .doFinally()
                     .removeProperty("agentRunAdmission")
                 .end();
+
+
+        from("direct:start-agent-runs")
+                .routeId("start-agent-runs")
+                .validate(exchangeProperty("mission").isNotNull())
+                .validate(body().isInstanceOf(List.class))
+                .bean(admissions, "admitAll")
+                .setProperty("agentRunAdmissions", body())
+                .split(body())
+                    .setBody(simple("${body.event}"))
+                    .to("direct:publish-agent-run-scheduled")
+                .end()
+                .setBody(simple("${exchangeProperty.agentRunAdmissions}"))
+                .setBody(method(admissions, "handles"))
+                .removeProperty("agentRunAdmissions");
 
         from("direct:publish-agent-run-scheduled")
                 .routeId("publish-agent-run-scheduled")

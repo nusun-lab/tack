@@ -8,6 +8,7 @@ import us.nusun.llmshare.framework.model.ThoughtFrame;
 import us.nusun.llmshare.framework.projection.AgentRunProjectionManager;
 import us.nusun.llmshare.framework.state.ThoughtStack;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @ApplicationScoped
@@ -36,7 +37,7 @@ public class ThoughtStackSupport {
     }
 
     public ThoughtFrame push(Exchange exchange, String name, String context, int maxTokens) {
-        ThoughtFrame frame = new ThoughtFrame("t_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8), name, context, maxTokens, "");
+        ThoughtFrame frame = new ThoughtFrame("t_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8), name, context, maxTokens, "", Instant.now());
         stack(exchange).push(frame);
         record(exchange, "THOUGHT_PUSHED");
         return frame;

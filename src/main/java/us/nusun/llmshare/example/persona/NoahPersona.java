@@ -37,9 +37,9 @@ public class NoahPersona implements PersonaProvider {
                 .label("DIR")
                 .color("38;2;64;224;255")
                 .agentRunStartAssignable(false)
-                .identity("mattermost", mattermostToken, "@noah-agent")
-                .identity("gitea", giteaToken, "noah-agent")
-                .identity("plane", planeToken, "Noah")
+                .identity("mattermost", mattermostToken, "@director-agent")
+                .identity("gitea", giteaToken, "director-agent")
+                .identity("plane", planeToken, "Director")
                 .build();
     }
 }

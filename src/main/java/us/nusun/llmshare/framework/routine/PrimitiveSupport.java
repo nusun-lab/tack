@@ -14,13 +14,16 @@ import us.nusun.llmshare.framework.inventory.PersonaCatalog;
 import us.nusun.llmshare.framework.inventory.RoutineCatalog;
 import us.nusun.llmshare.framework.inventory.ToolProfileRegistry;
 import us.nusun.llmshare.framework.llm.ProviderStructuredOutputSupport;
+import us.nusun.llmshare.framework.service.MissionRosterService;
 import us.nusun.llmshare.framework.model.*;
 import us.nusun.llmshare.framework.projection.AgentRunProjectionManager;
 import us.nusun.llmshare.framework.inventory.ExecutionRuntimeRegistry;
 import us.nusun.llmshare.framework.state.AgentRun;
+import us.nusun.llmshare.framework.state.AgentRunStore;
 import us.nusun.llmshare.framework.state.ThoughtStack;
 
 import java.io.InputStream;
+import java.time.Instant;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -37,6 +40,7 @@ public class PrimitiveSupport {
     @Inject PersonaCatalog personas;
     @Inject RoutineCatalog routines;
     @Inject ToolProfileRegistry toolProfiles;
+    @Inject MissionRosterService missionRoster;
     @Inject ExecutionRuntimeRegistry runtimes;
     @Inject AgentRunProjectionManager projections;
 
@@ -108,6 +112,7 @@ public class PrimitiveSupport {
     public Processor captureToolPassResult() {
         return exchange -> {
             LlmJobResult result = requireSucceeded(exchange, exchange.getIn().getBody(LlmJobResult.class), "tool/action pass");
+            exchange.setProperty("toolPassObservedAt", Instant.now());
             exchange.setProperty("toolPassResult", result.content());
             projections.record(exchange, "TOOL_PASS_COMPLETED");
         };
@@ -329,6 +334,7 @@ public class PrimitiveSupport {
         out.append("  name: ").append(frame.name()).append('\n');
         out.append("  purpose: ").append(frame.context()).append('\n');
         out.append("  maxTokens: ").append(frame.maxTokens()).append('\n');
+        out.append("  updatedAt: ").append(frame.updatedAt()).append('\n');
         out.append("  content: ").append(frame.content() == null || frame.content().isBlank() ? "(empty)" : frame.content()).append("\n");
     }
 
@@ -339,7 +345,7 @@ public class PrimitiveSupport {
         exchange.setProperty("missionGoal", mission == null ? "(none)" : safeText(mission.goal()));
         exchange.setProperty("agentRunInput", renderAgentRunInput(run));
         exchange.setProperty("routineSummary", renderRoutineSummary(routine));
-        exchange.setProperty("teamRoster", personas.teamRosterPromptJson(run.personaId()));
+        exchange.setProperty("missionRoster", missionRoster().missionRosterPromptJson(exchange));
         exchange.setProperty("activeThoughts", renderThoughts(exchange));
     }
 
@@ -401,12 +407,13 @@ public class PrimitiveSupport {
         return "Mission:\n" + exchange.getProperty("missionGoal", String.class)
                 + "\n\nAgent-run input:\n" + exchange.getProperty("agentRunInput", String.class)
                 + "\n\nRoutine context:\n" + exchange.getProperty("routineSummary", String.class)
-                + "\n\nTeam roster:\n" + exchange.getProperty("teamRoster", String.class)
+                + "\n\nMission roster:\n" + exchange.getProperty("missionRoster", String.class)
                 + "\nTeammate handles are for coordination. Credentials/tokens are never shown and should never be requested, guessed, or printed."
                 + "\n\nAct id: " + safeText(exchange.getProperty("actId", String.class))
                 + "\nTool profile: " + exchange.getProperty("toolProfileId", String.class)
                 + "\nTool-profile guidance:\n" + exchange.getProperty("toolProfileGuidance", String.class)
                 + "\n\nActive thoughts:\n" + exchange.getProperty("activeThoughts", String.class)
+                + "\nThoughts are framework memory from prior outputs; there are no tools for reading or writing thoughts."
                 + "\n\nAct prompt:\n" + safeText(exchange.getProperty("actPrompt", String.class))
                 + "\n\nDo the requested work using available tools when useful. Return a compact pass report in this shape:"
                 + passReportShape();
@@ -416,13 +423,14 @@ public class PrimitiveSupport {
         return "Mission:\n" + exchange.getProperty("missionGoal", String.class)
                 + "\n\nAgent-run input:\n" + exchange.getProperty("agentRunInput", String.class)
                 + "\n\nRoutine context:\n" + exchange.getProperty("routineSummary", String.class)
-                + "\n\nTeam roster:\n" + exchange.getProperty("teamRoster", String.class)
+                + "\n\nMission roster:\n" + exchange.getProperty("missionRoster", String.class)
                 + "\nTeammate handles are for coordination. Credentials/tokens are never shown and should never be requested, guessed, or printed."
                 + "\n\nAct id: " + safeText(exchange.getProperty("actId", String.class))
                 + "\nAct prompt: " + safeText(exchange.getProperty("actPrompt", String.class))
-                + "\nTool/action pass result:\n" + safeText(exchange.getProperty("toolPassResult", String.class))
-                + "\n\nRead-only active thoughts (context only; do not include these ids in StepResult.thoughts):\n" + exchange.getProperty("readOnlyThoughts", String.class)
-                + "\n\nWritable thoughts (only these ids may be changed):\n" + exchange.getProperty("writableThoughts", String.class)
+                + "\nLatest observation observedAt: " + safeText(exchangePropertyText(exchange, "toolPassObservedAt"))
+                + "\nLatest observation from this act:\n" + safeText(exchange.getProperty("toolPassResult", String.class))
+                + "\n\nPrevious read-only thought snapshots, possibly stale (context only; do not include these ids in StepResult.thoughts):\n" + exchange.getProperty("readOnlyThoughts", String.class)
+                + "\n\nPrevious writable thought snapshots, possibly stale (only these ids may be changed):\n" + exchange.getProperty("writableThoughts", String.class)
                 + stepResultRules();
     }
 
@@ -433,6 +441,7 @@ public class PrimitiveSupport {
                 + "\n\nDecision id: " + safeText(exchange.getProperty("decisionId", String.class))
                 + "\nQuestion: " + safeText(exchange.getProperty("decisionPrompt", String.class))
                 + "\nActive thoughts:\n" + exchange.getProperty("activeThoughts", String.class)
+                + "\nThoughts are framework memory from prior outputs; there are no tools for reading or writing thoughts."
                 + "\nLatest step result:\n" + exchange.getProperty("latestStepResultJson", String.class)
                 + "\nReturn only decisionId, result, confidence, and reason.";
     }
@@ -444,6 +453,7 @@ public class PrimitiveSupport {
                 + "\nAgent-run input:\n" + exchange.getProperty("agentRunInput", String.class)
                 + "\nRoutine context:\n" + exchange.getProperty("routineSummary", String.class)
                 + "\nActive thoughts:\n" + exchange.getProperty("activeThoughts", String.class)
+                + "\nThoughts are framework memory from prior outputs; there are no tools for reading or writing thoughts."
                 + "\nCaller JSON schema:\n" + exchange.getProperty("createSchemaJson", String.class);
     }
 
@@ -451,6 +461,15 @@ public class PrimitiveSupport {
         return "\nOutcome:"
                 + "\nActions taken:"
                 + "\nEvidence / links / ids:"
+                + "\n- Label links/ids as verified, missing, expected, or reference. Do not include guessed URLs."
+                + "\nLatest observations from this act:"
+                + "\n- created:"
+                + "\n- verified:"
+                + "\n- still missing:"
+                + "\n- blockers remaining:"
+                + "\n- stale blockers resolved:"
+                + "\nDurable facts to remember:"
+                + "\n- Preserve verified current anchors; record missing/expected artifacts as blockers without fake URLs; label reference examples as reference/patterns."
                 + "\nState changed:"
                 + "\nBlockers:"
                 + "\nNext useful action:";
@@ -458,17 +477,47 @@ public class PrimitiveSupport {
 
     public String stepResultRules() {
         return "\n\nReturn one universal StepResult."
+                + "\nThought synthesis is a state-reduction task."
+                + "\n- Previous thoughts are not authoritative; they are stale snapshots to patch."
+                + "\n- The latest observation from this act is newer than all previous thought snapshots."
+                + "\n- Before writing StepResult.thoughts:"
+                + "\n  1. Extract current anchors from the previous thought snapshots."
+                + "\n  2. Extract new observations from the latest observation from this act."
+                + "\n  3. Apply the latest observation as a patch over the previous thought state."
+                + "\n  4. For each anchor changed by this act, replace the old thought state with the newest observed state."
+                + "\n  5. If the latest observation creates, verifies, activates, or confirms an anchor, remove older missing/not verified/blocker text for that same anchor."
+                + "\n  6. Preserve unrelated anchors that the latest observation did not change."
+                + "\n  7. Write thoughts as the new current-state snapshots, not as copied previous prose."
+                + "\n- StepResult summary, artifacts, and thoughts must describe the same current state. If artifacts say an anchor is verified/active/created, thoughts must not say the same anchor is missing/not verified/uncreated."
                 + "\nThought update rules:"
                 + "\n- In `thoughts`, include only writable thought ids listed above; use [] only for a true no-op pass where no durable working context was confirmed or changed."
+                + "\n- There are no tools for reading or writing thoughts. Thought updates must be synthesized from the latest observation, previous thought snapshots, and prompt context, not from tool calls."
                 + "\n- If a thought id is included, content must be non-empty, useful, and rewritten as the whole compact current memory for that thought."
                 + "\n- The plain-text pass result is not durable memory; facts needed by later steps must be compacted into writable thoughts."
-                + "\n- Update thoughts whenever the pass confirms or changes durable working context, including shared documentation or wiki URLs, documentation repositories, important page paths, source repository URLs or clone URLs, branches, commits, change requests, team chat or collaboration channel names/links, project tracker or work item tracker workspace/item ids, URLs, status, owner, priority, canonical documentation page paths for work items, selected tasks/product items/work items, blockers, blocker owners, unblock conditions, and next useful actions."
+                + "\n- If meaningful work happened in a local scope and the most-specific writable thought is blank, usually update that thought with the local durable facts."
+                + "\n- Update thoughts whenever the pass confirms or changes durable working context, including shared documentation links/page paths, source repository URLs or clone URLs, branches, commits, change requests, collaboration channel names/links, project/work tracker ids, links, status, owners, priorities, canonical documentation pages for work items, selected tasks/product items/work items, blockers, blocker owners, unblock conditions, and next useful actions."
+                + "\n- Only record URLs, ids, and links that came from tool output, durable documentation, or prior verified thoughts. Do not invent URLs for missing artifacts. For missing artifacts, record expected name/path plus missing/blocker status, not a fake URL. If a URL is expected but not verified, write `URL not verified` or omit the URL."
+                + "\n- Current mission anchors are artifacts that belong to this mission/project. Reference examples or pattern artifacts from other projects must be labeled as references/patterns. Do not promote a reference/example repository, documentation space, work item, or collaboration channel into current mission durable anchors."
+                + "\n- Good memory shape: `current wiki: missing`; `reference pattern: example project documentation shows README.md, Project-Basics.md, Current-Work.md`. Bad memory shape: `documentation index: example-project-wiki` when it belongs to another mission."
+                + "\n- StepResult artifact rules: `url` is only for verified URLs. Missing expected artifacts should use fields such as name, org/owner if known, status: missing, blocker: true, and notes, without an invented URL. Verified artifacts may include real URLs."
+                + "\nFreshness rules:"
+                + "\n- Thoughts are current-state snapshots, not append-only logs."
+                + "\n- Each thought `updatedAt` is when that memory snapshot was last rewritten."
+                + "\n- The latest observation has `observedAt` and is the newest observation from this act."
+                + "\n- When the latest observation and existing thoughts conflict about the same current-mission anchor, the latest observation wins."
+                + "\n- Rewrite thoughts as the latest known state after this act."
+                + "\n- Do not preserve older missing/expected/blocker text for an anchor that this act created or verified. Keep only unresolved blockers, e.g. `project tracker verified; project membership still blocked`."
                 + "\n- Where to write: put current local scope details in the most-specific thought; put facts needed by later sibling scopes in a parent thought; put durable project anchors and persistent blockers in the root/routine thought."
-                + "\n- Promotion: before a local scope ends, promote important facts needed later into a parent or root thought when that parent/root id is writable."
+                + "\n- Promotion: before a local scope ends, write durable facts clearly while the scope is active. Useful non-empty local thought content is also carried forward into the parent when the scope exits, but explicit parent/root updates are still better when those ids are writable."
                 + "\n- Preserve useful mission facts, decisions, blockers, owners, durable artifact links, external system ids/URLs, and next actions that still matter."
                 + "\n- Drop stale, duplicate, speculative, low-signal, or overly detailed notes. Prefer compact bullets or short phrases."
                 + "\n- Stay within each thought's maxTokens budget shown above."
                 + "\n- Do not copy a thought's static purpose into content; content should be concrete accumulated state.";
+    }
+
+    private static String exchangePropertyText(Exchange exchange, String key) {
+        Object value = exchange.getProperty(key);
+        return value == null ? "" : String.valueOf(value);
     }
 
     private String renderAgentRunInput(AgentRun run) {
@@ -502,6 +551,12 @@ public class PrimitiveSupport {
 
     private ToolProfileRegistry toolProfiles() {
         return toolProfiles == null ? new ToolProfileRegistry(List.of()) : toolProfiles;
+    }
+
+    private MissionRosterService missionRoster() {
+        return missionRoster == null
+                ? new MissionRosterService(new AgentRunStore(), personas, routines, objectMapper == null ? new ObjectMapper() : objectMapper)
+                : missionRoster;
     }
 
     private static String safeText(String value) {

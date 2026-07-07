@@ -38,9 +38,9 @@ public class MilesPersona implements PersonaProvider {
                 .trait("He is technical, test-oriented, direct, and prefers verified repository/tool state over assumptions.")
                 .label("DEV")
                 .color("38;2;106;169;255")
-                .identity("mattermost", mattermostToken, "@miles-agent")
-                .identity("gitea", giteaToken, "miles-agent")
-                .identity("plane", planeToken, "Miles")
+                .identity("mattermost", mattermostToken, "@app-developer-agent")
+                .identity("gitea", giteaToken, "application-developer-agent")
+                .identity("plane", planeToken, "Dev")
                 .build();
     }
 }

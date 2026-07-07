@@ -127,9 +127,12 @@ class PrimitiveSemanticsTest {
         assertTrue(request.prompt().contains("Act id:"));
         assertTrue(request.prompt().contains("Routine context:"));
         assertTrue(request.prompt().contains("id: routine-a"));
-        assertTrue(request.prompt().contains("Team roster:"));
+        assertTrue(request.prompt().contains("Mission roster:"));
         assertTrue(request.prompt().contains("@persona-a"));
+        assertTrue(request.prompt().contains("run-1"));
+        assertTrue(request.prompt().contains("routine-a"));
         assertTrue(request.prompt().contains("\"self"));
+        assertFalse(request.prompt().contains("Persona B"));
         assertTrue(request.prompt().contains("Credentials/tokens are never shown"));
         assertFalse(request.prompt().contains("mattermost-token"));
         assertFalse(request.prompt().contains("gitea-token"));
@@ -139,10 +142,23 @@ class PrimitiveSemanticsTest {
         assertTrue(request.prompt().contains("name: dev-selection"));
         assertTrue(request.prompt().contains("purpose: Developer context"));
         assertTrue(request.prompt().contains("maxTokens: 100"));
+        assertTrue(request.prompt().contains("updatedAt:"));
         assertTrue(request.prompt().contains("Repository is not confirmed yet."));
+        assertTrue(request.prompt().contains("there are no tools for reading or writing thoughts"));
         assertTrue(request.prompt().contains("Confirm the target source repository."));
         assertTrue(request.prompt().contains("Outcome:"));
         assertTrue(request.prompt().contains("Evidence / links / ids:"));
+        assertTrue(request.prompt().contains("Label links/ids as verified, missing, expected, or reference"));
+        assertTrue(request.prompt().contains("Do not include guessed URLs"));
+        assertTrue(request.prompt().contains("Latest observations from this act:"));
+        assertTrue(request.prompt().contains("- created:"));
+        assertTrue(request.prompt().contains("- verified:"));
+        assertTrue(request.prompt().contains("- still missing:"));
+        assertTrue(request.prompt().contains("- blockers remaining:"));
+        assertTrue(request.prompt().contains("- stale blockers resolved:"));
+        assertTrue(request.prompt().contains("Durable facts to remember:"));
+        assertTrue(request.prompt().contains("record missing/expected artifacts as blockers without fake URLs"));
+        assertTrue(request.prompt().contains("label reference examples as reference/patterns"));
         assertFalse(request.prompt().contains("Return a concise factual pass result"));
     }
 
@@ -156,6 +172,7 @@ class PrimitiveSemanticsTest {
         exchange.setProperty("resolvedSynthesisRuntime", "synthesis-low");
         exchange.setProperty("actId", "chat-kickoff");
         exchange.setProperty("actPrompt", "Post implementation focus if stale.");
+        exchange.setProperty("toolPassObservedAt", java.time.Instant.parse("2026-07-07T12:00:00Z"));
         exchange.setProperty("toolPassResult", "No stale focus post found.");
 
         support.prepareStepSynthesisPrompt().process(exchange);
@@ -166,6 +183,7 @@ class PrimitiveSemanticsTest {
         assertTrue(request.systemPrompt().contains("Builds framework test scenarios"));
         assertTrue(request.systemPrompt().contains("StepResult JSON object"));
         assertTrue(request.prompt().contains("Test run input"));
+        assertTrue(request.prompt().contains("Latest observation observedAt: 2026-07-07T12:00:00Z"));
     }
 
     @Test
@@ -186,9 +204,9 @@ class PrimitiveSemanticsTest {
 
         LlmJobRequest request = exchange.getIn().getBody(LlmJobRequest.class);
         String prompt = request.prompt();
-        int writableStart = prompt.indexOf("Writable thoughts (only these ids may be changed):");
+        int writableStart = prompt.indexOf("Previous writable thought snapshots, possibly stale (only these ids may be changed):");
         assertFalse(prompt.contains("Active thoughts:"));
-        assertTrue(prompt.contains("Read-only active thoughts (context only; do not include these ids in StepResult.thoughts):"));
+        assertTrue(prompt.contains("Previous read-only thought snapshots, possibly stale (context only; do not include these ids in StepResult.thoughts):"));
         assertTrue(prompt.contains("readonly-thought"));
         assertTrue(writableStart >= 0);
         String writableSection = prompt.substring(writableStart);
@@ -199,20 +217,100 @@ class PrimitiveSemanticsTest {
         assertTrue(prompt.contains("Preserve useful mission facts"));
         assertTrue(prompt.contains("Stay within each thought's maxTokens budget"));
         assertTrue(prompt.contains("content must be non-empty, useful"));
+        assertTrue(prompt.contains("There are no tools for reading or writing thoughts"));
+        assertTrue(prompt.contains("Thought updates must be synthesized from the latest observation, previous thought snapshots, and prompt context"));
+        assertTrue(prompt.contains("not from tool calls"));
+        assertTrue(prompt.contains("Thought synthesis is a state-reduction task."));
+        assertTrue(prompt.contains("Previous thoughts are not authoritative; they are stale snapshots to patch."));
+        assertTrue(prompt.contains("The latest observation from this act is newer than all previous thought snapshots."));
+        assertTrue(prompt.contains("Before writing StepResult.thoughts:"));
+        assertTrue(prompt.contains("Extract current anchors from the previous thought snapshots."));
+        assertTrue(prompt.contains("Extract new observations from the latest observation from this act."));
+        assertTrue(prompt.contains("Apply the latest observation as a patch over the previous thought state."));
+        assertTrue(prompt.contains("replace the old thought state with the newest observed state."));
+        assertTrue(prompt.contains("remove older missing/not verified/blocker text for that same anchor."));
+        assertTrue(prompt.contains("Preserve unrelated anchors that the latest observation did not change."));
+        assertTrue(prompt.contains("new current-state snapshots, not as copied previous prose."));
+        assertTrue(prompt.contains("summary, artifacts, and thoughts must describe the same current state"));
+        assertTrue(prompt.indexOf("Thought synthesis is a state-reduction task.") < prompt.indexOf("Thought update rules:"));
         assertTrue(prompt.contains("plain-text pass result is not durable memory"));
-        assertTrue(prompt.contains("shared documentation or wiki URLs"));
+        assertTrue(prompt.contains("most-specific writable thought is blank"));
+        assertTrue(prompt.contains("shared documentation links/page paths"));
         assertTrue(prompt.contains("source repository URLs or clone URLs"));
-        assertTrue(prompt.contains("team chat or collaboration channel names/links"));
-        assertTrue(prompt.contains("project tracker or work item tracker workspace/item ids"));
-        assertTrue(prompt.contains("canonical documentation page paths"));
+        assertTrue(prompt.contains("collaboration channel names/links"));
+        assertTrue(prompt.contains("project/work tracker ids"));
+        assertTrue(prompt.contains("canonical documentation pages"));
         assertTrue(prompt.contains("selected tasks/product items/work items"));
         assertTrue(prompt.contains("blocker owners"));
+        assertTrue(prompt.contains("Only record URLs, ids, and links that came from tool output, durable documentation, or prior verified thoughts"));
+        assertTrue(prompt.contains("Do not invent URLs for missing artifacts"));
+        assertTrue(prompt.contains("URL not verified"));
+        assertTrue(prompt.contains("Reference examples or pattern artifacts from other projects must be labeled as references/patterns"));
+        assertTrue(prompt.contains("Do not promote a reference/example repository"));
+        assertTrue(prompt.contains("current wiki: missing"));
+        assertTrue(prompt.contains("reference pattern:"));
+        assertTrue(prompt.contains("`url` is only for verified URLs"));
+        assertTrue(prompt.contains("status: missing"));
+        assertTrue(prompt.contains("without an invented URL"));
+        assertTrue(prompt.contains("Freshness rules:"));
+        assertTrue(prompt.contains("Thoughts are current-state snapshots, not append-only logs"));
+        assertTrue(prompt.contains("Each thought `updatedAt` is when that memory snapshot was last rewritten"));
+        assertTrue(prompt.contains("latest observation has `observedAt`"));
+        assertTrue(prompt.contains("latest observation wins"));
+        assertTrue(prompt.contains("Rewrite thoughts as the latest known state after this act"));
+        assertTrue(prompt.contains("Do not preserve older missing/expected/blocker text"));
         assertTrue(prompt.contains("Where to write: put current local scope details in the most-specific thought"));
         assertTrue(prompt.contains("Promotion: before a local scope ends"));
+        assertTrue(prompt.contains("carried forward into the parent when the scope exits"));
         assertFalse(prompt.contains("Gitea"));
         assertFalse(prompt.contains("Mattermost"));
         assertFalse(prompt.contains("Plane"));
         assertTrue(prompt.contains("Do not copy a thought's static purpose into content"));
+    }
+
+    @Test
+    void stepSynthesisPromptFramesVerifiedAnchorAsPatchOverStaleThoughtSnapshot() throws Exception {
+        PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
+        Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
+        ThoughtStack stack = new ThoughtStack();
+        stack.push(new ThoughtFrame("pm-root", "project-manager-routine", "Durable PM project anchors", 300,
+                "Plane project tracker missing"));
+        exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
+        exchange.setProperty("resolvedSynthesisRuntime", "synthesis-low");
+        exchange.setProperty("thoughtUpdateDepth", 1);
+        exchange.setProperty("actId", "project-management-setup");
+        exchange.setProperty("actPrompt", "Create or verify the project tracker for the mission.");
+        exchange.setProperty("toolPassObservedAt", java.time.Instant.parse("2026-07-07T12:00:00Z"));
+        exchange.setProperty("toolPassResult", """
+                Outcome: Project tracker created and verified.
+                Evidence / links / ids:
+                - verified: Plane project Repair Shop Queue App, id 36a6bccc-4729-4c2d-83fc-0fe48441b1bd, identifier RSQA, workspace 7a3f3b43-ef50-476b-b316-bc1bf5021393, status active/verified
+                Latest observations from this act:
+                - created: Plane project Repair Shop Queue App
+                - verified: id=36a6bccc-4729-4c2d-83fc-0fe48441b1bd; identifier=RSQA; workspace=7a3f3b43-ef50-476b-b316-bc1bf5021393; status=active/verified
+                - still missing: none
+                - blockers remaining: none for project tracker
+                - stale blockers resolved: Plane project tracker missing -> resolved; project RSQA verified
+                Durable facts to remember: Plane project Repair Shop Queue App (RSQA) verified.
+                """);
+
+        support.prepareStepSynthesisPrompt().process(exchange);
+
+        String prompt = exchange.getIn().getBody(LlmJobRequest.class).prompt();
+        assertTrue(prompt.contains("Previous writable thought snapshots, possibly stale"));
+        assertTrue(prompt.contains("Plane project tracker missing"));
+        assertTrue(prompt.contains("Latest observation from this act:"));
+        assertTrue(prompt.contains("36a6bccc-4729-4c2d-83fc-0fe48441b1bd"));
+        assertTrue(prompt.contains("RSQA"));
+        assertTrue(prompt.contains("7a3f3b43-ef50-476b-b316-bc1bf5021393"));
+        assertTrue(prompt.contains("status active/verified"));
+        assertTrue(prompt.contains("stale blockers resolved: Plane project tracker missing -> resolved; project RSQA verified"));
+        assertTrue(prompt.contains("Previous thoughts are not authoritative; they are stale snapshots to patch."));
+        assertTrue(prompt.contains("The latest observation from this act is newer than all previous thought snapshots."));
+        assertTrue(prompt.contains("If the latest observation creates, verifies, activates, or confirms an anchor, remove older missing/not verified/blocker text for that same anchor."));
+        assertTrue(prompt.contains("StepResult summary, artifacts, and thoughts must describe the same current state."));
+        assertTrue(prompt.indexOf("Latest observation from this act:") < prompt.indexOf("Previous writable thought snapshots, possibly stale"));
+        assertTrue(prompt.indexOf("Thought synthesis is a state-reduction task.") < prompt.indexOf("Thought update rules:"));
     }
 
     @Test
@@ -231,7 +329,7 @@ class PrimitiveSemanticsTest {
         support.prepareStepSynthesisPrompt().process(exchange);
 
         String prompt = exchange.getIn().getBody(LlmJobRequest.class).prompt();
-        String writableSection = prompt.substring(prompt.indexOf("Writable thoughts (only these ids may be changed):"));
+        String writableSection = prompt.substring(prompt.indexOf("Previous writable thought snapshots, possibly stale (only these ids may be changed):"));
         assertTrue(writableSection.contains("routine-thought"));
         assertTrue(writableSection.contains("loop-thought"));
     }
@@ -372,6 +470,44 @@ class PrimitiveSemanticsTest {
     }
 
     @Test
+    void stepResultSchemaDocumentsVerifiedUrlsAndMissingArtifactsWithoutUrl() throws Exception {
+        String schema = java.nio.file.Files.readString(java.nio.file.Path.of("src/main/resources/schemas/step-result-schema.json"));
+
+        assertTrue(schema.contains("Use url only for verified URLs"));
+        assertTrue(schema.contains("Missing expected artifacts can be represented without url"));
+        assertTrue(schema.contains("status: missing"));
+        assertTrue(schema.contains("Label reference examples as reference/patterns"));
+    }
+
+    @Test
+    void stepResultArtifactsCanRepresentMissingWithoutUrlAndVerifiedWithUrl() throws Exception {
+        PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
+        Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
+        exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", """
+                {
+                  "actId":"artifact-check",
+                  "summary":"Current wiki is missing; reference pattern inspected separately.",
+                  "artifacts":[
+                    {"name":"current wiki","status":"missing","blocker":true,"notes":"URL not verified; do not invent one"},
+                    {"name":"reference pattern wiki","status":"reference","url":"https://docs.example/reference-wiki"}
+                  ],
+                  "thoughts":[]
+                }
+                """));
+
+        support.applyStepResult().process(exchange);
+
+        StepResult result = exchange.getIn().getBody(StepResult.class);
+        java.util.Map<String, Object> missing = result.artifacts().get(0);
+        java.util.Map<String, Object> verified = result.artifacts().get(1);
+        assertEquals("missing", missing.get("status"));
+        assertEquals(true, missing.get("blocker"));
+        assertFalse(missing.containsKey("url"));
+        assertEquals("reference", verified.get("status"));
+        assertEquals("https://docs.example/reference-wiki", verified.get("url"));
+    }
+
+    @Test
     void stepResultRewritesRoutineAndLoopThoughtsByDefaultAndUpdatesAgentRun() throws Exception {
         PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
@@ -429,6 +565,22 @@ class PrimitiveSemanticsTest {
 
         assertEquals("new parent", stack.frames().get(0).content());
         assertEquals("new child", stack.frames().get(1).content());
+    }
+
+    @Test
+    void stepResultAllowsEmptyThoughtUpdatesForTrueNoOpPasses() throws Exception {
+        PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
+        Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
+        ThoughtStack stack = new ThoughtStack();
+        stack.push(new ThoughtFrame("child", "Child", 100, "old child"));
+        exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
+        exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", """
+                {"actId":"noop","summary":"nothing changed","artifacts":[],"thoughts":[]}
+                """));
+
+        support.applyStepResult().process(exchange);
+
+        assertEquals("old child", stack.frames().getFirst().content());
     }
 
     @Test
