@@ -2,6 +2,7 @@ package us.nusun.llmshare.framework.tests.unit;
 
 import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.example.routine.ApplicationDeveloperRoutine;
+import us.nusun.llmshare.example.routine.DirectorRoutine;
 import us.nusun.llmshare.example.routine.ProductOwnerRoutine;
 import us.nusun.llmshare.example.routine.ProjectManagerRoutine;
 
@@ -13,6 +14,15 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RoutineThoughtPurposeTest {
+    @Test
+    void directorThoughtPurposesDescribeRosterAndProvisioningMemory() {
+        assertTrue(DirectorRoutine.DIRECTOR_ROUTINE_THOUGHT.contains("roster by status"));
+        assertTrue(DirectorRoutine.DIRECTOR_ROUTINE_THOUGHT.contains("active/completed/failed coverage"));
+        assertTrue(DirectorRoutine.DIRECTOR_CYCLE_THOUGHT.contains("source/project/chat signals"));
+        assertTrue(DirectorRoutine.DIRECTOR_CYCLE_THOUGHT.contains("planned AgentRunRequests or no-op decision"));
+        assertTrue(DirectorRoutine.DIRECTOR_CYCLE_THOUGHT.contains("Promote durable staffing state"));
+    }
+
     @Test
     void projectManagerThoughtPurposesDescribeDurableAndPromotedMemory() {
         assertTrue(ProjectManagerRoutine.PROJECT_MANAGER_ROUTINE_THOUGHT.contains("Durable PM project anchors"));

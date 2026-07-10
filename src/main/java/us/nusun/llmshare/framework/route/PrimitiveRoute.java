@@ -130,6 +130,9 @@ public class PrimitiveRoute extends RouteBuilder {
                         ${exchangeProperty.agentRunInput}
                         Routine context:
                         ${exchangeProperty.routineSummary}
+                        Mission roster:
+                        ${exchangeProperty.missionRoster}
+                        Teammate handles are for coordination. Credentials/tokens are never shown and should never be requested, guessed, or printed.
                         Active thoughts:
                         ${exchangeProperty.activeThoughts}
                         Thoughts are framework memory from prior outputs; there are no tools for reading or writing thoughts.

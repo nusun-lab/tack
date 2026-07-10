@@ -30,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static us.nusun.llmshare.framework.tests.support.AgentRunRouteTestSupport.SCHEDULED_TOPIC;
@@ -226,6 +227,34 @@ class AgentRunIsolationRouteTest {
             assertEquals(2, agentRuns.runs().size());
             assertEquals(2, kafka.sentTo(SCHEDULED_TOPIC).size());
             assertEquals(2, publishesSeen.get());
+            assertParentStateRestored(exchange, parent);
+        }
+    }
+
+    @Test
+    void startAgentRunsBatchAcceptsEmptyPlanningResultAsNoOp() throws Exception {
+        ProjectionStore store = FrameworkFixtures.projectionStore();
+        AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
+        AgentRunStore agentRuns = new AgentRunStore();
+        StubKafkaComponent kafka = new StubKafkaComponent();
+        RoutineCatalog routines = new RoutineCatalog(List.of(routine("test/parent", "direct:test-parent")));
+        FrameworkFixtures.set(manager, "routines", routines);
+
+        try (DefaultCamelContext context = context(manager, routines, agentRuns, kafka, "agent-run-isolation-test")) {
+            context.start();
+            AgentRun parent = parentRun();
+            Exchange exchange = preparedExchange(context, parent, List.of());
+
+            Exchange result = context.createProducerTemplate().send("direct:start-agent-runs", exchange);
+
+            assertNull(result.getException());
+            @SuppressWarnings("unchecked")
+            List<AgentRunHandle> handles = result.getIn().getBody(List.class);
+            assertEquals(List.of(), handles);
+            assertEquals(1, agentRuns.missions().size());
+            assertEquals(0, agentRuns.runs().size());
+            assertEquals(0, store.all().size());
+            assertEquals(List.of(), kafka.sentTopics());
             assertParentStateRestored(exchange, parent);
         }
     }

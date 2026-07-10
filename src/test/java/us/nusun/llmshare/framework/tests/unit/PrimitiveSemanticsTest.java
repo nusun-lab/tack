@@ -122,6 +122,7 @@ class PrimitiveSemanticsTest {
         assertTrue(request.systemPrompt().contains("Traits:"));
         assertTrue(request.systemPrompt().contains("Builds framework test scenarios"));
         assertTrue(request.systemPrompt().contains("tool-backed work"));
+        assertToolAccessScopeGuidance(request.systemPrompt());
         assertTrue(request.prompt().contains("Test mission"));
         assertTrue(request.prompt().contains("Test run input"));
         assertTrue(request.prompt().contains("Act id:"));
@@ -182,6 +183,7 @@ class PrimitiveSemanticsTest {
         assertEquals(true, request.metadata().get(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY));
         assertTrue(request.systemPrompt().contains("Builds framework test scenarios"));
         assertTrue(request.systemPrompt().contains("StepResult JSON object"));
+        assertToolAccessScopeGuidance(request.systemPrompt());
         assertTrue(request.prompt().contains("Test run input"));
         assertTrue(request.prompt().contains("Latest observation observedAt: 2026-07-07T12:00:00Z"));
     }
@@ -356,6 +358,7 @@ class PrimitiveSemanticsTest {
         assertEquals(true, request.metadata().get(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY));
         assertTrue(request.systemPrompt().contains("Builds framework test scenarios"));
         assertTrue(request.systemPrompt().contains("DecisionResult JSON object"));
+        assertToolAccessScopeGuidance(request.systemPrompt());
         assertTrue(request.prompt().contains("Test run input"));
         assertTrue(request.prompt().contains("Need repository name before coding."));
         assertTrue(request.prompt().contains("Repository is missing."));
@@ -379,6 +382,7 @@ class PrimitiveSemanticsTest {
         assertEquals(true, request.metadata().get(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY));
         assertTrue(request.systemPrompt().contains("Builds framework test scenarios"));
         assertTrue(request.systemPrompt().contains("caller-schema-shaped JSON"));
+        assertToolAccessScopeGuidance(request.systemPrompt());
         assertTrue(request.prompt().contains("Test run input"));
         assertTrue(exchange.getProperty("createSchemaJson", String.class).contains("agentRuns"));
         assertTrue(request.prompt().contains("\"agentRuns\""));
@@ -411,6 +415,9 @@ class PrimitiveSemanticsTest {
         assertFalse(request.prompt().contains("Available routines"));
         assertTrue(request.prompt().contains("Routine context:"));
         assertTrue(request.prompt().contains("id: routine-a"));
+        assertTrue(request.prompt().contains("Mission roster:"));
+        assertTrue(request.prompt().contains("\"status\""));
+        assertTrue(request.prompt().contains("run-1"));
         assertFalse(request.prompt().contains("routine-b"));
         assertTrue(request.prompt().contains("Need PM, PO, and developer runs."));
         assertTrue(request.prompt().contains("Caller JSON schema"));
@@ -727,6 +734,18 @@ class PrimitiveSemanticsTest {
         assertEquals("routine-a", body.get("agentRuns").get(0).get("personaId").asText());
         assertSame(result, exchange.getProperty("latestCreateResult"));
         assertSame(result, run.latestCreateResult());
+    }
+
+    private static void assertToolAccessScopeGuidance(String systemPrompt) {
+        assertTrue(systemPrompt.contains("Tool access is scoped to the current pass."));
+        assertTrue(systemPrompt.contains("The tools available in this pass are the only tools you may call now."));
+        assertTrue(systemPrompt.contains("Tool absence in the current pass is not evidence"));
+        assertTrue(systemPrompt.contains("treat it as deferred work for an appropriate future pass"));
+        assertTrue(systemPrompt.contains("Separate observed facts from current-pass limitations."));
+        assertTrue(systemPrompt.contains("Only record a blocker when it is supported by an actual tool result"));
+        assertTrue(systemPrompt.contains("Do not convert missing current-pass tools into durable facts."));
+        assertTrue(systemPrompt.contains("Do not infer global mission state from local tool availability."));
+        assertTrue(systemPrompt.contains("Preserve unresolved needs as clear deferred next actions."));
     }
 
     private static void assertCreateSchemaFails(String schema, String content, String expectedMessagePart) {

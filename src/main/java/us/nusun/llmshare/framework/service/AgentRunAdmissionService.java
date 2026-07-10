@@ -48,8 +48,12 @@ public class AgentRunAdmissionService {
         if (mission == null) {
             throw new IllegalArgumentException("AgentRun admission requires mission exchange property");
         }
-        if (requests == null || requests.isEmpty()) {
-            throw new IllegalArgumentException("AgentRun admission requires at least one AgentRunRequest");
+        if (requests == null) {
+            throw new IllegalArgumentException("AgentRun admission requires AgentRunRequest list");
+        }
+        if (requests.isEmpty()) {
+            agentRuns.putMission(mission);
+            return List.of();
         }
 
         List<PreparedAgentRun> prepared = requests.stream()

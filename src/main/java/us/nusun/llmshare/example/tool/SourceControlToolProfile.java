@@ -36,15 +36,16 @@ public class SourceControlToolProfile implements ToolProfileProvider {
                 .promptGuidance("""
                                  - read before writing
                                  - use durable repo evidence
-                                 - do not create repos in personal namespaces
+                                 - always create repositories in the agent-workspace organization
                                  - avoid duplicate branches, issues, or pull requests
                                  - no not use native wiki features
                                  - wikis should be their own repo
                                  - wikis should be in markdown
                                  - wikis should be well-linked so it's possible to navigate to any page starting from the index (readme.md)
                                  - do not read entire wikis, try to read only what you need
+                                 - generally reference the 'url' attribute of repositories, not clone or ssh
                                  """)
-                .denyTools("gitea", "delete_repository", "delete_branch")
+                .denyTools("gitea", "delete_repository", "delete_branch", "wiki_read", "wiki_write")
                 .maxResultCharacters(6000)
                 .build());
     }

@@ -34,6 +34,21 @@ import java.util.stream.Collectors;
 @Named("primitiveSupport")
 public class PrimitiveSupport {
     private static final int DEFAULT_THOUGHT_UPDATE_DEPTH = 2;
+    private static final String TOOL_ACCESS_SCOPE_GUIDANCE = """
+            Tool access is scoped to the current pass.
+            ---
+            The tools available in this pass are the only tools you may call now. Tool absence in the current pass is not evidence that the capability does not exist, that access is broken, or that the mission is blocked.
+
+            When a needed action cannot be performed with the current tools, treat it as deferred work for an appropriate future pass, not as a failure.
+
+            When recording thoughts or summaries:
+            - Separate observed facts from current-pass limitations.
+            - Only record a blocker when it is supported by an actual tool result, explicit instruction, or durable mission context.
+            - Do not convert missing current-pass tools into durable facts.
+            - Do not infer global mission state from local tool availability.
+
+            Use current tools to make progress where possible. Preserve unresolved needs as clear deferred next actions.
+            """;
 
     @Inject ObjectMapper objectMapper;
     @Inject ThoughtStackSupport thoughts;
@@ -389,7 +404,9 @@ public class PrimitiveSupport {
 
     private String primitiveSystemPrompt(Exchange exchange, String primitive) {
         Persona persona = personas.getRequired(currentRun(exchange).personaId());
-        return renderPersonaBehavior(persona) + "\n" + switch (primitive) {
+        return renderPersonaBehavior(persona)
+                + "\n\n" + TOOL_ACCESS_SCOPE_GUIDANCE
+                + "\n" + switch (primitive) {
             case "tool" -> "Contract: Do tool-backed work using available tools when useful. Do not claim external state unless tool-backed. Return only a compact plain-text pass report.";
             case "synthesis" -> "Contract: Synthesize framework action results. Return only a StepResult JSON object that matches the supplied schema. Thought content is a compact running notebook, not hidden chain-of-thought.";
             case "decision" -> "Contract: Answer a narrow routine control-flow question. Return only a DecisionResult JSON object.";
@@ -452,6 +469,8 @@ public class PrimitiveSupport {
                 + "\nMission:\n" + exchange.getProperty("missionGoal", String.class)
                 + "\nAgent-run input:\n" + exchange.getProperty("agentRunInput", String.class)
                 + "\nRoutine context:\n" + exchange.getProperty("routineSummary", String.class)
+                + "\nMission roster:\n" + exchange.getProperty("missionRoster", String.class)
+                + "\nTeammate handles are for coordination. Credentials/tokens are never shown and should never be requested, guessed, or printed."
                 + "\nActive thoughts:\n" + exchange.getProperty("activeThoughts", String.class)
                 + "\nThoughts are framework memory from prior outputs; there are no tools for reading or writing thoughts."
                 + "\nCaller JSON schema:\n" + exchange.getProperty("createSchemaJson", String.class);
