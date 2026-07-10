@@ -375,22 +375,25 @@ public class PrimitiveSupport {
             case "tool" -> """
 
                     Tool access:
-                    - Use only tools available in this pass.
-                    - Treat missing tools as deferred work, not evidence of broken access or a mission blocker.
-                    - Record blockers only from tool results, explicit instructions, or durable mission context.
-                    - Preserve unresolved needs as next actions.
+                    - You have access to only 1 tool profile at a time
+                    - If you lack a particular tool for this step, that's not a blocker, you will have access in later steps
 
-                    Contract: Do tool-backed work using available tools when useful. Do not claim external state unless tool-backed. Return only a compact plain-text pass report.
+                    Contract:
+                    - Do tool-backed work using available tools
+                    - Never do anything except for the specific act
+                    - Do not claim external state unless tool-backed.
+                    - Return only a compact plain-text pass report.
                     """;
             case "synthesis" -> """
 
-                    Contract: Synthesize framework action results.
-                    Return only a valid StepResult JSON object matching the supplied schema.
-                    This pass has no tools; do not call tools, reason about tool availability, or retry the action.
-                    The preceding action has already completed; do not repeat it.
-                    Treat the supplied latest observation as the newest evidence.
-                    Rewrite thoughts as current-state snapshots.
-                    Thought content is a compact running notebook, not hidden chain-of-thought.
+                    Contract:
+                    - Synthesize framework action results.
+                    - Return only valid JSON object matching the supplied schema.
+                    - This pass has no tools; do not call tools, reason about tool availability, or retry the action.
+                    - The preceding action has already completed; do not repeat it.
+                    - Treat the supplied latest observation as the newest evidence.
+                    - Rewrite thoughts as current-state snapshots.
+                    - Thought content is a compact running notebook, not hidden chain-of-thought.
                     """;
             case "decision" -> """
 
@@ -473,8 +476,7 @@ public class PrimitiveSupport {
                 + "\nDurable facts to remember:"
                 + "\n- Preserve verified current anchors; record missing/expected artifacts as blockers without fake URLs; label reference examples as reference/patterns."
                 + "\nState changed:"
-                + "\nBlockers:"
-                + "\nNext useful action:";
+                + "\nBlockers:";
     }
 
     public String stepResultRules() {
@@ -492,7 +494,7 @@ public class PrimitiveSupport {
                 - In `thoughts`, include every thought id whose durable memory changed; use [] only when no durable context changed.
                 - Only use thought ids listed in the previous thought snapshots.
                 - Rewrite each included thought as complete, compact, current memory. Content must be non-empty and within maxTokens.
-                - Preserve mission facts, decisions, artifact ids or URLs, owners, blockers, unblock conditions, and next actions that still matter.
+                - Preserve mission facts, decisions, artifact ids or URLs, owners, blockers, and unblock conditions that still matter.
                 - Drop stale, duplicate, speculative, low-signal, or overly detailed notes.
 
                 Artifact accuracy:

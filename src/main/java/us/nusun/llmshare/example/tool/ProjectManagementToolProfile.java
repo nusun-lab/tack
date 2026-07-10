@@ -42,7 +42,7 @@ public class ProjectManagementToolProfile implements ToolProfileProvider {
                 .promptGuidance("""
                         - find existing projects and work items before creating anything
                         - avoid duplicates
-                        - record blockers plainly with owner, evidence, and next action
+                        - record blockers plainly with owner and evidence
                         - no single work item should be too long
                         - strive to break large work items down into small tasks
                         - when breaking items into smaller pieces, make sure the parent item summarizes instead of duplicating the content of its children

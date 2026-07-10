@@ -1,7 +1,12 @@
 package us.nusun.llmshare.framework.llm;
 
+import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.mcp.client.McpClient;
 import dev.langchain4j.model.TokenCountEstimator;
+import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.request.ResponseFormat;
+import dev.langchain4j.model.chat.request.ToolChoice;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiTokenCountEstimator;
 import jakarta.enterprise.inject.Produces;
@@ -70,11 +75,11 @@ public class LlmAgentFactory {
             @ConfigProperty(name = "llm.runtime-default.openai.thinking-off.enabled") boolean thinkingOffEnabled,
             @ConfigProperty(name = "llm.runtime-default.openai.strict-json-schema", defaultValue = "true") boolean strictJsonSchema,
             @ConfigProperty(name = "llm.runtime-default.tool-memory.max-tokens", defaultValue = "12000") int memoryMaxTokens) {
-        Map<String, OpenAiChatModel> runtimeModels = runtimeModels(runtimes, defaultBaseUrl, defaultApiKey, defaultModel, temperature, maxTokens, timeoutMs, thinkingOffEnabled, strictJsonSchema);
+        Map<String, ChatModel> runtimeModels = runtimeModels(runtimes, defaultBaseUrl, defaultApiKey, defaultModel, temperature, maxTokens, timeoutMs, thinkingOffEnabled, strictJsonSchema);
         return new ExecutionRuntimeAgentFactory(runtimes, runtimeModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator, memoryMaxTokens);
     }
 
-    private static Map<String, OpenAiChatModel> runtimeModels(
+    private static Map<String, ChatModel> runtimeModels(
             ExecutionRuntimeRegistry runtimes,
             String defaultBaseUrl,
             String defaultApiKey,
@@ -84,7 +89,7 @@ public class LlmAgentFactory {
             long timeoutMs,
             boolean thinkingOffEnabled,
             boolean strictJsonSchema) {
-        LinkedHashMap<String, OpenAiChatModel> models = new LinkedHashMap<>();
+        LinkedHashMap<String, ChatModel> models = new LinkedHashMap<>();
         for (ExecutionRuntimeDefinition runtime : runtimes.allRuntimes()) {
             InferenceLaneDefinition lane = runtimes.laneRequired(runtime.laneId());
             models.put(runtime.id(), chatModel(
@@ -140,7 +145,7 @@ public class LlmAgentFactory {
 
     public static class ExecutionRuntimeAgentFactory implements AgentFactory {
         private final ExecutionRuntimeRegistry runtimes;
-        private final Map<String, OpenAiChatModel> runtimeModels;
+        private final Map<String, ChatModel> runtimeModels;
         private final McpClientFactory mcpClientFactory;
         private final ToolProfileRegistry toolProfiles;
         private final PersonaCatalog personas;
@@ -148,7 +153,7 @@ public class LlmAgentFactory {
         private final int memoryMaxTokens;
         private CamelContext camelContext;
 
-        public ExecutionRuntimeAgentFactory(ExecutionRuntimeRegistry runtimes, Map<String, OpenAiChatModel> runtimeModels, McpClientFactory mcpClientFactory, ToolProfileRegistry toolProfiles, PersonaCatalog personas, TokenCountEstimator tokenCountEstimator, int memoryMaxTokens) {
+        public ExecutionRuntimeAgentFactory(ExecutionRuntimeRegistry runtimes, Map<String, ChatModel> runtimeModels, McpClientFactory mcpClientFactory, ToolProfileRegistry toolProfiles, PersonaCatalog personas, TokenCountEstimator tokenCountEstimator, int memoryMaxTokens) {
             this.runtimes = runtimes;
             this.runtimeModels = runtimeModels;
             this.mcpClientFactory = mcpClientFactory;
@@ -168,7 +173,7 @@ public class LlmAgentFactory {
                 throw new IllegalStateException("No executionRuntimeId on exchange");
             }
             ExecutionRuntimeDefinition runtime = runtimes.getRequired(runtimeId);
-            OpenAiChatModel model = runtimeModels.get(runtime.id());
+            ChatModel model = runtimeModels.get(runtime.id());
             if (model == null) {
                 throw new IllegalStateException("No chat model configured for execution runtime " + runtime.id());
             }
@@ -182,7 +187,28 @@ public class LlmAgentFactory {
             }
             Agent agent = configuration.getChatMemoryProvider() == null ? new AgentWithoutMemory(configuration) : new AgentWithMemory(configuration);
             applyProviderSchemaIfRequired(exchange, runtime, agent);
+            if (runtime.toolCalling()) {
+                AbstractAgent<?> abstractAgent = (AbstractAgent<?>) agent;
+                ResponseFormat responseFormat = abstractAgent.getResponseFormat();
+                configuration.withAiServicesCustomizer(aiServices ->
+                        aiServices.chatRequestTransformer(request -> forceInitialToolChoice(request, responseFormat)));
+            }
             return agent;
+        }
+
+        static ChatRequest forceInitialToolChoice(ChatRequest request) {
+            return forceInitialToolChoice(request, null);
+        }
+
+        private static ChatRequest forceInitialToolChoice(ChatRequest request, ResponseFormat responseFormat) {
+            boolean hasToolResult = request.messages().stream()
+                    .anyMatch(ToolExecutionResultMessage.class::isInstance);
+            ChatRequest.Builder builder = request.toBuilder()
+                    .toolChoice(hasToolResult ? ToolChoice.AUTO : ToolChoice.REQUIRED);
+            if (responseFormat != null) {
+                builder.responseFormat(responseFormat);
+            }
+            return builder.build();
         }
 
         private List<McpClient> mcpClients(Exchange exchange) {

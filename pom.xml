@@ -18,7 +18,7 @@
         <quarkus.platform.version>3.36.0</quarkus.platform.version>
         <camel-quarkus.platform.artifact-id>quarkus-camel-bom</camel-quarkus.platform.artifact-id>
         <langchain4j.version>1.16.3</langchain4j.version>
-        <camel.langchain4j.agent.version>4.21.0-SNAPSHOT</camel.langchain4j.agent.version>
+        <camel.langchain4j.agent.version>4.22.0-SNAPSHOT</camel.langchain4j.agent.version>
         <surefire-plugin.version>3.5.3</surefire-plugin.version>
         <jacoco-plugin.version>0.8.13</jacoco-plugin.version>
     </properties>
@@ -138,7 +138,7 @@
         <dependency>
             <groupId>org.apache.camel</groupId>
             <artifactId>camel-langchain4j-agent</artifactId>
-            <!-- Force only the LangChain4j agent runtime to 4.21.x API support while the
+            <!-- Force only the LangChain4j agent runtime to snapshot API support while the
                  surrounding Camel Quarkus platform remains on its released 4.20-based line. -->
             <version>${camel.langchain4j.agent.version}</version>
         </dependency>

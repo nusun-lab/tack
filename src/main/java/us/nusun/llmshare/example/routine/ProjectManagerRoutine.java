@@ -231,7 +231,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     Create or update one small developer implementation task from a ready PO item.
                                     New developer work starts in to-do only when it has a named assignee,
                                     priority, source repo under agent-workspace, canonical wiki page,
-                                    acceptance, and next action.
+                                    and acceptance.
                                     """)
                             .toolProfile("project-management"))
                     .to("direct:act")
@@ -276,7 +276,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .process(routine.act("pm-status-note")
                         .prompt("""
                                 Update current-work or one small status page and keep it linked from the index.
-                                Record owner, PM state, blocker, next action, PM item link, canonical wiki page,
+                                Record owner, PM state, blocker, PM item link, canonical wiki page,
                                 and any durable outcome from recent chat. Leave ephemeral chatter out.
                                 """)
                         .toolProfile("source-control"))

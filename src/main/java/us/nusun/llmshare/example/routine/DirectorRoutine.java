@@ -57,18 +57,21 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                     .process(routine.act("director-source-control-review")
                             .prompt("""
                                     Use source-control tools to read durable documentation and repositories.
+                                    Observe only, do not make changes.
                                     """)
                             .toolProfile("source-control"))
                     .to("direct:act")
                     .process(routine.act("director-project-management-review")
                             .prompt("""
                                     Use project-management tools to read mission-related projects.
+                                    Observe only, do not make changes.
                                     """)
                             .toolProfile("project-management"))
                     .to("direct:act")
                     .process(routine.act("director-team-chat-review")
                             .prompt("""
                                     Use team-chat tools to inspect recent relevant channel context.
+                                    Observe only, do not make changes.
                                     """)
                             .toolProfile("team-chat"))
                     .to("direct:act")

@@ -161,6 +161,7 @@ class PrimitiveSemanticsTest {
         assertTrue(request.prompt().contains("Durable facts to remember:"));
         assertTrue(request.prompt().contains("record missing/expected artifacts as blockers without fake URLs"));
         assertTrue(request.prompt().contains("label reference examples as reference/patterns"));
+        assertFalse(request.prompt().contains("Next useful action:"));
         assertFalse(request.prompt().contains("Return a concise factual pass result"));
     }
 
@@ -184,7 +185,7 @@ class PrimitiveSemanticsTest {
         assertEquals(true, request.metadata().get(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY));
         assertTrue(request.systemPrompt().contains("Builds framework test scenarios"));
         assertTrue(request.systemPrompt().contains("Synthesize framework action results."));
-        assertTrue(request.systemPrompt().contains("Return only a valid StepResult JSON object matching the supplied schema."));
+        assertTrue(request.systemPrompt().contains("Return only valid JSON object matching the supplied schema."));
         assertTrue(request.systemPrompt().contains("This pass has no tools; do not call tools, reason about tool availability, or retry the action."));
         assertTrue(request.systemPrompt().contains("The preceding action has already completed; do not repeat it."));
         assertTrue(request.systemPrompt().contains("Treat the supplied latest observation as the newest evidence."));
@@ -234,6 +235,7 @@ class PrimitiveSemanticsTest {
         assertTrue(prompt.contains("include every thought id whose durable memory changed"));
         assertTrue(prompt.contains("Only use thought ids listed in the previous thought snapshots"));
         assertTrue(prompt.contains("Content must be non-empty and within maxTokens"));
+        assertFalse(prompt.contains("next actions"));
         assertTrue(prompt.contains("Artifact accuracy:"));
         assertTrue(prompt.contains("Use URLs only when verified"));
         assertTrue(prompt.contains("without invented URLs"));
@@ -698,11 +700,9 @@ class PrimitiveSemanticsTest {
 
     private static void assertToolAccessScopeGuidance(String systemPrompt) {
         assertTrue(systemPrompt.contains("Tool access:"));
-        assertTrue(systemPrompt.contains("Use only tools available in this pass."));
-        assertTrue(systemPrompt.contains("Treat missing tools as deferred work"));
-        assertTrue(systemPrompt.contains("not evidence of broken access or a mission blocker"));
-        assertTrue(systemPrompt.contains("Record blockers only from tool results, explicit instructions, or durable mission context."));
-        assertTrue(systemPrompt.contains("Preserve unresolved needs as next actions."));
+        assertTrue(systemPrompt.contains("You have access to only 1 tool profile at a time"));
+        assertTrue(systemPrompt.contains("you will have access in later steps"));
+        assertFalse(systemPrompt.contains("next actions"));
     }
 
     private static void assertNoToolAccessScopeGuidance(String systemPrompt) {
