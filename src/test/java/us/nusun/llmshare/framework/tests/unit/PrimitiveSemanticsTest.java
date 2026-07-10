@@ -129,12 +129,14 @@ class PrimitiveSemanticsTest {
         assertTrue(request.prompt().contains("Routine context:"));
         assertTrue(request.prompt().contains("id: routine-a"));
         assertTrue(request.prompt().contains("Mission roster:"));
-        assertTrue(request.prompt().contains("@persona-a"));
-        assertTrue(request.prompt().contains("run-1"));
+        assertTrue(request.prompt().contains("- name: Persona A"));
+        assertTrue(request.prompt().contains("routine: Routine A"));
+        assertTrue(request.prompt().contains("platform identities: gitea @persona-a, mattermost @persona-a, plane @persona-a"));
+        assertFalse(request.prompt().contains("run-1"));
         assertTrue(request.prompt().contains("routine-a"));
-        assertTrue(request.prompt().contains("\"self"));
+        assertFalse(request.prompt().contains("\"self"));
         assertFalse(request.prompt().contains("Persona B"));
-        assertTrue(request.prompt().contains("Credentials/tokens are never shown"));
+        assertFalse(request.prompt().contains("Credentials/tokens"));
         assertFalse(request.prompt().contains("mattermost-token"));
         assertFalse(request.prompt().contains("gitea-token"));
         assertFalse(request.prompt().contains("plane-token"));
@@ -145,7 +147,6 @@ class PrimitiveSemanticsTest {
         assertTrue(request.prompt().contains("maxTokens: 100"));
         assertTrue(request.prompt().contains("updatedAt:"));
         assertTrue(request.prompt().contains("Repository is not confirmed yet."));
-        assertTrue(request.prompt().contains("there are no tools for reading or writing thoughts"));
         assertTrue(request.prompt().contains("Confirm the target source repository."));
         assertTrue(request.prompt().contains("Outcome:"));
         assertTrue(request.prompt().contains("Evidence / links / ids:"));
@@ -172,7 +173,7 @@ class PrimitiveSemanticsTest {
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
         exchange.setProperty("resolvedSynthesisRuntime", "synthesis-low");
         exchange.setProperty("actId", "chat-kickoff");
-        exchange.setProperty("actPrompt", "Post implementation focus if stale.");
+        exchange.setProperty("actPrompt", "Use source-control tools to inspect repository status before implementation.");
         exchange.setProperty("toolPassObservedAt", java.time.Instant.parse("2026-07-07T12:00:00Z"));
         exchange.setProperty("toolPassResult", "No stale focus post found.");
 
@@ -182,22 +183,30 @@ class PrimitiveSemanticsTest {
         assertEquals("classpath:schemas/step-result-schema.json", request.responseSchema());
         assertEquals(true, request.metadata().get(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY));
         assertTrue(request.systemPrompt().contains("Builds framework test scenarios"));
-        assertTrue(request.systemPrompt().contains("StepResult JSON object"));
-        assertToolAccessScopeGuidance(request.systemPrompt());
+        assertTrue(request.systemPrompt().contains("Synthesize framework action results."));
+        assertTrue(request.systemPrompt().contains("Return only a valid StepResult JSON object matching the supplied schema."));
+        assertTrue(request.systemPrompt().contains("This pass has no tools; do not call tools, reason about tool availability, or retry the action."));
+        assertTrue(request.systemPrompt().contains("The preceding action has already completed; do not repeat it."));
+        assertTrue(request.systemPrompt().contains("Treat the supplied latest observation as the newest evidence."));
+        assertTrue(request.systemPrompt().contains("Rewrite thoughts as current-state snapshots."));
+        assertNoToolAccessScopeGuidance(request.systemPrompt());
         assertTrue(request.prompt().contains("Test run input"));
+        assertTrue(request.prompt().contains("Preceding action objective, for context only:"));
+        assertTrue(request.prompt().contains("Use source-control tools to inspect repository status before implementation."));
+        assertTrue(request.prompt().contains("Do not execute or repeat this objective during synthesis."));
+        assertFalse(request.prompt().contains("Act prompt:"));
         assertTrue(request.prompt().contains("Latest observation observedAt: 2026-07-07T12:00:00Z"));
     }
 
     @Test
-    void stepSynthesisPromptOnlyExposesWritableThoughtsForUpdates() throws Exception {
+    void stepSynthesisPromptExposesAllThoughtsForUpdates() throws Exception {
         PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
         ThoughtStack stack = new ThoughtStack();
-        stack.push(new ThoughtFrame("readonly-thought", "Read-only context", 100, "Older stable context."));
-        stack.push(new ThoughtFrame("writable-thought", "Writable context", 100, ""));
+        stack.push(new ThoughtFrame("parent-thought", "Parent context", 100, "Older stable context."));
+        stack.push(new ThoughtFrame("child-thought", "Child context", 100, ""));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
         exchange.setProperty("resolvedSynthesisRuntime", "synthesis-low");
-        exchange.setProperty("thoughtUpdateDepth", 1);
         exchange.setProperty("actId", "chat-kickoff");
         exchange.setProperty("actPrompt", "Post implementation focus if stale.");
         exchange.setProperty("toolPassResult", "No stale focus post found.");
@@ -206,68 +215,37 @@ class PrimitiveSemanticsTest {
 
         LlmJobRequest request = exchange.getIn().getBody(LlmJobRequest.class);
         String prompt = request.prompt();
-        int writableStart = prompt.indexOf("Previous writable thought snapshots, possibly stale (only these ids may be changed):");
         assertFalse(prompt.contains("Active thoughts:"));
-        assertTrue(prompt.contains("Previous read-only thought snapshots, possibly stale (context only; do not include these ids in StepResult.thoughts):"));
-        assertTrue(prompt.contains("readonly-thought"));
-        assertTrue(writableStart >= 0);
-        String writableSection = prompt.substring(writableStart);
-        assertTrue(writableSection.contains("writable-thought"));
-        assertFalse(writableSection.contains("readonly-thought"));
-        assertFalse(writableSection.contains("writable:"));
-        assertTrue(prompt.contains("rewritten as the whole compact current memory"));
-        assertTrue(prompt.contains("Preserve useful mission facts"));
-        assertTrue(prompt.contains("Stay within each thought's maxTokens budget"));
-        assertTrue(prompt.contains("content must be non-empty, useful"));
-        assertTrue(prompt.contains("There are no tools for reading or writing thoughts"));
-        assertTrue(prompt.contains("Thought updates must be synthesized from the latest observation, previous thought snapshots, and prompt context"));
-        assertTrue(prompt.contains("not from tool calls"));
-        assertTrue(prompt.contains("Thought synthesis is a state-reduction task."));
-        assertTrue(prompt.contains("Previous thoughts are not authoritative; they are stale snapshots to patch."));
-        assertTrue(prompt.contains("The latest observation from this act is newer than all previous thought snapshots."));
-        assertTrue(prompt.contains("Before writing StepResult.thoughts:"));
-        assertTrue(prompt.contains("Extract current anchors from the previous thought snapshots."));
-        assertTrue(prompt.contains("Extract new observations from the latest observation from this act."));
-        assertTrue(prompt.contains("Apply the latest observation as a patch over the previous thought state."));
-        assertTrue(prompt.contains("replace the old thought state with the newest observed state."));
-        assertTrue(prompt.contains("remove older missing/not verified/blocker text for that same anchor."));
-        assertTrue(prompt.contains("Preserve unrelated anchors that the latest observation did not change."));
-        assertTrue(prompt.contains("new current-state snapshots, not as copied previous prose."));
-        assertTrue(prompt.contains("summary, artifacts, and thoughts must describe the same current state"));
-        assertTrue(prompt.indexOf("Thought synthesis is a state-reduction task.") < prompt.indexOf("Thought update rules:"));
-        assertTrue(prompt.contains("plain-text pass result is not durable memory"));
-        assertTrue(prompt.contains("most-specific writable thought is blank"));
-        assertTrue(prompt.contains("shared documentation links/page paths"));
-        assertTrue(prompt.contains("source repository URLs or clone URLs"));
-        assertTrue(prompt.contains("collaboration channel names/links"));
-        assertTrue(prompt.contains("project/work tracker ids"));
-        assertTrue(prompt.contains("canonical documentation pages"));
-        assertTrue(prompt.contains("selected tasks/product items/work items"));
-        assertTrue(prompt.contains("blocker owners"));
-        assertTrue(prompt.contains("Only record URLs, ids, and links that came from tool output, durable documentation, or prior verified thoughts"));
-        assertTrue(prompt.contains("Do not invent URLs for missing artifacts"));
-        assertTrue(prompt.contains("URL not verified"));
-        assertTrue(prompt.contains("Reference examples or pattern artifacts from other projects must be labeled as references/patterns"));
-        assertTrue(prompt.contains("Do not promote a reference/example repository"));
-        assertTrue(prompt.contains("current wiki: missing"));
-        assertTrue(prompt.contains("reference pattern:"));
-        assertTrue(prompt.contains("`url` is only for verified URLs"));
-        assertTrue(prompt.contains("status: missing"));
-        assertTrue(prompt.contains("without an invented URL"));
-        assertTrue(prompt.contains("Freshness rules:"));
-        assertTrue(prompt.contains("Thoughts are current-state snapshots, not append-only logs"));
-        assertTrue(prompt.contains("Each thought `updatedAt` is when that memory snapshot was last rewritten"));
-        assertTrue(prompt.contains("latest observation has `observedAt`"));
+        assertTrue(prompt.contains("Preceding action objective, for context only:"));
+        assertTrue(prompt.contains("Post implementation focus if stale."));
+        assertTrue(prompt.contains("Do not execute or repeat this objective during synthesis."));
+        assertFalse(prompt.contains("Act prompt:"));
+        assertTrue(prompt.contains("Previous thought snapshots, possibly stale:"));
+        assertTrue(prompt.contains("parent-thought"));
+        assertTrue(prompt.contains("child-thought"));
+        assertTrue(prompt.contains("Return one StepResult JSON object."));
+        assertTrue(prompt.contains("Thought synthesis:"));
+        assertTrue(prompt.contains("Treat previous thoughts as stale snapshots"));
+        assertTrue(prompt.contains("latest observation as the newest state"));
         assertTrue(prompt.contains("latest observation wins"));
-        assertTrue(prompt.contains("Rewrite thoughts as the latest known state after this act"));
-        assertTrue(prompt.contains("Do not preserve older missing/expected/blocker text"));
-        assertTrue(prompt.contains("Where to write: put current local scope details in the most-specific thought"));
-        assertTrue(prompt.contains("Promotion: before a local scope ends"));
-        assertTrue(prompt.contains("carried forward into the parent when the scope exits"));
+        assertTrue(prompt.contains("summary, artifacts, and thoughts describe the same current state"));
+        assertTrue(prompt.contains("Replace stale missing or blocker details"));
+        assertTrue(prompt.contains("Thought updates:"));
+        assertTrue(prompt.contains("include every thought id whose durable memory changed"));
+        assertTrue(prompt.contains("Only use thought ids listed in the previous thought snapshots"));
+        assertTrue(prompt.contains("Content must be non-empty and within maxTokens"));
+        assertTrue(prompt.contains("Artifact accuracy:"));
+        assertTrue(prompt.contains("Use URLs only when verified"));
+        assertTrue(prompt.contains("without invented URLs"));
+        assertTrue(prompt.contains("Do not promote reference artifacts"));
+        assertTrue(prompt.indexOf("Thought synthesis:") < prompt.indexOf("Thought updates:"));
+        assertTrue(prompt.indexOf("Thought updates:") < prompt.indexOf("Artifact accuracy:"));
+        assertFalse(prompt.contains("Good memory shape"));
+        assertFalse(prompt.contains("current wiki: missing"));
+        assertFalse(prompt.contains("project tracker verified; project membership"));
         assertFalse(prompt.contains("Gitea"));
         assertFalse(prompt.contains("Mattermost"));
         assertFalse(prompt.contains("Plane"));
-        assertTrue(prompt.contains("Do not copy a thought's static purpose into content"));
     }
 
     @Test
@@ -279,7 +257,6 @@ class PrimitiveSemanticsTest {
                 "Plane project tracker missing"));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
         exchange.setProperty("resolvedSynthesisRuntime", "synthesis-low");
-        exchange.setProperty("thoughtUpdateDepth", 1);
         exchange.setProperty("actId", "project-management-setup");
         exchange.setProperty("actPrompt", "Create or verify the project tracker for the mission.");
         exchange.setProperty("toolPassObservedAt", java.time.Instant.parse("2026-07-07T12:00:00Z"));
@@ -299,7 +276,7 @@ class PrimitiveSemanticsTest {
         support.prepareStepSynthesisPrompt().process(exchange);
 
         String prompt = exchange.getIn().getBody(LlmJobRequest.class).prompt();
-        assertTrue(prompt.contains("Previous writable thought snapshots, possibly stale"));
+        assertTrue(prompt.contains("Previous thought snapshots, possibly stale"));
         assertTrue(prompt.contains("Plane project tracker missing"));
         assertTrue(prompt.contains("Latest observation from this act:"));
         assertTrue(prompt.contains("36a6bccc-4729-4c2d-83fc-0fe48441b1bd"));
@@ -307,12 +284,13 @@ class PrimitiveSemanticsTest {
         assertTrue(prompt.contains("7a3f3b43-ef50-476b-b316-bc1bf5021393"));
         assertTrue(prompt.contains("status active/verified"));
         assertTrue(prompt.contains("stale blockers resolved: Plane project tracker missing -> resolved; project RSQA verified"));
-        assertTrue(prompt.contains("Previous thoughts are not authoritative; they are stale snapshots to patch."));
-        assertTrue(prompt.contains("The latest observation from this act is newer than all previous thought snapshots."));
-        assertTrue(prompt.contains("If the latest observation creates, verifies, activates, or confirms an anchor, remove older missing/not verified/blocker text for that same anchor."));
-        assertTrue(prompt.contains("StepResult summary, artifacts, and thoughts must describe the same current state."));
-        assertTrue(prompt.indexOf("Latest observation from this act:") < prompt.indexOf("Previous writable thought snapshots, possibly stale"));
-        assertTrue(prompt.indexOf("Thought synthesis is a state-reduction task.") < prompt.indexOf("Thought update rules:"));
+        assertTrue(prompt.contains("Treat previous thoughts as stale snapshots"));
+        assertTrue(prompt.contains("latest observation as the newest state"));
+        assertTrue(prompt.contains("latest observation wins"));
+        assertTrue(prompt.contains("Replace stale missing or blocker details"));
+        assertTrue(prompt.contains("summary, artifacts, and thoughts describe the same current state"));
+        assertTrue(prompt.indexOf("Latest observation from this act:") < prompt.indexOf("Previous thought snapshots, possibly stale"));
+        assertTrue(prompt.indexOf("Thought synthesis:") < prompt.indexOf("Thought updates:"));
     }
 
     @Test
@@ -331,9 +309,8 @@ class PrimitiveSemanticsTest {
         support.prepareStepSynthesisPrompt().process(exchange);
 
         String prompt = exchange.getIn().getBody(LlmJobRequest.class).prompt();
-        String writableSection = prompt.substring(prompt.indexOf("Previous writable thought snapshots, possibly stale (only these ids may be changed):"));
-        assertTrue(writableSection.contains("routine-thought"));
-        assertTrue(writableSection.contains("loop-thought"));
+        assertTrue(prompt.contains("routine-thought"));
+        assertTrue(prompt.contains("loop-thought"));
     }
 
 
@@ -358,7 +335,7 @@ class PrimitiveSemanticsTest {
         assertEquals(true, request.metadata().get(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY));
         assertTrue(request.systemPrompt().contains("Builds framework test scenarios"));
         assertTrue(request.systemPrompt().contains("DecisionResult JSON object"));
-        assertToolAccessScopeGuidance(request.systemPrompt());
+        assertNoToolAccessScopeGuidance(request.systemPrompt());
         assertTrue(request.prompt().contains("Test run input"));
         assertTrue(request.prompt().contains("Need repository name before coding."));
         assertTrue(request.prompt().contains("Repository is missing."));
@@ -382,7 +359,7 @@ class PrimitiveSemanticsTest {
         assertEquals(true, request.metadata().get(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY));
         assertTrue(request.systemPrompt().contains("Builds framework test scenarios"));
         assertTrue(request.systemPrompt().contains("caller-schema-shaped JSON"));
-        assertToolAccessScopeGuidance(request.systemPrompt());
+        assertNoToolAccessScopeGuidance(request.systemPrompt());
         assertTrue(request.prompt().contains("Test run input"));
         assertTrue(exchange.getProperty("createSchemaJson", String.class).contains("agentRuns"));
         assertTrue(request.prompt().contains("\"agentRuns\""));
@@ -416,8 +393,11 @@ class PrimitiveSemanticsTest {
         assertTrue(request.prompt().contains("Routine context:"));
         assertTrue(request.prompt().contains("id: routine-a"));
         assertTrue(request.prompt().contains("Mission roster:"));
-        assertTrue(request.prompt().contains("\"status\""));
-        assertTrue(request.prompt().contains("run-1"));
+        assertTrue(request.prompt().contains("- name: Persona A"));
+        assertTrue(request.prompt().contains("routine: Routine A"));
+        assertTrue(request.prompt().contains("platform identities: gitea @persona-a, mattermost @persona-a, plane @persona-a"));
+        assertFalse(request.prompt().contains("\"status\""));
+        assertFalse(request.prompt().contains("run-1"));
         assertFalse(request.prompt().contains("routine-b"));
         assertTrue(request.prompt().contains("Need PM, PO, and developer runs."));
         assertTrue(request.prompt().contains("Caller JSON schema"));
@@ -556,25 +536,6 @@ class PrimitiveSemanticsTest {
     }
 
     @Test
-    void stepResultCanRewriteMultipleFramesWhenDepthAllowsIt() throws Exception {
-        PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
-        Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
-        ThoughtStack stack = new ThoughtStack();
-        stack.push(new ThoughtFrame("parent", "Parent", 100, "old parent"));
-        stack.push(new ThoughtFrame("child", "Child", 100, "old child"));
-        exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
-        exchange.setProperty("thoughtUpdateDepth", 2);
-        exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", """
-                {"actId":"release-checkpoint","summary":"done","artifacts":[],"thoughts":[{"id":"parent","content":"new parent"},{"id":"child","content":"new child"}]}
-                """));
-
-        support.applyStepResult().process(exchange);
-
-        assertEquals("new parent", stack.frames().get(0).content());
-        assertEquals("new child", stack.frames().get(1).content());
-    }
-
-    @Test
     void stepResultAllowsEmptyThoughtUpdatesForTrueNoOpPasses() throws Exception {
         PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
@@ -597,7 +558,6 @@ class PrimitiveSemanticsTest {
         ThoughtStack stack = new ThoughtStack();
         stack.push(new ThoughtFrame("child", "Child", 100, "old child"));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
-        exchange.setProperty("thoughtUpdateDepth", 1);
         exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", """
                 {"actId":"work-item-review","summary":"done","artifacts":[],"thoughts":[{"id":"child","content":"   "}]}
                 """));
@@ -609,20 +569,20 @@ class PrimitiveSemanticsTest {
     }
 
     @Test
-    void stepResultRejectsNonWritableThoughtUpdate() {
+    void stepResultRejectsUnknownThoughtUpdate() {
         PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
         ThoughtStack stack = new ThoughtStack();
         stack.push(new ThoughtFrame("parent", "Parent", 100, "old parent"));
-        stack.push(new ThoughtFrame("child", "Child", 100, "old child"));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
-        exchange.setProperty("thoughtUpdateDepth", 1);
         exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", """
-                {"actId":"work-item-review","summary":"done","artifacts":[],"thoughts":[{"id":"parent","content":"bad update"}]}
+                {"actId":"work-item-review","summary":"done","artifacts":[],"thoughts":[{"id":"missing","content":"bad update"}]}
                 """));
 
         Exception failure = assertThrows(Exception.class, () -> support.applyStepResult().process(exchange));
-        assertTrue(failure.getMessage().contains("non-writable thought"));
+
+        assertTrue(failure.getMessage().contains("unknown thought"));
+        assertEquals("old parent", stack.frames().getFirst().content());
     }
 
     @Test
@@ -737,15 +697,19 @@ class PrimitiveSemanticsTest {
     }
 
     private static void assertToolAccessScopeGuidance(String systemPrompt) {
-        assertTrue(systemPrompt.contains("Tool access is scoped to the current pass."));
-        assertTrue(systemPrompt.contains("The tools available in this pass are the only tools you may call now."));
-        assertTrue(systemPrompt.contains("Tool absence in the current pass is not evidence"));
-        assertTrue(systemPrompt.contains("treat it as deferred work for an appropriate future pass"));
-        assertTrue(systemPrompt.contains("Separate observed facts from current-pass limitations."));
-        assertTrue(systemPrompt.contains("Only record a blocker when it is supported by an actual tool result"));
-        assertTrue(systemPrompt.contains("Do not convert missing current-pass tools into durable facts."));
-        assertTrue(systemPrompt.contains("Do not infer global mission state from local tool availability."));
-        assertTrue(systemPrompt.contains("Preserve unresolved needs as clear deferred next actions."));
+        assertTrue(systemPrompt.contains("Tool access:"));
+        assertTrue(systemPrompt.contains("Use only tools available in this pass."));
+        assertTrue(systemPrompt.contains("Treat missing tools as deferred work"));
+        assertTrue(systemPrompt.contains("not evidence of broken access or a mission blocker"));
+        assertTrue(systemPrompt.contains("Record blockers only from tool results, explicit instructions, or durable mission context."));
+        assertTrue(systemPrompt.contains("Preserve unresolved needs as next actions."));
+    }
+
+    private static void assertNoToolAccessScopeGuidance(String systemPrompt) {
+        assertFalse(systemPrompt.contains("Tool access:"));
+        assertFalse(systemPrompt.contains("Use only tools available in this pass."));
+        assertFalse(systemPrompt.contains("Treat missing tools as deferred work"));
+        assertFalse(systemPrompt.contains("Record blockers only from tool results"));
     }
 
     private static void assertCreateSchemaFails(String schema, String content, String expectedMessagePart) {

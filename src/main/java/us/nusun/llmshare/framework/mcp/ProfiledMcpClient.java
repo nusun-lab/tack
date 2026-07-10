@@ -8,6 +8,8 @@ import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.invocation.InvocationContext;
 import dev.langchain4j.mcp.client.*;
 import dev.langchain4j.service.tool.ToolExecutionResult;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import us.nusun.llmshare.framework.logging.LogTokens;
 import us.nusun.llmshare.framework.model.Persona;
 import us.nusun.llmshare.framework.model.ToolProfile;
@@ -16,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 public class ProfiledMcpClient implements McpClient {
+    private static final Logger LOG = LoggerFactory.getLogger(ProfiledMcpClient.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final int MAX_LOG_VALUE_LENGTH = 4000;
 
@@ -40,8 +43,8 @@ public class ProfiledMcpClient implements McpClient {
     }
 
     @Override public String key() { return delegate.key(); }
-    @Override public List<ToolSpecification> listTools() { return filter(delegate.listTools()); }
-    @Override public List<ToolSpecification> listTools(InvocationContext invocationContext) { return filter(delegate.listTools(invocationContext)); }
+    @Override public List<ToolSpecification> listTools() { return filterAndLog(delegate.listTools()); }
+    @Override public List<ToolSpecification> listTools(InvocationContext invocationContext) { return filterAndLog(delegate.listTools(invocationContext)); }
     @Override public ToolExecutionResult executeTool(ToolExecutionRequest executionRequest) { checkAllowed(executionRequest.name()); return executeToolInternal(executionRequest, null); }
     @Override public ToolExecutionResult executeTool(ToolExecutionRequest executionRequest, InvocationContext invocationContext) { checkAllowed(executionRequest.name()); return executeToolInternal(executionRequest, invocationContext); }
     @Override public List<McpResource> listResources() { return delegate.listResources(); }
@@ -57,6 +60,17 @@ public class ProfiledMcpClient implements McpClient {
     @Override public void checkHealth() { delegate.checkHealth(); }
     @Override public void setRoots(List<McpRoot> roots) { delegate.setRoots(roots); }
     @Override public void close() throws Exception { delegate.close(); }
+
+    private List<ToolSpecification> filterAndLog(List<ToolSpecification> tools) {
+        List<ToolSpecification> filtered = filter(tools);
+        LOG.info("MCP tools discovered server={} profile={} persona={} count={} tools={}",
+                server,
+                profile.id(),
+                persona == null ? null : persona.id(),
+                filtered.size(),
+                filtered.stream().map(ToolSpecification::name).toList());
+        return filtered;
+    }
 
     private List<ToolSpecification> filter(List<ToolSpecification> tools) {
         if (tools == null) {

@@ -1,7 +1,5 @@
 package us.nusun.llmshare.framework.tests.unit;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.framework.inventory.PersonaCatalog;
 import us.nusun.llmshare.framework.inventory.RoutineCatalog;
@@ -22,80 +20,83 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MissionRosterServiceTest {
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-
     @Test
-    void missionRosterContainsOnlyRunsAdmittedToCurrentMission() throws Exception {
+    void missionRosterContainsOnlyRunsAdmittedToCurrentMission() {
         AgentRunStore store = storeWithRuns();
         MissionRosterService service = service(store);
 
-        JsonNode roster = OBJECT_MAPPER.readTree(service.missionRosterPromptJson("mission-1", "run-a"));
-        String json = roster.toPrettyString();
+        String roster = service.missionRosterPrompt("mission-1");
 
-        assertEquals(2, roster.size());
-        assertTrue(json.contains("persona-a"));
-        assertTrue(json.contains("persona-c"));
-        assertFalse(json.contains("persona-b"));
-        assertFalse(json.contains("run-b-other-mission"));
+        assertEquals(2, entryCount(roster));
+        assertTrue(roster.contains("- name: Persona A"));
+        assertTrue(roster.contains("routine: Routine A"));
+        assertTrue(roster.contains("- name: Persona C"));
+        assertTrue(roster.contains("routine: Routine B"));
+        assertFalse(roster.contains("Persona B"));
+        assertFalse(roster.contains("run-b-other-mission"));
     }
 
     @Test
-    void missionRosterExcludesRunsFromOtherMissions() throws Exception {
+    void missionRosterExcludesRunsFromOtherMissions() {
         AgentRunStore store = storeWithRuns();
         MissionRosterService service = service(store);
 
-        JsonNode roster = OBJECT_MAPPER.readTree(service.missionRosterPromptJson("mission-2", "run-b-other-mission"));
-        String json = roster.toPrettyString();
+        String roster = service.missionRosterPrompt("mission-2");
 
-        assertEquals(1, roster.size());
-        assertTrue(json.contains("persona-b"));
-        assertFalse(json.contains("persona-a"));
-        assertFalse(json.contains("persona-c"));
+        assertEquals(1, entryCount(roster));
+        assertTrue(roster.contains("- name: Persona B"));
+        assertTrue(roster.contains("routine: Routine A"));
+        assertFalse(roster.contains("Persona A"));
+        assertFalse(roster.contains("Persona C"));
     }
 
     @Test
-    void missionRosterMarksSelfByAgentRunIdAndSupportsDuplicatePersonas() throws Exception {
+    void missionRosterSupportsDuplicatePersonasWithoutRunMetadata() {
         AgentRunStore store = new AgentRunStore();
         store.putMission(new Mission("mission-1", "Build", List.of(), "active", Map.of(), Instant.now()));
         store.putRun(new AgentRun("run-a-1", "mission-1", "persona-a", "routine-a", Map.of()));
         store.putRun(new AgentRun("run-a-2", "mission-1", "persona-a", "routine-b", Map.of()));
         MissionRosterService service = service(store);
 
-        JsonNode roster = OBJECT_MAPPER.readTree(service.missionRosterPromptJson("mission-1", "run-a-2"));
+        String roster = service.missionRosterPrompt("mission-1");
 
-        assertEquals(false, entry(roster, "run-a-1").get("self").asBoolean());
-        assertEquals(true, entry(roster, "run-a-2").get("self").asBoolean());
+        assertEquals(2, entryCount(roster));
+        assertTrue(roster.contains("- name: Persona A"));
+        assertTrue(roster.contains("routine: Routine A"));
+        assertTrue(roster.contains("routine: Routine B"));
+        assertFalse(roster.contains("run-a-1"));
+        assertFalse(roster.contains("run-a-2"));
+        assertFalse(roster.contains("self"));
     }
 
     @Test
-    void missionRosterIncludesCoordinationMetadataAndPromptSafeIdentitiesOnly() throws Exception {
+    void missionRosterIncludesOnlyNamesRoutineNamesAndPromptSafePlatformIdentities() {
         AgentRunStore store = storeWithRuns();
         MissionRosterService service = service(store);
 
-        JsonNode entry = entry(OBJECT_MAPPER.readTree(service.missionRosterPromptJson("mission-1", "run-a")), "run-a");
-        String json = entry.toPrettyString();
+        String roster = service.missionRosterPrompt("mission-1");
 
-        assertEquals("run-a", entry.get("agentRunId").asText());
-        assertEquals("persona-a", entry.get("personaId").asText());
-        assertEquals("Persona A", entry.get("personaName").asText());
-        assertEquals("PA", entry.get("personaLabel").asText());
-        assertEquals("routine-a", entry.get("routineId").asText());
-        assertEquals("Routine A", entry.get("routineName").asText());
-        assertEquals("accepted", entry.get("status").asText());
-        assertEquals("run-parent", entry.get("parentAgentRunId").asText());
-        assertTrue(json.contains("@persona-a"));
-        assertFalse(json.contains("mattermost-token"));
-        assertFalse(json.contains("gitea-token"));
-        assertFalse(json.contains("plane-token"));
+        assertTrue(roster.contains("- name: Persona A"));
+        assertTrue(roster.contains("routine: Routine A"));
+        assertTrue(roster.contains("platform identities: gitea @persona-a, mattermost @persona-a, plane @persona-a"));
+        assertTrue(roster.contains("- name: Persona C"));
+        assertTrue(roster.contains("routine: Routine B"));
+        assertTrue(roster.contains("platform identities: mattermost @persona-c"));
+        assertFalse(roster.contains("run-a"));
+        assertFalse(roster.contains("personaId"));
+        assertFalse(roster.contains("routineId"));
+        assertFalse(roster.contains("PA"));
+        assertFalse(roster.contains("accepted"));
+        assertFalse(roster.contains("run-parent"));
+        assertFalse(roster.contains("Routine A description"));
+        assertFalse(roster.contains("mattermost-token"));
+        assertFalse(roster.contains("gitea-token"));
+        assertFalse(roster.contains("plane-token"));
+        assertFalse(roster.toLowerCase().contains("credential"));
     }
 
-    private static JsonNode entry(JsonNode roster, String agentRunId) {
-        for (JsonNode entry : roster) {
-            if (agentRunId.equals(entry.get("agentRunId").asText())) {
-                return entry;
-            }
-        }
-        throw new AssertionError("Missing roster entry " + agentRunId + " in " + roster.toPrettyString());
+    private static long entryCount(String roster) {
+        return roster.lines().filter(line -> line.startsWith("- ")).count();
     }
 
     private static AgentRunStore storeWithRuns() {
@@ -115,7 +116,7 @@ class MissionRosterServiceTest {
     }
 
     private static MissionRosterService service(AgentRunStore store) {
-        return FrameworkFixtures.missionRosterService(store, personas(), routines(), OBJECT_MAPPER);
+        return FrameworkFixtures.missionRosterService(store, personas(), routines());
     }
 
     private static PersonaCatalog personas() {

@@ -30,7 +30,6 @@ public class PrimitiveRoute extends RouteBuilder {
 
                         Mission roster:
                         ${exchangeProperty.missionRoster}
-                        Teammate handles are for coordination. Credentials/tokens are never shown and should never be requested, guessed, or printed.
 
                         Act id: ${exchangeProperty.actId}
                         Tool profile: ${exchangeProperty.toolProfileId}
@@ -39,7 +38,6 @@ public class PrimitiveRoute extends RouteBuilder {
 
                         Active thoughts:
                         ${exchangeProperty.activeThoughts}
-                        Thoughts are framework memory from prior outputs; there are no tools for reading or writing thoughts.
 
                         Act prompt:
                         ${exchangeProperty.actPrompt}
@@ -64,19 +62,17 @@ public class PrimitiveRoute extends RouteBuilder {
 
                         Mission roster:
                         ${exchangeProperty.missionRoster}
-                        Teammate handles are for coordination. Credentials/tokens are never shown and should never be requested, guessed, or printed.
 
                         Act id: ${exchangeProperty.actId}
-                        Act prompt: ${exchangeProperty.actPrompt}
+                        Preceding action objective, for context only:
+                        ${exchangeProperty.precedingActionObjective}
+                        Do not execute or repeat this objective during synthesis.
                         Latest observation observedAt: ${exchangeProperty.toolPassObservedAt}
                         Latest observation from this act:
                         ${exchangeProperty.toolPassResult}
 
-                        Previous read-only thought snapshots, possibly stale (context only; do not include these ids in StepResult.thoughts):
-                        ${exchangeProperty.readOnlyThoughts}
-
-                        Previous writable thought snapshots, possibly stale (only these ids may be changed):
-                        ${exchangeProperty.writableThoughts}
+                        Previous thought snapshots, possibly stale:
+                        ${exchangeProperty.activeThoughts}
                         ${bean:primitiveSupport.stepResultRules}
                         """))
                 .process(primitive.prepareStepSynthesisPrompt())
@@ -104,7 +100,6 @@ public class PrimitiveRoute extends RouteBuilder {
                         Question: ${exchangeProperty.decisionPrompt}
                         Active thoughts:
                         ${exchangeProperty.activeThoughts}
-                        Thoughts are framework memory from prior outputs; there are no tools for reading or writing thoughts.
                         Latest step result:
                         ${exchangeProperty.latestStepResultJson}
                         Return only decisionId, result, confidence, and reason.
@@ -132,10 +127,8 @@ public class PrimitiveRoute extends RouteBuilder {
                         ${exchangeProperty.routineSummary}
                         Mission roster:
                         ${exchangeProperty.missionRoster}
-                        Teammate handles are for coordination. Credentials/tokens are never shown and should never be requested, guessed, or printed.
                         Active thoughts:
                         ${exchangeProperty.activeThoughts}
-                        Thoughts are framework memory from prior outputs; there are no tools for reading or writing thoughts.
                         Caller JSON schema:
                         ${exchangeProperty.createSchemaJson}
                         """))

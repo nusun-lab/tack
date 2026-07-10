@@ -115,7 +115,6 @@ public class RoutineSupport {
         private String toolProfile = "none";
         private String toolRuntime;
         private String synthesisRuntime;
-        private Integer thoughtUpdateDepth;
 
         private Act(String id) {
             this.id = id;
@@ -146,11 +145,6 @@ public class RoutineSupport {
             return this;
         }
 
-        public Act thoughtUpdateDepth(int thoughtUpdateDepth) {
-            this.thoughtUpdateDepth = thoughtUpdateDepth;
-            return this;
-        }
-
         @Override
         public void process(Exchange exchange) {
             setProperty(exchange, "actId", id);
@@ -158,7 +152,6 @@ public class RoutineSupport {
             setProperty(exchange, "toolProfile", toolProfile);
             setOptionalProperty(exchange, "toolRuntime", toolRuntime);
             setOptionalProperty(exchange, "synthesisRuntime", synthesisRuntime);
-            setOptionalProperty(exchange, "thoughtUpdateDepth", thoughtUpdateDepth);
         }
     }
 

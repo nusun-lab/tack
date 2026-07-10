@@ -56,38 +56,19 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                     .process(routine.enterThought("orchestration-cycle", DIRECTOR_CYCLE_THOUGHT, 300))
                     .process(routine.act("director-source-control-review")
                             .prompt("""
-                                    Read the mission roster in the prompt first. Use source-control tools to inspect
-                                    durable documentation and repositories only as needed. Do not create new repositories.
-
-                                    Look for verified mission anchors, current-work or status pages, source repository
-                                    links, branches, commits, review artifacts, setup/navigation gaps, external evidence
-                                    that the mission outcome is complete or incomplete, and blockers that may require
-                                    another agent run. Do not create or update external artifacts in this scan.
+                                    Use source-control tools to read durable documentation and repositories.
                                     """)
                             .toolProfile("source-control"))
                     .to("direct:act")
                     .process(routine.act("director-project-management-review")
                             .prompt("""
-                                    Read the mission roster in the prompt first. Use project-management tools to inspect
-                                    mission-related projects. Do not create new projects.
-
-                                    Look for work item states, owners, priorities, blockers, handoffs, unassigned or stale
-                                    work, completion/review evidence, and whether completed or failed roster entries imply
-                                    a follow-on gap. Do not create, move, assign, or update work items in this scan.
+                                    Use project-management tools to read mission-related projects.
                                     """)
                             .toolProfile("project-management"))
                     .to("direct:act")
                     .process(routine.act("director-team-chat-review")
                             .prompt("""
-                                    Read the mission roster in the prompt first. Use team-chat tools to inspect recent
-                                    relevant channel context and participate when useful. Do not create new chat channels.
-
-                                    Look for direct requests, unresolved blockers, unanswered handoffs, active coordination,
-                                    claims of completion that need durable evidence, and users or teammates waiting on a
-                                    response. If a relevant discussion needs orchestration input, reply in the existing
-                                    thread or channel with a concise decision, focused question, or pointer to durable
-                                    evidence. If no useful participation is needed, stay quiet. Do not post generic status,
-                                    create new threads, or duplicate durable docs.
+                                    Use team-chat tools to inspect recent relevant channel context.
                                     """)
                             .toolProfile("team-chat"))
                     .to("direct:act")

@@ -4,7 +4,6 @@ import us.nusun.llmshare.framework.model.ThoughtFrame;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 public class ThoughtStack {
@@ -35,16 +34,6 @@ public class ThoughtStack {
 
     public List<ThoughtFrame> frames() {
         return List.copyOf(frames);
-    }
-
-    public List<ThoughtFrame> writable(int depth) {
-        if (depth <= 0 || frames.isEmpty()) {
-            return List.of();
-        }
-        int from = Math.max(0, frames.size() - depth);
-        ArrayList<ThoughtFrame> result = new ArrayList<>(frames.subList(from, frames.size()));
-        Collections.reverse(result);
-        return List.copyOf(result);
     }
 
     public boolean contains(String id) {

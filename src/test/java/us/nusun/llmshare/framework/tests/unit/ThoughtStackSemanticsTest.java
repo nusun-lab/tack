@@ -12,18 +12,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ThoughtStackSemanticsTest {
     @Test
-    void writableFramesComeFromTheTopOfTheActiveScopeStack() {
-        ThoughtStack stack = new ThoughtStack();
-        stack.push(new ThoughtFrame("mission", "Mission context", 100, "broad"));
-        stack.push(new ThoughtFrame("routine", "Routine context", 100, "focused"));
-        stack.push(new ThoughtFrame("loop", "Loop context", 100, "local"));
-
-        assertEquals(
-                java.util.List.of("loop", "routine"),
-                stack.writable(2).stream().map(ThoughtFrame::id).toList());
-    }
-
-    @Test
     void newThoughtFramesHaveUpdatedAtMetadata() {
         ThoughtFrame frame = new ThoughtFrame("t1", "scope-name", "Purpose", 100, "content");
 

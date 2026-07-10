@@ -1,7 +1,5 @@
 package us.nusun.llmshare.framework.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.Exchange;
@@ -12,74 +10,58 @@ import us.nusun.llmshare.framework.model.RoutineDefinition;
 import us.nusun.llmshare.framework.state.AgentRun;
 import us.nusun.llmshare.framework.state.AgentRunStore;
 
-import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @ApplicationScoped
 public class MissionRosterService {
     @Inject AgentRunStore agentRuns;
     @Inject PersonaCatalog personas;
     @Inject RoutineCatalog routines;
-    @Inject ObjectMapper objectMapper;
 
     public MissionRosterService() {
     }
 
-    public MissionRosterService(AgentRunStore agentRuns, PersonaCatalog personas, RoutineCatalog routines, ObjectMapper objectMapper) {
+    public MissionRosterService(AgentRunStore agentRuns, PersonaCatalog personas, RoutineCatalog routines) {
         this.agentRuns = agentRuns;
         this.personas = personas;
         this.routines = routines;
-        this.objectMapper = objectMapper;
     }
 
-    public String missionRosterPromptJson(Exchange exchange) {
+    public String missionRosterPrompt(Exchange exchange) {
         AgentRun current = exchange == null ? null : exchange.getProperty("agentRun", AgentRun.class);
-        return missionRosterPromptJson(current == null ? null : current.missionId(), current == null ? null : current.id());
+        return missionRosterPrompt(current == null ? null : current.missionId());
     }
 
-    public String missionRosterPromptJson(String missionId, String currentAgentRunId) {
-        List<MissionRosterEntry> entries = agentRuns.runsByMission(missionId).stream()
-                .map(run -> entry(run, currentAgentRunId))
-                .toList();
-        try {
-            return mapper().writerWithDefaultPrettyPrinter().writeValueAsString(entries);
-        } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Unable to render mission roster prompt JSON", e);
-        }
+    public String missionRosterPrompt(String missionId) {
+        String roster = agentRuns.runsByMission(missionId).stream()
+                .map(this::entry)
+                .collect(Collectors.joining("\n"));
+        return roster.isBlank() ? "(none)" : roster;
     }
 
-    private ObjectMapper mapper() {
-        return objectMapper == null ? new ObjectMapper() : objectMapper;
-    }
-
-    private MissionRosterEntry entry(AgentRun run, String currentAgentRunId) {
+    private String entry(AgentRun run) {
         Persona persona = personas.getRequired(run.personaId());
         RoutineDefinition routine = routines.getRequired(run.routineId());
-        return new MissionRosterEntry(
-                run.id(),
-                run.personaId(),
-                persona.name(),
-                persona.label(),
-                run.routineId(),
-                routine.name(),
-                routine.description(),
-                run.status(),
-                run.parentAgentRunId(),
-                run.id().equals(currentAgentRunId),
-                PersonaCatalog.promptIdentities(persona));
+        return "- name: " + persona.name()
+                + "\n  routine: " + routine.name()
+                + "\n  platform identities: " + renderIdentities(persona);
     }
 
-    public record MissionRosterEntry(
-            String agentRunId,
-            String personaId,
-            String personaName,
-            String personaLabel,
-            String routineId,
-            String routineName,
-            String routineDescription,
-            String status,
-            String parentAgentRunId,
-            boolean self,
-            Map<String, PersonaCatalog.IdentityPromptView> identities
-    ) {}
+    private static String renderIdentities(Persona persona) {
+        String identities = persona.identities().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .filter(entry -> entry.getValue() != null
+                        && entry.getValue().handle() != null
+                        && !entry.getValue().handle().isBlank())
+                .map(entry -> {
+                    String platform = entry.getValue().platform();
+                    if (platform == null || platform.isBlank()) {
+                        platform = entry.getKey();
+                    }
+                    return platform + " " + entry.getValue().handle();
+                })
+                .collect(Collectors.joining(", "));
+        return identities.isBlank() ? "(none)" : identities;
+    }
 }

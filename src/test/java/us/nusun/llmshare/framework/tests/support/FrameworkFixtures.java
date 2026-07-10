@@ -173,7 +173,7 @@ public final class FrameworkFixtures {
         set(support, "personas", personas);
         set(support, "routines", routines);
         set(support, "toolProfiles", toolProfileRegistry());
-        set(support, "missionRoster", missionRosterService(agentRuns, personas, routines, objectMapper));
+        set(support, "missionRoster", missionRosterService(agentRuns, personas, routines));
         set(support, "runtimes", executionRuntimeRegistry());
         set(support, "projections", new NoopProjectionManager());
         return support;
@@ -186,8 +186,8 @@ public final class FrameworkFixtures {
         return store;
     }
 
-    public static MissionRosterService missionRosterService(AgentRunStore agentRuns, PersonaCatalog personas, RoutineCatalog routines, ObjectMapper objectMapper) {
-        return new MissionRosterService(agentRuns, personas, routines, objectMapper);
+    public static MissionRosterService missionRosterService(AgentRunStore agentRuns, PersonaCatalog personas, RoutineCatalog routines) {
+        return new MissionRosterService(agentRuns, personas, routines);
     }
 
     public static void bindCatalogBeans(DefaultCamelContext context) {

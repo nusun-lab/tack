@@ -33,7 +33,6 @@ class RoutineSupportTest {
                 .toolProfile("team-chat")
                 .toolRuntime("tool-high")
                 .synthesisRuntime("synthesis-high")
-                .thoughtUpdateDepth(2)
                 .process(exchange);
 
         assertEquals("collaboration-sync", exchange.getProperty("actId"));
@@ -41,7 +40,6 @@ class RoutineSupportTest {
         assertEquals("team-chat", exchange.getProperty("toolProfile"));
         assertEquals("tool-high", exchange.getProperty("toolRuntime"));
         assertEquals("synthesis-high", exchange.getProperty("synthesisRuntime"));
-        assertEquals(2, exchange.getProperty("thoughtUpdateDepth"));
     }
 
     @Test
@@ -53,7 +51,6 @@ class RoutineSupportTest {
                 .prompt("First.")
                 .toolRuntime("tool-high")
                 .synthesisRuntime("synthesis-high")
-                .thoughtUpdateDepth(2)
                 .process(exchange);
         support.act("second")
                 .prompt("Second.")
@@ -61,7 +58,6 @@ class RoutineSupportTest {
 
         assertEquals(null, exchange.getProperty("toolRuntime"));
         assertEquals(null, exchange.getProperty("synthesisRuntime"));
-        assertEquals(null, exchange.getProperty("thoughtUpdateDepth"));
     }
 
     @Test
