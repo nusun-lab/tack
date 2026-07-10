@@ -205,7 +205,9 @@ class SoftwareTeamExampleTest {
         assertTrue(profileReferences > 0);
 
         assertTrue(source.contains("director-workspace-review"));
-        assertTrue(source.contains("workspace-artifact-provisioning"));
+        assertTrue(source.contains("plane-project-provisioning"));
+        assertTrue(source.contains("documentation-repository-provisioning"));
+        assertTrue(source.contains("source-repository-provisioning"));
         assertTrue(source.contains("collaboration-setup-message"));
         assertTrue(source.contains("pm-intake-review"));
         assertTrue(source.contains("pm-actionable-dev-task"));
@@ -217,6 +219,7 @@ class SoftwareTeamExampleTest {
 
         for (String removed : List.of(
                 "director-source-control-review", "director-project-management-review", "director-team-chat-review",
+                "workspace-artifact-provisioning",
                 "pm-wiki-basics-read", "wiki-repo-setup", "project-management-setup", "source-repository-plan",
                 "project-basics-announcement", "collaboration-setup-gap", "wiki-project-index", "wiki-bootstrap-audit", "pm-wiki-status-sync",
                 "pm-po-item-review", "pm-readiness-status", "pm-task-breakdown", "pm-task-sequencing", "pm-actionability-check",

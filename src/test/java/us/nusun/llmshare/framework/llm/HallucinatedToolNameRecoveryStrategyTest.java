@@ -140,7 +140,8 @@ class HallucinatedToolNameRecoveryStrategyTest {
                 probeToolProvider()));
 
         assertTrue(model.requests.size() > 1);
-        assertTrue(failure.getMessage().contains("exceeded 100 tool calling round trips"));
+        assertTrue(model.requests.size() <= 6);
+        assertTrue(failure.getMessage().contains("exceeded 4 tool calling round trips"));
     }
 
     @Test

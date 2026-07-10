@@ -19,7 +19,6 @@ public record LlmJobRequest(
 ) {
     public static final String DEFAULT_LANE = "low-pass";
     public static final LlmPassType DEFAULT_PASS_TYPE = LlmPassType.SYNTHESIS;
-    public static final String JSON_ONLY_SUFFIX = "Return valid JSON only. Do not include labels, markdown fences, comments, prefixes, or explanatory text.";
 
     public static LlmJobRequest fromPrompt(UUID jobId, String laneId, LlmPassType passType, String requester, String role, String prompt, String systemPrompt, String responseSchema) {
         return new LlmJobRequest(jobId, laneId, passType, requester, role, 0, prompt, systemPrompt, responseSchema, Map.of(), null);
@@ -54,9 +53,12 @@ public record LlmJobRequest(
         if (responseSchema == null || responseSchema.isBlank()) {
             return this;
         }
+        String jsonOnlySuffix = """
+                Return valid JSON only. Do not include labels, markdown fences, comments, prefixes, or explanatory text.
+                """.strip();
         String nextSystemPrompt = systemPrompt == null || systemPrompt.isBlank()
-                ? JSON_ONLY_SUFFIX
-                : systemPrompt.contains("Return valid JSON only") ? systemPrompt : systemPrompt + "\n" + JSON_ONLY_SUFFIX;
+                ? jsonOnlySuffix
+                : systemPrompt.contains("Return valid JSON only") ? systemPrompt : systemPrompt + "\n" + jsonOnlySuffix;
         return new LlmJobRequest(jobId, laneId, passType, requester, role, priority, prompt, nextSystemPrompt, responseSchema, metadata, requestedAt);
     }
 

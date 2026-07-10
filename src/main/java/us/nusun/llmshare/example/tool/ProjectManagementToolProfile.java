@@ -28,15 +28,15 @@ public class ProjectManagementToolProfile implements ToolProfileProvider {
         return List.of(ToolProfile.builder(ID)
                 .mcpServer(plane.definition())
                 .promptGuidance("""
-                        - find existing projects and work items before creating anything
+                        - find direct existing projects and work items before creating anything
+                        - work on only the project or work item named by the current step
                         - Plane is the sole source of truth for planned work, assignments, status, blockers, dependencies, priorities, and delivery planning
                         - avoid duplicate projects or work items
                         - record blockers plainly with owner and evidence
-                        - no single work item should be too long
-                        - strive to break large work items down into small tasks
-                        - when breaking items into smaller pieces, make sure the parent item summarizes instead of duplicating the content of its children
+                        - keep each work item small; split only the one item in scope
+                        - when splitting work, make the parent summarize instead of duplicating child content
                         - workspace members are automatically members of public projects
-                        - do not attempt to add members to public projects membership is opt-in""")
+                        - do not attempt to add members to public projects; membership is opt-in""")
                 .denyTools(PlaneMcpServer.ID,
                         "delete_project",
                         "delete_work_item",

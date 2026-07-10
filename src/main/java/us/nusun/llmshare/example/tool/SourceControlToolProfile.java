@@ -28,7 +28,8 @@ public class SourceControlToolProfile implements ToolProfileProvider {
         return List.of(ToolProfile.builder(ID)
                 .mcpServer(gitea.definition())
                 .promptGuidance("""
-                                 - read before writing
+                                 - read only the direct files or links needed for the current step before writing
+                                 - make one focused source-control change per step unless the act prompt says otherwise
                                  - Gitea is for source control and implementation evidence
                                  - Plane owns planned work, assignments, status, blockers, dependencies, priorities, and delivery planning
                                  - Gitea issues, labels, milestones, and time tracking must never be used for project coordination
@@ -36,8 +37,8 @@ public class SourceControlToolProfile implements ToolProfileProvider {
                                  - avoid duplicate repositories, branches, pull requests, tags, or releases
                                  - do not use native wiki features
                                  - canonical documentation should live in its own markdown repository
-                                 - documentation should be well-linked so it is possible to navigate to any page starting from the index (readme.md)
-                                 - do not read entire documentation repositories, try to read only what you need
+                                 - documentation should be navigable from the index (readme.md)
+                                 - do not read entire documentation repositories
                                  - generally reference the url attribute of repositories, not clone or ssh
                                  """)
                 .denyTools(GiteaMcpServer.ID,

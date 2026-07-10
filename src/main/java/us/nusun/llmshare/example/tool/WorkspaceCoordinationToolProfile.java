@@ -97,7 +97,8 @@ public class WorkspaceCoordinationToolProfile implements ToolProfileProvider {
                         "get_user_by_username",
                         "search_users")
                 .promptGuidance("""
-                        - search before creating artifacts
+                        - search direct names before creating artifacts
+                        - create or update only the artifact named by the current step, then stop
                         - Plane is the sole system for projects, planned work, assignments, status, and blockers
                         - never create or manage planned work through Gitea issues
                         - use Gitea only for repository discovery, repository creation, and implementation evidence

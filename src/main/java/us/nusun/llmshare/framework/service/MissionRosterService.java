@@ -43,13 +43,22 @@ public class MissionRosterService {
     private String entry(AgentRun run) {
         Persona persona = personas.getRequired(run.personaId());
         RoutineDefinition routine = routines.getRequired(run.routineId());
-        return "- name: " + persona.name()
-                + "\n  personaId: " + run.personaId()
-                + "\n  routine: " + routine.name()
-                + "\n  routineId: " + run.routineId()
-                + "\n  agentRunId: " + run.id()
-                + "\n  status: " + run.status()
-                + "\n  platform identities: " + renderIdentities(persona);
+        return """
+                - name: %s
+                  personaId: %s
+                  routine: %s
+                  routineId: %s
+                  agentRunId: %s
+                  status: %s
+                  platform identities: %s
+                """.formatted(
+                persona.name(),
+                run.personaId(),
+                routine.name(),
+                run.routineId(),
+                run.id(),
+                run.status(),
+                renderIdentities(persona)).strip();
     }
 
     private static String renderIdentities(Persona persona) {

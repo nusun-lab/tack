@@ -152,7 +152,13 @@ class PrimitiveSemanticsTest {
         assertTrue(request.prompt().contains("updatedAt:"));
         assertTrue(request.prompt().contains("Repository is not confirmed yet."));
         assertTrue(request.prompt().contains("Confirm the target source repository."));
+        assertTrue(request.prompt().contains("## Mission-Level Context"));
+        assertTrue(request.prompt().contains("## Step-Level Context"));
+        assertTrue(request.prompt().contains("## Rules / Execution Guidance"));
+        assertTrue(request.prompt().contains("## ACT PROMPT - DO THIS NOW"));
+        assertTrue(request.prompt().contains("Normal steps should finish in 1-3 tool calls"));
         assertTrue(request.prompt().contains("Outcome:"));
+        assertTrue(request.prompt().contains("Tool calls used:"));
         assertTrue(request.prompt().contains("Evidence / links / ids:"));
         assertTrue(request.prompt().contains("Label links/ids as verified, missing, expected, or reference"));
         assertTrue(request.prompt().contains("Do not include guessed URLs"));
@@ -188,7 +194,7 @@ class PrimitiveSemanticsTest {
         assertEquals("classpath:schemas/step-result-schema.json", request.responseSchema());
         assertEquals(true, request.metadata().get(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY));
         assertTrue(request.systemPrompt().contains("Builds framework test scenarios"));
-        assertTrue(request.systemPrompt().contains("Synthesize framework action results."));
+        assertTrue(request.systemPrompt().contains("Synthesize the completed action result into the required JSON."));
         assertTrue(request.systemPrompt().contains("Return only valid JSON object matching the supplied schema."));
         assertTrue(request.systemPrompt().contains("This pass has no tools; do not call tools, reason about tool availability, or retry the action."));
         assertTrue(request.systemPrompt().contains("The preceding action has already completed; do not repeat it."));
@@ -706,8 +712,10 @@ class PrimitiveSemanticsTest {
 
     private static void assertToolAccessScopeGuidance(String systemPrompt) {
         assertTrue(systemPrompt.contains("Tool access:"));
-        assertTrue(systemPrompt.contains("You have access to only 1 tool profile at a time"));
-        assertTrue(systemPrompt.contains("you will have access in later steps"));
+        assertTrue(systemPrompt.contains("You have access to only one tool profile during this pass."));
+        assertTrue(systemPrompt.contains("Bounded execution:"));
+        assertTrue(systemPrompt.contains("target 1-3 calls for normal steps"));
+        assertTrue(systemPrompt.contains("Stop when the requested evidence, mutation, or blocker is known."));
         assertFalse(systemPrompt.contains("next actions"));
     }
 

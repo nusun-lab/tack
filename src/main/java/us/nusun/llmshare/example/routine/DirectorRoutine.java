@@ -17,8 +17,6 @@ import us.nusun.llmshare.example.tool.WorkspaceReadonlyToolProfile;
 @ApplicationScoped
 public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
     public static final String ID = "software-team/director";
-    public static final String DIRECTOR_ROUTINE_THOUGHT = "Durable orchestration anchors: mission goal, roster by status, active/completed/failed coverage, verified project state, persistent staffing blockers, last provisioning decision.";
-    public static final String DIRECTOR_CYCLE_THOUGHT = "Current orchestration cycle: roster statuses, workspace signals, completed/failed run implications, staffing gap, planned AgentRunRequests or no-op decision. Promote durable staffing state to orchestration root before cycle exits.";
 
     @Inject RoutineSupport routine;
 
@@ -43,7 +41,9 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
     public void configure() {
         from("direct:example-software-team-director")
                 .routeId("example-software-team-director")
-                .process(routine.enterThought("orchestration-root", DIRECTOR_ROUTINE_THOUGHT, 500))
+                .process(routine.enterThought("orchestration-root", """
+                        Durable orchestration anchors: mission goal, roster by status, active/completed/failed coverage, verified project state, persistent staffing blockers, last provisioning decision.
+                        """, 500))
                 .to("direct:director-monitoring-loop")
                 .process(routine.exitThought("orchestration-root"));
 
@@ -53,15 +53,15 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                 .setProperty("decision.director-mission-complete.result", constant(false))
                 .loopDoWhile(exchangeProperty("decision.director-mission-complete.result").isNotEqualTo(true))
                     .setProperty("directorCycle", simple("${exchangeProperty.directorCycle++}"))
-                    .process(routine.enterThought("orchestration-cycle", DIRECTOR_CYCLE_THOUGHT, 300))
+                    .process(routine.enterThought("orchestration-cycle", """
+                        Current orchestration cycle: roster statuses, workspace signals, completed/failed run implications, staffing gap, planned AgentRunRequests or no-op decision. Promote durable staffing state to orchestration root before cycle exits.
+                        """, 300))
                     .process(routine.act("director-workspace-review")
                             .prompt("""
-                                    Read only mission-relevant workspace evidence.
-                                    Inspect Plane planned-work state for ownership, status, blockers, and priorities;
-                                    Gitea repositories, documentation pages, commits, pull requests, builds, tags, or releases
-                                    for implementation evidence; and recent Mattermost messages or threads for conversation context.
-                                    Do not mutate anything, do not scan entire projects, repositories, documentation repositories,
-                                    or channels, and distinguish verified observations from assumptions.
+                                    Read only the smallest mission-relevant status slice.
+                                    Check roster-linked Plane work, one direct Gitea/doc anchor, and recent Mattermost context only
+                                    when it changes staffing decisions. Do not mutate anything, sweep whole systems, or chase
+                                    unrelated artifacts. Stop once completion state or a specific staffing gap is clear.
                                     """)
                             .toolProfile(WorkspaceReadonlyToolProfile.ID))
                     .to("direct:act")
@@ -86,65 +86,28 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         .schemaId("agent-run-request-list")
                         .schema("classpath:schemas/example/software-team/agent-run-requests-schema.json")
                         .prompt(simple("""
-                                Given the mission, verified tool-backed project state, active thoughts, and mission roster,
-                                decide whether the mission needs any additional agent runs.
-                                
+                                Decide whether this mission needs additional agent runs.
+
                                 Mission:
                                 ${exchangeProperty.mission.goal}
-                                
+
                                 Assignable personas:
                                 ${bean:personaCatalog.agentRunStartAssignablePromptJson}
-                                
+
                                 Routines:
                                 ${bean:routineCatalog.startableJson}
-                                
+
                                 Tool profiles:
                                 ${bean:toolProfileCatalog.promptJson}
-                                
-                                Choose personas and routines only from the catalog data above.
-                                
-                                An AgentRunRequest provisions additional execution coverage. It is not:
-                                
-                                * a task assignment for an agent that is already running,
-                                * a message or handoff to an existing teammate,
-                                * a way to redirect an existing agent toward newly discovered work, or
-                                * a replacement for recording actionable work in the appropriate shared system.
-                                
-                                Before creating any run, determine which mission-required capability is currently absent from the active roster.
-                                
-                                Apply these rules:
-                                
-                                * Return {"agentRuns":[]} when no additional active coverage is needed.
-                                * Treat accepted and running roster entries as active coverage.
-                                * Never schedule a personaId/routineId pair that is already accepted or running merely because there is new work for that agent to perform.
-                                * Existing agents are expected to discover and act on relevant shared project state through their own routines.
-                                * Work that belongs to an active agent is not a staffing gap.
-                                * A blocked active agent is not automatically a staffing gap. Add another run only when a distinct catalog-listed capability is required to resolve the blocker.
-                                * Do not schedule the same personaId/routineId pair as the roster entry marked self:true.
-                                * Treat complete runs as finished coverage. Create a follow-on only when the verified project state now requires another execution stage or a different capability.
-                                * Treat failed runs as recovery signals. Add a replacement or support run only when the mission still requires that coverage and no accepted or running roster entry already provides it.
-                                * Use the current mission roster as authoritative for run status and active coverage.
-                                * Treat active thoughts as potentially stale planning context. When thoughts conflict with the current roster or verified tool-backed state, prefer the current roster and verified state.
-                                * Do not infer a staffing gap from statements such as "no work started," "no code exists," "items are blocked," or "tasks are not actionable" when an active roster member already owns the relevant capability.
-                                * Keep the team small. Additional agents share inference lanes and may reduce productivity.
-                                * Schedule at most two new runs in one cycle unless there are no active non-self teammates.
-                                * For every proposed run, identify the specific missing capability it adds. If no missing capability can be named, do not create the run.
-                                * Make each run input clear about:
-                                
-                                  * the mission focus,
-                                  * the verified state requiring additional coverage,
-                                  * why the existing active roster cannot cover that need, and
-                                  * the distinct capability or execution stage the new run adds.
-                                * Use only catalog descriptions and observed state. Do not invent personas, routines, tools, blockers, or external state.
-                                
-                                Perform the decision in this order:
-                                
-                                1. Build the set of personaId/routineId pairs whose roster status is accepted or running.
-                                2. Identify mission needs supported by verified project state.
-                                3. Determine whether each need is already covered by an active pair.
-                                4. Discard needs that are merely tasks for existing active agents.
-                                5. Create AgentRunRequest objects only for remaining uncovered capabilities.
-                                6. Return {"agentRuns":[]} when no uncovered capability remains.
+
+                                Use only catalog entries above and verified current roster/state.
+                                Return {"agentRuns":[]} unless a mission-required capability is missing from accepted/running coverage.
+                                Treat accepted and running roster entries as active coverage, including blocked agents unless a distinct
+                                catalog capability is required to unblock them. Do not schedule work that an active agent already owns.
+                                At most two new runs per cycle.
+
+                                For each proposed run, make the input name the mission focus, verified gap, why active coverage cannot
+                                handle it, and the distinct capability or execution stage added.
 
                                 """)))
                 .to("direct:create")

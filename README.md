@@ -455,6 +455,7 @@ public class LowLane implements InferenceLaneProvider {
 | `LLM_MODEL_DEFAULT_OPENAI_THINKING_OFF_ENABLED` | `true`       | Default `enable_thinking=false` custom parameter for compatible models. |
 | `LLM_MODEL_DEFAULT_STRUCTURED_OUTPUT_PROVIDER_SCHEMA_ENABLED` | `false` | Default provider-schema mode for structured output calls. |
 | `LLM_MODEL_DEFAULT_TOOL_MEMORY_MAX_TOKENS` | `12000`          | Default ephemeral tool-pass memory window. |
+| `LLM_MODEL_DEFAULT_MAX_TOOL_CALLING_ROUND_TRIPS` | `4`       | Default maximum tool-calling round trips per tool pass. |
 | `LLM_LOW_MODEL`              | blank                      | Low-lane model override.             |
 | `LLM_HIGH_MODEL`             | blank                      | High-lane model override.            |
 | `LLM_LOW_PARALLELISM`        | `1`                        | Low-lane worker parallelism and request-topic partition count. |

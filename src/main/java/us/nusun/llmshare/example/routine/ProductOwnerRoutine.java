@@ -17,12 +17,6 @@ import us.nusun.llmshare.example.tool.WorkspaceReadonlyToolProfile;
 @ApplicationScoped
 public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider {
     public static final String ID = "software-team/product-owner";
-    public static final String PRODUCT_OWNER_ROUTINE_THOUGHT = "Durable product anchors: product documentation pages, current-work page, Plane project, source repository, team chat, persistent product blockers.";
-    public static final String PO_BASICS_THOUGHT = "Current product-basics read: documentation repository, current-work page, Plane project, source repository, team chat, product navigation, blockers. Promote durable anchors to product-owner-routine before basics exits.";
-    public static final String PO_CYCLE_THOUGHT = "Current PO pass: selected product Plane work item, canonical item page, acceptance status, priority/readiness, PM handoff request, next product action.";
-    public static final String PO_BACKLOG_THOUGHT = "Current item selection: Plane work item id/link, owner, priority, status, blocker, canonical page. Promote selected item to po-cycle before backlog exits.";
-    public static final String PO_ACCEPTANCE_THOUGHT = "Scope and acceptance work for selected item: goal, users, in/out of scope, acceptance criteria, decisions, open questions. Promote acceptance summary/page link to po-cycle.";
-    public static final String PO_PRIORITY_THOUGHT = "Priority/status handoff: Plane work item status, priority, readiness for PM breakdown, remaining blocker, requested PM action.";
 
     @Inject RoutineSupport routine;
 
@@ -47,7 +41,9 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
     public void configure() {
         from("direct:example-software-team-product-owner")
                 .routeId("example-software-team-product-owner")
-                .process(routine.enterThought("product-owner-routine", PRODUCT_OWNER_ROUTINE_THOUGHT, 500))
+                .process(routine.enterThought("product-owner-routine", """
+                        Durable product anchors: product documentation pages, current-work page, Plane project, source repository, team chat, persistent product blockers.
+                        """, 500))
                 .to("direct:po-project-basics-loop")
                 .to("direct:po-product-loop")
                 .process(routine.exitThought("product-owner-routine"));
@@ -58,14 +54,15 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .setProperty("decision.product-owner-has-project-basics.result", constant(false))
                 .loopDoWhile(exchangeProperty("decision.product-owner-has-project-basics.result").isNotEqualTo(true))
                     .setProperty("productOwnerProjectBasicsCycle", simple("${exchangeProperty.productOwnerProjectBasicsCycle++}"))
-                    .process(routine.enterThought("po-basics", PO_BASICS_THOUGHT, 300))
+                    .process(routine.enterThought("po-basics", """
+                        Current product-basics read: documentation repository, current-work page, Plane project, source repository, team chat, product navigation, blockers. Promote durable anchors to product-owner-routine before basics exits.
+                        """, 300))
                     .process(routine.act("po-workspace-basics-read")
                             .prompt("""
-                                    Verify project basics across the workspace without mutation.
-                                    Use Gitea for the documentation index and direct project-basics/current-work/product links,
-                                    Plane for project and work item status, and Mattermost for recent setup conversation.
-                                    Capture bootstrap status, Git organization agent-workspace, documentation repository URL,
-                                    team chat, Plane project, source repository, current work, blockers, and product page map.
+                                    Verify product project basics without mutation.
+                                    Check only direct anchors from active thoughts, documentation index/project-basics/current-work,
+                                    product links, and the minimal Plane/Mattermost lookup needed. Capture team chat, Plane project,
+                                    source repository, current work, blockers, product navigation, or one exact missing-basic blocker.
                                     Do not scan whole projects, repositories, documentation repositories, or channels.
                                     """)
                             .toolProfile(WorkspaceReadonlyToolProfile.ID))
@@ -103,7 +100,9 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .setProperty("decision.product-owner-done.result", constant(false))
                 .loopDoWhile(exchangeProperty("decision.product-owner-done.result").isNotEqualTo(true))
                     .setProperty("productOwnerCycle", simple("${exchangeProperty.productOwnerCycle++}"))
-                    .process(routine.enterThought("po-cycle", PO_CYCLE_THOUGHT, 300))
+                    .process(routine.enterThought("po-cycle", """
+                        Current PO pass: selected product Plane work item, canonical item page, acceptance status, priority/readiness, PM handoff request, next product action.
+                        """, 300))
                     .to("direct:po-team-chat-sync")
                     .to("direct:po-backlog-selection-loop")
                     .to("direct:po-acceptance-loop")
@@ -135,12 +134,14 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .setProperty("decision.po-backlog-selection-done.result", constant(false))
                 .loopDoWhile(exchangeProperty("decision.po-backlog-selection-done.result").isNotEqualTo(true))
                     .setProperty("poBacklogCycle", simple("${exchangeProperty.poBacklogCycle++}"))
-                    .process(routine.enterThought("po-backlog", PO_BACKLOG_THOUGHT, 250))
+                    .process(routine.enterThought("po-backlog", """
+                        Current item selection: Plane work item id/link, owner, priority, status, blocker, canonical page. Promote selected item to po-cycle before backlog exits.
+                        """, 250))
                     .process(routine.act("po-backlog-review")
                             .prompt("""
-                                    In the Plane project from project basics, review one PO-owned product/backlog work item
-                                    needing scope or acceptance. Do not select developer implementation tasks.
-                                    Capture priority, status, owner, blocker, and canonical documentation page.
+                                    Review exactly one PO-owned product/backlog work item needing scope or acceptance.
+                                    Do not select developer implementation tasks. Capture priority, status, owner, blocker,
+                                    and canonical documentation page.
                                     """)
                             .toolProfile(ProjectManagementToolProfile.ID))
                     .to("direct:act")
@@ -166,14 +167,15 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .setProperty("decision.po-acceptance-done.result", constant(false))
                 .loopDoWhile(exchangeProperty("decision.po-acceptance-done.result").isNotEqualTo(true))
                     .setProperty("poAcceptanceCycle", simple("${exchangeProperty.poAcceptanceCycle++}"))
-                    .process(routine.enterThought("po-acceptance", PO_ACCEPTANCE_THOUGHT, 250))
+                    .process(routine.enterThought("po-acceptance", """
+                        Scope and acceptance work for selected item: goal, users, in/out of scope, acceptance criteria, decisions, open questions. Promote acceptance summary/page link to po-cycle.
+                        """, 250))
                     .process(routine.act("po-canonical-acceptance-update")
                             .prompt("""
-                                    Update one canonical documentation page for the selected item. Include Plane work item link,
-                                    owner, goal, users, in-scope, out-of-scope, compact Gherkin acceptance criteria,
-                                    decisions, and open questions. Keep each criterion testable and tied to the Plane work item.
-                                    Record one product decision or open question on the same canonical item page, or on a focused
-                                    decisions page linked from that item. Keep it small and linked from current-work and the product index.
+                                    Update exactly one canonical documentation page for the selected item.
+                                    Include Plane link, owner, goal, users, in/out of scope, compact Gherkin acceptance criteria,
+                                    and either one product decision or one open question. Keep it small and linked from current-work
+                                    and the product index. Do not fan out to other pages unless needed for navigation.
                                     """)
                             .toolProfile(SourceControlToolProfile.ID))
                     .to("direct:act")
@@ -191,14 +193,15 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .setProperty("decision.po-priority-status-done.result", constant(false))
                 .loopDoWhile(exchangeProperty("decision.po-priority-status-done.result").isNotEqualTo(true))
                     .setProperty("poPriorityCycle", simple("${exchangeProperty.poPriorityCycle++}"))
-                    .process(routine.enterThought("po-priority", PO_PRIORITY_THOUGHT, 250))
+                    .process(routine.enterThought("po-priority", """
+                        Priority/status handoff: Plane work item status, priority, readiness for PM breakdown, remaining blocker, requested PM action.
+                        """, 250))
                     .process(routine.act("po-plane-handoff-update")
                             .prompt("""
-                                    Update priority or product readiness on one Plane work item after verifying current status.
-                                    If acceptance is ready, move or annotate it as ready for PM breakdown only if that workflow
-                                    state exists. Add a compact handoff note for PM with canonical documentation page, priority,
-                                    acceptance summary, remaining questions, and requested PM action. Do not create, assign,
-                                    or start developer tasks.
+                                    Update priority or product readiness on exactly one Plane work item after verifying current status.
+                                    If acceptance is ready, move or annotate it for PM breakdown only if that workflow state exists.
+                                    Add one compact PM handoff note with canonical page, priority, acceptance summary, remaining
+                                    questions, and requested PM action. Do not create, assign, or start developer tasks.
                                     """)
                             .toolProfile(ProjectManagementToolProfile.ID))
                     .to("direct:act")

@@ -19,7 +19,6 @@ import java.util.UUID;
 
 @ApplicationScoped
 public class LlmRouteSupport {
-    private static final String DEFAULT_SYSTEM_PROMPT = "You are a precise worker in a shared LLM queue. Return only what the requester asked for.";
     private static final String DYNAMIC_AGENT_URI = "langchain4j-agent:dynamic?agentFactory=#dynamicAgentFactory";
 
     public static final class LlmAvailabilityException extends RuntimeException {
@@ -74,7 +73,9 @@ public class LlmRouteSupport {
         exchange.setProperty("passType", job.passType());
         exchange.setProperty("llmStartedAt", Instant.now());
         exchange.setProperty("agentInvocationUri", DYNAMIC_AGENT_URI);
-        exchange.getIn().setBody(new AiAgentBody<>(job.prompt(), firstNonBlank(job.systemPrompt(), DEFAULT_SYSTEM_PROMPT), job.jobId()));
+        exchange.getIn().setBody(new AiAgentBody<>(job.prompt(), firstNonBlank(job.systemPrompt(), """
+                You are a precise worker in a shared LLM queue. Return only what the requester asked for.
+                """.strip()), job.jobId()));
     }
 
     public void logPrompt(@ExchangeProperty("llmJob") LlmJobEnvelope job, Exchange exchange) {

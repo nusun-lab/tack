@@ -77,9 +77,10 @@ public class LlmAgentFactory {
             @ConfigProperty(name = "llm.model-default.openai.timeout-ms") long timeoutMs,
             @ConfigProperty(name = "llm.model-default.openai.thinking-off.enabled") boolean thinkingOffEnabled,
             @ConfigProperty(name = "llm.model-default.openai.strict-json-schema", defaultValue = "true") boolean strictJsonSchema,
-            @ConfigProperty(name = "llm.model-default.tool-memory.max-tokens", defaultValue = "12000") int memoryMaxTokens) {
+            @ConfigProperty(name = "llm.model-default.tool-memory.max-tokens", defaultValue = "12000") int memoryMaxTokens,
+            @ConfigProperty(name = "llm.model-default.max-tool-calling-round-trips", defaultValue = "4") int maxToolCallingRoundTrips) {
         Map<String, ChatModel> laneModels = laneModels(lanes, defaultBaseUrl, defaultApiKey, defaultModel, temperature, maxTokens, timeoutMs, thinkingOffEnabled, strictJsonSchema);
-        return new DynamicAgentFactory(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator, memoryMaxTokens);
+        return new DynamicAgentFactory(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator, memoryMaxTokens, maxToolCallingRoundTrips);
     }
 
     private static Map<String, ChatModel> laneModels(
@@ -156,11 +157,18 @@ public class LlmAgentFactory {
         private final McpClientFactory mcpClientFactory;
         private final ToolProfileRegistry toolProfiles;
         private final PersonaCatalog personas;
+        private static final int DEFAULT_MAX_TOOL_CALLING_ROUND_TRIPS = 4;
+
         private final TokenCountEstimator tokenCountEstimator;
         private final int memoryMaxTokens;
+        private final int maxToolCallingRoundTrips;
         private CamelContext camelContext;
 
         public DynamicAgentFactory(InferenceLaneRegistry lanes, Map<String, ChatModel> laneModels, McpClientFactory mcpClientFactory, ToolProfileRegistry toolProfiles, PersonaCatalog personas, TokenCountEstimator tokenCountEstimator, int memoryMaxTokens) {
+            this(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator, memoryMaxTokens, DEFAULT_MAX_TOOL_CALLING_ROUND_TRIPS);
+        }
+
+        public DynamicAgentFactory(InferenceLaneRegistry lanes, Map<String, ChatModel> laneModels, McpClientFactory mcpClientFactory, ToolProfileRegistry toolProfiles, PersonaCatalog personas, TokenCountEstimator tokenCountEstimator, int memoryMaxTokens, int maxToolCallingRoundTrips) {
             this.lanes = lanes;
             this.laneModels = laneModels;
             this.mcpClientFactory = mcpClientFactory;
@@ -168,6 +176,7 @@ public class LlmAgentFactory {
             this.personas = personas;
             this.tokenCountEstimator = tokenCountEstimator;
             this.memoryMaxTokens = memoryMaxTokens;
+            this.maxToolCallingRoundTrips = maxToolCallingRoundTrips;
         }
 
         @Override
@@ -185,6 +194,9 @@ public class LlmAgentFactory {
             AgentConfiguration configuration = new AgentConfiguration().withChatModel(model);
             if (passType == LlmPassType.TOOL) {
                 configuration.withChatMemoryProvider(new EphemeralToolPassChatMemoryProvider(memoryMaxTokens, tokenCountEstimator, true));
+                if (maxToolCallingRoundTrips > 0) {
+                    configuration.withMaxToolCallingRoundTrips(maxToolCallingRoundTrips);
+                }
                 List<McpClient> clients = mcpClients(exchange);
                 if (!clients.isEmpty()) {
                     configuration.withMcpClients(clients);

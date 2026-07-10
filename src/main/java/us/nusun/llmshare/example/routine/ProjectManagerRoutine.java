@@ -18,11 +18,6 @@ import us.nusun.llmshare.example.tool.WorkspaceReadonlyToolProfile;
 @ApplicationScoped
 public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvider {
     public static final String ID = "software-team/project-manager";
-    public static final String PROJECT_MANAGER_ROUTINE_THOUGHT = "Durable PM project anchors: documentation index URL/path, project-basics/current-work pages, team chat channel, Plane project, source repository, roster, persistent setup blockers.";
-    public static final String PM_BOOTSTRAP_THOUGHT = "Current bootstrap checklist: documentation repository, team chat, Plane project, source repository, roster, blocker owner, next bootstrap action. Promote final URLs/blockers to project-manager-routine before bootstrap exits.";
-    public static final String PM_CYCLE_THOUGHT = "Current PM pass: selected product handoff, selected developer task, status movement, owners, blockers, risks, next team action.";
-    public static final String PM_INTAKE_THOUGHT = "One product handoff under review: Plane work item id/link, owner, priority, canonical acceptance page, readiness/blocker. Promote selected handoff to pm-cycle before intake exits.";
-    public static final String PM_PLANNING_THOUGHT = "One developer task being planned: Plane work item id/link, assignee, repository, canonical documentation page, acceptance, next code step, blocker. Promote created/updated task to pm-cycle before planning exits.";
 
     @Inject RoutineSupport routine;
 
@@ -47,14 +42,15 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
     public void configure() {
         from("direct:example-software-team-project-manager")
                 .routeId("example-software-team-project-manager")
-                .process(routine.enterThought("project-manager-routine", PROJECT_MANAGER_ROUTINE_THOUGHT, 500))
+                .process(routine.enterThought("project-manager-routine", """
+                        Durable PM project anchors: documentation index URL/path, project-basics/current-work pages, team chat channel, Plane project, source repository, roster, persistent setup blockers.
+                        """, 500))
                 .process(routine.act("pm-workspace-basics-read")
                         .prompt("""
-                                Verify project basics across the workspace without mutation.
-                                Use Plane for the project and planned work, Gitea for the documentation and source repositories,
-                                and Mattermost for recent setup conversation. Open only the documentation index and direct
-                                project-basics/current-work links when needed. Capture bootstrap status, Git organization
-                                agent-workspace, team chat, Plane project, source repository, documentation repository, and roster.
+                                Verify project basics without mutation.
+                                Check only direct anchors from active thoughts, the documentation index/project-basics links,
+                                and the minimal Plane/Mattermost lookup needed to confirm missing basics. Capture bootstrap status,
+                                team chat, Plane project, source repository, documentation repository, roster, or one exact blocker.
                                 Do not scan whole projects, repositories, documentation repositories, or channels.
                                 """)
                         .toolProfile(WorkspaceReadonlyToolProfile.ID))
@@ -78,15 +74,30 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .setProperty("collaborationSetupAttempt", constant(0))
                 .loopDoWhile(exchangeProperty("decision.collaboration-setup-complete.result").isNotEqualTo(true))
                     .setProperty("collaborationSetupAttempt", simple("${exchangeProperty.collaborationSetupAttempt++}"))
-                    .process(routine.enterThought("pm-bootstrap", PM_BOOTSTRAP_THOUGHT, 300))
-                    .process(routine.act("workspace-artifact-provisioning")
+                    .process(routine.enterThought("pm-bootstrap", """
+                        Current bootstrap checklist: documentation repository, team chat, Plane project, source repository, roster, blocker owner, next bootstrap action. Promote final URLs/blockers to project-manager-routine before bootstrap exits.
+                        """, 300))
+                    .process(routine.act("plane-project-provisioning")
                             .prompt("""
-                                    Search before creating artifacts. Create or confirm exactly one public Plane project,
-                                    exactly one shared markdown documentation repository under Git organization agent-workspace,
-                                    and exactly one target source repository under agent-workspace. Never create repositories
-                                    in a personal namespace. Never create Gitea issues, labels, milestones, or time tracking.
-                                    Do not write files, branches, pull requests, tags, or releases. Preserve existing useful
-                                    repositories and Plane project state, and record any access blocker with owner.
+                                    Search direct project names first, then create or confirm exactly one public Plane project.
+                                    Preserve an existing useful project. Stop after the Plane project is verified or one exact
+                                    access blocker with owner is recorded.
+                                    """)
+                            .toolProfile(WorkspaceCoordinationToolProfile.ID))
+                    .to("direct:act")
+                    .process(routine.act("documentation-repository-provisioning")
+                            .prompt("""
+                                    Search direct repository names first, then create or confirm exactly one markdown documentation
+                                    repository under Git organization agent-workspace. Never use a personal namespace and do not
+                                    create branches, pull requests, tags, releases, issues, labels, milestones, or time tracking.
+                                    """)
+                            .toolProfile(WorkspaceCoordinationToolProfile.ID))
+                    .to("direct:act")
+                    .process(routine.act("source-repository-provisioning")
+                            .prompt("""
+                                    Search direct repository names first, then create or confirm exactly one target source repository
+                                    under Git organization agent-workspace. Never use a personal namespace and do not create branches,
+                                    pull requests, tags, releases, issues, labels, milestones, or time tracking.
                                     """)
                             .toolProfile(WorkspaceCoordinationToolProfile.ID))
                     .to("direct:act")
@@ -145,7 +156,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .setProperty("decision.project-manager-done.result", constant(false))
                 .loopDoWhile(exchangeProperty("decision.project-manager-done.result").isNotEqualTo(true))
                     .setProperty("projectManagerCycle", simple("${exchangeProperty.projectManagerCycle++}"))
-                    .process(routine.enterThought("pm-cycle", PM_CYCLE_THOUGHT, 300))
+                    .process(routine.enterThought("pm-cycle", """
+                        Current PM pass: selected product handoff, selected developer task, status movement, owners, blockers, risks, next team action.
+                        """, 300))
                     .to("direct:pm-documentation-status-sync")
                     .to("direct:pm-work-intake-loop")
                     .to("direct:pm-task-planning-loop")
@@ -164,11 +177,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .routeId("pm-documentation-status-sync")
                 .process(routine.act("pm-workspace-status-read")
                         .prompt("""
-                                Read only mission-relevant status anchors across the workspace.
-                                Use Gitea for the documentation index, project-basics, current-work, and direct status links;
-                                Plane for owners, blockers, priorities, and work item state; and Mattermost only for recent
-                                handoff context. Capture owners, blockers, Plane work item links, canonical documentation pages,
-                                agent-workspace repository links, and broken navigation.
+                                Read only current mission status anchors.
+                                Use the documentation index/current-work links, directly linked Plane items, and recent Mattermost
+                                handoff context only if needed. Capture owners, blockers, Plane links, canonical documentation pages,
+                                agent-workspace repository links, or broken navigation. Do not sweep unrelated work.
                                 """)
                         .toolProfile(WorkspaceReadonlyToolProfile.ID))
                 .to("direct:act");
@@ -179,15 +191,15 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .setProperty("decision.pm-work-intake-done.result", constant(false))
                 .loopDoWhile(exchangeProperty("decision.pm-work-intake-done.result").isNotEqualTo(true))
                     .setProperty("pmWorkIntakeCycle", simple("${exchangeProperty.pmWorkIntakeCycle++}"))
-                    .process(routine.enterThought("pm-intake", PM_INTAKE_THOUGHT, 250))
+                    .process(routine.enterThought("pm-intake", """
+                        One product handoff under review: Plane work item id/link, owner, priority, canonical acceptance page, readiness/blocker. Promote selected handoff to pm-cycle before intake exits.
+                        """, 250))
                     .process(routine.act("pm-intake-review")
                             .prompt("""
-                                    In the Plane project from project basics, review one PO work item marked ready for PM breakdown
-                                    or explicitly waiting on PM. Capture status, priority, product owner, blocker,
-                                    canonical acceptance documentation page, and requested handoff.
-                                    Verify current status before changing it. If product owner and canonical acceptance page
-                                    are present, keep the item ready for planning. If not, leave status or mark blocked only
-                                    if that state exists. Do not start developer work in this intake step.
+                                    Review exactly one PO work item marked ready for PM breakdown or waiting on PM.
+                                    Capture status, priority, product owner, blocker, canonical acceptance page, and requested handoff.
+                                    Verify current status before changing it. If the owner or acceptance page is missing, leave status
+                                    or mark blocked only if that state exists. Do not start developer work.
                                     """)
                             .toolProfile(ProjectManagementToolProfile.ID))
                     .to("direct:act")
@@ -206,17 +218,15 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .setProperty("decision.pm-task-planning-done.result", constant(false))
                 .loopDoWhile(exchangeProperty("decision.pm-task-planning-done.result").isNotEqualTo(true))
                     .setProperty("pmTaskPlanningCycle", simple("${exchangeProperty.pmTaskPlanningCycle++}"))
-                    .process(routine.enterThought("pm-planning", PM_PLANNING_THOUGHT, 250))
+                    .process(routine.enterThought("pm-planning", """
+                        One developer task being planned: Plane work item id/link, assignee, repository, canonical documentation page, acceptance, next code step, blocker. Promote created/updated task to pm-cycle before planning exits.
+                        """, 250))
                     .process(routine.act("pm-actionable-dev-task")
                             .prompt("""
-                                    Create or update exactly one small developer implementation Plane work item from a ready PO item.
-                                    The task starts in to-do only when it has a named assignee, priority, source repository under
-                                    agent-workspace, canonical documentation page, acceptance, predecessor or dependency notes,
-                                    and a concrete next code step. Set predecessor, next named owner, and unblock condition for
-                                    that one task. PM owns assignment, to-do readiness, and blocked planning states. DEV owns
-                                    to-do -> in-progress and in-progress -> review/done transitions. Annotate missing scope,
-                                    assignee, repository, canonical page, or blockers; move to blocked only if the exact workflow
-                                    state exists.
+                                    Create or update exactly one small developer implementation Plane work item from one ready PO item.
+                                    Put it in to-do only when assignee, priority, agent-workspace source repository, canonical page,
+                                    acceptance, dependencies, and one concrete next code step are present. Otherwise record the one
+                                    missing blocker/owner. Do not plan multiple tasks in this step.
                                     """)
                             .toolProfile(ProjectManagementToolProfile.ID))
                     .to("direct:act")

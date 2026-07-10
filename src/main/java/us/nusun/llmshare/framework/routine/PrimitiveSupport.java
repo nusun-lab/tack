@@ -74,6 +74,7 @@ public class PrimitiveSupport {
             AgentRun run = currentRun(exchange);
             run.currentPrimitive(primitive);
             run.currentId(exchange.getProperty(idProperty, String.class));
+            exchange.removeProperty("primitivePrompt");
             exchange.setProperty("personaId", run.personaId());
             projections.record(exchange, primitive.toUpperCase() + "_STARTED");
         };
@@ -376,19 +377,26 @@ public class PrimitiveSupport {
             case "tool" -> """
 
                     Tool access:
-                    - You have access to only 1 tool profile at a time
-                    - If you lack a particular tool for this step, that's not a blocker, you will have access in later steps
+                    - You have access to only one tool profile during this pass.
+                    - If a needed tool is unavailable, record the narrow blocker and stop; later steps may use other profiles.
+
+                    Bounded execution:
+                    - Work only on the highlighted ACT PROMPT.
+                    - Use the fewest useful tool calls; target 1-3 calls for normal steps.
+                    - Stop when the requested evidence, mutation, or blocker is known.
+                    - Do not browse entire projects, repositories, documentation trees, or channels.
+                    - Do not re-check mission context unless this act prompt requires it.
 
                     Contract:
-                    - Do tool-backed work using available tools
-                    - Never do anything except for the specific act
+                    - Do tool-backed work using available tools.
+                    - Never do anything except the specific act.
                     - Do not claim external state unless tool-backed.
                     - Return only a compact plain-text pass report.
                     """;
             case "synthesis" -> """
 
                     Contract:
-                    - Synthesize framework action results.
+                    - Synthesize the completed action result into the required JSON.
                     - Return only valid JSON object matching the supplied schema.
                     - This pass has no tools; do not call tools, reason about tool availability, or retry the action.
                     - The preceding action has already completed; do not repeat it.
@@ -398,92 +406,121 @@ public class PrimitiveSupport {
                     """;
             case "decision" -> """
 
-                    Contract: Answer a narrow routine control-flow question. Return only a DecisionResult JSON object.
+                    Contract:
+                    - Answer one narrow routine control-flow question.
+                    - Use only supplied context; this pass has no tools.
+                    - Return only a DecisionResult JSON object.
                     """;
             case "create" -> """
 
-                    Contract: Create caller-schema-shaped JSON. Return only a JSON object matching the caller schema.
+                    Contract:
+                    - Create caller-schema-shaped JSON for the highlighted prompt only.
+                    - Use only supplied context; this pass has no tools.
+                    - Return only a JSON object matching the caller schema.
                     """;
             default -> throw new IllegalArgumentException("Unknown primitive system contract: " + primitive);
         };
     }
 
     private String renderPersonaBehavior(Persona persona) {
-        return "You are " + safeText(persona.name()) + ". " + safeText(persona.description())
-                + "\nTraits: " + (persona.traits().isEmpty() ? "(none)" : String.join("; ", persona.traits()));
+        return """
+                You are %s. %s
+                Traits: %s
+                """.formatted(
+                safeText(persona.name()),
+                safeText(persona.description()),
+                persona.traits().isEmpty() ? "(none)" : String.join("; ", persona.traits())).strip();
     }
 
     private String renderToolPassPrompt(Exchange exchange) {
-        return "Mission:\n" + exchange.getProperty("missionGoal", String.class)
-                + "\n\nAgent-run input:\n" + exchange.getProperty("agentRunInput", String.class)
-                + "\n\nRoutine context:\n" + exchange.getProperty("routineSummary", String.class)
-                + "\n\nMission roster:\n" + exchange.getProperty("missionRoster", String.class)
-                + "\n\nAct id: " + safeText(exchange.getProperty("actId", String.class))
-                + "\nTool profile: " + exchange.getProperty("toolProfileId", String.class)
-                + "\nTool-profile guidance:\n" + exchange.getProperty("toolProfileGuidance", String.class)
-                + "\n\nActive thoughts:\n" + exchange.getProperty("activeThoughts", String.class)
-                + "\n\nAct prompt:\n" + safeText(exchange.getProperty("actPrompt", String.class))
-                + "\n\nDo the requested work using available tools when useful. Return a compact pass report in this shape:"
-                + passReportShape();
+        return """
+                %s
+
+                ## Step-Level Context
+                - Primitive: act
+                - Act id: %s
+                - Tool profile: %s
+
+                ### Active thoughts:
+                %s
+
+                ### Tool-profile guidance:
+                %s
+
+                ## Rules / Execution Guidance
+                - The highlighted ACT PROMPT is the only work that matters right now.
+                - Take the smallest useful path: one direct read or mutation first, then stop when enough is known.
+                - Normal steps should finish in 1-3 tool calls. If more is needed, report the precise blocker or remaining narrow follow-up.
+                - Prefer direct ids, links, and named anchors from context over broad searches.
+                - Do not scan whole systems or refresh unrelated mission state.
+                - Label verified evidence, missing artifacts, blockers, and assumptions plainly.
+
+                ## ACT PROMPT - DO THIS NOW
+                This is the only goal for this pass. Use prior context only when it helps complete this act.
+
+                %s
+
+                ## Response Format
+                Return a compact pass report in this shape:
+                Outcome:
+                Tool calls used:
+                Actions taken:
+                Evidence / links / ids:
+                - Label links/ids as verified, missing, expected, or reference. Do not include guessed URLs.
+                Latest observations from this act:
+                - created:
+                - verified:
+                - still missing:
+                - blockers remaining:
+                - stale blockers resolved:
+                Durable facts to remember:
+                - Preserve verified current anchors; record missing/expected artifacts as blockers without fake URLs; label reference examples as reference/patterns.
+                State changed:
+                Blockers:
+                """.formatted(
+                missionLevelContext(exchange),
+                safeText(exchange.getProperty("actId", String.class)),
+                safeText(exchange.getProperty("toolProfileId", String.class)),
+                exchange.getProperty("activeThoughts", String.class),
+                exchange.getProperty("toolProfileGuidance", String.class),
+                safeText(exchange.getProperty("actPrompt", String.class)));
     }
 
     private String renderStepSynthesisPrompt(Exchange exchange) {
-        return "Mission:\n" + exchange.getProperty("missionGoal", String.class)
-                + "\n\nAgent-run input:\n" + exchange.getProperty("agentRunInput", String.class)
-                + "\n\nRoutine context:\n" + exchange.getProperty("routineSummary", String.class)
-                + "\n\nMission roster:\n" + exchange.getProperty("missionRoster", String.class)
-                + "\n\nAct id: " + safeText(exchange.getProperty("actId", String.class))
-                + "\nPreceding action objective, for context only:\n" + exchange.getProperty("precedingActionObjective", String.class)
-                + "\nDo not execute or repeat this objective during synthesis."
-                + "\nLatest observation observedAt: " + safeText(exchangePropertyText(exchange, "toolPassObservedAt"))
-                + "\nLatest observation from this act:\n" + safeText(exchange.getProperty("toolPassResult", String.class))
-                + "\n\nPrevious thought snapshots, possibly stale:\n" + exchange.getProperty("activeThoughts", String.class)
-                + stepResultRules();
-    }
-
-    private String renderDecisionPrompt(Exchange exchange) {
-        return "Mission:\n" + exchange.getProperty("missionGoal", String.class)
-                + "\n\nAgent-run input:\n" + exchange.getProperty("agentRunInput", String.class)
-                + "\n\nRoutine context:\n" + exchange.getProperty("routineSummary", String.class)
-                + "\n\nDecision id: " + safeText(exchange.getProperty("decisionId", String.class))
-                + "\nQuestion: " + safeText(exchange.getProperty("decisionPrompt", String.class))
-                + "\nActive thoughts:\n" + exchange.getProperty("activeThoughts", String.class)
-                + "\nLatest step result:\n" + exchange.getProperty("latestStepResultJson", String.class)
-                + "\nReturn only decisionId, result, confidence, and reason.";
-    }
-
-    private String renderCreatePrompt(Exchange exchange) {
-        return "Create id: " + safeText(exchange.getProperty("createId", String.class))
-                + "\nPrompt:\n" + safeText(exchange.getProperty("createPrompt", String.class))
-                + "\nMission:\n" + exchange.getProperty("missionGoal", String.class)
-                + "\nAgent-run input:\n" + exchange.getProperty("agentRunInput", String.class)
-                + "\nRoutine context:\n" + exchange.getProperty("routineSummary", String.class)
-                + "\nMission roster:\n" + exchange.getProperty("missionRoster", String.class)
-                + "\nActive thoughts:\n" + exchange.getProperty("activeThoughts", String.class)
-                + "\nCaller JSON schema:\n" + exchange.getProperty("createSchemaJson", String.class);
-    }
-
-    public String passReportShape() {
-        return "\nOutcome:"
-                + "\nActions taken:"
-                + "\nEvidence / links / ids:"
-                + "\n- Label links/ids as verified, missing, expected, or reference. Do not include guessed URLs."
-                + "\nLatest observations from this act:"
-                + "\n- created:"
-                + "\n- verified:"
-                + "\n- still missing:"
-                + "\n- blockers remaining:"
-                + "\n- stale blockers resolved:"
-                + "\nDurable facts to remember:"
-                + "\n- Preserve verified current anchors; record missing/expected artifacts as blockers without fake URLs; label reference examples as reference/patterns."
-                + "\nState changed:"
-                + "\nBlockers:";
-    }
-
-    public String stepResultRules() {
         return """
+                %s
 
+                ## Step-Level Context
+                - Primitive: synthesis
+                - Act id: %s
+
+                ### Preceding action objective, for context only:
+                %s
+                Do not execute or repeat this objective during synthesis.
+
+                Latest observation observedAt: %s
+
+                ### Latest observation from this act:
+                %s
+
+                ### Previous thought snapshots, possibly stale:
+                %s
+
+                ## Rules / Execution Guidance
+                - No tools are available in this pass.
+                - Synthesize only the completed act and the latest observation.
+                - Keep the result compact and current; do not expand into broad planning.
+
+                ## SYNTHESIS PROMPT - DO THIS NOW
+                Produce one StepResult JSON object for this act. This is the only task for this pass.
+
+                ## Response Format
                 Return one StepResult JSON object.
+
+                Step boundary:
+                - Use only the latest observation and supplied context.
+                - Do not do new work, ask for tools, or broaden the scope.
+                - Keep summaries and thought rewrites compact.
 
                 Thought synthesis:
                 - Treat previous thoughts as stale snapshots and the latest observation as the newest state.
@@ -502,7 +539,94 @@ public class PrimitiveSupport {
                 - Use URLs only when verified by tool output, durable documentation, or prior verified thoughts.
                 - Represent missing artifacts as missing or blocked without invented URLs.
                 - Do not promote reference artifacts from other projects as current mission anchors.
-                """;
+                """.formatted(
+                missionLevelContext(exchange),
+                safeText(exchange.getProperty("actId", String.class)),
+                exchange.getProperty("precedingActionObjective", String.class),
+                safeText(exchangePropertyText(exchange, "toolPassObservedAt")),
+                safeText(exchange.getProperty("toolPassResult", String.class)),
+                exchange.getProperty("activeThoughts", String.class));
+    }
+
+    private String renderDecisionPrompt(Exchange exchange) {
+        return """
+                %s
+
+                ## Step-Level Context
+                - Primitive: decide
+                - Decision id: %s
+
+                ### Active thoughts:
+                %s
+
+                ### Latest step result:
+                %s
+
+                ## Rules / Execution Guidance
+                - Answer only the highlighted decision question.
+                - Do not invent missing evidence or perform work outside this decision.
+                - Prefer false when the supplied evidence is incomplete, stale, or blocked.
+
+                ## DECISION PROMPT - ANSWER THIS NOW
+                Question: %s
+
+                ## Response Format
+                Return only decisionId, result, confidence, and reason.
+                """.formatted(
+                missionLevelContext(exchange),
+                safeText(exchange.getProperty("decisionId", String.class)),
+                exchange.getProperty("activeThoughts", String.class),
+                exchange.getProperty("latestStepResultJson", String.class),
+                safeText(exchange.getProperty("decisionPrompt", String.class)));
+    }
+
+    private String renderCreatePrompt(Exchange exchange) {
+        return """
+                %s
+
+                ## Step-Level Context
+                - Primitive: create
+                - Create id: %s
+
+                ### Active thoughts:
+                %s
+
+                ## Rules / Execution Guidance
+                - Produce only the JSON object requested by the caller schema.
+                - Use catalog data only when the create prompt explicitly includes it.
+                - Do not add explanatory prose or fields outside the schema.
+
+                ## CREATE PROMPT - PRODUCE THIS NOW
+                %s
+
+                ## Caller JSON schema:
+                %s
+                """.formatted(
+                missionLevelContext(exchange),
+                safeText(exchange.getProperty("createId", String.class)),
+                exchange.getProperty("activeThoughts", String.class),
+                safeText(exchange.getProperty("createPrompt", String.class)),
+                exchange.getProperty("createSchemaJson", String.class));
+    }
+
+    private String missionLevelContext(Exchange exchange) {
+        return """
+                ## Mission-Level Context
+                ### Mission:
+                %s
+
+                ### Agent-run input:
+                %s
+
+                ### Routine context:
+                %s
+
+                ### Mission roster:
+                %s""".formatted(
+                exchange.getProperty("missionGoal", String.class),
+                exchange.getProperty("agentRunInput", String.class),
+                exchange.getProperty("routineSummary", String.class),
+                exchange.getProperty("missionRoster", String.class));
     }
 
     private static String exchangePropertyText(Exchange exchange, String key) {

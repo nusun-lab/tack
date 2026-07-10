@@ -79,10 +79,11 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                         "search_users")
                 .promptGuidance("""
                         - this profile is read-only
+                        - use the fewest direct lookups needed for the current step, then stop
                         - Plane is authoritative for planned work, ownership, status, and blockers
                         - Gitea is authoritative for repository and implementation evidence
                         - Mattermost provides conversational context
-                        - gather only the evidence needed for the current task
+                        - prefer direct ids, links, and recent bounded reads over broad searches
                         - do not read entire repositories, projects, wikis, or channels
                         - distinguish verified observations from assumptions
                         """)
