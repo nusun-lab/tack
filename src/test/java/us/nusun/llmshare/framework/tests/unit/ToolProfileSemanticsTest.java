@@ -9,6 +9,7 @@ import dev.langchain4j.mcp.client.*;
 import dev.langchain4j.service.tool.ToolExecutionResult;
 import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.framework.logging.LogTokens;
+import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
 import us.nusun.llmshare.framework.inventory.ToolProfileRegistry;
 import us.nusun.llmshare.framework.mcp.ProfiledMcpClient;
 import us.nusun.llmshare.framework.model.McpServerDefinition;
@@ -24,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ToolProfileSemanticsTest {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final ApproximateTokenCountEstimator TOKEN_ESTIMATOR = new ApproximateTokenCountEstimator();
 
     @Test
     void promptGuidanceIsAvailableFromBuilderAndExampleProfiles() {
@@ -162,14 +164,14 @@ class ToolProfileSemanticsTest {
         ToolProfile profile = ToolProfile.builder("tiny")
                 .server("source-control")
                 .allowTool("source-control", "get_pull_request")
-                .maxResultCharacters(24)
+                .maxResultTokens(10)
                 .build();
-        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient(), "source-control", profile);
+        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient("x".repeat(100)), "source-control", profile);
 
         ToolExecutionResult result = client.executeTool(ToolExecutionRequest.builder().id("1").name("get_pull_request").arguments("{}").build());
 
-        assertEquals("...(truncated, original ", result.resultText());
-        assertTrue(result.resultText().length() <= 24);
+        assertTrue(TOKEN_ESTIMATOR.estimateTokenCountInText(result.resultText()) <= 10);
+        assertTrue(result.resultText().contains("...(truncated, original 25 tokens)"));
     }
 
     @Test
@@ -178,11 +180,12 @@ class ToolProfileSemanticsTest {
                 .server("source-control")
                 .allowTool("source-control", "get_pull_request")
                 .build();
-        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient("abcdefghijklmnopqrstuvwxyz"), "source-control", profile, null, null, 20);
+        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient("x".repeat(100)), "source-control", profile, null, null, 10);
 
         ToolExecutionResult result = client.executeTool(ToolExecutionRequest.builder().id("1").name("get_pull_request").arguments("{}").build());
 
-        assertEquals("...(truncated, origi", result.resultText());
+        assertTrue(TOKEN_ESTIMATOR.estimateTokenCountInText(result.resultText()) <= 10);
+        assertTrue(result.resultText().contains("...(truncated, original 25 tokens)"));
     }
 
     @Test
@@ -191,13 +194,12 @@ class ToolProfileSemanticsTest {
         ToolProfile profile = ToolProfile.builder("large")
                 .server("source-control")
                 .allowTool("source-control", "get_pull_request")
-                .maxResultCharacters(5000)
+                .maxResultTokens(5000)
                 .build();
-        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient(longResult), "source-control", profile, null, null, 1000);
+        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient(longResult), "source-control", profile, null, null, 100);
 
         ToolExecutionResult result = client.executeTool(ToolExecutionRequest.builder().id("1").name("get_pull_request").arguments("{}").build());
 
-        assertEquals(1500, result.resultText().length());
         assertEquals(longResult, result.resultText());
     }
 
@@ -217,18 +219,19 @@ class ToolProfileSemanticsTest {
 
     @Test
     void dimmedToolResponseLogUsesLimitedResultText() {
-        String hugeResult = "abcdefghijklmnopqrstuvwxyz0123456789";
+        String hugeResult = "x".repeat(100);
         ToolProfile profile = ToolProfile.builder("logged")
                 .server("source-control")
                 .allowTool("source-control", "get_pull_request")
                 .build();
         CapturingLogTokens logs = new CapturingLogTokens();
         Persona persona = FrameworkFixtures.personaCatalog().getRequired(FrameworkFixtures.PERSONA_A);
-        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient(hugeResult), "source-control", profile, persona, logs, 20);
+        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient(hugeResult), "source-control", profile, persona, logs, 10);
 
         ToolExecutionResult result = client.executeTool(ToolExecutionRequest.builder().id("1").name("get_pull_request").arguments("{}").build());
 
-        assertEquals("...(truncated, origi", result.resultText());
+        assertTrue(TOKEN_ESTIMATOR.estimateTokenCountInText(result.resultText()) <= 10);
+        assertTrue(result.resultText().contains("...(truncated, original 25 tokens)"));
         assertTrue(logs.messages.stream().anyMatch(message -> message.contains("RESPONSE")));
         assertFalse(String.join("\n", logs.messages).contains(hugeResult));
         assertTrue(String.join("\n", logs.messages).contains("...(truncated"));

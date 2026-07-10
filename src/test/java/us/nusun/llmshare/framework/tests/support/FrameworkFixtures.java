@@ -92,18 +92,18 @@ public final class FrameworkFixtures {
                 ToolProfile.builder("team-chat")
                         .allowTools("mattermost", "create_post", "get_channel")
                         .promptGuidance("Read recent context before posting.")
-                        .maxResultCharacters(1500)
+                        .maxResultTokens(1500)
                         .build(),
                 ToolProfile.builder("project-management")
                         .allowTools("plane", "list_projects", "create_issue")
                         .defaultArgument("plane", "list_projects", "fields", "id,name,identifier")
                         .promptGuidance("Find existing work before creating new items.")
-                        .maxResultCharacters(1500)
+                        .maxResultTokens(1500)
                         .build(),
                 ToolProfile.builder("source-control")
                         .allowTools("gitea", "get_repository", "get_pull_request")
                         .promptGuidance("Read before writing and avoid duplicate branches or pull requests.")
-                        .maxResultCharacters(1500)
+                        .maxResultTokens(1500)
                         .build());
     }
 

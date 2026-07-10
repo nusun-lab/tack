@@ -17,7 +17,7 @@ public record ToolProfile(
         Map<String, McpServerDefinition> mcpServers,
         Map<String, Map<String, Map<String, JsonNode>>> defaultArguments,
         String promptGuidance,
-        int maxResultCharacters
+        int maxResultTokens
 ) {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
@@ -70,7 +70,7 @@ public record ToolProfile(
         private final Map<String, McpServerDefinition> mcpServers = new LinkedHashMap<>();
         private final Map<String, Map<String, Map<String, JsonNode>>> defaultArguments = new LinkedHashMap<>();
         private String promptGuidance = "";
-        private int maxResultCharacters;
+        private int maxResultTokens;
 
         private Builder(String id) {
             this.id = id;
@@ -139,11 +139,11 @@ public record ToolProfile(
                     .put(argumentName, value == null ? OBJECT_MAPPER.nullNode() : value.deepCopy());
             return this;
         }
-        public Builder maxResultCharacters(int maxResultCharacters) { this.maxResultCharacters = maxResultCharacters; return this; }
+        public Builder maxResultTokens(int maxResultTokens) { this.maxResultTokens = maxResultTokens; return this; }
         public Builder promptGuidance(String promptGuidance) { this.promptGuidance = promptGuidance; return this; }
 
         public ToolProfile build() {
-            return new ToolProfile(id, servers, allowedTools, deniedTools, allowAllToolServers, mcpServers, defaultArguments, promptGuidance, maxResultCharacters);
+            return new ToolProfile(id, servers, allowedTools, deniedTools, allowAllToolServers, mcpServers, defaultArguments, promptGuidance, maxResultTokens);
         }
     }
 

@@ -131,7 +131,6 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
 
                                 """)))
                 .to("direct:create")
-                .marshal().json(JsonLibrary.Jackson)
                 .unmarshal().json(JsonLibrary.Jackson, MissionRequest.class)
                 .setBody(simple("${body.agentRuns}"))
                 .to("direct:start-agent-runs")

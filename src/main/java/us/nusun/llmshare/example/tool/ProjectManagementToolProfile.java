@@ -2,9 +2,9 @@ package us.nusun.llmshare.example.tool;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import us.nusun.llmshare.framework.inventory.ToolProfileProvider;
 import us.nusun.llmshare.framework.model.McpServerDefinition;
 import us.nusun.llmshare.framework.model.ToolProfile;
-import us.nusun.llmshare.framework.inventory.ToolProfileProvider;
 
 import java.util.List;
 
@@ -18,22 +18,16 @@ public class ProjectManagementToolProfile implements ToolProfileProvider {
     @ConfigProperty(name = "agent.tool.mcp.plane.url", defaultValue = "")
     String url = "";
 
-    @ConfigProperty(name = "agent.tool.mcp.plane.transport-type", defaultValue = "streamableHttp")
-    String transportType = "streamableHttp";
-
-    @ConfigProperty(name = "agent.tool.mcp.plane.auth-header-name", defaultValue = "Authorization")
-    String authHeaderName = "Authorization";
-
-    @ConfigProperty(name = "agent.tool.mcp.plane.auth-header-value-format", defaultValue = "Bearer %s")
-    String authHeaderValueFormat = "Bearer %s";
+    @ConfigProperty(name = "agent.tool.profile.project-management.max-result-tokens", defaultValue = "5000")
+    int maxResultTokens = 5000;
 
     @Override
     public List<ToolProfile> toolProfiles() {
         McpServerDefinition.Builder plane = McpServerDefinition.builder("plane")
                 .url(url)
-                .transportType(transportType)
-                .authHeaderName(authHeaderName)
-                .authHeaderValueFormat(authHeaderValueFormat);
+                .transportType("streamableHttp")
+                .authHeaderName("Authorization")
+                .authHeaderValueFormat("Bearer %s");
         if (workspaceSlug != null && !workspaceSlug.isBlank()) {
             plane.extraHeader("x-workspace-slug", workspaceSlug);
         }
@@ -51,7 +45,7 @@ public class ProjectManagementToolProfile implements ToolProfileProvider {
                 .denyTools("plane", "delete_project", "delete_work_item")
                 .defaultArgument("plane", "list_projects", "fields", "id,name,identifier")
                 .defaultArgument("plane", "list_work_items", "fields", "id,name,sequence_id,state,priority,assignees")
-                .maxResultCharacters(5000)
+                .maxResultTokens(maxResultTokens)
                 .build());
     }
 }

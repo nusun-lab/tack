@@ -7,10 +7,12 @@ import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.invocation.InvocationContext;
 import dev.langchain4j.mcp.client.*;
+import dev.langchain4j.model.TokenCountEstimator;
 import dev.langchain4j.service.tool.ToolExecutionResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import us.nusun.llmshare.framework.logging.LogTokens;
+import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
 import us.nusun.llmshare.framework.model.Persona;
 import us.nusun.llmshare.framework.model.ToolProfile;
 
@@ -27,19 +29,25 @@ public class ProfiledMcpClient implements McpClient {
     private final ToolProfile profile;
     private final Persona persona;
     private final LogTokens logTokens;
-    private final int globalMaxResultCharacters;
+    private final int globalMaxResultTokens;
+    private final TokenCountEstimator tokenCountEstimator;
 
     public ProfiledMcpClient(McpClient delegate, String server, ToolProfile profile) {
         this(delegate, server, profile, null, null, McpToolResultLimiter.DISABLED);
     }
 
-    public ProfiledMcpClient(McpClient delegate, String server, ToolProfile profile, Persona persona, LogTokens logTokens, int globalMaxResultCharacters) {
+    public ProfiledMcpClient(McpClient delegate, String server, ToolProfile profile, Persona persona, LogTokens logTokens, int globalMaxResultTokens) {
+        this(delegate, server, profile, persona, logTokens, globalMaxResultTokens, new ApproximateTokenCountEstimator());
+    }
+
+    public ProfiledMcpClient(McpClient delegate, String server, ToolProfile profile, Persona persona, LogTokens logTokens, int globalMaxResultTokens, TokenCountEstimator tokenCountEstimator) {
         this.delegate = delegate;
         this.server = server;
         this.profile = profile;
         this.persona = persona;
         this.logTokens = logTokens;
-        this.globalMaxResultCharacters = globalMaxResultCharacters;
+        this.globalMaxResultTokens = globalMaxResultTokens;
+        this.tokenCountEstimator = tokenCountEstimator == null ? new ApproximateTokenCountEstimator() : tokenCountEstimator;
     }
 
     @Override public String key() { return delegate.key(); }
@@ -113,7 +121,8 @@ public class ProfiledMcpClient implements McpClient {
     private ToolExecutionResult limitResult(ToolExecutionResult result) {
         return McpToolResultLimiter.limit(
                 result,
-                McpToolResultLimiter.effectiveLimit(profile.maxResultCharacters(), globalMaxResultCharacters));
+                McpToolResultLimiter.effectiveLimit(profile.maxResultTokens(), globalMaxResultTokens),
+                tokenCountEstimator);
     }
 
     private void logDim(String message) {

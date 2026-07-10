@@ -51,7 +51,7 @@ class MissionRosterServiceTest {
     }
 
     @Test
-    void missionRosterSupportsDuplicatePersonasWithoutRunMetadata() {
+    void missionRosterSupportsDuplicatePersonasWithRunMetadata() {
         AgentRunStore store = new AgentRunStore();
         store.putMission(new Mission("mission-1", "Build", List.of(), "active", Map.of(), Instant.now()));
         store.putRun(new AgentRun("run-a-1", "mission-1", "persona-a", "routine-a", Map.of()));
@@ -64,13 +64,17 @@ class MissionRosterServiceTest {
         assertTrue(roster.contains("- name: Persona A"));
         assertTrue(roster.contains("routine: Routine A"));
         assertTrue(roster.contains("routine: Routine B"));
-        assertFalse(roster.contains("run-a-1"));
-        assertFalse(roster.contains("run-a-2"));
+        assertTrue(roster.contains("agentRunId: run-a-1"));
+        assertTrue(roster.contains("agentRunId: run-a-2"));
+        assertTrue(roster.contains("personaId: persona-a"));
+        assertTrue(roster.contains("routineId: routine-a"));
+        assertTrue(roster.contains("routineId: routine-b"));
+        assertTrue(roster.contains("status: running"));
         assertFalse(roster.contains("self"));
     }
 
     @Test
-    void missionRosterIncludesOnlyNamesRoutineNamesAndPromptSafePlatformIdentities() {
+    void missionRosterIncludesNamesIdsStatusAndPromptSafePlatformIdentities() {
         AgentRunStore store = storeWithRuns();
         MissionRosterService service = service(store);
 
@@ -82,11 +86,15 @@ class MissionRosterServiceTest {
         assertTrue(roster.contains("- name: Persona C"));
         assertTrue(roster.contains("routine: Routine B"));
         assertTrue(roster.contains("platform identities: mattermost @persona-c"));
-        assertFalse(roster.contains("run-a"));
-        assertFalse(roster.contains("personaId"));
-        assertFalse(roster.contains("routineId"));
+        assertTrue(roster.contains("personaId: persona-a"));
+        assertTrue(roster.contains("routineId: routine-a"));
+        assertTrue(roster.contains("agentRunId: run-a"));
+        assertTrue(roster.contains("status: accepted"));
+        assertTrue(roster.contains("personaId: persona-c"));
+        assertTrue(roster.contains("routineId: routine-b"));
+        assertTrue(roster.contains("agentRunId: run-c"));
+        assertTrue(roster.contains("status: running"));
         assertFalse(roster.contains("PA"));
-        assertFalse(roster.contains("accepted"));
         assertFalse(roster.contains("run-parent"));
         assertFalse(roster.contains("Routine A description"));
         assertFalse(roster.contains("mattermost-token"));

@@ -336,7 +336,7 @@
 
     function renderToolProfiles(profiles) {
       document.getElementById('toolProfiles').innerHTML = profiles.map(p => `<article class="card">
-        <div class="inventory-title"><h3>${esc(p.id)}</h3><span class="label">max ${esc(p.maxResultCharacters || 0)} chars</span></div>
+        <div class="inventory-title"><h3>${esc(p.id)}</h3><span class="label">max ${esc(p.maxResultTokens || 0)} tokens</span></div>
         <dl class="kv"><dt>Servers</dt><dd>${arr(p.servers).map(s => `<span class="label mono">${esc(s)}</span>`).join(' ') || '<span class="muted">none</span>'}</dd><dt>Allowed tools</dt><dd><pre>${json(p.allowedTools)}</pre></dd><dt>Default args</dt><dd><pre>${json(p.defaultArguments)}</pre></dd></dl>
       </article>`).join('') || '<div class="empty">No tool profiles registered.</div>';
     }

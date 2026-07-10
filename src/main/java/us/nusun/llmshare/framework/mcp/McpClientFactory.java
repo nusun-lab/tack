@@ -5,6 +5,7 @@ import dev.langchain4j.mcp.client.McpClient;
 import dev.langchain4j.mcp.client.McpHeadersSupplier;
 import dev.langchain4j.mcp.client.transport.McpTransport;
 import dev.langchain4j.mcp.client.transport.http.StreamableHttpMcpTransport;
+import dev.langchain4j.model.TokenCountEstimator;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -32,8 +33,8 @@ public class McpClientFactory {
     @ConfigProperty(name = "agent.mcp.initialization-timeout-ms", defaultValue = "30000")
     long initializationTimeoutMs = 30000;
 
-    @ConfigProperty(name = "agent.mcp.max-tool-result-characters", defaultValue = "1000")
-    int maxToolResultCharacters = 1000;
+    @ConfigProperty(name = "agent.mcp.max-tool-result-tokens", defaultValue = "1000")
+    int maxToolResultTokens = 1000;
 
     @ConfigProperty(name = "agent.mcp.logging.transport-requests", defaultValue = "false")
     boolean logTransportRequests;
@@ -42,6 +43,7 @@ public class McpClientFactory {
     boolean logTransportResponses;
 
     @Inject LogTokens logTokens;
+    @Inject TokenCountEstimator tokenCountEstimator;
 
     public List<McpClient> clientsFor(Persona persona, ToolProfile profile) {
         if (profile == null || profile.none()) {
@@ -60,7 +62,7 @@ public class McpClientFactory {
         }
         McpClient client = build(persona, server);
         if (client != null) {
-            clients.add(new ProfiledMcpClient(client, server.id(), profile, persona, logTokens, maxToolResultCharacters));
+            clients.add(new ProfiledMcpClient(client, server.id(), profile, persona, logTokens, maxToolResultTokens, tokenCountEstimator));
         }
     }
 

@@ -121,7 +121,7 @@ class McpClientFactoryBoundaryTest {
         McpClientFactory factory = new McpClientFactory();
         FrameworkFixtures.set(factory, "transportTimeoutMs", 1000L);
         FrameworkFixtures.set(factory, "initializationTimeoutMs", 500L);
-        FrameworkFixtures.set(factory, "maxToolResultCharacters", 1000);
+        FrameworkFixtures.set(factory, "maxToolResultTokens", 1000);
         FrameworkFixtures.set(factory, "logTransportRequests", false);
         FrameworkFixtures.set(factory, "logTransportResponses", false);
         FrameworkFixtures.set(factory, "logTokens", new LogTokens(false));

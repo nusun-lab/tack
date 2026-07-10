@@ -132,7 +132,10 @@ class PrimitiveSemanticsTest {
         assertTrue(request.prompt().contains("- name: Persona A"));
         assertTrue(request.prompt().contains("routine: Routine A"));
         assertTrue(request.prompt().contains("platform identities: gitea @persona-a, mattermost @persona-a, plane @persona-a"));
-        assertFalse(request.prompt().contains("run-1"));
+        assertTrue(request.prompt().contains("personaId: persona-a"));
+        assertTrue(request.prompt().contains("routineId: routine-a"));
+        assertTrue(request.prompt().contains("agentRunId: run-1"));
+        assertTrue(request.prompt().contains("status: running"));
         assertTrue(request.prompt().contains("routine-a"));
         assertFalse(request.prompt().contains("\"self"));
         assertFalse(request.prompt().contains("Persona B"));
@@ -398,8 +401,10 @@ class PrimitiveSemanticsTest {
         assertTrue(request.prompt().contains("- name: Persona A"));
         assertTrue(request.prompt().contains("routine: Routine A"));
         assertTrue(request.prompt().contains("platform identities: gitea @persona-a, mattermost @persona-a, plane @persona-a"));
-        assertFalse(request.prompt().contains("\"status\""));
-        assertFalse(request.prompt().contains("run-1"));
+        assertTrue(request.prompt().contains("personaId: persona-a"));
+        assertTrue(request.prompt().contains("routineId: routine-a"));
+        assertTrue(request.prompt().contains("agentRunId: run-1"));
+        assertTrue(request.prompt().contains("status: running"));
         assertFalse(request.prompt().contains("routine-b"));
         assertTrue(request.prompt().contains("Need PM, PO, and developer runs."));
         assertTrue(request.prompt().contains("Caller JSON schema"));
@@ -654,7 +659,7 @@ class PrimitiveSemanticsTest {
 
         support.applyCreateResult().process(valid);
 
-        assertInstanceOf(JsonNode.class, valid.getIn().getBody());
+        assertEquals("{\"status\":\"ready\",\"items\":[{\"name\":\"alpha\",\"score\":3}]}", valid.getIn().getBody(String.class));
 
         assertCreateSchemaFails(schema, "{\"status\":\"waiting\",\"items\":[{\"name\":\"alpha\",\"score\":3}]}", "enum");
         assertCreateSchemaFails(schema, "{\"status\":\"ready\",\"extra\":true,\"items\":[{\"name\":\"alpha\",\"score\":3}]}", "additional");
@@ -678,7 +683,7 @@ class PrimitiveSemanticsTest {
     }
 
     @Test
-    void createResultStoresSchemaShapedObjectAndCanExposeObjectAsBody() throws Exception {
+    void createResultStoresSchemaShapedObjectAndExposesJsonAsBody() throws Exception {
         PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
         exchange.setProperty("createId", "planned-agent-runs");
@@ -689,11 +694,12 @@ class PrimitiveSemanticsTest {
 
         support.applyCreateResult().process(exchange);
 
-        JsonNode body = assertInstanceOf(JsonNode.class, exchange.getIn().getBody());
+        String body = exchange.getIn().getBody(String.class);
         CreateResult result = exchange.getProperty("creates.planned-agent-runs", CreateResult.class);
         AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
         assertEquals("agent-run-list", result.schemaId());
-        assertEquals("routine-a", body.get("agentRuns").get(0).get("personaId").asText());
+        assertEquals("routine-a", result.object().get("agentRuns").get(0).get("personaId").asText());
+        assertEquals("{\"agentRuns\":[{\"personaId\":\"routine-a\",\"routineId\":\"routine-a\",\"reason\":\"Implement the first vertical slice.\"}]}", body);
         assertSame(result, exchange.getProperty("latestCreateResult"));
         assertSame(result, run.latestCreateResult());
     }

@@ -229,7 +229,7 @@ public class PrimitiveSupport {
             currentRun(exchange).apply(result);
             exchange.setProperty("creates." + result.createId(), result);
             exchange.setProperty("latestCreateResult", result);
-            exchange.getIn().setBody(object);
+            exchange.getIn().setBody(object.toString());
             projections.record(exchange, "CREATE_COMPLETED");
         };
     }

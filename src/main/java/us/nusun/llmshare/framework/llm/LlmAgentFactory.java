@@ -45,6 +45,8 @@ import java.util.Map;
 @Singleton
 public class LlmAgentFactory {
     private static final Logger LOG = LoggerFactory.getLogger(LlmAgentFactory.class);
+    private static final HallucinatedToolNameRecoveryStrategy HALLUCINATED_TOOL_NAME_RECOVERY_STRATEGY =
+            new HallucinatedToolNameRecoveryStrategy();
 
     @Produces
     @Singleton
@@ -187,12 +189,15 @@ public class LlmAgentFactory {
             }
             Agent agent = configuration.getChatMemoryProvider() == null ? new AgentWithoutMemory(configuration) : new AgentWithMemory(configuration);
             applyProviderSchemaIfRequired(exchange, runtime, agent);
-            if (runtime.toolCalling()) {
-                AbstractAgent<?> abstractAgent = (AbstractAgent<?>) agent;
-                ResponseFormat responseFormat = abstractAgent.getResponseFormat();
-                configuration.withAiServicesCustomizer(aiServices ->
-                        aiServices.chatRequestTransformer(request -> forceInitialToolChoice(request, responseFormat)));
-            }
+            ResponseFormat responseFormat = agent instanceof AbstractAgent<?> abstractAgent
+                    ? abstractAgent.getResponseFormat()
+                    : null;
+            configuration.withAiServicesCustomizer(aiServices -> {
+                aiServices.hallucinatedToolNameStrategy(HALLUCINATED_TOOL_NAME_RECOVERY_STRATEGY);
+                if (runtime.toolCalling()) {
+                    aiServices.chatRequestTransformer(request -> forceInitialToolChoice(request, responseFormat));
+                }
+            });
             return agent;
         }
 
