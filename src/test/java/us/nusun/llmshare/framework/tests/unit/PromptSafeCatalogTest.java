@@ -19,9 +19,9 @@ class PromptSafeCatalogTest {
         assertTrue(json.contains("persona-a"));
         assertTrue(json.contains("Persona A"));
         assertTrue(json.contains("@persona-a"));
-        assertFalse(json.contains("mattermost-token"));
-        assertFalse(json.contains("gitea-token"));
-        assertFalse(json.contains("plane-token"));
+        assertFalse(json.contains("alpha-secret"));
+        assertFalse(json.contains("beta-secret"));
+        assertFalse(json.contains("gamma-secret"));
         assertFalse(json.contains("token"));
     }
 
@@ -35,16 +35,16 @@ class PromptSafeCatalogTest {
         assertTrue(json.contains("Synthetic framework persona A"));
         assertTrue(json.contains("@persona-a"));
         assertFalse(json.contains("\"self\" : true"));
-        assertFalse(json.contains("mattermost-token"));
-        assertFalse(json.contains("gitea-token"));
-        assertFalse(json.contains("plane-token"));
+        assertFalse(json.contains("alpha-secret"));
+        assertFalse(json.contains("beta-secret"));
+        assertFalse(json.contains("gamma-secret"));
         assertFalse(json.contains("token"));
     }
 
     @Test
     void toolProfilePromptJsonExcludesConnectionAndAuthDetails() {
         ToolProfileRegistry registry = new ToolProfileRegistry(List.of(ToolProfile.builder("guided")
-                .mcpServer(McpServerDefinition.builder("source-control")
+                .mcpServer(McpServerDefinition.builder(FrameworkFixtures.SERVER_GAMMA)
                         .url("https://mcp.example/secret")
                         .authHeaderName("X-Secret-Header")
                         .authHeaderValueFormat("Bearer secret-%s")
@@ -57,7 +57,7 @@ class PromptSafeCatalogTest {
 
         assertTrue(json.contains("guided"));
         assertTrue(json.contains("Read before writing."));
-        assertTrue(json.contains("source-control"));
+        assertTrue(json.contains(FrameworkFixtures.SERVER_GAMMA));
         assertFalse(json.contains("https://mcp.example/secret"));
         assertFalse(json.contains("X-Secret-Header"));
         assertFalse(json.contains("Bearer secret"));

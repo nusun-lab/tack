@@ -8,9 +8,8 @@ import org.apache.camel.Exchange;
 import org.apache.camel.ExchangeProperty;
 import org.apache.camel.ServiceStatus;
 import org.apache.camel.component.langchain4j.agent.api.AiAgentBody;
-import us.nusun.llmshare.framework.inventory.ExecutionRuntimeRegistry;
+import us.nusun.llmshare.framework.inventory.InferenceLaneRegistry;
 import us.nusun.llmshare.framework.logging.LogTokens;
-import us.nusun.llmshare.framework.model.ExecutionRuntimeDefinition;
 import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
 import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.LlmJobResult;
@@ -21,6 +20,7 @@ import java.util.UUID;
 @ApplicationScoped
 public class LlmRouteSupport {
     private static final String DEFAULT_SYSTEM_PROMPT = "You are a precise worker in a shared LLM queue. Return only what the requester asked for.";
+    private static final String DYNAMIC_AGENT_URI = "langchain4j-agent:dynamic?agentFactory=#dynamicAgentFactory";
 
     public static final class LlmAvailabilityException extends RuntimeException {
         public LlmAvailabilityException(String message) { super(message); }
@@ -28,7 +28,7 @@ public class LlmRouteSupport {
     }
 
     @Inject CamelContext camelContext;
-    @Inject ExecutionRuntimeRegistry runtimes;
+    @Inject InferenceLaneRegistry lanes;
     @Inject InFlightReplyManager inFlightReplyManager;
     @Inject LlmDeadLetterFactory deadLetterFactory;
     @Inject LogTokens logTokens;
@@ -38,20 +38,20 @@ public class LlmRouteSupport {
 
     public LlmRouteSupport(
             CamelContext camelContext,
-            ExecutionRuntimeRegistry runtimes,
+            InferenceLaneRegistry lanes,
             InFlightReplyManager inFlightReplyManager,
             LlmDeadLetterFactory deadLetterFactory) {
-        this(camelContext, runtimes, inFlightReplyManager, deadLetterFactory, new LogTokens(false));
+        this(camelContext, lanes, inFlightReplyManager, deadLetterFactory, new LogTokens(false));
     }
 
     public LlmRouteSupport(
             CamelContext camelContext,
-            ExecutionRuntimeRegistry runtimes,
+            InferenceLaneRegistry lanes,
             InFlightReplyManager inFlightReplyManager,
             LlmDeadLetterFactory deadLetterFactory,
             LogTokens logTokens) {
         this.camelContext = camelContext;
-        this.runtimes = runtimes;
+        this.lanes = lanes;
         this.inFlightReplyManager = inFlightReplyManager;
         this.deadLetterFactory = deadLetterFactory;
         this.logTokens = logTokens;
@@ -68,11 +68,12 @@ public class LlmRouteSupport {
     }
 
     public void prepareAgentCall(@ExchangeProperty("llmJob") LlmJobEnvelope job, Exchange exchange) {
-        ExecutionRuntimeDefinition runtime = runtimes.getRequired(job.requester());
-        exchange.setProperty("executionRuntime", runtime);
-        exchange.setProperty("executionRuntimeId", runtime.id());
+        InferenceLaneDefinition lane = lanes.getRequired(job.laneId());
+        exchange.setProperty("inferenceLane", lane);
+        exchange.setProperty("laneId", lane.id());
+        exchange.setProperty("passType", job.passType());
         exchange.setProperty("llmStartedAt", Instant.now());
-        exchange.setProperty("agentInvocationUri", agentInvocationUri(runtime, job, exchange));
+        exchange.setProperty("agentInvocationUri", DYNAMIC_AGENT_URI);
         exchange.getIn().setBody(new AiAgentBody<>(job.prompt(), firstNonBlank(job.systemPrompt(), DEFAULT_SYSTEM_PROMPT), job.jobId()));
     }
 
@@ -110,27 +111,6 @@ public class LlmRouteSupport {
 
     public static String routeSuffix(String laneId) {
         return laneId == null ? "" : laneId.replaceAll("[^A-Za-z0-9_-]", "-");
-    }
-
-    private String agentInvocationUri(ExecutionRuntimeDefinition runtime, LlmJobEnvelope job, Exchange exchange) {
-        String invocationUri = "langchain4j-agent:" + runtime.agentName() + agentConfigurationQuery(runtime);
-        return usesAgentFactory(runtime) || !ProviderStructuredOutputSupport.shouldApplyProviderSchema(exchange, job)
-                ? invocationUri
-                : invocationUri + "&jsonSchema=" + job.responseSchema();
-    }
-
-    private boolean usesAgentFactory(ExecutionRuntimeDefinition runtime) {
-        return runtime.agentFactoryBeanName() != null && !runtime.agentFactoryBeanName().isBlank();
-    }
-
-    private String agentConfigurationQuery(ExecutionRuntimeDefinition runtime) {
-        if (runtime.agentFactoryBeanName() != null && !runtime.agentFactoryBeanName().isBlank()) {
-            return "?agentFactory=#" + runtime.agentFactoryBeanName();
-        }
-        if (runtime.agentConfigurationBeanName() != null && !runtime.agentConfigurationBeanName().isBlank()) {
-            return "?agentConfiguration=#" + runtime.agentConfigurationBeanName();
-        }
-        throw new IllegalStateException("Execution runtime " + runtime.id() + " does not define an agent factory or agent configuration bean");
     }
 
     private void verifyRouteStarted(Exchange exchange, String routeId) {

@@ -47,7 +47,7 @@ class LazyInitializingMcpClientBoundaryTest {
 
         IllegalStateException failure = assertThrows(IllegalStateException.class, client::listTools);
 
-        assertTrue(failure.getMessage().contains("service 'plane'"));
+        assertTrue(failure.getMessage().contains("service 'synthetic-mcp'"));
         assertTrue(failure.getMessage().contains("identity '@miles'"));
         assertTrue(failure.getMessage().contains("url 'http://mcp.example'"));
         assertTrue(failure.getMessage().contains("connection refused"));
@@ -71,7 +71,7 @@ class LazyInitializingMcpClientBoundaryTest {
     private static LazyInitializingMcpClient lazy(java.util.function.Supplier<McpClient> supplier) {
         return new LazyInitializingMcpClient(
                 "lazy-key",
-                "plane",
+                "synthetic-mcp",
                 "@miles",
                 "streamableHttp",
                 "http://mcp.example",

@@ -82,10 +82,10 @@ class MissionRosterServiceTest {
 
         assertTrue(roster.contains("- name: Persona A"));
         assertTrue(roster.contains("routine: Routine A"));
-        assertTrue(roster.contains("platform identities: gitea @persona-a, mattermost @persona-a, plane @persona-a"));
+        assertTrue(roster.contains("platform identities: alpha-mcp @persona-a, beta-mcp @persona-a, gamma-mcp @persona-a"));
         assertTrue(roster.contains("- name: Persona C"));
         assertTrue(roster.contains("routine: Routine B"));
-        assertTrue(roster.contains("platform identities: mattermost @persona-c"));
+        assertTrue(roster.contains("platform identities: alpha-mcp @persona-c"));
         assertTrue(roster.contains("personaId: persona-a"));
         assertTrue(roster.contains("routineId: routine-a"));
         assertTrue(roster.contains("agentRunId: run-a"));
@@ -97,9 +97,9 @@ class MissionRosterServiceTest {
         assertFalse(roster.contains("PA"));
         assertFalse(roster.contains("run-parent"));
         assertFalse(roster.contains("Routine A description"));
-        assertFalse(roster.contains("mattermost-token"));
-        assertFalse(roster.contains("gitea-token"));
-        assertFalse(roster.contains("plane-token"));
+        assertFalse(roster.contains("alpha-secret"));
+        assertFalse(roster.contains("beta-secret"));
+        assertFalse(roster.contains("gamma-secret"));
         assertFalse(roster.toLowerCase().contains("credential"));
     }
 
@@ -133,21 +133,21 @@ class MissionRosterServiceTest {
                         .name("Persona A")
                         .label("PA")
                         .description("Persona A description")
-                        .identity("mattermost", "mattermost-token", "@persona-a")
-                        .identity("gitea", "gitea-token", "@persona-a")
-                        .identity("plane", "plane-token", "@persona-a")
+                        .identity(FrameworkFixtures.SERVER_ALPHA, "alpha-secret", "@persona-a")
+                        .identity(FrameworkFixtures.SERVER_BETA, "beta-secret", "@persona-a")
+                        .identity(FrameworkFixtures.SERVER_GAMMA, "gamma-secret", "@persona-a")
                         .build(),
                 Persona.builder("persona-b")
                         .name("Persona B")
                         .label("PB")
                         .description("Persona B description")
-                        .identity("mattermost", "mattermost-token-b", "@persona-b")
+                        .identity(FrameworkFixtures.SERVER_ALPHA, "alpha-secret-b", "@persona-b")
                         .build(),
                 Persona.builder("persona-c")
                         .name("Persona C")
                         .label("PC")
                         .description("Persona C description")
-                        .identity("mattermost", "mattermost-token-c", "@persona-c")
+                        .identity(FrameworkFixtures.SERVER_ALPHA, "alpha-secret-c", "@persona-c")
                         .build()));
     }
 

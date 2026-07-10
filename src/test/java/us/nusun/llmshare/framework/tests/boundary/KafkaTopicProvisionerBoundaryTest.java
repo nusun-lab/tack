@@ -6,9 +6,8 @@ import org.apache.kafka.clients.admin.RecordsToDelete;
 import org.apache.kafka.common.errors.TopicExistsException;
 import org.apache.kafka.common.TopicPartition;
 import org.junit.jupiter.api.Test;
-import us.nusun.llmshare.framework.inventory.ExecutionRuntimeRegistry;
+import us.nusun.llmshare.framework.inventory.InferenceLaneRegistry;
 import us.nusun.llmshare.framework.llm.KafkaTopicProvisioner;
-import us.nusun.llmshare.framework.model.ExecutionRuntimeDefinition;
 import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 
@@ -214,12 +213,12 @@ class KafkaTopicProvisionerBoundaryTest {
     }
 
     private static KafkaTopicProvisioner provisioner(boolean enabled) {
-        return provisioner(enabled, FrameworkFixtures.executionRuntimeRegistry());
+        return provisioner(enabled, FrameworkFixtures.inferenceLaneRegistry());
     }
 
-    private static KafkaTopicProvisioner provisioner(boolean enabled, ExecutionRuntimeRegistry registry) {
+    private static KafkaTopicProvisioner provisioner(boolean enabled, InferenceLaneRegistry registry) {
         KafkaTopicProvisioner provisioner = new KafkaTopicProvisioner();
-        FrameworkFixtures.set(provisioner, "runtimes", registry);
+        FrameworkFixtures.set(provisioner, "lanes", registry);
         FrameworkFixtures.set(provisioner, "deadLetterTopic", "llm.dead-letter");
         FrameworkFixtures.set(provisioner, "agentRunScheduledTopic", "agent-runs.scheduled");
         FrameworkFixtures.set(provisioner, "bootstrapServers", "localhost:9092");
@@ -230,12 +229,12 @@ class KafkaTopicProvisionerBoundaryTest {
     }
 
     private static TestableProvisioner provisionerWithExistingTopics(Set<String> existingTopics) {
-        return provisionerWithExistingTopics(existingTopics, FrameworkFixtures.executionRuntimeRegistry());
+        return provisionerWithExistingTopics(existingTopics, FrameworkFixtures.inferenceLaneRegistry());
     }
 
-    private static TestableProvisioner provisionerWithExistingTopics(Set<String> existingTopics, ExecutionRuntimeRegistry registry) {
+    private static TestableProvisioner provisionerWithExistingTopics(Set<String> existingTopics, InferenceLaneRegistry registry) {
         TestableProvisioner provisioner = new TestableProvisioner(existingTopics);
-        FrameworkFixtures.set(provisioner, "runtimes", registry);
+        FrameworkFixtures.set(provisioner, "lanes", registry);
         FrameworkFixtures.set(provisioner, "deadLetterTopic", "llm.dead-letter");
         FrameworkFixtures.set(provisioner, "agentRunScheduledTopic", "agent-runs.scheduled");
         FrameworkFixtures.set(provisioner, "bootstrapServers", "localhost:9092");
@@ -245,8 +244,8 @@ class KafkaTopicProvisionerBoundaryTest {
         return provisioner;
     }
 
-    private static ExecutionRuntimeRegistry registryWithLowLaneParallelism(int parallelism) {
-        return new ExecutionRuntimeRegistry(
+    private static InferenceLaneRegistry registryWithLowLaneParallelism(int parallelism) {
+        return new InferenceLaneRegistry(
                 List.of(
                         InferenceLaneDefinition.builder("low-pass")
                                 .requestTopic("llm.requests.low")
@@ -257,15 +256,6 @@ class KafkaTopicProvisionerBoundaryTest {
                                 .requestTopic("llm.requests.high")
                                 .responseTopic("llm.replies.high")
                                 .parallelism(1)
-                                .build()),
-                List.of(
-                        ExecutionRuntimeDefinition.builder("tool-low")
-                                .lane("low-pass")
-                                .agentFactoryBeanName("executionRuntimeAgentFactory")
-                                .build(),
-                        ExecutionRuntimeDefinition.builder("tool-high")
-                                .lane("high-pass")
-                                .agentFactoryBeanName("executionRuntimeAgentFactory")
                                 .build()));
     }
 

@@ -11,6 +11,7 @@ import us.nusun.llmshare.framework.logging.LogTokens;
 import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.LlmJobRequest;
 import us.nusun.llmshare.framework.model.LlmJobResult;
+import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 
 import java.time.Instant;
@@ -27,7 +28,7 @@ class LoggingSemanticsTest {
         CapturingLogTokens logs = new CapturingLogTokens();
         LlmRouteSupport support = new LlmRouteSupport(
                 new DefaultCamelContext(),
-                FrameworkFixtures.executionRuntimeRegistry(),
+                FrameworkFixtures.inferenceLaneRegistry(),
                 new InFlightReplyManager(),
                 new LlmDeadLetterFactory(),
                 logs);
@@ -56,7 +57,9 @@ class LoggingSemanticsTest {
     private static LlmJobEnvelope job() {
         return LlmJobEnvelope.queued(new LlmJobRequest(
                 null,
-                "synthesis-low",
+                "low-pass",
+                LlmPassType.SYNTHESIS,
+                "test",
                 "test",
                 0,
                 "prompt",

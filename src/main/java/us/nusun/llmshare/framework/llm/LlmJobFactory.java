@@ -4,15 +4,16 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.Exchange;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
-import us.nusun.llmshare.framework.inventory.ExecutionRuntimeRegistry;
+import us.nusun.llmshare.framework.inventory.InferenceLaneRegistry;
 import us.nusun.llmshare.framework.inventory.PersonaCatalog;
-import us.nusun.llmshare.framework.model.ExecutionRuntimeDefinition;
 import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
 import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.LlmJobRequest;
+import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.model.Mission;
 import us.nusun.llmshare.framework.model.PartitionKeyStrategy;
 import us.nusun.llmshare.framework.model.Persona;
+import us.nusun.llmshare.framework.model.RoutineDefinition;
 import us.nusun.llmshare.framework.state.AgentRun;
 
 import java.util.LinkedHashMap;
@@ -21,48 +22,62 @@ import java.util.UUID;
 
 @ApplicationScoped
 public class LlmJobFactory {
-    @Inject ExecutionRuntimeRegistry runtimes;
+    @Inject InferenceLaneRegistry lanes;
     @Inject PersonaCatalog personas;
-    @ConfigProperty(name = "agent.framework.default-synthesis-runtime", defaultValue = "synthesis-low")
-    String defaultSynthesisRuntime = "synthesis-low";
+    @ConfigProperty(name = "agent.framework.default-lane", defaultValue = "low-pass")
+    String defaultLane = RoutineDefinition.FRAMEWORK_DEFAULT_LANE;
 
     public LlmJobFactory() {
     }
 
-    public LlmJobFactory(ExecutionRuntimeRegistry runtimes, PersonaCatalog personas) {
-        this.runtimes = runtimes;
+    public LlmJobFactory(InferenceLaneRegistry lanes, PersonaCatalog personas) {
+        this.lanes = lanes;
         this.personas = personas;
     }
 
     public void prepare(Exchange exchange) {
         prepareWithCatalogs(
                 exchange,
-                runtimes,
+                lanes,
                 personas,
-                firstNonBlank(defaultSynthesisRuntime, "synthesis-low"),
+                firstNonBlank(defaultLane, RoutineDefinition.FRAMEWORK_DEFAULT_LANE),
                 globalModelFallback(exchange));
     }
 
     private void prepareWithCatalogs(
             Exchange exchange,
-            ExecutionRuntimeRegistry runtimes,
+            InferenceLaneRegistry lanes,
             PersonaCatalog personas,
-            String defaultRuntimeId,
+            String defaultLaneId,
             String globalModelFallback) {
         Object body = exchange.getIn().getBody();
         UUID overrideJobId = exchange.getProperty("llmJobId", UUID.class);
         UUID headerJobId = readJobId(exchange.getIn().getHeader("jobId", String.class));
         UUID jobId = overrideJobId != null ? overrideJobId : headerJobId;
-        String runtimeId = firstNonBlank(
-                exchange.getIn().getHeader("executionRuntime", String.class),
-                exchange.getProperty("executionRuntimeId", String.class),
-                defaultRuntimeId);
+        String headerLaneId = firstNonBlank(
+                exchange.getIn().getHeader("lane", String.class),
+                exchange.getIn().getHeader("laneId", String.class));
+        String propertyLaneId = firstNonBlank(
+                exchange.getProperty("laneId", String.class),
+                exchange.getProperty("lane", String.class));
+        LlmPassType headerPassType = firstPassType(
+                exchange.getIn().getHeader("passType"),
+                exchange.getIn().getHeader("llmPassType"));
+        LlmPassType propertyPassType = firstPassType(
+                exchange.getProperty("passType"),
+                exchange.getProperty("llmPassType"));
 
         LlmJobRequest request = body instanceof LlmJobRequest existing
-                ? normalize(existing, jobId, runtimeId)
+                ? normalize(
+                        existing,
+                        jobId,
+                        firstNonBlank(headerLaneId, blank(existing.laneId()) ? defaultLaneId : null),
+                        headerPassType)
                 : LlmJobRequest.fromPrompt(
                         jobId,
-                        runtimeId,
+                        firstNonBlank(headerLaneId, propertyLaneId, defaultLaneId),
+                        firstPassType(headerPassType, propertyPassType, LlmPassType.SYNTHESIS),
+                        exchange.getIn().getHeader("requester", String.class),
                         exchange.getIn().getHeader("role", String.class),
                         body == null ? null : body.toString(),
                         exchange.getIn().getHeader("systemPrompt", String.class),
@@ -70,17 +85,16 @@ public class LlmJobFactory {
                         .normalized()
                         .ensureJsonOnlyResponse();
 
-        ExecutionRuntimeDefinition runtime = runtimes.getRequired(request.requester());
-        InferenceLaneDefinition lane = runtimes.laneRequired(runtime.laneId());
-        request = withRouteMetadata(request, exchange, runtime, lane, globalModelFallback);
-        exchange.setProperty("executionRuntime", runtime);
-        exchange.setProperty("executionRuntimeId", runtime.id());
+        InferenceLaneDefinition lane = lanes.getRequired(request.laneId());
+        request = withRouteMetadata(request, exchange, lane, globalModelFallback);
+        exchange.setProperty("laneId", lane.id());
+        exchange.setProperty("passType", request.passType());
         exchange.setProperty("inferenceLane", lane);
-        exchange.setProperty("modelId", selectedModel(runtime, lane, globalModelFallback));
+        exchange.setProperty("modelId", selectedModel(lane, globalModelFallback));
         exchange.setProperty("laneRequestTopic", lane.requestTopic());
         exchange.setProperty("laneReplyTopic", lane.responseTopic());
         exchange.setProperty("llmPartitionKey", partitionKey(request, exchange, lane));
-        applyLogPersona(exchange, personas, runtime.id());
+        applyLogPersona(exchange, personas, request.requester());
         exchange.setProperty("llmJobId", request.jobId());
         exchange.setProperty("llmJob", LlmJobEnvelope.queued(request));
         exchange.getIn().setBody(exchange.getProperty("llmJob", LlmJobEnvelope.class));
@@ -127,25 +141,25 @@ public class LlmJobFactory {
         return job == null ? null : job.jobId();
     }
 
-    private static LlmJobRequest withRouteMetadata(LlmJobRequest request, Exchange exchange, ExecutionRuntimeDefinition runtime, InferenceLaneDefinition lane, String globalModelFallback) {
+    private static LlmJobRequest withRouteMetadata(LlmJobRequest request, Exchange exchange, InferenceLaneDefinition lane, String globalModelFallback) {
         LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
         if (request.metadata() != null) {
             metadata.putAll(request.metadata());
         }
-        putIfPresent(metadata, "executionRuntimeId", runtime.id());
-        putIfPresent(metadata, "inferenceLane", lane.id());
-        putIfPresent(metadata, "model", selectedModel(runtime, lane, globalModelFallback));
+        putIfPresent(metadata, "laneId", lane.id());
+        putIfPresent(metadata, "passType", request.passType() == null ? null : request.passType().name());
+        putIfPresent(metadata, "model", selectedModel(lane, globalModelFallback));
         putIfPresent(metadata, "partitionKeyStrategy", lane.partitionKeyStrategy().name());
         putIfPresent(metadata, "personaId", exchange.getProperty("personaId", String.class));
         putIfPresent(metadata, "toolProfile", exchange.getProperty("toolProfile", String.class));
         putIfPresent(metadata, ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY,
                 firstPresent(exchange.getProperty(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY),
                         exchange.getIn().getHeader(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY)));
-        return new LlmJobRequest(request.jobId(), request.requester(), request.role(), request.priority(), request.prompt(), request.systemPrompt(), request.responseSchema(), Map.copyOf(metadata), request.requestedAt());
+        return new LlmJobRequest(request.jobId(), request.laneId(), request.passType(), request.requester(), request.role(), request.priority(), request.prompt(), request.systemPrompt(), request.responseSchema(), Map.copyOf(metadata), request.requestedAt());
     }
 
-    private static String selectedModel(ExecutionRuntimeDefinition runtime, InferenceLaneDefinition lane, String globalModelFallback) {
-        return LlmAgentFactory.selectedModel(runtime, lane, globalModelFallback);
+    private static String selectedModel(InferenceLaneDefinition lane, String globalModelFallback) {
+        return LlmAgentFactory.selectedModel(lane, globalModelFallback);
     }
 
     private static void applyLogPersona(Exchange exchange, PersonaCatalog personas, String fallbackLabel) {
@@ -161,7 +175,13 @@ public class LlmJobFactory {
     }
 
     private static void restoreFrameworkMetadataFromEnvelope(Exchange exchange, LlmJobEnvelope job) {
-        if (job == null || job.metadata() == null) {
+        if (job == null) {
+            return;
+        }
+        exchange.setProperty("llmJobId", job.jobId());
+        exchange.setProperty("laneId", job.laneId());
+        exchange.setProperty("passType", job.passType());
+        if (job.metadata() == null) {
             return;
         }
         job.metadata().forEach((key, value) -> {
@@ -169,14 +189,37 @@ public class LlmJobFactory {
                 exchange.setProperty(key, String.valueOf(value));
             }
         });
+        exchange.setProperty("passType", job.passType());
     }
 
-    private static LlmJobRequest normalize(LlmJobRequest request, UUID overrideJobId, String runtimeId) {
+    private static LlmJobRequest normalize(LlmJobRequest request, UUID overrideJobId, String laneId, LlmPassType passType) {
         LlmJobRequest normalized = overrideJobId == null ? request : request.withJobId(overrideJobId);
-        if (normalized.requester() == null || normalized.requester().isBlank() || "anonymous".equals(normalized.requester())) {
-            normalized = new LlmJobRequest(normalized.jobId(), runtimeId, normalized.role(), normalized.priority(), normalized.prompt(), normalized.systemPrompt(), normalized.responseSchema(), normalized.metadata(), normalized.requestedAt());
-        }
+        normalized = normalized.withLaneAndPass(laneId, passType);
         return normalized.normalized().ensureJsonOnlyResponse();
+    }
+
+    private static LlmPassType firstPassType(Object... values) {
+        for (Object value : values) {
+            LlmPassType parsed = parsePassType(value);
+            if (parsed != null) {
+                return parsed;
+            }
+        }
+        return null;
+    }
+
+    private static LlmPassType parsePassType(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof LlmPassType passType) {
+            return passType;
+        }
+        String text = String.valueOf(value);
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        return LlmPassType.valueOf(text.strip().toUpperCase());
     }
 
     private static UUID readJobId(String rawJobId) {
@@ -230,6 +273,10 @@ public class LlmJobFactory {
         }
     }
 
+    private static boolean blank(String value) {
+        return value == null || value.isBlank();
+    }
+
     private static Object firstPresent(Object... values) {
         for (Object value : values) {
             if (value != null) {
@@ -257,6 +304,6 @@ public class LlmJobFactory {
     }
 
     private static String globalModelFallback(Exchange exchange) {
-        return resolveOptionalPlaceholder(exchange, "{{llm.runtime-default.openai.model:}}");
+        return resolveOptionalPlaceholder(exchange, "{{llm.model-default.openai.model:}}");
     }
 }

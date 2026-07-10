@@ -11,7 +11,7 @@ import org.apache.camel.component.jsonvalidator.JsonValidationException;
 import us.nusun.llmshare.framework.llm.LlmDeadLetterFactory;
 import us.nusun.llmshare.framework.llm.LlmJobFactory;
 import us.nusun.llmshare.framework.llm.LlmRouteSupport;
-import us.nusun.llmshare.framework.inventory.ExecutionRuntimeRegistry;
+import us.nusun.llmshare.framework.inventory.InferenceLaneRegistry;
 import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
 import us.nusun.llmshare.framework.model.LlmJobDeadLetter;
 import us.nusun.llmshare.framework.model.LlmJobEnvelope;
@@ -19,7 +19,7 @@ import us.nusun.llmshare.framework.model.LlmJobResult;
 
 @ApplicationScoped
 public class LlmRoute extends RouteBuilder {
-    @Inject ExecutionRuntimeRegistry runtimes;
+    @Inject InferenceLaneRegistry lanes;
     @Inject LlmJobFactory jobFactory;
     @Inject LlmDeadLetterFactory deadLetterFactory;
     @Inject LlmRouteSupport routeSupport;
@@ -74,7 +74,7 @@ public class LlmRoute extends RouteBuilder {
                 .end()
                 .validate(body().isInstanceOf(LlmJobResult.class));
 
-        for (InferenceLaneDefinition lane : runtimes.allLanes()) {
+        for (InferenceLaneDefinition lane : lanes.allLanes()) {
             llmWorker(lane);
         }
 
@@ -86,7 +86,7 @@ public class LlmRoute extends RouteBuilder {
         from("direct:publish-failed-llm-job-dlq")
                 .routeId("publish-failed-llm-job-dlq")
                 .setBody(method(deadLetterFactory, "failedQueuedJobDeadLetter"))
-                .log(LoggingLevel.WARN, "Publishing failed LLM job to DLQ: jobId=${body.jobId} lane=${body.laneId} runtime=${body.runtimeId} reason=${body.failureMessage}")
+                .log(LoggingLevel.WARN, "Publishing failed LLM job to DLQ: jobId=${body.jobId} lane=${body.laneId} passType=${body.passType} reason=${body.failureMessage}")
                 .marshal(llmJson(LlmJobDeadLetter.class))
                 .setHeader(KafkaConstants.KEY, method(jobFactory, "jobIdKafkaKey"))
                 .toD("kafka:{{llm.topic.dead-letter:llm.dead-letter}}");

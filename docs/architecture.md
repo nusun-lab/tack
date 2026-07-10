@@ -44,7 +44,7 @@ Lifecycle hardening is future work. AgentRun admission records accepted state an
 
 ## Inference Lane Parallelism
 
-An inference lane is a shared Kafka-backed model work pool. Its `parallelism` controls how many jobs that lane can work on concurrently in the current single-runtime-instance topology.
+An inference lane is a shared Kafka-backed model work pool. Its `parallelism` controls how many jobs that lane can work on concurrently in the current single-orchestrator-instance topology.
 
 `parallelism = 1` keeps the lane serialized. `parallelism > 1` creates a partitioned work pool: the worker route uses `consumersCount=parallelism` with `maxPollRecords=1`.
 
@@ -54,7 +54,28 @@ Lane-wide FIFO is not guaranteed when `parallelism > 1`. Ordering is preserved o
 
 Replies remain simple in this mode: reply topics are single-partition, reply records are keyed by `jobId`, and `InFlightReplyManager` completes the local in-memory waiter by `jobId`.
 
-The current request/reply implementation assumes one active orchestrator/runtime instance owns those in-memory waiters. Lane worker parallelism is supported inside that topology. Horizontally scaled orchestrator/API instances require reply-to routing or durable reply storage and are intentionally out of scope for this mode.
+The current request/reply implementation assumes one active orchestrator instance owns those in-memory waiters. Lane worker parallelism is supported inside that topology. Horizontally scaled orchestrator/API instances require reply-to routing or durable reply storage and are intentionally out of scope for this mode.
+
+
+## Software-Team Tool Boundaries
+
+The bundled software-team example is deliberately outside framework core, but it documents one concrete way to keep MCP tool authority understandable.
+
+Plane owns projects, planned work, assignments, status, dependencies, priorities, blockers, and delivery planning. Gitea owns repositories, files, branches, commits, pull requests, builds, tags, and releases. Mattermost owns conversation, questions, handoffs, and concise notifications.
+
+The example publishes five profiles:
+
+- `workspace-readonly`: read-only cross-system orientation with explicit allow lists for Plane, Gitea, and Mattermost.
+- `workspace-coordination`: bounded cross-system coordination with explicit allow lists; it can update Plane, create/discover Gitea repositories, and communicate in Mattermost, but it cannot mutate source files, branches, pull requests, releases, or Gitea issue state.
+- `project-management`: broad Plane profile with denials for destructive operations, intake, work logs, pages, feature administration, and custom-schema administration.
+- `source-control`: broad Gitea profile with denials for destructive operations, native wiki surfaces, issue/label/milestone/time-tracking coordination, and unrelated admin surfaces.
+- `team-chat`: broad Mattermost profile with denials for destructive operations, low-value UI state, reactions, pins, and bookmarks.
+
+Gitea issues, labels, milestones, and time tracking are excluded because Plane is the single source of truth for planned work and status. Cross-system profiles use allow lists because combining systems increases blast radius. Domain profiles use deny lists because a single authoritative system can expose a broad surface without creating cross-system ambiguity.
+
+The example declares Plane, Gitea, and Mattermost connection definitions as separate `McpServer` classes. Each `ToolProfile` class injects the server declarations it needs, composes those immutable definitions directly, and owns its capability policy; there is no inheritance between profiles.
+
+Routine authors should choose the narrowest profile that supports the act. Composite profiles should reduce redundant model passes when one coherent act needs multiple systems, not become universal all-tools profiles.
 
 ## Why not just use a Java BlockingQueue?
 

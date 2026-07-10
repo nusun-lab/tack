@@ -17,7 +17,7 @@ import us.nusun.llmshare.framework.llm.ProviderStructuredOutputSupport;
 import us.nusun.llmshare.framework.service.MissionRosterService;
 import us.nusun.llmshare.framework.model.*;
 import us.nusun.llmshare.framework.projection.AgentRunProjectionManager;
-import us.nusun.llmshare.framework.inventory.ExecutionRuntimeRegistry;
+import us.nusun.llmshare.framework.inventory.InferenceLaneRegistry;
 import us.nusun.llmshare.framework.state.AgentRun;
 import us.nusun.llmshare.framework.state.AgentRunStore;
 import us.nusun.llmshare.framework.state.ThoughtStack;
@@ -39,7 +39,7 @@ public class PrimitiveSupport {
     @Inject RoutineCatalog routines;
     @Inject ToolProfileRegistry toolProfiles;
     @Inject MissionRosterService missionRoster;
-    @Inject ExecutionRuntimeRegistry runtimes;
+    @Inject InferenceLaneRegistry lanes;
     @Inject AgentRunProjectionManager projections;
 
     public static final class FrameworkPrimitiveException extends RuntimeException {
@@ -51,26 +51,22 @@ public class PrimitiveSupport {
         return exchange -> projections.record(exchange, eventType);
     }
 
-    public Processor resolveActRuntimes() {
+    public Processor resolveActLane() {
         return exchange -> {
-            RoutineDefinition routine = currentRoutine(exchange);
-            String toolRuntime = firstNonBlank(exchange.getProperty("toolRuntime", String.class), routine.defaultToolRuntime(), "tool-low");
-            String synthesisRuntime = firstNonBlank(exchange.getProperty("synthesisRuntime", String.class), routine.defaultSynthesisRuntime(), "synthesis-low");
-            exchange.setProperty("resolvedToolRuntime", toolRuntime);
-            exchange.setProperty("resolvedSynthesisRuntime", synthesisRuntime);
+            resolveLane(exchange);
             exchange.setProperty("toolProfile", firstNonBlank(exchange.getProperty("toolProfile", String.class), "none"));
         };
     }
 
-    public Processor resolveSynthesisRuntime(String overrideProperty) {
-        return exchange -> {
-            RoutineDefinition routine = currentRoutine(exchange);
-            String synthesisRuntime = firstNonBlank(
-                    exchange.getProperty(overrideProperty, String.class),
-                    routine.defaultSynthesisRuntime(),
-                    "synthesis-low");
-            exchange.setProperty("resolvedSynthesisRuntime", synthesisRuntime);
-        };
+    public Processor resolveLane() {
+        return this::resolveLane;
+    }
+
+    private void resolveLane(Exchange exchange) {
+        RoutineDefinition routine = currentRoutine(exchange);
+        String laneId = firstNonBlank(exchange.getProperty("lane", String.class), routine.defaultLane(), RoutineDefinition.FRAMEWORK_DEFAULT_LANE);
+        lanes().getRequired(laneId);
+        exchange.setProperty("resolvedLane", laneId);
     }
 
     public Processor markCurrent(String primitive, String idProperty) {
@@ -94,12 +90,12 @@ public class PrimitiveSupport {
             }
             AgentRun run = currentRun(exchange);
             Persona persona = personas.getRequired(run.personaId());
-            String runtimeId = exchange.getProperty("resolvedToolRuntime", String.class);
-            exchange.setProperty("executionRuntimeId", runtimeId);
+            String laneId = exchange.getProperty("resolvedLane", String.class);
             exchange.setProperty("personaId", persona.id());
             exchange.getIn().setBody(llmRequest(
                     exchange,
-                    runtimeId,
+                    laneId,
+                    LlmPassType.TOOL,
                     persona.name(),
                     primitiveSystemPrompt(exchange, "tool"),
                     primitivePrompt(exchange, this::renderToolPassPrompt),
@@ -127,11 +123,11 @@ public class PrimitiveSupport {
             }
             AgentRun run = currentRun(exchange);
             Persona persona = personas.getRequired(run.personaId());
-            String runtimeId = exchange.getProperty("resolvedSynthesisRuntime", String.class);
-            exchange.setProperty("executionRuntimeId", runtimeId);
+            String laneId = exchange.getProperty("resolvedLane", String.class);
             exchange.getIn().setBody(llmRequest(
                     exchange,
-                    runtimeId,
+                    laneId,
+                    LlmPassType.SYNTHESIS,
                     persona.name(),
                     primitiveSystemPrompt(exchange, "synthesis"),
                     primitivePrompt(exchange, this::renderStepSynthesisPrompt),
@@ -168,11 +164,11 @@ public class PrimitiveSupport {
             }
             AgentRun run = currentRun(exchange);
             Persona persona = personas.getRequired(run.personaId());
-            String runtimeId = exchange.getProperty("resolvedSynthesisRuntime", String.class);
-            exchange.setProperty("executionRuntimeId", runtimeId);
+            String laneId = exchange.getProperty("resolvedLane", String.class);
             exchange.getIn().setBody(llmRequest(
                     exchange,
-                    runtimeId,
+                    laneId,
+                    LlmPassType.SYNTHESIS,
                     persona.name(),
                     primitiveSystemPrompt(exchange, "decision"),
                     primitivePrompt(exchange, this::renderDecisionPrompt),
@@ -205,11 +201,11 @@ public class PrimitiveSupport {
             }
             AgentRun run = currentRun(exchange);
             Persona persona = personas.getRequired(run.personaId());
-            String runtimeId = exchange.getProperty("resolvedSynthesisRuntime", String.class);
-            exchange.setProperty("executionRuntimeId", runtimeId);
+            String laneId = exchange.getProperty("resolvedLane", String.class);
             exchange.getIn().setBody(llmRequest(
                     exchange,
-                    runtimeId,
+                    laneId,
+                    LlmPassType.SYNTHESIS,
                     persona.name(),
                     primitiveSystemPrompt(exchange, "create"),
                     primitivePrompt(exchange, this::renderCreatePrompt),
@@ -234,11 +230,11 @@ public class PrimitiveSupport {
         };
     }
 
-    private LlmJobRequest llmRequest(Exchange exchange, String runtimeId, String role, String systemPrompt, String prompt, String schema) {
-        return new LlmJobRequest(null, runtimeId, role, 0, prompt, systemPrompt, schema, frameworkMetadata(exchange, runtimeId, schema), null);
+    private LlmJobRequest llmRequest(Exchange exchange, String laneId, LlmPassType passType, String role, String systemPrompt, String prompt, String schema) {
+        return new LlmJobRequest(null, laneId, passType, primitiveRequester(exchange), role, 0, prompt, systemPrompt, schema, frameworkMetadata(exchange, laneId, passType, schema), null);
     }
 
-    private Map<String, Object> frameworkMetadata(Exchange exchange, String runtimeId, String schema) {
+    private Map<String, Object> frameworkMetadata(Exchange exchange, String laneId, LlmPassType passType, String schema) {
         LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
         AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
         Mission mission = exchange.getProperty("mission", Mission.class);
@@ -255,10 +251,8 @@ public class PrimitiveSupport {
         putIfPresent(metadata, "decisionId", exchange.getProperty("decisionId", String.class));
         putIfPresent(metadata, "createId", exchange.getProperty("createId", String.class));
         putIfPresent(metadata, "toolProfile", exchange.getProperty("toolProfile", String.class));
-        putIfPresent(metadata, "executionRuntimeId", runtimeId);
-        if (runtimeId != null && !runtimeId.isBlank()) {
-            putIfPresent(metadata, "inferenceLane", runtimes.getRequired(runtimeId).laneId());
-        }
+        putIfPresent(metadata, "laneId", laneId);
+        putIfPresent(metadata, "passType", passType == null ? null : passType.name());
         if (schema != null && !schema.isBlank()) {
             metadata.put(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY, true);
         }
@@ -267,6 +261,13 @@ public class PrimitiveSupport {
 
     private static void putIfPresent(Map<String, Object> metadata, String key, String value) {
         if (value != null && !value.isBlank()) metadata.put(key, value);
+    }
+
+    private static String primitiveRequester(Exchange exchange) {
+        AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
+        String primitive = run == null ? exchange.getProperty("currentPrimitive", String.class) : run.currentPrimitive();
+        String id = run == null ? exchange.getProperty("currentId", String.class) : run.currentId();
+        return firstNonBlank(primitive == null ? null : primitive + (id == null || id.isBlank() ? "" : ":" + id), "framework");
     }
 
     private LlmJobResult requireSucceeded(Exchange exchange, LlmJobResult llm, String pass) {
@@ -540,6 +541,10 @@ public class PrimitiveSupport {
 
     private ToolProfileRegistry toolProfiles() {
         return toolProfiles == null ? new ToolProfileRegistry(List.of()) : toolProfiles;
+    }
+
+    private InferenceLaneRegistry lanes() {
+        return lanes == null ? new InferenceLaneRegistry(List.of()) : lanes;
     }
 
     private MissionRosterService missionRoster() {

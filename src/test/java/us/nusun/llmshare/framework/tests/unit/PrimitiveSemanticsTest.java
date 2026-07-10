@@ -7,6 +7,7 @@ import us.nusun.llmshare.framework.state.AgentRun;
 import us.nusun.llmshare.framework.model.CreateResult;
 import us.nusun.llmshare.framework.model.DecisionResult;
 import us.nusun.llmshare.framework.model.LlmJobRequest;
+import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.model.StepResult;
 import us.nusun.llmshare.framework.model.ThoughtFrame;
 import us.nusun.llmshare.framework.llm.ProviderStructuredOutputSupport;
@@ -24,44 +25,41 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PrimitiveSemanticsTest {
     @Test
-    void actRuntimeResolutionUsesRoutineDefaultsAndToolProfileProperty() throws Exception {
+    void actLaneResolutionUsesRoutineDefaultAndToolProfileProperty() throws Exception {
         PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
-        exchange.setProperty("toolProfile", "project-management");
+        exchange.setProperty("toolProfile", FrameworkFixtures.PROFILE_BETA);
 
-        support.resolveActRuntimes().process(exchange);
+        support.resolveActLane().process(exchange);
 
-        assertEquals("tool-low", exchange.getProperty("resolvedToolRuntime"));
-        assertEquals("synthesis-low", exchange.getProperty("resolvedSynthesisRuntime"));
-        assertEquals("project-management", exchange.getProperty("toolProfile"));
+        assertEquals("low-pass", exchange.getProperty("resolvedLane"));
+        assertEquals(FrameworkFixtures.PROFILE_BETA, exchange.getProperty("toolProfile"));
     }
 
     @Test
-    void actRuntimeResolutionAllowsPerActOverrides() throws Exception {
+    void actLaneResolutionAllowsPerActOverride() throws Exception {
         PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
-        exchange.setProperty("toolRuntime", "tool-high");
-        exchange.setProperty("synthesisRuntime", "synthesis-high");
+        exchange.setProperty("lane", "high-pass");
 
-        support.resolveActRuntimes().process(exchange);
+        support.resolveActLane().process(exchange);
 
-        assertEquals("tool-high", exchange.getProperty("resolvedToolRuntime"));
-        assertEquals("synthesis-high", exchange.getProperty("resolvedSynthesisRuntime"));
+        assertEquals("high-pass", exchange.getProperty("resolvedLane"));
         assertEquals("none", exchange.getProperty("toolProfile"));
     }
 
 
     @Test
-    void synthesisRuntimeResolutionUsesRoutineDefaultUnlessPropertyOverridesIt() throws Exception {
+    void laneResolutionUsesRoutineDefaultUnlessPropertyOverridesIt() throws Exception {
         PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
 
-        support.resolveSynthesisRuntime("synthesisRuntime").process(exchange);
-        assertEquals("synthesis-low", exchange.getProperty("resolvedSynthesisRuntime"));
+        support.resolveLane().process(exchange);
+        assertEquals("low-pass", exchange.getProperty("resolvedLane"));
 
-        exchange.setProperty("synthesisRuntime", "synthesis-high");
-        support.resolveSynthesisRuntime("synthesisRuntime").process(exchange);
-        assertEquals("synthesis-high", exchange.getProperty("resolvedSynthesisRuntime"));
+        exchange.setProperty("lane", "high-pass");
+        support.resolveLane().process(exchange);
+        assertEquals("high-pass", exchange.getProperty("resolvedLane"));
     }
 
     @Test
@@ -83,41 +81,44 @@ class PrimitiveSemanticsTest {
     void toolPassRequestCarriesFrameworkMetadataAcrossQueuedBoundary() throws Exception {
         PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
-        support.resolveActRuntimes().process(exchange);
+        support.resolveActLane().process(exchange);
         exchange.setProperty("actId", "assignment-review");
         support.markCurrent("act", "actId").process(exchange);
-        exchange.setProperty("toolProfile", "source-control");
+        exchange.setProperty("toolProfile", FrameworkFixtures.PROFILE_GAMMA);
         exchange.setProperty("actPrompt", "Inspect assigned work.");
 
         support.prepareToolPassPrompt().process(exchange);
 
         LlmJobRequest request = exchange.getIn().getBody(LlmJobRequest.class);
         assertEquals(FrameworkFixtures.PERSONA_A, request.metadata().get("personaId"));
-        assertEquals("source-control", request.metadata().get("toolProfile"));
+        assertEquals(FrameworkFixtures.PROFILE_GAMMA, request.metadata().get("toolProfile"));
         assertEquals("act", request.metadata().get("primitive"));
         assertEquals("assignment-review", request.metadata().get("primitiveId"));
-        assertEquals("tool-low", request.metadata().get("executionRuntimeId"));
-        assertEquals("low-pass", request.metadata().get("inferenceLane"));
+        assertEquals("low-pass", request.laneId());
+        assertEquals(LlmPassType.TOOL, request.passType());
+        assertEquals("low-pass", request.metadata().get("laneId"));
+        assertEquals("TOOL", request.metadata().get("passType"));
         assertEquals("run-1", request.metadata().get("agentRunId"));
         assertEquals("mission-1", request.metadata().get("missionId"));
         assertFalse(request.metadata().containsKey(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY));
     }
 
     @Test
-    void toolPassPromptUsesPersonaMissionThoughtsAndResolvedRuntime() throws Exception {
+    void toolPassPromptUsesPersonaMissionThoughtsAndResolvedLane() throws Exception {
         PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
         ThoughtStack stack = new ThoughtStack();
         stack.push(new ThoughtFrame("routine", "dev-selection", "Developer context", 100, "Repository is not confirmed yet."));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
-        exchange.setProperty("resolvedToolRuntime", "tool-low");
-        exchange.setProperty("toolProfile", "source-control");
+        exchange.setProperty("resolvedLane", "low-pass");
+        exchange.setProperty("toolProfile", FrameworkFixtures.PROFILE_GAMMA);
         exchange.setProperty("actPrompt", "Confirm the target source repository.");
 
         support.prepareToolPassPrompt().process(exchange);
 
         LlmJobRequest request = exchange.getIn().getBody(LlmJobRequest.class);
-        assertEquals("tool-low", request.requester());
+        assertEquals("low-pass", request.laneId());
+        assertEquals(LlmPassType.TOOL, request.passType());
         assertEquals("Persona A", request.role());
         assertTrue(request.systemPrompt().contains("Traits:"));
         assertTrue(request.systemPrompt().contains("Builds framework test scenarios"));
@@ -131,7 +132,7 @@ class PrimitiveSemanticsTest {
         assertTrue(request.prompt().contains("Mission roster:"));
         assertTrue(request.prompt().contains("- name: Persona A"));
         assertTrue(request.prompt().contains("routine: Routine A"));
-        assertTrue(request.prompt().contains("platform identities: gitea @persona-a, mattermost @persona-a, plane @persona-a"));
+        assertTrue(request.prompt().contains("platform identities: alpha-mcp @persona-a, beta-mcp @persona-a, gamma-mcp @persona-a"));
         assertTrue(request.prompt().contains("personaId: persona-a"));
         assertTrue(request.prompt().contains("routineId: routine-a"));
         assertTrue(request.prompt().contains("agentRunId: run-1"));
@@ -140,10 +141,10 @@ class PrimitiveSemanticsTest {
         assertFalse(request.prompt().contains("\"self"));
         assertFalse(request.prompt().contains("Persona B"));
         assertFalse(request.prompt().contains("Credentials/tokens"));
-        assertFalse(request.prompt().contains("mattermost-token"));
-        assertFalse(request.prompt().contains("gitea-token"));
-        assertFalse(request.prompt().contains("plane-token"));
-        assertTrue(request.prompt().contains("Tool profile: source-control"));
+        assertFalse(request.prompt().contains("alpha-secret"));
+        assertFalse(request.prompt().contains("beta-secret"));
+        assertFalse(request.prompt().contains("gamma-secret"));
+        assertTrue(request.prompt().contains("Tool profile: " + FrameworkFixtures.PROFILE_GAMMA));
         assertTrue(request.prompt().contains("Read before writing and avoid duplicate branches or pull requests."));
         assertTrue(request.prompt().contains("name: dev-selection"));
         assertTrue(request.prompt().contains("purpose: Developer context"));
@@ -175,9 +176,9 @@ class PrimitiveSemanticsTest {
         ThoughtStack stack = new ThoughtStack();
         stack.push(new ThoughtFrame("developer", "Developer context", 100, "Need current work summary."));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
-        exchange.setProperty("resolvedSynthesisRuntime", "synthesis-low");
+        exchange.setProperty("resolvedLane", "low-pass");
         exchange.setProperty("actId", "chat-kickoff");
-        exchange.setProperty("actPrompt", "Use source-control tools to inspect repository status before implementation.");
+        exchange.setProperty("actPrompt", "Use synthetic tools to inspect repository status before implementation.");
         exchange.setProperty("toolPassObservedAt", java.time.Instant.parse("2026-07-07T12:00:00Z"));
         exchange.setProperty("toolPassResult", "No stale focus post found.");
 
@@ -196,7 +197,7 @@ class PrimitiveSemanticsTest {
         assertNoToolAccessScopeGuidance(request.systemPrompt());
         assertTrue(request.prompt().contains("Test run input"));
         assertTrue(request.prompt().contains("Preceding action objective, for context only:"));
-        assertTrue(request.prompt().contains("Use source-control tools to inspect repository status before implementation."));
+        assertTrue(request.prompt().contains("Use synthetic tools to inspect repository status before implementation."));
         assertTrue(request.prompt().contains("Do not execute or repeat this objective during synthesis."));
         assertFalse(request.prompt().contains("Act prompt:"));
         assertTrue(request.prompt().contains("Latest observation observedAt: 2026-07-07T12:00:00Z"));
@@ -210,7 +211,7 @@ class PrimitiveSemanticsTest {
         stack.push(new ThoughtFrame("parent-thought", "Parent context", 100, "Older stable context."));
         stack.push(new ThoughtFrame("child-thought", "Child context", 100, ""));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
-        exchange.setProperty("resolvedSynthesisRuntime", "synthesis-low");
+        exchange.setProperty("resolvedLane", "low-pass");
         exchange.setProperty("actId", "chat-kickoff");
         exchange.setProperty("actPrompt", "Post implementation focus if stale.");
         exchange.setProperty("toolPassResult", "No stale focus post found.");
@@ -248,9 +249,6 @@ class PrimitiveSemanticsTest {
         assertFalse(prompt.contains("Good memory shape"));
         assertFalse(prompt.contains("current wiki: missing"));
         assertFalse(prompt.contains("project tracker verified; project membership"));
-        assertFalse(prompt.contains("Gitea"));
-        assertFalse(prompt.contains("Mattermost"));
-        assertFalse(prompt.contains("Plane"));
     }
 
     @Test
@@ -259,36 +257,36 @@ class PrimitiveSemanticsTest {
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
         ThoughtStack stack = new ThoughtStack();
         stack.push(new ThoughtFrame("pm-root", "project-manager-routine", "Durable PM project anchors", 300,
-                "Plane project tracker missing"));
+                "Synthetic project tracker missing"));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
-        exchange.setProperty("resolvedSynthesisRuntime", "synthesis-low");
-        exchange.setProperty("actId", "project-management-setup");
+        exchange.setProperty("resolvedLane", "low-pass");
+        exchange.setProperty("actId", "synthetic-planning-setup");
         exchange.setProperty("actPrompt", "Create or verify the project tracker for the mission.");
         exchange.setProperty("toolPassObservedAt", java.time.Instant.parse("2026-07-07T12:00:00Z"));
         exchange.setProperty("toolPassResult", """
                 Outcome: Project tracker created and verified.
                 Evidence / links / ids:
-                - verified: Plane project Repair Shop Queue App, id 36a6bccc-4729-4c2d-83fc-0fe48441b1bd, identifier RSQA, workspace 7a3f3b43-ef50-476b-b316-bc1bf5021393, status active/verified
+                - verified: Synthetic project Repair Shop Queue App, id 36a6bccc-4729-4c2d-83fc-0fe48441b1bd, identifier RSQA, workspace 7a3f3b43-ef50-476b-b316-bc1bf5021393, status active/verified
                 Latest observations from this act:
-                - created: Plane project Repair Shop Queue App
+                - created: Synthetic project Repair Shop Queue App
                 - verified: id=36a6bccc-4729-4c2d-83fc-0fe48441b1bd; identifier=RSQA; workspace=7a3f3b43-ef50-476b-b316-bc1bf5021393; status=active/verified
                 - still missing: none
                 - blockers remaining: none for project tracker
-                - stale blockers resolved: Plane project tracker missing -> resolved; project RSQA verified
-                Durable facts to remember: Plane project Repair Shop Queue App (RSQA) verified.
+                - stale blockers resolved: Synthetic project tracker missing -> resolved; project RSQA verified
+                Durable facts to remember: Synthetic project Repair Shop Queue App (RSQA) verified.
                 """);
 
         support.prepareStepSynthesisPrompt().process(exchange);
 
         String prompt = exchange.getIn().getBody(LlmJobRequest.class).prompt();
         assertTrue(prompt.contains("Previous thought snapshots, possibly stale"));
-        assertTrue(prompt.contains("Plane project tracker missing"));
+        assertTrue(prompt.contains("Synthetic project tracker missing"));
         assertTrue(prompt.contains("Latest observation from this act:"));
         assertTrue(prompt.contains("36a6bccc-4729-4c2d-83fc-0fe48441b1bd"));
         assertTrue(prompt.contains("RSQA"));
         assertTrue(prompt.contains("7a3f3b43-ef50-476b-b316-bc1bf5021393"));
         assertTrue(prompt.contains("status active/verified"));
-        assertTrue(prompt.contains("stale blockers resolved: Plane project tracker missing -> resolved; project RSQA verified"));
+        assertTrue(prompt.contains("stale blockers resolved: Synthetic project tracker missing -> resolved; project RSQA verified"));
         assertTrue(prompt.contains("Treat previous thoughts as stale snapshots"));
         assertTrue(prompt.contains("latest observation as the newest state"));
         assertTrue(prompt.contains("latest observation wins"));
@@ -306,7 +304,7 @@ class PrimitiveSemanticsTest {
         stack.push(new ThoughtFrame("routine-thought", "Routine context", 100, "Broad state."));
         stack.push(new ThoughtFrame("loop-thought", "Loop context", 100, "Local state."));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
-        exchange.setProperty("resolvedSynthesisRuntime", "synthesis-low");
+        exchange.setProperty("resolvedLane", "low-pass");
         exchange.setProperty("actId", "loop-closeout");
         exchange.setProperty("actPrompt", "Close out the current loop.");
         exchange.setProperty("toolPassResult", "Loop status was updated.");
@@ -328,14 +326,15 @@ class PrimitiveSemanticsTest {
         ThoughtStack stack = new ThoughtStack();
         stack.push(new ThoughtFrame("developer", "Developer context", 100, "Need repository name before coding."));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
-        exchange.setProperty("resolvedSynthesisRuntime", "synthesis-high");
+        exchange.setProperty("resolvedLane", "high-pass");
         exchange.setProperty("decisionId", "application-developer-done");
         exchange.setProperty("decisionPrompt", "Is the application developer routine complete?");
 
         support.prepareDecisionPrompt().process(exchange);
 
         LlmJobRequest request = exchange.getIn().getBody(LlmJobRequest.class);
-        assertEquals("synthesis-high", request.requester());
+        assertEquals("high-pass", request.laneId());
+        assertEquals(LlmPassType.SYNTHESIS, request.passType());
         assertEquals("classpath:schemas/decision-result-schema.json", request.responseSchema());
         assertEquals(true, request.metadata().get(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY));
         assertTrue(request.systemPrompt().contains("Builds framework test scenarios"));
@@ -352,7 +351,7 @@ class PrimitiveSemanticsTest {
     void createSchemaClasspathUriIsResolvedIntoPromptSchemaBody() throws Exception {
         PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
-        exchange.setProperty("resolvedSynthesisRuntime", "synthesis-low");
+        exchange.setProperty("resolvedLane", "low-pass");
         exchange.setProperty("createId", "planned-agent-runs");
         exchange.setProperty("createPrompt", "Propose the initial agent runs.");
         exchange.setProperty("createSchema", "classpath:schemas/example/software-team/agent-run-requests-schema.json");
@@ -378,7 +377,7 @@ class PrimitiveSemanticsTest {
         ThoughtStack stack = new ThoughtStack();
         stack.push(new ThoughtFrame("mission", "Mission planning", 200, "Need PM, PO, and developer runs."));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
-        exchange.setProperty("resolvedSynthesisRuntime", "synthesis-low");
+        exchange.setProperty("resolvedLane", "low-pass");
         exchange.setProperty("createId", "planned-agent-runs");
         exchange.setProperty("createPrompt", "Propose the initial agent runs.");
         String schema = """
@@ -389,7 +388,8 @@ class PrimitiveSemanticsTest {
         support.prepareCreatePrompt().process(exchange);
 
         LlmJobRequest request = exchange.getIn().getBody(LlmJobRequest.class);
-        assertEquals("synthesis-low", request.requester());
+        assertEquals("low-pass", request.laneId());
+        assertEquals(LlmPassType.SYNTHESIS, request.passType());
         assertEquals(schema, exchange.getProperty("createSchemaJson", String.class));
         assertTrue(request.prompt().contains(schema));
         assertTrue(request.prompt().contains("Test mission"));
@@ -400,7 +400,7 @@ class PrimitiveSemanticsTest {
         assertTrue(request.prompt().contains("Mission roster:"));
         assertTrue(request.prompt().contains("- name: Persona A"));
         assertTrue(request.prompt().contains("routine: Routine A"));
-        assertTrue(request.prompt().contains("platform identities: gitea @persona-a, mattermost @persona-a, plane @persona-a"));
+        assertTrue(request.prompt().contains("platform identities: alpha-mcp @persona-a, beta-mcp @persona-a, gamma-mcp @persona-a"));
         assertTrue(request.prompt().contains("personaId: persona-a"));
         assertTrue(request.prompt().contains("routineId: routine-a"));
         assertTrue(request.prompt().contains("agentRunId: run-1"));
@@ -414,7 +414,7 @@ class PrimitiveSemanticsTest {
     void createPromptDoesNotInjectCatalogDataAccidentally() throws Exception {
         PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
-        exchange.setProperty("resolvedSynthesisRuntime", "synthesis-low");
+        exchange.setProperty("resolvedLane", "low-pass");
         exchange.setProperty("createId", "generic-create");
         exchange.setProperty("createPrompt", "Create a generic object.");
         exchange.setProperty("createSchema", "{\"type\":\"object\"}");
@@ -437,7 +437,7 @@ class PrimitiveSemanticsTest {
         ThoughtStack stack = new ThoughtStack();
         stack.push(new ThoughtFrame("mission", "Mission planning", 200, "Need PM, PO, and developer runs."));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
-        exchange.setProperty("resolvedSynthesisRuntime", "synthesis-low");
+        exchange.setProperty("resolvedLane", "low-pass");
         exchange.setProperty("createId", "planned-agent-runs");
         exchange.setProperty("createPrompt", "Propose the initial agent runs.\nPersonas:\n"
                 + FrameworkFixtures.personaCatalog().agentRunStartAssignablePromptJson()
@@ -458,7 +458,7 @@ class PrimitiveSemanticsTest {
         assertTrue(request.prompt().contains("Tool profiles:"));
         assertTrue(request.prompt().contains("routine-a"));
         assertTrue(request.prompt().contains("routine-a"));
-        assertTrue(request.prompt().contains("source-control"));
+        assertTrue(request.prompt().contains(FrameworkFixtures.PROFILE_GAMMA));
         assertTrue(request.prompt().contains(schema));
         assertTrue(request.prompt().contains("Need PM, PO, and developer runs."));
     }
@@ -477,7 +477,7 @@ class PrimitiveSemanticsTest {
     void stepResultArtifactsCanRepresentMissingWithoutUrlAndVerifiedWithUrl() throws Exception {
         PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
-        exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", """
+        exchange.getIn().setBody(FrameworkFixtures.llmResult("low-pass", """
                 {
                   "actId":"artifact-check",
                   "summary":"Current wiki is missing; reference pattern inspected separately.",
@@ -509,7 +509,7 @@ class PrimitiveSemanticsTest {
         stack.push(new ThoughtFrame("parent", "Parent", 100, "old parent"));
         stack.push(new ThoughtFrame("child", "Child", 100, "old child"));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
-        exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", """
+        exchange.getIn().setBody(FrameworkFixtures.llmResult("low-pass", """
                 {"actId":"work-item-review","summary":"done","artifacts":[],"thoughts":[{"id":"parent","content":"new parent"},{"id":"child","content":"new child"}]}
                 """));
 
@@ -531,7 +531,7 @@ class PrimitiveSemanticsTest {
     void stepResultDoesNotControlAgentLifecycleStatus() throws Exception {
         PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
-        exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", """
+        exchange.getIn().setBody(FrameworkFixtures.llmResult("low-pass", """
                 {"actId":"work-item-review","summary":"decision needed","artifacts":[],"thoughts":[]}
                 """));
 
@@ -549,7 +549,7 @@ class PrimitiveSemanticsTest {
         ThoughtStack stack = new ThoughtStack();
         stack.push(new ThoughtFrame("child", "Child", 100, "old child"));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
-        exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", """
+        exchange.getIn().setBody(FrameworkFixtures.llmResult("low-pass", """
                 {"actId":"noop","summary":"nothing changed","artifacts":[],"thoughts":[]}
                 """));
 
@@ -565,7 +565,7 @@ class PrimitiveSemanticsTest {
         ThoughtStack stack = new ThoughtStack();
         stack.push(new ThoughtFrame("child", "Child", 100, "old child"));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
-        exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", """
+        exchange.getIn().setBody(FrameworkFixtures.llmResult("low-pass", """
                 {"actId":"work-item-review","summary":"done","artifacts":[],"thoughts":[{"id":"child","content":"   "}]}
                 """));
 
@@ -582,7 +582,7 @@ class PrimitiveSemanticsTest {
         ThoughtStack stack = new ThoughtStack();
         stack.push(new ThoughtFrame("parent", "Parent", 100, "old parent"));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
-        exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", """
+        exchange.getIn().setBody(FrameworkFixtures.llmResult("low-pass", """
                 {"actId":"work-item-review","summary":"done","artifacts":[],"thoughts":[{"id":"missing","content":"bad update"}]}
                 """));
 
@@ -596,7 +596,7 @@ class PrimitiveSemanticsTest {
     void decisionResultStoresFullObjectAndMirrorsBooleanForCamelControlFlow() throws Exception {
         PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
-        exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", """
+        exchange.getIn().setBody(FrameworkFixtures.llmResult("low-pass", """
                 {"decisionId":"application-developer-done","result":true,"confidence":0.91,"reason":"delivery state is represented"}
                 """));
 
@@ -617,7 +617,7 @@ class PrimitiveSemanticsTest {
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
         exchange.setProperty("createId", "planned-agent-runs");
         exchange.setProperty("createSchemaJson", "{\"type\":\"object\",\"required\":[\"agentRuns\"]}");
-        exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", "{\"wrong\":[]}"));
+        exchange.getIn().setBody(FrameworkFixtures.llmResult("low-pass", "{\"wrong\":[]}"));
 
         Exception failure = assertThrows(Exception.class, () -> support.applyCreateResult().process(exchange));
 
@@ -655,7 +655,7 @@ class PrimitiveSemanticsTest {
         Exchange valid = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
         valid.setProperty("createId", "schema-validation");
         valid.setProperty("createSchemaJson", schema);
-        valid.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", "{\"status\":\"ready\",\"items\":[{\"name\":\"alpha\",\"score\":3}]}"));
+        valid.getIn().setBody(FrameworkFixtures.llmResult("low-pass", "{\"status\":\"ready\",\"items\":[{\"name\":\"alpha\",\"score\":3}]}"));
 
         support.applyCreateResult().process(valid);
 
@@ -674,7 +674,7 @@ class PrimitiveSemanticsTest {
         PrimitiveSupport support = FrameworkFixtures.primitiveSupport();
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
         java.time.Instant now = java.time.Instant.now();
-        exchange.getIn().setBody(new us.nusun.llmshare.framework.model.LlmJobResult(java.util.UUID.randomUUID(), us.nusun.llmshare.framework.model.LlmJobStatus.FAILED, "synthesis-low", "test", "mock", null, null, now, now, now, 0, "model unavailable"));
+        exchange.getIn().setBody(new us.nusun.llmshare.framework.model.LlmJobResult(java.util.UUID.randomUUID(), us.nusun.llmshare.framework.model.LlmJobStatus.FAILED, "low-pass", LlmPassType.SYNTHESIS, "test", "test", "mock", null, null, now, now, now, 0, "model unavailable"));
 
         Exception failure = assertThrows(Exception.class, () -> support.applyDecisionResult().process(exchange));
 
@@ -688,7 +688,7 @@ class PrimitiveSemanticsTest {
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
         exchange.setProperty("createId", "planned-agent-runs");
         exchange.setProperty("schemaId", "agent-run-list");
-        exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", """
+        exchange.getIn().setBody(FrameworkFixtures.llmResult("low-pass", """
                 {"agentRuns":[{"personaId":"routine-a","routineId":"routine-a","reason":"Implement the first vertical slice."}]}
                 """));
 
@@ -723,7 +723,7 @@ class PrimitiveSemanticsTest {
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
         exchange.setProperty("createId", "schema-validation");
         exchange.setProperty("createSchemaJson", schema);
-        exchange.getIn().setBody(FrameworkFixtures.llmResult("synthesis-low", content));
+        exchange.getIn().setBody(FrameworkFixtures.llmResult("low-pass", content));
 
         Exception failure = assertThrows(Exception.class, () -> support.applyCreateResult().process(exchange));
 

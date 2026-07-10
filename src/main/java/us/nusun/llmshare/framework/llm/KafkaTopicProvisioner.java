@@ -12,7 +12,7 @@ import org.apache.kafka.clients.admin.TopicDescription;
 import org.apache.kafka.common.TopicPartition;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
-import us.nusun.llmshare.framework.inventory.ExecutionRuntimeRegistry;
+import us.nusun.llmshare.framework.inventory.InferenceLaneRegistry;
 import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
 
 import java.util.List;
@@ -26,7 +26,7 @@ import java.util.concurrent.ExecutionException;
 public class KafkaTopicProvisioner {
     private static final Logger LOG = Logger.getLogger(KafkaTopicProvisioner.class);
 
-    @jakarta.inject.Inject ExecutionRuntimeRegistry runtimes;
+    @jakarta.inject.Inject InferenceLaneRegistry lanes;
     @ConfigProperty(name = "kafka.bootstrap.servers") String bootstrapServers;
     @ConfigProperty(name = "llm.topic.dead-letter", defaultValue = "llm.dead-letter") String deadLetterTopic;
     @ConfigProperty(name = "agent-run.scheduled.topic", defaultValue = "agent-runs.scheduled") String agentRunScheduledTopic;
@@ -48,7 +48,7 @@ public class KafkaTopicProvisioner {
 
     public List<String> configuredTopicNames() {
         java.util.ArrayList<String> topics = new java.util.ArrayList<>();
-        for (InferenceLaneDefinition lane : runtimes.allLanes()) {
+        for (InferenceLaneDefinition lane : lanes.allLanes()) {
             topics.add(lane.requestTopic());
             topics.add(lane.responseTopic());
         }
@@ -65,7 +65,7 @@ public class KafkaTopicProvisioner {
 
     public Map<String, Integer> configuredTopicPartitions() {
         LinkedHashMap<String, Integer> topicPartitions = new LinkedHashMap<>();
-        for (InferenceLaneDefinition lane : runtimes.allLanes()) {
+        for (InferenceLaneDefinition lane : lanes.allLanes()) {
             topicPartitions.merge(lane.requestTopic(), lane.parallelism(), Math::max);
             topicPartitions.putIfAbsent(lane.responseTopic(), 1);
         }
@@ -158,7 +158,7 @@ public class KafkaTopicProvisioner {
 
     private void verifyExistingRequestTopicPartitions(Admin adminClient, Set<String> existingTopics) throws Exception {
         LinkedHashMap<String, Integer> requiredRequestPartitions = new LinkedHashMap<>();
-        for (InferenceLaneDefinition lane : runtimes.allLanes()) {
+        for (InferenceLaneDefinition lane : lanes.allLanes()) {
             if (existingTopics.contains(lane.requestTopic())) {
                 requiredRequestPartitions.merge(lane.requestTopic(), lane.parallelism(), Math::max);
             }

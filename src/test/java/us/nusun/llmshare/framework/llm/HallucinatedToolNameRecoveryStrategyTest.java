@@ -22,6 +22,7 @@ import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.LlmJobRequest;
 import us.nusun.llmshare.framework.model.LlmJobResult;
 import us.nusun.llmshare.framework.model.LlmJobStatus;
+import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.mcp.McpClientFactory;
 import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
 import us.nusun.llmshare.framework.route.LlmRoute;
@@ -51,7 +52,7 @@ class HallucinatedToolNameRecoveryStrategyTest {
     @Test
     void recoversFromOneHallucinatedToolName() {
         ScriptedChatModel model = ScriptedChatModel.hallucinateThenAnswer();
-        Agent agent = factory("tool-low", model).createAgent(exchange("tool-low"));
+        Agent agent = factory("low-pass", model).createAgent(exchange("low-pass"));
 
         Result<String> result = assertDoesNotThrow(() -> agent.chat(
                 new AiAgentBody<>("Inspect project state.", "You are a tester.", "memory-hallucination"),
@@ -92,7 +93,9 @@ class HallucinatedToolNameRecoveryStrategyTest {
             context.start();
             LlmJobEnvelope job = LlmJobEnvelope.queued(new LlmJobRequest(
                     UUID.randomUUID(),
-                    "tool-low",
+                    "low-pass",
+                    LlmPassType.TOOL,
+                    "test",
                     "test",
                     0,
                     "Inspect current state.",
@@ -101,7 +104,8 @@ class HallucinatedToolNameRecoveryStrategyTest {
                     Map.of(
                             "personaId", FrameworkFixtures.PERSONA_A,
                             "toolProfile", "none",
-                            "executionRuntimeId", "tool-low"),
+                            "laneId", "low-pass",
+                            "passType", "TOOL"),
                     null).normalized());
             String json = new ObjectMapper()
                     .registerModule(new JavaTimeModule())
@@ -129,7 +133,7 @@ class HallucinatedToolNameRecoveryStrategyTest {
     @Test
     void repeatedHallucinatedToolNamesRemainBoundedByRoundTripLimit() {
         ScriptedChatModel model = ScriptedChatModel.alwaysHallucinates();
-        Agent agent = factory("tool-low", model).createAgent(exchange("tool-low"));
+        Agent agent = factory("low-pass", model).createAgent(exchange("low-pass"));
 
         RuntimeException failure = assertThrows(RuntimeException.class, () -> agent.chat(
                 new AiAgentBody<>("Inspect project state.", "You are a tester.", "memory-repeated"),
@@ -142,7 +146,7 @@ class HallucinatedToolNameRecoveryStrategyTest {
     @Test
     void realToolExecutionFailuresUseExistingToolErrorBehavior() {
         ScriptedChatModel model = ScriptedChatModel.requestFailingToolThenAnswer();
-        Agent agent = factory("tool-low", model).createAgent(exchange("tool-low"));
+        Agent agent = factory("low-pass", model).createAgent(exchange("low-pass"));
 
         Result<String> result = assertDoesNotThrow(() -> agent.chat(
                 new AiAgentBody<>("Run failing tool.", "You are a tester.", "memory-tool-failure"),
@@ -156,10 +160,10 @@ class HallucinatedToolNameRecoveryStrategyTest {
         assertFalse(toolResult.text().contains("No tool named"));
     }
 
-    private static LlmAgentFactory.ExecutionRuntimeAgentFactory factory(String runtimeId, ChatModel model) {
-        return new LlmAgentFactory.ExecutionRuntimeAgentFactory(
-                FrameworkFixtures.executionRuntimeRegistry(),
-                Map.of(runtimeId, model),
+    private static LlmAgentFactory.DynamicAgentFactory factory(String laneId, ChatModel model) {
+        return new LlmAgentFactory.DynamicAgentFactory(
+                FrameworkFixtures.inferenceLaneRegistry(),
+                Map.of(laneId, model),
                 new McpClientFactory(),
                 FrameworkFixtures.toolProfileRegistry(),
                 FrameworkFixtures.personaCatalog(),
@@ -167,9 +171,10 @@ class HallucinatedToolNameRecoveryStrategyTest {
                 12000);
     }
 
-    private static Exchange exchange(String runtimeId) {
+    private static Exchange exchange(String laneId) {
         Exchange exchange = new DefaultExchange(new DefaultCamelContext());
-        exchange.setProperty("executionRuntimeId", runtimeId);
+        exchange.setProperty("laneId", laneId);
+        exchange.setProperty("passType", LlmPassType.TOOL);
         exchange.setProperty("personaId", FrameworkFixtures.PERSONA_A);
         exchange.setProperty("toolProfile", "none");
         return exchange;
@@ -182,25 +187,25 @@ class HallucinatedToolNameRecoveryStrategyTest {
         Properties properties = new Properties();
         properties.setProperty("llm.consumer.group", "hallucinated-tool-test");
         properties.setProperty("llm.response.consumer.group", "hallucinated-tool-test-response");
-        properties.setProperty("llm.runtime-default.openai.model", "test-model");
+        properties.setProperty("llm.model-default.openai.model", "test-model");
         properties.setProperty("llm.reply-timeout-ms", "100");
         properties.setProperty("llm.topic.dead-letter", "llm.dead-letter");
         context.getPropertiesComponent().setOverrideProperties(properties);
         context.addComponent("kafka", kafka);
         InFlightReplyManager replies = new InFlightReplyManager();
         context.getRegistry().bind("inFlightReplyManager", replies);
-        LlmAgentFactory.ExecutionRuntimeAgentFactory agentFactory = factory("tool-low", model);
+        LlmAgentFactory.DynamicAgentFactory agentFactory = factory("low-pass", model);
         agentFactory.setCamelContext(context);
-        context.getRegistry().bind("executionRuntimeAgentFactory", agentFactory);
+        context.getRegistry().bind("dynamicAgentFactory", agentFactory);
         FrameworkFixtures.bindCatalogBeans(context);
         LlmRoute route = new LlmRoute();
-        FrameworkFixtures.set(route, "runtimes", FrameworkFixtures.executionRuntimeRegistry());
-        FrameworkFixtures.set(route, "jobFactory", new LlmJobFactory(FrameworkFixtures.executionRuntimeRegistry(), FrameworkFixtures.personaCatalog()));
+        FrameworkFixtures.set(route, "lanes", FrameworkFixtures.inferenceLaneRegistry());
+        FrameworkFixtures.set(route, "jobFactory", new LlmJobFactory(FrameworkFixtures.inferenceLaneRegistry(), FrameworkFixtures.personaCatalog()));
         LlmDeadLetterFactory deadLetters = new LlmDeadLetterFactory();
         FrameworkFixtures.set(route, "deadLetterFactory", deadLetters);
         FrameworkFixtures.set(route, "routeSupport", new LlmRouteSupport(
                 context,
-                FrameworkFixtures.executionRuntimeRegistry(),
+                FrameworkFixtures.inferenceLaneRegistry(),
                 replies,
                 deadLetters));
         context.addRoutes(route);

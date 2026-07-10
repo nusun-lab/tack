@@ -10,9 +10,10 @@ import us.nusun.llmshare.framework.model.ToolProfile;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class McpClientFactoryBoundaryTest {
     @Test
@@ -23,41 +24,49 @@ class McpClientFactoryBoundaryTest {
     }
 
     @Test
-    void missingUrlOrTokenDisablesConfiguredServerClient() {
-        McpClientFactory factory = factory();
-        Persona persona = Persona.builder("persona")
-                .name("Persona")
-                .identity("plane", "", "@persona")
-                .identity("gitea", "", "@persona")
-                .build();
-        ToolProfile profile = ToolProfile.builder("tools")
-                .mcpServer(server("plane", null))
-                .mcpServer(server("gitea", "http://gitea.example"))
-                .allowAllTools("plane")
-                .allowAllTools("gitea")
-                .build();
-
-        assertEquals(List.of(), factory.clientsFor(persona, profile));
-    }
-
-    @Test
-    void createsOnlyAllowedServerClientsWithPerPersonaLazyKeys() {
+    void createsOneProfiledClientForEachConfiguredServerWithCredentials() {
         McpClientFactory factory = factory();
         Persona persona = Persona.builder("persona-a")
                 .name("Persona A")
-                .identity("plane", "plane-secret", "@miles-agent")
-                .identity("gitea", "", "@miles-agent")
+                .identity(FrameworkFixtures.SERVER_ALPHA, "alpha-secret", "@alpha-agent")
+                .identity(FrameworkFixtures.SERVER_BETA, "beta-secret", "@beta-agent")
                 .build();
-        ToolProfile profile = ToolProfile.builder("project-management")
-                .mcpServer(server("plane", "http://plane.example/mcp"))
-                .mcpServer(server("gitea", "http://gitea.example/mcp"))
-                .allowAllTools("plane")
+        ToolProfile profile = ToolProfile.builder("synthetic-tools")
+                .mcpServer(server(FrameworkFixtures.SERVER_ALPHA, "http://alpha.example/mcp"))
+                .mcpServer(server(FrameworkFixtures.SERVER_BETA, "http://beta.example/mcp"))
+                .allowAllTools(FrameworkFixtures.SERVER_ALPHA)
+                .allowAllTools(FrameworkFixtures.SERVER_BETA)
                 .build();
 
         List<McpClient> clients = factory.clientsFor(persona, profile);
 
-        assertEquals(1, clients.size());
-        assertEquals("plane:persona-a", clients.getFirst().key());
+        assertEquals(Set.of(
+                        FrameworkFixtures.SERVER_ALPHA + ":persona-a",
+                        FrameworkFixtures.SERVER_BETA + ":persona-a"),
+                clients.stream().map(McpClient::key).collect(Collectors.toSet()));
+    }
+
+    @Test
+    void missingUrlOrTokenSkipsOnlyThatServerClient() {
+        McpClientFactory factory = factory();
+        Persona persona = Persona.builder("persona-a")
+                .name("Persona A")
+                .identity(FrameworkFixtures.SERVER_ALPHA, "alpha-secret", "@alpha-agent")
+                .identity(FrameworkFixtures.SERVER_BETA, "", "@beta-agent")
+                .identity(FrameworkFixtures.SERVER_GAMMA, "gamma-secret", "@gamma-agent")
+                .build();
+        ToolProfile profile = ToolProfile.builder("synthetic-tools")
+                .mcpServer(server(FrameworkFixtures.SERVER_ALPHA, "http://alpha.example/mcp"))
+                .mcpServer(server(FrameworkFixtures.SERVER_BETA, "http://beta.example/mcp"))
+                .mcpServer(server(FrameworkFixtures.SERVER_GAMMA, ""))
+                .allowAllTools(FrameworkFixtures.SERVER_ALPHA)
+                .allowAllTools(FrameworkFixtures.SERVER_BETA)
+                .allowAllTools(FrameworkFixtures.SERVER_GAMMA)
+                .build();
+
+        List<McpClient> clients = factory.clientsFor(persona, profile);
+
+        assertEquals(List.of(FrameworkFixtures.SERVER_ALPHA + ":persona-a"), clients.stream().map(McpClient::key).toList());
     }
 
     @Test
@@ -65,21 +74,21 @@ class McpClientFactoryBoundaryTest {
         McpClientFactory factory = factory();
         Persona persona = Persona.builder("persona-a")
                 .name("Persona A")
-                .identity("custom", "custom-secret", "@custom-agent")
+                .identity("custom-mcp", "custom-secret", "@custom-agent")
                 .build();
         ToolProfile profile = ToolProfile.builder("custom-tools")
-                .mcpServer(McpServerDefinition.builder("custom")
+                .mcpServer(McpServerDefinition.builder("custom-mcp")
                         .url("http://custom.example/mcp")
                         .authHeaderName("X-Token")
                         .authHeaderValueFormat("Token %s")
                         .build())
-                .allowAllTools("custom")
+                .allowAllTools("custom-mcp")
                 .build();
 
         List<McpClient> clients = factory.clientsFor(persona, profile);
 
         assertEquals(1, clients.size());
-        assertEquals("custom:persona-a", clients.getFirst().key());
+        assertEquals("custom-mcp:persona-a", clients.getFirst().key());
     }
 
     @Test
@@ -87,34 +96,34 @@ class McpClientFactoryBoundaryTest {
         McpClientFactory factory = factory();
         Persona persona = Persona.builder("persona-a")
                 .name("Persona A")
-                .identity("plane", "plane-secret", "@plane-agent")
-                .identity("custom", "custom-secret", "@custom-agent")
+                .identity(FrameworkFixtures.SERVER_ALPHA, "alpha-secret", "@alpha-agent")
+                .identity("custom-mcp", "custom-secret", "@custom-agent")
                 .build();
-        ToolProfile profile = ToolProfile.builder("project-management")
-                .mcpServer(server("plane", "http://plane.example/mcp"))
-                .allowAllTools("plane")
+        ToolProfile profile = ToolProfile.builder("synthetic-tools")
+                .mcpServer(server(FrameworkFixtures.SERVER_ALPHA, "http://alpha.example/mcp"))
+                .allowAllTools(FrameworkFixtures.SERVER_ALPHA)
                 .build();
 
         List<McpClient> clients = factory.clientsFor(persona, profile);
 
-        assertEquals(List.of("plane:persona-a"), clients.stream().map(McpClient::key).toList());
+        assertEquals(List.of(FrameworkFixtures.SERVER_ALPHA + ":persona-a"), clients.stream().map(McpClient::key).toList());
     }
 
     @Test
-    void profileServerDefinitionUsesConcreteRuntimeUrl() {
-        ToolProfile profile = ToolProfile.builder("source-control")
-                .mcpServer(McpServerDefinition.builder("gitea")
-                        .url("http://gitea.example/mcp")
-                        .authHeaderValueFormat("token %s")
+    void profileServerDefinitionUsesConcreteUrlAndAuthFormat() {
+        ToolProfile profile = ToolProfile.builder("synthetic-tools")
+                .mcpServer(McpServerDefinition.builder(FrameworkFixtures.SERVER_GAMMA)
+                        .url("http://gamma.example/mcp")
+                        .authHeaderValueFormat("Token %s")
                         .build())
-                .allowAllTools("gitea")
+                .allowAllTools(FrameworkFixtures.SERVER_GAMMA)
                 .build();
 
-        McpServerDefinition server = profile.mcpServers().get("gitea");
+        McpServerDefinition server = profile.mcpServers().get(FrameworkFixtures.SERVER_GAMMA);
 
-        assertEquals("gitea", server.id());
-        assertEquals("http://gitea.example/mcp", server.url());
-        assertEquals("token %s", server.authHeaderValueFormat());
+        assertEquals(FrameworkFixtures.SERVER_GAMMA, server.id());
+        assertEquals("http://gamma.example/mcp", server.url());
+        assertEquals("Token %s", server.authHeaderValueFormat());
     }
 
     private static McpClientFactory factory() {

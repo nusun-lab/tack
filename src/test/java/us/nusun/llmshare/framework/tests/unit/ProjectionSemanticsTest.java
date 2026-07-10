@@ -32,10 +32,10 @@ class ProjectionSemanticsTest {
         run.currentPrimitive("act");
         run.currentId("work-item-review");
         run.apply(new StepResult("work-item-review", "Project membership is missing.", List.of(), List.of()));
-        exchange.setProperty("toolProfile", "project-management");
-        exchange.setProperty("actPrompt", "Review one current item in the project management system.");
-        exchange.setProperty("resolvedToolRuntime", "tool-low");
-        exchange.setProperty("resolvedSynthesisRuntime", "synthesis-high");
+        exchange.setProperty("toolProfile", FrameworkFixtures.PROFILE_BETA);
+        String fullPrompt = "Review one current item in the project management system. " + "Preserve this sentence. ".repeat(30);
+        exchange.setProperty("actPrompt", fullPrompt);
+        exchange.setProperty("resolvedLane", "high-pass");
         ThoughtStack stack = new ThoughtStack();
         stack.push(new ThoughtFrame("pm", "pm-cycle", "Project Manager routine context", 900, "Current state: ".repeat(120)));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
@@ -52,14 +52,14 @@ class ProjectionSemanticsTest {
         assertEquals(FrameworkFixtures.ROUTINE_A, projection.routine().get("id"));
         assertEquals("act", projection.current().get("primitive"));
         assertEquals("work-item-review", projection.current().get("id"));
-        assertEquals("project-management", projection.toolProfile());
-        assertEquals("tool-low", projection.runtimes().get("toolRuntime"));
-        assertEquals("synthesis-high", projection.runtimes().get("synthesisRuntime"));
-        assertEquals("low-pass", projection.lanes().get("toolLane"));
-        assertEquals("high-pass", projection.lanes().get("synthesisLane"));
+        assertEquals(FrameworkFixtures.PROFILE_BETA, projection.toolProfile());
+        assertEquals("high-pass", projection.laneId());
+        assertEquals(fullPrompt, projection.current().get("promptSummary"));
         assertEquals("step", projection.latestResult().get("type"));
         assertEquals("Project membership is missing.", projection.latestResult().get("summary"));
         assertEquals("ACT_COMPLETED", projection.timeline().getFirst().get("type"));
+        assertEquals("act", projection.timeline().getFirst().get("primitive"));
+        assertEquals("work-item-review", projection.timeline().getFirst().get("stepId"));
         assertEquals(Boolean.TRUE, projection.thoughtStack().getFirst().get("truncated"));
         assertEquals("pm-cycle", projection.thoughtStack().getFirst().get("name"));
         assertEquals("pm-cycle", projection.thoughtStack().getFirst().get("displayId"));
@@ -96,10 +96,9 @@ class ProjectionSemanticsTest {
         AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
         run.currentPrimitive("act");
         run.currentId("inspect-delivery-state");
-        exchange.setProperty("toolProfile", "project-management");
+        exchange.setProperty("toolProfile", FrameworkFixtures.PROFILE_BETA);
         exchange.setProperty("actPrompt", "Inspect current delivery state.");
-        exchange.setProperty("resolvedToolRuntime", "tool-low");
-        exchange.setProperty("resolvedSynthesisRuntime", "synthesis-low");
+        exchange.setProperty("resolvedLane", "low-pass");
         exchange.setProperty("latestPrimitiveFailure", "tool pass failed: missing persona identity");
 
         support.projectionEvent("ACT_STARTED").process(exchange);
@@ -114,11 +113,8 @@ class ProjectionSemanticsTest {
         assertNotNull(projection);
         assertEquals("act", projection.current().get("primitive"));
         assertEquals("inspect-delivery-state", projection.current().get("id"));
-        assertEquals("project-management", projection.toolProfile());
-        assertEquals("tool-low", projection.runtimes().get("toolRuntime"));
-        assertEquals("synthesis-low", projection.runtimes().get("synthesisRuntime"));
-        assertEquals("low-pass", projection.lanes().get("toolLane"));
-        assertEquals("low-pass", projection.lanes().get("synthesisLane"));
+        assertEquals(FrameworkFixtures.PROFILE_BETA, projection.toolProfile());
+        assertEquals("low-pass", projection.laneId());
         assertEquals("failure", projection.latestResult().get("type"));
         assertEquals("tool pass failed: missing persona identity", projection.latestResult().get("summary"));
         assertEquals(List.of(

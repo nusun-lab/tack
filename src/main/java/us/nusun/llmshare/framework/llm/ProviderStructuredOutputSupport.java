@@ -16,7 +16,7 @@ import java.io.InputStream;
 public final class ProviderStructuredOutputSupport {
     public static final String FORCE_PROVIDER_SCHEMA_PROPERTY = "llmForceProviderSchema";
     private static final String PROVIDER_SCHEMA_ENABLED_PLACEHOLDER =
-            "{{llm.runtime-default.structured-output.provider-schema-enabled:false}}";
+            "{{llm.model-default.structured-output.provider-schema-enabled:false}}";
     private static final String SCHEMA_NAME = "camel_schema";
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 

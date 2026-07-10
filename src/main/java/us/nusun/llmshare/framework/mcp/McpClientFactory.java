@@ -53,6 +53,12 @@ public class McpClientFactory {
         for (McpServerDefinition server : profile.mcpServers().values()) {
             add(clients, persona, profile, server);
         }
+        if (clients.isEmpty() && !profile.mcpServers().isEmpty()) {
+            LOG.warn("No MCP clients selected profile={} persona={} configuredServers={}",
+                    profile.id(),
+                    persona.id(),
+                    profile.mcpServers().keySet());
+        }
         return List.copyOf(clients);
     }
 
@@ -60,19 +66,20 @@ public class McpClientFactory {
         if (!profile.allowsServer(server.id())) {
             return;
         }
-        McpClient client = build(persona, server);
+        McpClient client = build(persona, profile, server);
         if (client != null) {
             clients.add(new ProfiledMcpClient(client, server.id(), profile, persona, logTokens, maxToolResultTokens, tokenCountEstimator));
         }
     }
 
-    private McpClient build(Persona persona, McpServerDefinition server) {
+    private McpClient build(Persona persona, ToolProfile profile, McpServerDefinition server) {
         ExternalIdentity identity = persona.identityFor(server.id());
         String handle = identity == null || blank(identity.handle()) ? persona.id() : identity.handle();
         String token = identity == null ? null : identity.token();
         String url = server.url();
         if (blank(url) || blank(token)) {
-            LOG.debug("Skipping MCP client server={} persona={} handle={} urlPresent={} tokenPresent={}",
+            LOG.info("Skipping MCP client profile={} server={} persona={} handle={} urlPresent={} tokenPresent={}",
+                    profile.id(),
                     server.id(),
                     persona.id(),
                     handle,

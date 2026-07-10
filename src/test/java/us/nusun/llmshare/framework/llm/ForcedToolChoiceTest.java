@@ -24,6 +24,7 @@ import org.apache.camel.support.DefaultExchange;
 import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.LlmJobRequest;
+import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.mcp.McpClientFactory;
 import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
@@ -54,7 +55,7 @@ class ForcedToolChoiceTest {
     @Test
     void toolEnabledAgentRequiresToolChoiceUntilFirstToolResultThenReturnsAuto() {
         RecordingChatModel model = new RecordingChatModel(true);
-        Agent agent = factory("tool-low", model).createAgent(exchange("tool-low"));
+        Agent agent = factory("low-pass", model).createAgent(exchange("low-pass", LlmPassType.TOOL));
 
         agent.chat(new AiAgentBody<>("Inspect current external state.", "You are a tester.", "memory-1"), probeToolProvider());
 
@@ -67,9 +68,9 @@ class ForcedToolChoiceTest {
     @Test
     void toolEnabledAgentPreservesProviderResponseFormat() {
         RecordingChatModel model = new RecordingChatModel(false);
-        Exchange exchange = exchange("tool-low", context(true));
-        exchange.setProperty("llmJob", job("tool-low", SCHEMA));
-        Agent agent = factory("tool-low", model).createAgent(exchange);
+        Exchange exchange = exchange("low-pass", LlmPassType.TOOL, context(true));
+        exchange.setProperty("llmJob", job("low-pass", LlmPassType.TOOL, SCHEMA));
+        Agent agent = factory("low-pass", model).createAgent(exchange);
 
         agent.chat(new AiAgentBody<>("Inspect current external state.", "You are a tester.", "memory-2"), probeToolProvider());
 
@@ -83,7 +84,7 @@ class ForcedToolChoiceTest {
     @Test
     void synthesisOnlyAgentDoesNotSetToolChoice() {
         RecordingChatModel model = new RecordingChatModel(false);
-        Agent agent = factory("synthesis-low", model).createAgent(exchange("synthesis-low"));
+        Agent agent = factory("low-pass", model).createAgent(exchange("low-pass", LlmPassType.SYNTHESIS));
 
         agent.chat(new AiAgentBody<>("Synthesize.", "Return JSON.", null), null);
 
@@ -114,7 +115,7 @@ class ForcedToolChoiceTest {
                 .parameters(parameters)
                 .build();
 
-        ChatRequest transformed = LlmAgentFactory.ExecutionRuntimeAgentFactory.forceInitialToolChoice(request);
+        ChatRequest transformed = LlmAgentFactory.DynamicAgentFactory.forceInitialToolChoice(request);
 
         assertEquals(messages, transformed.messages());
         assertEquals("model-a", transformed.modelName());
@@ -142,16 +143,16 @@ class ForcedToolChoiceTest {
                         .build())
                 .build();
 
-        ChatRequest transformed = LlmAgentFactory.ExecutionRuntimeAgentFactory.forceInitialToolChoice(request);
+        ChatRequest transformed = LlmAgentFactory.DynamicAgentFactory.forceInitialToolChoice(request);
 
         assertEquals(messages, transformed.messages());
         assertEquals(ToolChoice.AUTO, transformed.toolChoice());
     }
 
-    private static LlmAgentFactory.ExecutionRuntimeAgentFactory factory(String runtimeId, ChatModel model) {
-        return new LlmAgentFactory.ExecutionRuntimeAgentFactory(
-                FrameworkFixtures.executionRuntimeRegistry(),
-                Map.of(runtimeId, model),
+    private static LlmAgentFactory.DynamicAgentFactory factory(String laneId, ChatModel model) {
+        return new LlmAgentFactory.DynamicAgentFactory(
+                FrameworkFixtures.inferenceLaneRegistry(),
+                Map.of(laneId, model),
                 new McpClientFactory(),
                 FrameworkFixtures.toolProfileRegistry(),
                 FrameworkFixtures.personaCatalog(),
@@ -159,13 +160,14 @@ class ForcedToolChoiceTest {
                 12000);
     }
 
-    private static Exchange exchange(String runtimeId) {
-        return exchange(runtimeId, new DefaultCamelContext());
+    private static Exchange exchange(String laneId, LlmPassType passType) {
+        return exchange(laneId, passType, new DefaultCamelContext());
     }
 
-    private static Exchange exchange(String runtimeId, DefaultCamelContext context) {
+    private static Exchange exchange(String laneId, LlmPassType passType, DefaultCamelContext context) {
         Exchange exchange = new DefaultExchange(context);
-        exchange.setProperty("executionRuntimeId", runtimeId);
+        exchange.setProperty("laneId", laneId);
+        exchange.setProperty("passType", passType);
         exchange.setProperty("personaId", FrameworkFixtures.PERSONA_A);
         exchange.setProperty("toolProfile", "none");
         return exchange;
@@ -174,15 +176,17 @@ class ForcedToolChoiceTest {
     private static DefaultCamelContext context(boolean providerSchemaEnabled) {
         DefaultCamelContext context = new DefaultCamelContext();
         Properties properties = new Properties();
-        properties.setProperty("llm.runtime-default.structured-output.provider-schema-enabled", String.valueOf(providerSchemaEnabled));
+        properties.setProperty("llm.model-default.structured-output.provider-schema-enabled", String.valueOf(providerSchemaEnabled));
         context.getPropertiesComponent().setOverrideProperties(properties);
         return context;
     }
 
-    private static LlmJobEnvelope job(String runtimeId, String schema) {
+    private static LlmJobEnvelope job(String laneId, LlmPassType passType, String schema) {
         return LlmJobEnvelope.queued(new LlmJobRequest(
                 UUID.randomUUID(),
-                runtimeId,
+                laneId,
+                passType,
+                "test",
                 "test",
                 0,
                 "Return the result.",

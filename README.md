@@ -2,12 +2,12 @@
 
 A Quarkus and Apache Camel framework for running mission-bound LLM agents through structured workflows, Kafka-backed model execution, and optional MCP tools.
 
-The framework treats an agent run as application state, not as a single long-lived LangChain4j object. Camel routes define the workflow, Kafka serializes model work, and the catalog describes the personas, routines, tool profiles, inference lanes, and execution runtimes available to the system.
+The framework treats an agent run as application state, not as a single long-lived LangChain4j object. Camel routes define the workflow, Kafka serializes model work, and the catalog describes the personas, routines, tool profiles, and inference lanes available to the system.
 
 ## Highlights
 
 * **Mission-bound agent runs** with isolated parent/child state.
-* **Catalog-driven configuration** for personas, routines, tool profiles, inference lanes, and execution runtimes.
+* **Catalog-driven configuration** for personas, routines, tool profiles, and inference lanes.
 * **Kafka-backed LLM queueing** so model calls can be serialized and routed by lane.
 * **Reusable Camel primitives** for action, decision, schema-shaped creation, and child agent startup.
 * **Two-pass tool execution** for `direct:act`: one pass for tool use, one pass for structured `StepResult` synthesis.
@@ -27,7 +27,7 @@ A mission moves through the framework in a small number of explicit steps:
 7. LLM work is queued through Kafka by inference lane.
 8. Replies return through Kafka and update the agent run projection.
 
-At runtime, a mission is a goal/context container. An `AgentRun` is one persona/routine execution scheduled inside that mission. Parent/child agent runs are lineage only; no agent run synchronously waits for another agent run to complete.
+During execution, a mission is a goal/context container. An `AgentRun` is one persona/routine execution scheduled inside that mission. Parent/child agent runs are lineage only; no agent run synchronously waits for another agent run to complete.
 
 ## Requirements
 
@@ -41,14 +41,14 @@ The project currently uses Quarkus 3.36.0 and a snapshot Camel LangChain4j agent
 
 ## Quick start
 
-Start Kafka and your OpenAI-compatible model endpoint, then configure the local runtime:
+Start Kafka and your OpenAI-compatible model endpoint, then configure the local run:
 
 ```bash
 export KAFKA_BOOTSTRAP_SERVERS=localhost:9092
 
-export LLM_RUNTIME_DEFAULT_OPENAI_BASE_URL=http://localhost:8000/v1
-export LLM_RUNTIME_DEFAULT_OPENAI_MODEL=qwen-36-27b
-export LLM_RUNTIME_DEFAULT_OPENAI_API_KEY=not-needed
+export LLM_MODEL_DEFAULT_OPENAI_BASE_URL=http://localhost:8000/v1
+export LLM_MODEL_DEFAULT_OPENAI_MODEL=qwen-36-27b
+export LLM_MODEL_DEFAULT_OPENAI_API_KEY=not-needed
 
 export LLM_WORKER_ENABLED=true
 export LLM_LOCAL_WORKER_ROUTE_VERIFICATION_ENABLED=true
@@ -122,10 +122,34 @@ Mission requests explicitly choose which `AgentRunRequest` objects to schedule. 
 
 The bundled software-team example expects all shared Git work to live under the `agent-workspace` organization.
 
-* The PM bootstrap routine records `agent-workspace` as a project basic in the wiki.
-* The shared wiki repository and target source repository should be created or reused under `agent-workspace`.
+* The PM bootstrap routine records `agent-workspace` as a project basic in the canonical documentation repository.
+* The shared documentation repository and target source repository should be created or reused under `agent-workspace`.
 * Agents should not create project repositories in their personal Git namespaces.
 * If an agent cannot access `agent-workspace`, it should record a setup blocker instead of creating a duplicate repository elsewhere.
+
+### Software-team tool profiles
+
+The bundled software-team example publishes exactly five tool profiles. Public profile ID constants live on the individual `*ToolProfile` classes, and routines reference those constants rather than duplicating literals.
+
+| Profile | MCP servers | Policy | Intended use |
+| ------- | ----------- | ------ | ------------ |
+| `workspace-readonly` | Plane, Gitea, Mattermost | Explicit allow lists on every server | Small read-only orientation across planned work, implementation evidence, and conversation context. |
+| `workspace-coordination` | Plane, Gitea, Mattermost | Explicit allow lists on every server | Bounded coordination: Plane updates, Gitea repository discovery/creation, and concise Mattermost handoffs. |
+| `project-management` | Plane | Broad Plane access with deny list | Deep Plane planning, work item breakdown, assignments, dependencies, states, blockers, priorities, and delivery planning. |
+| `source-control` | Gitea | Broad Gitea access with deny list | Repository, file, branch, commit, pull request, build, tag, and release work. |
+| `team-chat` | Mattermost | Broad Mattermost access with deny list | Focused conversation, questions, handoffs, notifications, channel setup, and membership work. |
+
+Ownership boundaries are strict:
+
+* Plane owns projects, planned work, assignments, status, dependencies, priorities, blockers, and delivery planning.
+* Gitea owns repositories, files, branches, commits, pull requests, builds, tags, and releases.
+* Mattermost owns conversation, questions, handoffs, and concise notifications.
+
+Gitea issue tracking, labels, milestones, and time tracking are intentionally unavailable. They would create a second project-management system and split ownership from Plane. Mattermost messages should link to authoritative Plane work items, Gitea artifacts, or canonical documentation pages rather than recreating durable state.
+
+The cross-system profiles use explicit allow lists because a single act can otherwise receive too much authority across three systems. The three domain profiles use broad access with deny lists because their jobs are intentionally domain-specific and need room to use new non-conflicting tools added by those MCP servers.
+
+Routine authors should choose the narrowest profile that fully supports the act. Use `workspace-readonly` for cross-system orientation, `workspace-coordination` for bounded Plane/Gitea/Mattermost coordination, a full domain profile for deep domain work, and `team-chat` for chat administration not included in coordination. Composite profiles should reduce redundant passes when one coherent operation needs multiple systems; they should not become universal all-tools profiles.
 
 ## Core concepts
 
@@ -153,10 +177,6 @@ A tool profile defines which MCP servers and tools are visible during `direct:ac
 
 An inference lane defines where LLM jobs are queued and which model endpoint/model serves them. The bundled example provides `low-pass` and `high-pass` lanes.
 
-### ExecutionRuntime
-
-An execution runtime selects an inference lane and model behavior, such as whether tool calling is enabled. It can also override the lane model. The bundled example provides `tool-low`, `tool-high`, `synthesis-low`, and `synthesis-high`.
-
 ## Framework primitives
 
 ### `direct:act`
@@ -166,7 +186,7 @@ Use `direct:act` when the model may need tools and the routine needs a structure
 ```java
 .process(routine.act("source-readiness")
         .prompt("Confirm the target repository exists and report blockers.")
-        .toolProfile("source-control"))
+        .toolProfile(SourceToolProfile.SOURCE_CONTROL))
 .to("direct:act")
 ```
 
@@ -270,8 +290,6 @@ Catalog entries are discovered from CDI beans. The main provider interfaces are:
 | `RoutineProvider`          | Routine definitions       |
 | `ToolProfileProvider`      | MCP tool profiles         |
 | `InferenceLaneProvider`    | LLM queue/model lanes     |
-| `ExecutionRuntimeProvider` | Runtime definitions       |
-| `RuntimeTopologyProvider`  | Runtime topology metadata |
 
 ## Create your own catalog
 
@@ -280,7 +298,6 @@ At minimum, a framework adopter provides:
 * `PersonaProvider` for the actors available to missions.
 * `RoutineProvider` for Camel routes those actors can run.
 * `InferenceLaneProvider` for queue topics, endpoint overrides, and optional lane model names.
-* `ExecutionRuntimeProvider` for runtime IDs that select lanes, tool-calling behavior, and optional runtime model overrides.
 * `AgentRunRequest` entries in each `POST /missions` request for the AgentRuns the framework should schedule.
 
 Optional pieces:
@@ -326,8 +343,7 @@ public class CoordinatorRoutine extends RouteBuilder implements RoutineProvider 
                 .name("Coordinator Routine")
                 .description("Decides what work should happen next for the mission.")
                 .routeUri("direct:my-domain-coordinator")
-                .defaultToolRuntime("tool-low")
-                .defaultSynthesisRuntime("synthesis-low")
+                .defaultLane("low-pass")
                 .build());
     }
 
@@ -347,27 +363,52 @@ public class CoordinatorRoutine extends RouteBuilder implements RoutineProvider 
 
 ```java
 @ApplicationScoped
+public class RepositoryMcpServer {
+    public static final String ID = "repository";
+
+    private final McpServerDefinition definition;
+
+    @Inject
+    public RepositoryMcpServer(
+            @ConfigProperty(name = "agent.tool.mcp.repository.url", defaultValue = "") String url) {
+        this.definition = McpServerDefinition.builder(ID)
+                .url(url)
+                .transportType("streamableHttp")
+                .authHeaderName("Authorization")
+                .authHeaderValueFormat("token %s")
+                .build();
+    }
+
+    public McpServerDefinition definition() {
+        return definition;
+    }
+}
+
+@ApplicationScoped
 public class SourceToolProfile implements ToolProfileProvider {
-    @ConfigProperty(name = "agent.tool.mcp.gitea.url", defaultValue = "")
-    String giteaUrl = "";
+    public static final String SOURCE_CONTROL = "source-control";
+
+    private final RepositoryMcpServer repository;
+
+    @Inject
+    public SourceToolProfile(RepositoryMcpServer repository) {
+        this.repository = repository;
+    }
 
     @Override
     public List<ToolProfile> toolProfiles() {
-        return List.of(ToolProfile.builder("source-control")
-                .mcpServer(McpServerDefinition.builder("gitea")
-                        .url(giteaUrl)
-                        .authHeaderValueFormat("token %s")
-                        .build())
-                .denyTools("gitea", "delete_repository", "delete_branch")
-                .maxResultCharacters(6000)
+        return List.of(ToolProfile.builder(SOURCE_CONTROL)
+                .mcpServer(repository.definition())
+                .denyTools(RepositoryMcpServer.ID, "delete_repository", "delete_branch")
+                .maxResultTokens(6000)
                 .build());
     }
 }
 ```
 
-If a listed server has no allow-list, its tools are allowed unless explicitly denied. Use `allowTool`, `allowTools`, `denyTool`, `denyTools`, default arguments, and result limits to make profiles narrower. The reserved profile id `none` is built into the framework and is intentionally excluded from catalog listings.
+If a listed server has no allow-list, its tools are allowed unless explicitly denied. Use `allowTool`, `allowTools`, `denyTool`, `denyTools`, default arguments, and result limits to make profiles narrower. Declare each reusable MCP server definition in its own `McpServer` class, inject that class into the `ToolProfile` classes that need it, and keep capability policy in each profile. The reserved profile id `none` is built into the framework and is intentionally excluded from catalog listings.
 
-### Inference lane and runtime examples
+### Inference lane example
 
 ```java
 @ApplicationScoped
@@ -385,23 +426,9 @@ public class LowLane implements InferenceLaneProvider {
                 .build();
     }
 }
-
-@ApplicationScoped
-public class SynthesisLow implements ExecutionRuntimeProvider {
-    @Override
-    public ExecutionRuntimeDefinition executionRuntime() {
-        return ExecutionRuntimeDefinition.builder("synthesis-low")
-                .lane("low-pass")
-                .toolCalling(false)
-                .model("qwen-runtime-override")
-                .agentName("synthesis-low")
-                .agentFactoryBeanName("executionRuntimeAgentFactory")
-                .build();
-    }
-}
 ```
 
-## Runtime configuration
+## Run configuration
 
 ### Kafka and LLM
 
@@ -418,16 +445,16 @@ public class SynthesisLow implements ExecutionRuntimeProvider {
 | `LLM_TOPIC_DEAD_LETTER`      | `llm.dead-letter`          | Failed queued-job topic.             |
 | `LLM_KAFKA_PROVISION_TOPICS` | `true`                     | Create configured topics at startup. |
 | `LLM_KAFKA_TOPIC_PARTITIONS` | `1`                        | Scheduled-event and dead-letter topic partitions. Lane request topics use lane parallelism; reply topics are single-partition. |
-| `LLM_RUNTIME_DEFAULT_OPENAI_BASE_URL` | `http://localhost:8000/v1` | Runtime-inventory fallback OpenAI-compatible endpoint. |
-| `LLM_RUNTIME_DEFAULT_OPENAI_MODEL` | `qwen-36-27b`           | Runtime-inventory fallback model name. |
-| `LLM_RUNTIME_DEFAULT_OPENAI_API_KEY` | `not-needed`           | Runtime-inventory fallback API key.  |
-| `LLM_RUNTIME_DEFAULT_OPENAI_TEMPERATURE` | `0`                  | Default temperature for inventory-created OpenAI chat models. |
-| `LLM_RUNTIME_DEFAULT_OPENAI_MAX_TOKENS` | `4096`               | Default max output tokens for inventory-created OpenAI chat models. |
-| `LLM_RUNTIME_DEFAULT_OPENAI_TIMEOUT_MS` | `300000`             | Default OpenAI request timeout. |
-| `LLM_RUNTIME_DEFAULT_OPENAI_STRICT_JSON_SCHEMA` | `true`         | Default strict JSON-schema mode for OpenAI chat models. |
-| `LLM_RUNTIME_DEFAULT_OPENAI_THINKING_OFF_ENABLED` | `true`       | Default `enable_thinking=false` custom parameter for compatible models. |
-| `LLM_RUNTIME_DEFAULT_STRUCTURED_OUTPUT_PROVIDER_SCHEMA_ENABLED` | `false` | Default provider-schema mode for structured synthesis calls. |
-| `LLM_RUNTIME_DEFAULT_TOOL_MEMORY_MAX_TOKENS` | `12000`          | Default ephemeral tool-pass memory window. |
+| `LLM_MODEL_DEFAULT_OPENAI_BASE_URL` | `http://localhost:8000/v1` | Global fallback OpenAI-compatible endpoint. |
+| `LLM_MODEL_DEFAULT_OPENAI_MODEL` | `qwen-36-27b`           | Global fallback model name. |
+| `LLM_MODEL_DEFAULT_OPENAI_API_KEY` | `not-needed`           | Global fallback API key.  |
+| `LLM_MODEL_DEFAULT_OPENAI_TEMPERATURE` | `0`                  | Default temperature for lane-created OpenAI chat models. |
+| `LLM_MODEL_DEFAULT_OPENAI_MAX_TOKENS` | `4096`               | Default max output tokens for lane-created OpenAI chat models. |
+| `LLM_MODEL_DEFAULT_OPENAI_TIMEOUT_MS` | `300000`             | Default OpenAI request timeout. |
+| `LLM_MODEL_DEFAULT_OPENAI_STRICT_JSON_SCHEMA` | `true`         | Default strict JSON-schema mode for OpenAI chat models. |
+| `LLM_MODEL_DEFAULT_OPENAI_THINKING_OFF_ENABLED` | `true`       | Default `enable_thinking=false` custom parameter for compatible models. |
+| `LLM_MODEL_DEFAULT_STRUCTURED_OUTPUT_PROVIDER_SCHEMA_ENABLED` | `false` | Default provider-schema mode for structured output calls. |
+| `LLM_MODEL_DEFAULT_TOOL_MEMORY_MAX_TOKENS` | `12000`          | Default ephemeral tool-pass memory window. |
 | `LLM_LOW_MODEL`              | blank                      | Low-lane model override.             |
 | `LLM_HIGH_MODEL`             | blank                      | High-lane model override.            |
 | `LLM_LOW_PARALLELISM`        | `1`                        | Low-lane worker parallelism and request-topic partition count. |
@@ -435,11 +462,14 @@ public class SynthesisLow implements ExecutionRuntimeProvider {
 | `LLM_LOW_PARTITION_KEY_STRATEGY` | `AGENT_RUN`             | Low-lane partition key strategy: `AGENT_RUN`, `MISSION`, or `JOB`. |
 | `LLM_HIGH_PARTITION_KEY_STRATEGY` | `AGENT_RUN`            | High-lane partition key strategy: `AGENT_RUN`, `MISSION`, or `JOB`. |
 | `LLM_REPLY_TIMEOUT_MS`       | `900000`                   | Synchronous reply wait timeout.      |
+| `AGENT_TOOL_PROFILE_WORKSPACE_READONLY_MAX_RESULT_TOKENS` | `4000` | Result budget for the read-only cross-system software-team profile. |
+| `AGENT_TOOL_PROFILE_WORKSPACE_COORDINATION_MAX_RESULT_TOKENS` | `5000` | Result budget for the bounded cross-system coordination profile. |
+
 
 Model selection precedence is:
 
 ```text
-execution runtime model override > inference lane model > LLM_RUNTIME_DEFAULT_OPENAI_MODEL fallback
+inference lane model > LLM_MODEL_DEFAULT_OPENAI_MODEL fallback
 ```
 
 The selected model is copied into LLM request metadata and preserved on worker failures and DLQ entries.
@@ -474,7 +504,7 @@ JOB:     jobId
 
 Request messages use the selected partition key as the Kafka key. Reply messages continue to use `jobId` as the Kafka key and are correlated in memory by `jobId`.
 
-Current topology assumption: the request/reply implementation assumes one active orchestrator/runtime instance owns the in-memory LLM reply waiters. Lane worker parallelism is supported within that topology. Horizontally scaled orchestrator instances require reply-to routing or durable reply storage and are out of scope for this mode.
+Current topology assumption: the request/reply implementation assumes one active orchestrator process owns the in-memory LLM reply waiters. Lane worker parallelism is supported within that topology. Horizontally scaled orchestrator instances require reply-to routing or durable reply storage and are out of scope for this mode.
 
 ### AgentRun scheduling
 
@@ -506,7 +536,7 @@ Lifecycle hardening is intentionally future work. AgentRun admission records acc
 
 ### Local worker verification
 
-By default, `direct:llm` assumes a local single-process runtime. Before queueing an LLM request, it verifies that the selected lane has a local worker route and a local reply-consumer route available.
+By default, `direct:llm` assumes a local single-process run mode. Before queueing an LLM request, it verifies that the selected lane has a local worker route and a local reply-consumer route available.
 
 For an API process that queues jobs while another process runs the workers, disable the local worker check:
 
@@ -519,7 +549,7 @@ This skips the selected lane worker-route verification only. The local response 
 
 ## MCP configuration
 
-MCP servers are optional. Framework code builds clients from generic `McpServerDefinition` entries attached to the active `ToolProfile`. The bundled example profiles define Mattermost, Gitea, and Plane servers; adopters can add other servers by adding a `McpServerDefinition` through `ToolProfile.builder(...).mcpServer(...)`, without editing `McpClientFactory` or defining LangChain4j MCP server beans. `ToolProfile.server(...)` only declares a logical server id for allow/deny/default-argument rules; it does not create a buildable MCP client by itself.
+MCP servers are optional. Framework code builds clients from generic `McpServerDefinition` entries attached to the active `ToolProfile`. The bundled software-team profiles use individual example-side `PlaneMcpServer`, `GiteaMcpServer`, and `MattermostMcpServer` classes for connection definitions; each `ToolProfile` class composes the immutable definitions it needs and owns its own capability policy. Adopters can add other servers by adding a `McpServerDefinition` through `ToolProfile.builder(...).mcpServer(...)`, without editing `McpClientFactory` or defining LangChain4j MCP server beans. `ToolProfile.server(...)` only declares a logical server id for allow/deny/default-argument rules; it does not create a buildable MCP client by itself.
 
 If a server URL or persona token is blank, that MCP client is skipped.
 
@@ -559,7 +589,7 @@ The workspace API is intended for local development and debugging.
 
 `POST /missions` returns `202 Accepted` after mission creation, accepted run recording, and scheduled-event publication. Routine execution starts when `AgentRunScheduled` is consumed and continues asynchronously after the Kafka route commits. Later routine failures are visible through workspace projection state and normal logs, not as a delayed HTTP response.
 
-The projection includes mission IDs, agent-run IDs, persona/routine metadata, primitive state, runtime/lane information, latest results, timeline entries, and thought-stack snapshots.
+The projection includes mission IDs, agent-run IDs, persona/routine metadata, primitive state, selected inference lane, latest results, timeline entries, and thought-stack snapshots.
 
 ## Project layout
 
@@ -599,7 +629,7 @@ Framework code owns:
 * `direct:act`, `direct:decide`, and `direct:create`
 * `ThoughtStack`
 * `AgentRunProjection`
-* inference lanes and execution runtimes
+* inference lanes
 * tool-profile enforcement and MCP client wrapping
 
 Example or application namespaces own:
@@ -626,4 +656,4 @@ Confirm that the MCP server URL is set, the persona has a token for that server,
 
 ### Tool results are truncated
 
-Tool result size is bounded by the selected `ToolProfile.maxResultCharacters` when set, otherwise by `AGENT_MCP_MAX_TOOL_RESULT_CHARACTERS`. Set a profile-specific limit when one workflow needs more context than the global default.
+Tool result size is bounded by the selected `ToolProfile.maxResultTokens` when set, otherwise by `AGENT_MCP_MAX_TOOL_RESULT_TOKENS`. Set a profile-specific limit when one workflow needs more context than the global default.

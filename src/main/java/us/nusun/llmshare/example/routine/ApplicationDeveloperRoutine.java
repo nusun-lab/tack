@@ -9,14 +9,19 @@ import us.nusun.llmshare.framework.routine.RoutineSupport;
 
 import java.util.List;
 
+import us.nusun.llmshare.example.tool.ProjectManagementToolProfile;
+import us.nusun.llmshare.example.tool.SourceControlToolProfile;
+import us.nusun.llmshare.example.tool.TeamChatToolProfile;
+import us.nusun.llmshare.example.tool.WorkspaceReadonlyToolProfile;
+
 @ApplicationScoped
 public class ApplicationDeveloperRoutine extends RouteBuilder implements RoutineProvider {
     public static final String ID = "software-team/application-developer";
-    public static final String APPLICATION_DEVELOPER_ROUTINE_THOUGHT = "Durable developer anchors: documentation index, engineering documentation index, source repo/clone URL, project tracking workspace, team chat, current-work page, persistent repo/tool blockers.";
-    public static final String DEV_BASICS_THOUGHT = "Current project-basics read: source repo, documentation workspace, project tracking workspace, team chat, current work, blockers, engineering navigation. Promote durable anchors to application-developer-routine before basics exits.";
-    public static final String DEV_CYCLE_THOUGHT = "Current developer pass: selected assigned task, task id/link, canonical documentation page, branch/commit/change request, validation state, blocker, next code step.";
-    public static final String DEV_SELECTION_THOUGHT = "Task selection only: selected assigned in-progress/to-do task, status, owner, priority, canonical page, repo, next code step. Promote selected task to dev-cycle before selection exits.";
-    public static final String DEV_IMPLEMENTATION_THOUGHT = "Current implementation step: files inspected/changed, branch, commit/change request, validation evidence, blocker, next patch. Promote branch/commit/validation/blocker to dev-cycle before implementation exits.";
+    public static final String APPLICATION_DEVELOPER_ROUTINE_THOUGHT = "Durable developer anchors: documentation index, engineering documentation index, source repository URL, Plane project, team chat, current-work page, persistent repository/tool blockers.";
+    public static final String DEV_BASICS_THOUGHT = "Current project-basics read: source repository, documentation repository, Plane project, team chat, current work, blockers, engineering navigation. Promote durable anchors to application-developer-routine before basics exits.";
+    public static final String DEV_CYCLE_THOUGHT = "Current developer pass: selected assigned task, Plane work item id/link, canonical documentation page, branch/commit/pull request, validation state, blocker, next code step.";
+    public static final String DEV_SELECTION_THOUGHT = "Task selection only: selected assigned in-progress/to-do task, status, owner, priority, canonical page, repository, next code step. Promote selected task to dev-cycle before selection exits.";
+    public static final String DEV_IMPLEMENTATION_THOUGHT = "Current implementation step: files inspected/changed, branch, commit/pull request, validation evidence, blocker, next patch. Promote branch/commit/validation/blocker to dev-cycle before implementation exits.";
 
     @Inject RoutineSupport routine;
 
@@ -29,12 +34,11 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         return RoutineDefinition.builder(ID)
                 .name("Application Developer")
                 .description("""
-                        Drive implementation through wiki-backed assignment selection,
+                        Drive implementation through documentation-backed assignment selection,
                         incremental source patches, explicit status movement, review evidence, and closeout.
                         """)
                 .routeUri("direct:example-software-team-application-developer")
-                .defaultToolRuntime("tool-high")
-                .defaultSynthesisRuntime("synthesis-high")
+                .defaultLane("high-pass")
                 .build();
     }
 
@@ -54,21 +58,22 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .loopDoWhile(exchangeProperty("decision.developer-has-project-basics.result").isNotEqualTo(true))
                     .setProperty("developerProjectBasicsCycle", simple("${exchangeProperty.developerProjectBasicsCycle++}"))
                     .process(routine.enterThought("dev-basics", DEV_BASICS_THOUGHT, 300))
-                    .process(routine.act("dev-wiki-basics-read")
+                    .process(routine.act("dev-workspace-basics-read")
                             .prompt("""
-                                    Open the wiki index only; follow project-basics, current-work, and engineering links if needed.
-                                    Capture bootstrap status, Git organization agent-workspace, wiki URL,
-                                    PM project, chat, source repo, current work, blockers, and engineering page map.
-                                    Do not scan the whole wiki; missing navigation blocks development work.
+                                    Verify project basics across the workspace without mutation.
+                                    Use Gitea for the documentation index and direct project-basics/current-work/engineering links,
+                                    Plane for project and work item state, and Mattermost for recent setup conversation.
+                                    Capture bootstrap status, Git organization agent-workspace, documentation repository URL,
+                                    Plane project, team chat, source repository, current work, blockers, and engineering page map.
+                                    Do not scan whole projects, repositories, documentation repositories, or channels.
                                     """)
-                            .toolProfile("source-control"))
+                            .toolProfile(WorkspaceReadonlyToolProfile.ID))
                     .to("direct:act")
                     .process(routine.decide("developer-has-project-basics")
                             .prompt("""
-                                    Are project basics present and linked in the wiki enough to do development:
-                                    bootstrap status, Git organization agent-workspace, PM project,
-                                    source repo under agent-workspace, chat channel, current work, blockers,
-                                    and dev navigation?
+                                    Are project basics present and linked enough to do development: bootstrap status,
+                                    Git organization agent-workspace, Plane project, source repository under agent-workspace,
+                                    team chat channel, current work, blockers, and dev navigation?
                                     """))
                     .to("direct:decide")
                     .choice()
@@ -82,13 +87,13 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .routeId("dev-project-basics-blocker")
                 .process(routine.act("dev-project-basics-blocker")
                         .prompt("""
-                                Read the last 20 messages in the default or project channel.
+                                Read the last 20 messages in the default or project Mattermost channel.
                                 If PM/setup discussion exists, respond there only when a specific technical/setup
-                                answer is useful. Otherwise post one blocker asking PM to finish wiki project basics
-                                only if no current blocker exists. Include the wiki link if known.
+                                answer is useful. Otherwise post one blocker asking PM to finish project basics
+                                only if no current blocker exists. Include the documentation index link if known.
                                 Do not start development work; keep rechecking project basics in the next loop.
                                 """)
-                        .toolProfile("team-chat"))
+                        .toolProfile(TeamChatToolProfile.ID))
                 .to("direct:act");
 
         from("direct:dev-delivery-loop")
@@ -123,11 +128,11 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .routeId("dev-team-chat-sync")
                 .process(routine.act("dev-team-chat-sync")
                         .prompt("""
-                                Read the last 20 project chat messages from the wiki link. Reply first to a direct
+                                Read the last 20 project Mattermost messages from the project-basics link. Reply first to a direct
                                 technical question, blocker, review request, or handoff. If blocked, ask at most one
-                                named question. Do not volunteer for unassigned work or repeat PM/wiki data.
+                                named question. Do not volunteer for unassigned work or repeat Plane/documentation data.
                                 """)
-                        .toolProfile("team-chat"))
+                        .toolProfile(TeamChatToolProfile.ID))
                 .to("direct:act");
 
         from("direct:dev-work-selection-loop")
@@ -139,11 +144,11 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .process(routine.enterThought("dev-selection", DEV_SELECTION_THOUGHT, 250))
                     .process(routine.act("dev-in-progress-review")
                             .prompt("""
-                                    In the PM project from the wiki, review only in-progress tasks assigned to this developer.
+                                    In the Plane project from project basics, review only in-progress tasks assigned to this developer.
                                     Choose the highest-priority task with a source-control next step.
                                     Do not take new to-do work while assigned in-progress work can still move.
                                     """)
-                            .toolProfile("project-management"))
+                            .toolProfile(ProjectManagementToolProfile.ID))
                     .to("direct:act")
                     .process(routine.decide("developer-has-work")
                             .prompt("""
@@ -152,23 +157,17 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .to("direct:decide")
                     .choice()
                         .when(exchangeProperty("decision.developer-has-work.result").isNotEqualTo(true))
-                            .process(routine.act("dev-to-do-review")
+                            .process(routine.act("dev-assigned-to-do-start")
                                     .prompt("""
                                             Review one task assigned to this developer in to-do status only.
                                             Ignore unassigned tasks, backlog/product items, and tasks assigned to others.
-                                            Select only actionable implementation work with canonical wiki page,
-                                            acceptance criteria, source repo under agent-workspace, priority,
-                                            and next code step.
+                                            Select only actionable implementation work with canonical documentation page,
+                                            acceptance criteria, source repository under agent-workspace, priority,
+                                            and next code step. If the selected task is assigned to this developer,
+                                            currently to-do, and has a canonical documentation page, move exactly that task
+                                            to in-progress. Otherwise do not move it; add a blocker note instead.
                                             """)
-                                    .toolProfile("project-management"))
-                            .to("direct:act")
-                            .process(routine.act("dev-start-to-do-status")
-                                    .prompt("""
-                                            If the selected task is assigned to this developer, currently to-do,
-                                            and has a canonical wiki page, move exactly that task to in-progress.
-                                            Otherwise do not move it; add a blocker note instead.
-                                            """)
-                                    .toolProfile("project-management"))
+                                    .toolProfile(ProjectManagementToolProfile.ID))
                             .to("direct:act")
                             .process(routine.decide("developer-has-work")
                                     .prompt("""
@@ -195,46 +194,32 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .process(routine.enterThought("dev-implementation", DEV_IMPLEMENTATION_THOUGHT, 250))
                     .process(routine.act("dev-task-context-read")
                             .prompt("""
-                                    Read the selected PM task only. Verify current status, objective, blocker,
-                                    assignee is this developer, canonical wiki page, acceptance criteria,
-                                    source repo under agent-workspace, and expected review evidence.
+                                    Read the selected Plane task only. Verify current status, objective, blocker,
+                                    assignee is this developer, canonical documentation page, acceptance criteria,
+                                    source repository under agent-workspace, and expected review evidence.
                                     """)
-                            .toolProfile("project-management"))
+                            .toolProfile(ProjectManagementToolProfile.ID))
                     .to("direct:act")
-                    .process(routine.act("dev-wiki-engineering-read")
+                    .process(routine.act("dev-source-context-plan")
                             .prompt("""
-                                    Read only the wiki index, current-work, canonical item page, and direct engineering links.
-                                    Do not scan the whole wiki; report missing navigation links.
+                                    Read only the documentation index, current-work, canonical item page, direct engineering links,
+                                    and source files relevant to the selected task. Verify the source repository is owned by Git
+                                    organization agent-workspace; do not create or use repositories in personal namespaces.
+                                    Report missing navigation, repository access, or branch blockers. Decide the next coherent patch:
+                                    production files, tests, docs/config if needed, acceptance target, branch plan, and validation evidence.
+                                    If the repository is greenfield, plan the smallest runnable skeleton needed for the task.
+                                    Do not modify source files in this planning step.
                                     """)
-                            .toolProfile("source-control"))
-                    .to("direct:act")
-                    .process(routine.act("dev-source-repository-readiness")
-                            .prompt("""
-                                    Use the source repo from the wiki. Inspect only files relevant to the selected task.
-                                    The repo must be owned by Git organization agent-workspace; do not create or use
-                                    repositories in personal namespaces.
-                                    If repo access is missing, record the blocker. If the task branch is missing,
-                                    create or plan it if supported by the source-control tools.
-                                    """)
-                            .toolProfile("source-control"))
-                    .to("direct:act")
-                    .process(routine.act("dev-patch-plan")
-                            .prompt("""
-                                    Inspect only the files needed for the selected task.
-                                    Decide the next coherent patch: production files, tests, docs/config if needed,
-                                    acceptance target, and validation evidence. If the repo is greenfield,
-                                    plan the smallest runnable skeleton needed for the task. Do not touch unrelated files.
-                                    """)
-                            .toolProfile("source-control"))
+                            .toolProfile(SourceControlToolProfile.ID))
                     .to("direct:act")
                     .process(routine.act("dev-delivery-step")
                             .prompt("""
                                     Apply the next coherent source-control patch for the selected task.
-                                    Prefer production code plus a matching test/update over wiki or chat notes.
+                                    Prefer production code plus a matching test/update over documentation or Mattermost notes.
                                     Use or create a task branch and commit if supported by the source-control tools.
                                     If no code change is possible, record the exact blocker and owner.
                                     """)
-                            .toolProfile("source-control"))
+                            .toolProfile(SourceControlToolProfile.ID))
                     .to("direct:act")
                     .process(routine.act("dev-validation-step")
                             .prompt("""
@@ -242,15 +227,15 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                     changed-file review, or why validation cannot run with the current tools.
                                     Do not claim tests passed unless the tool result shows it.
                                     """)
-                            .toolProfile("source-control"))
+                            .toolProfile(SourceControlToolProfile.ID))
                     .to("direct:act")
                     .process(routine.act("dev-review-readiness")
                             .prompt("""
                                     Check review readiness in source control: changed files, branch, commit,
-                                    PR/review link if supported, and validation status if available.
+                                    Gitea pull request link if supported, and validation status if available.
                                     No review-ready status without a code diff or explicit source-control blocker.
                                     """)
-                            .toolProfile("source-control"))
+                            .toolProfile(SourceControlToolProfile.ID))
                     .to("direct:act")
                     .to("direct:dev-status-transition")
                     .process(routine.decide("developer-implementation-complete")
@@ -265,54 +250,49 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
 
         from("direct:dev-status-transition")
                 .routeId("dev-status-transition")
-                .process(routine.act("dev-status-update")
+                .process(routine.act("dev-plane-status-evidence-update")
                         .prompt("""
-                                Verify current status and assignee before changing the selected PM task.
+                                Verify current status and assignee before changing the selected Plane task.
                                 Move to-do -> in-progress only for a selected task assigned to this developer.
                                 Move in-progress -> review only with branch, commit or diff plus validation evidence.
                                 Move to done only if the workflow permits it and acceptance evidence is recorded.
-                                Otherwise keep in-progress and add the next patch or blocker.
-                                """)
-                        .toolProfile("project-management"))
-                .to("direct:act")
-                .process(routine.act("dev-work-item-note")
-                        .prompt("""
-                                Add one compact PM note with source-control evidence, branch/commit/PR or diff,
-                                validation status, blocker, next step, canonical wiki page, and engineering note link.
+                                Otherwise keep in-progress and add the next patch or blocker. Add one compact Plane note
+                                with source-control evidence, branch/commit/Gitea pull request or diff, validation status,
+                                blocker, next step, canonical documentation page, and engineering note link.
                                 Keep status and evidence consistent.
                                 """)
-                        .toolProfile("project-management"))
+                        .toolProfile(ProjectManagementToolProfile.ID))
                 .to("direct:act");
 
         from("direct:dev-work-closeout")
                 .routeId("dev-work-closeout")
-                .process(routine.act("dev-wiki-closeout")
+                .process(routine.act("dev-documentation-closeout")
                         .prompt("""
                                 Update one focused engineering note if needed: changed files, code outcome,
                                 tests or validation gaps, review evidence, and next step.
                                 Link source-control evidence from the canonical item page and engineering index.
-                                The wiki summarizes durable code knowledge; it does not replace source changes.
+                                The documentation summarizes durable code knowledge; it does not replace source changes.
                                 """)
-                        .toolProfile("source-control"))
+                        .toolProfile(SourceControlToolProfile.ID))
                 .to("direct:act")
                 .process(routine.act("dev-team-chat-closeout")
                         .prompt("""
-                                Read the last 20 messages in the project chat from the wiki.
+                                Read the last 20 messages in the project Mattermost channel from project basics.
                                 Post only if delivery evidence changed, a blocker needs a named owner, or a teammate is waiting.
-                                Include PM item and canonical wiki links; otherwise stay quiet.
+                                Include Plane work item and canonical documentation links; otherwise stay quiet.
                                 """)
-                        .toolProfile("team-chat"))
+                        .toolProfile(TeamChatToolProfile.ID))
                 .to("direct:act");
 
         from("direct:dev-no-work-closeout")
                 .routeId("dev-no-work-closeout")
                 .process(routine.act("dev-no-work-note")
                         .prompt("""
-                                Read the last 20 messages in the project chat from the wiki.
+                                Read the last 20 messages in the project Mattermost channel from project basics.
                                 If no in-progress or assigned ready to-do work exists, reply to an existing PM thread if present.
-                                Otherwise ask PM once for one assigned actionable to-do. Include the wiki index link.
+                                Otherwise ask PM once for one assigned actionable to-do. Include the documentation index link.
                                 """)
-                        .toolProfile("team-chat"))
+                        .toolProfile(TeamChatToolProfile.ID))
                 .to("direct:act");
     }
 }

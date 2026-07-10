@@ -30,16 +30,14 @@ class RoutineSupportTest {
 
         support.act("collaboration-sync")
                 .prompt("Ask one focused question.")
-                .toolProfile("team-chat")
-                .toolRuntime("tool-high")
-                .synthesisRuntime("synthesis-high")
+                .toolProfile(FrameworkFixtures.PROFILE_ALPHA)
+                .lane("high-pass")
                 .process(exchange);
 
         assertEquals("collaboration-sync", exchange.getProperty("actId"));
         assertEquals("Ask one focused question.", exchange.getProperty("actPrompt"));
-        assertEquals("team-chat", exchange.getProperty("toolProfile"));
-        assertEquals("tool-high", exchange.getProperty("toolRuntime"));
-        assertEquals("synthesis-high", exchange.getProperty("synthesisRuntime"));
+        assertEquals(FrameworkFixtures.PROFILE_ALPHA, exchange.getProperty("toolProfile"));
+        assertEquals("high-pass", exchange.getProperty("lane"));
     }
 
     @Test
@@ -49,15 +47,13 @@ class RoutineSupportTest {
 
         support.act("first")
                 .prompt("First.")
-                .toolRuntime("tool-high")
-                .synthesisRuntime("synthesis-high")
+                .lane("high-pass")
                 .process(exchange);
         support.act("second")
                 .prompt("Second.")
                 .process(exchange);
 
-        assertEquals(null, exchange.getProperty("toolRuntime"));
-        assertEquals(null, exchange.getProperty("synthesisRuntime"));
+        assertEquals(null, exchange.getProperty("lane"));
     }
 
     @Test
@@ -69,12 +65,12 @@ class RoutineSupportTest {
 
         support.decide("ready")
                 .prompt("Is the setup ready?")
-                .synthesisRuntime("synthesis-high")
+                .lane("high-pass")
                 .process(exchange);
 
         assertEquals("ready", exchange.getProperty("decisionId"));
         assertEquals("Is the setup ready?", exchange.getProperty("decisionPrompt"));
-        assertEquals("synthesis-high", exchange.getProperty("synthesisRuntime"));
+        assertEquals("high-pass", exchange.getProperty("lane"));
     }
 
     @Test
@@ -134,7 +130,7 @@ class RoutineSupportTest {
             assertTrue(prompt.contains("Build a parking lot manager app."));
             assertTrue(prompt.contains("persona-a"));
             assertTrue(prompt.contains("routine-a"));
-            assertTrue(prompt.contains("source-control"));
+            assertTrue(prompt.contains(FrameworkFixtures.PROFILE_GAMMA));
         }
     }
 

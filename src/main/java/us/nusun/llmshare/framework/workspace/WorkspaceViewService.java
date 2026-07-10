@@ -7,7 +7,7 @@ import us.nusun.llmshare.framework.inventory.PersonaCatalog;
 import us.nusun.llmshare.framework.inventory.RoutineCatalog;
 import us.nusun.llmshare.framework.inventory.ToolProfileRegistry;
 import us.nusun.llmshare.framework.projection.ProjectionStore;
-import us.nusun.llmshare.framework.inventory.ExecutionRuntimeRegistry;
+import us.nusun.llmshare.framework.inventory.InferenceLaneRegistry;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -17,7 +17,7 @@ import java.util.Map;
 public class WorkspaceViewService {
     @Inject PersonaCatalog personas;
     @Inject RoutineCatalog routines;
-    @Inject ExecutionRuntimeRegistry runtimes;
+    @Inject InferenceLaneRegistry lanes;
     @Inject ToolProfileRegistry toolProfiles;
     @Inject ProjectionStore projections;
 
@@ -25,8 +25,7 @@ public class WorkspaceViewService {
         LinkedHashMap<String, Object> view = new LinkedHashMap<>();
         view.put("personas", personas.all());
         view.put("routines", routines.all());
-        view.put("executionRuntimes", runtimes.allRuntimes());
-        view.put("inferenceLanes", runtimes.allLanes());
+        view.put("inferenceLanes", lanes.allLanes());
         view.put("toolProfiles", toolProfiles.all());
         view.put("agentRunProjections", projections.all());
         return view;

@@ -1,6 +1,6 @@
 # Local MCP Agent Identities
 
-This wiring is for local development.
+This wiring is for local development with the bundled software-team example.
 
 Personas declare external identities. MCP clients are created from:
 
@@ -10,7 +10,7 @@ Persona identity + ToolProfile server + McpServerDefinition
 
 The token config path and token environment variable are person-named. Routine roles do not own identity tokens.
 
-Mattermost, Gitea, and Plane are bundled example MCP server definitions declared by the example tool profiles. Framework adopters can add different servers in their own `ToolProfile` entries without changing `McpClientFactory`.
+The software-team example declares Plane, Gitea, and Mattermost as separate `PlaneMcpServer`, `GiteaMcpServer`, and `MattermostMcpServer` classes. Each tool profile class injects only the MCP server declarations it needs, composes their immutable definitions directly, and keeps its own allow/deny/default-argument policy.
 
 ## Required MCP Server Variables
 
@@ -23,17 +23,34 @@ Endpoint variables:
 - `PLANE_MCP_URL`
 - `PLANE_WORKSPACE_SLUG`
 
-Transport/auth override variables:
+Profile result budgets:
 
-- `MATTERMOST_MCP_TRANSPORT_TYPE`
-- `GITEA_MCP_TRANSPORT_TYPE`
-- `PLANE_MCP_TRANSPORT_TYPE`
-- `MATTERMOST_AUTH_HEADER_NAME`
-- `GITEA_AUTH_HEADER_NAME`
-- `PLANE_AUTH_HEADER_NAME`
-- `MATTERMOST_AUTH_HEADER_VALUE_FORMAT`
-- `GITEA_AUTH_HEADER_VALUE_FORMAT`
-- `PLANE_AUTH_HEADER_VALUE_FORMAT`
+- `AGENT_TOOL_PROFILE_WORKSPACE_READONLY_MAX_RESULT_TOKENS` default `4000`
+- `AGENT_TOOL_PROFILE_WORKSPACE_COORDINATION_MAX_RESULT_TOKENS` default `5000`
+- `AGENT_TOOL_PROFILE_TEAM_CHAT_MAX_RESULT_TOKENS` default `3000`
+- `AGENT_TOOL_PROFILE_SOURCE_CONTROL_MAX_RESULT_TOKENS` default `60000`
+- `AGENT_TOOL_PROFILE_PROJECT_MANAGEMENT_MAX_RESULT_TOKENS` default `50000`
+
+The example server definitions use streamable HTTP. Auth formats are fixed in code:
+
+- Mattermost: `Authorization: Bearer <token>`
+- Gitea: `Authorization: token <token>`
+- Plane: `Authorization: Bearer <token>`
+- Plane also sends `x-workspace-slug: <PLANE_WORKSPACE_SLUG>` when configured.
+
+## Software-Team Profiles
+
+The example publishes exactly five profiles:
+
+- `workspace-readonly`: explicit read-only allow lists for Plane, Gitea, and Mattermost.
+- `workspace-coordination`: explicit bounded coordination allow lists for Plane, Gitea, and Mattermost.
+- `project-management`: broad Plane profile with destructive, intake, worklog, page, feature-admin, and custom-schema denials.
+- `source-control`: broad Gitea profile with destructive, native wiki, issue, label, milestone, time-tracking, admin, notification, package, fork, team-search, user-search, and server-version denials.
+- `team-chat`: broad Mattermost profile with destructive, low-value UI-state, reaction, pin, and bookmark denials.
+
+Plane is authoritative for projects, planned work, assignments, status, dependencies, priorities, blockers, and delivery planning. Gitea is authoritative for repositories, files, branches, commits, pull requests, builds, tags, and releases. Mattermost is for conversation, questions, handoffs, and concise notifications.
+
+Gitea issues, labels, milestones, and time tracking are intentionally unavailable because Plane owns planned work and status. Mattermost messages should link to authoritative Plane or Gitea artifacts and should not recreate durable state.
 
 ## Persona Token Variables
 
@@ -77,7 +94,7 @@ export LLM_LOW_API_KEY=...
 export LLM_HIGH_API_KEY=...
 ```
 
-`LLM_RUNTIME_DEFAULT_OPENAI_API_KEY` is the fallback when a lane-specific token is not configured.
+`LLM_MODEL_DEFAULT_OPENAI_API_KEY` is the fallback when a lane-specific token is not configured.
 
 ## Identity Model
 
@@ -91,14 +108,7 @@ String giteaToken = "";
 .identity("gitea", giteaToken, "owen-agent")
 ```
 
-The handle is a tool-facing hint. The token is a concrete value supplied by the adopter's provider, usually from whatever config property or secret mapping that application chooses. Blank tokens skip that persona/server MCP client.
-
-## Plane Header Behavior
-
-The Plane MCP client sends:
-
-- configured auth header containing the persona Plane token. The application default is `Authorization: Bearer <token>`.
-- `x-workspace-slug: <PLANE_WORKSPACE_SLUG>` when configured
+The handle is a tool-facing hint. The token is a concrete value supplied by the adopter's provider, usually from whatever config property or secret mapping that application chooses. Blank tokens skip that persona/server MCP client only.
 
 ## MCP Logging
 

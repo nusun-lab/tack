@@ -53,8 +53,8 @@ public class ProfiledMcpClient implements McpClient {
     @Override public String key() { return delegate.key(); }
     @Override public List<ToolSpecification> listTools() { return filterAndLog(delegate.listTools()); }
     @Override public List<ToolSpecification> listTools(InvocationContext invocationContext) { return filterAndLog(delegate.listTools(invocationContext)); }
-    @Override public ToolExecutionResult executeTool(ToolExecutionRequest executionRequest) { checkAllowed(executionRequest.name()); return executeToolInternal(executionRequest, null); }
-    @Override public ToolExecutionResult executeTool(ToolExecutionRequest executionRequest, InvocationContext invocationContext) { checkAllowed(executionRequest.name()); return executeToolInternal(executionRequest, invocationContext); }
+    @Override public ToolExecutionResult executeTool(ToolExecutionRequest executionRequest) { return executeToolInternal(executionRequest, null); }
+    @Override public ToolExecutionResult executeTool(ToolExecutionRequest executionRequest, InvocationContext invocationContext) { return executeToolInternal(executionRequest, invocationContext); }
     @Override public List<McpResource> listResources() { return delegate.listResources(); }
     @Override public List<McpResource> listResources(InvocationContext invocationContext) { return delegate.listResources(invocationContext); }
     @Override public List<McpResourceTemplate> listResourceTemplates() { return delegate.listResourceTemplates(); }
@@ -84,30 +84,44 @@ public class ProfiledMcpClient implements McpClient {
         if (tools == null) {
             return List.of();
         }
-        return tools.stream().filter(tool -> profile.allowsTool(server, tool.name())).toList();
+        return tools.stream()
+                .filter(tool -> profile.allowsTool(server, tool.name()))
+                .map(this::exposeTool)
+                .toList();
     }
 
-    private void checkAllowed(String toolName) {
+    private ToolSpecification exposeTool(ToolSpecification tool) {
+        if (!qualifiesToolNames()) {
+            return tool;
+        }
+        return tool.toBuilder().name(exposedToolName(tool.name())).build();
+    }
+
+    private void checkAllowed(String exposedToolName) {
+        String toolName = originalToolName(exposedToolName);
         if (!profile.allowsTool(server, toolName)) {
-            throw new IllegalArgumentException("Tool " + toolName + " is not allowed by profile " + profile.id());
+            throw new IllegalArgumentException("Tool " + exposedToolName + " is not allowed by profile " + profile.id());
         }
     }
 
     public ToolExecutionRequest applyProfile(ToolExecutionRequest request) {
-        Map<String, JsonNode> defaults = profile.defaultArguments(server, request.name());
+        String toolName = originalToolName(request.name());
+        ToolExecutionRequest rawRequest = toolName.equals(request.name()) ? request : request.toBuilder().name(toolName).build();
+        Map<String, JsonNode> defaults = profile.defaultArguments(server, toolName);
         if (defaults.isEmpty()) {
-            return request;
+            return rawRequest;
         }
-        ObjectNode arguments = parseArgumentsObject(request.arguments());
+        ObjectNode arguments = parseArgumentsObject(rawRequest.arguments());
         defaults.forEach((name, value) -> {
             if (!arguments.has(name)) {
                 arguments.set(name, value == null ? OBJECT_MAPPER.nullNode() : value.deepCopy());
             }
         });
-        return request.toBuilder().arguments(arguments.toString()).build();
+        return rawRequest.toBuilder().arguments(arguments.toString()).build();
     }
 
     private ToolExecutionResult executeToolInternal(ToolExecutionRequest request, InvocationContext invocationContext) {
+        checkAllowed(request.name());
         ToolExecutionRequest profiled = applyProfile(request);
         logDim("TOOL " + server + "." + profiled.name() + " REQUEST " + abbreviate(profiled.arguments()));
         ToolExecutionResult result = invocationContext == null
@@ -116,6 +130,27 @@ public class ProfiledMcpClient implements McpClient {
         result = limitResult(result);
         logDim("TOOL " + server + "." + profiled.name() + " RESPONSE isError=" + result.isError() + " " + abbreviate(resultText(result)));
         return result;
+    }
+
+
+    private boolean qualifiesToolNames() {
+        return profile.mcpServers().size() > 1;
+    }
+
+    private String exposedToolName(String toolName) {
+        return serverQualifier() + "__" + toolName;
+    }
+
+    private String originalToolName(String toolName) {
+        if (!qualifiesToolNames()) {
+            return toolName;
+        }
+        String prefix = serverQualifier() + "__";
+        return toolName != null && toolName.startsWith(prefix) ? toolName.substring(prefix.length()) : toolName;
+    }
+
+    private String serverQualifier() {
+        return server.replaceAll("[^A-Za-z0-9_]", "_");
     }
 
     private ToolExecutionResult limitResult(ToolExecutionResult result) {

@@ -113,8 +113,7 @@ public class RoutineSupport {
         private final String id;
         private Expression prompt;
         private String toolProfile = "none";
-        private String toolRuntime;
-        private String synthesisRuntime;
+        private String lane;
 
         private Act(String id) {
             this.id = id;
@@ -135,13 +134,8 @@ public class RoutineSupport {
             return this;
         }
 
-        public Act toolRuntime(String toolRuntime) {
-            this.toolRuntime = toolRuntime;
-            return this;
-        }
-
-        public Act synthesisRuntime(String synthesisRuntime) {
-            this.synthesisRuntime = synthesisRuntime;
+        public Act lane(String lane) {
+            this.lane = lane;
             return this;
         }
 
@@ -150,15 +144,14 @@ public class RoutineSupport {
             setProperty(exchange, "actId", id);
             setPromptProperty(exchange, "actPrompt", prompt);
             setProperty(exchange, "toolProfile", toolProfile);
-            setOptionalProperty(exchange, "toolRuntime", toolRuntime);
-            setOptionalProperty(exchange, "synthesisRuntime", synthesisRuntime);
+            setOptionalProperty(exchange, "lane", lane);
         }
     }
 
     public static final class Decision implements Processor {
         private final String id;
         private Expression prompt;
-        private String synthesisRuntime;
+        private String lane;
 
         private Decision(String id) {
             this.id = id;
@@ -174,8 +167,8 @@ public class RoutineSupport {
             return this;
         }
 
-        public Decision synthesisRuntime(String synthesisRuntime) {
-            this.synthesisRuntime = synthesisRuntime;
+        public Decision lane(String lane) {
+            this.lane = lane;
             return this;
         }
 
@@ -183,7 +176,7 @@ public class RoutineSupport {
         public void process(Exchange exchange) {
             setProperty(exchange, "decisionId", id);
             setPromptProperty(exchange, "decisionPrompt", prompt);
-            setOptionalProperty(exchange, "synthesisRuntime", synthesisRuntime);
+            setOptionalProperty(exchange, "lane", lane);
         }
     }
 
@@ -194,7 +187,7 @@ public class RoutineSupport {
         private String schema;
         private String schemaJson;
         private String schemaUri;
-        private String synthesisRuntime;
+        private String lane;
 
         private Creation(String id) {
             this.id = id;
@@ -230,8 +223,8 @@ public class RoutineSupport {
             return this;
         }
 
-        public Creation synthesisRuntime(String synthesisRuntime) {
-            this.synthesisRuntime = synthesisRuntime;
+        public Creation lane(String lane) {
+            this.lane = lane;
             return this;
         }
 
@@ -243,7 +236,7 @@ public class RoutineSupport {
             setOptionalProperty(exchange, "createSchema", schema);
             setOptionalProperty(exchange, "createSchemaJson", schemaJson);
             setOptionalProperty(exchange, "createSchemaUri", schemaUri);
-            setOptionalProperty(exchange, "synthesisRuntime", synthesisRuntime);
+            setOptionalProperty(exchange, "lane", lane);
         }
     }
 

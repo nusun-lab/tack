@@ -4,14 +4,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.camel.Exchange;
 import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.support.DefaultExchange;
-import us.nusun.llmshare.framework.inventory.ExecutionRuntimeRegistry;
+import us.nusun.llmshare.framework.inventory.InferenceLaneRegistry;
 import us.nusun.llmshare.framework.inventory.PersonaCatalog;
 import us.nusun.llmshare.framework.inventory.RoutineCatalog;
 import us.nusun.llmshare.framework.inventory.ToolProfileRegistry;
-import us.nusun.llmshare.framework.model.ExecutionRuntimeDefinition;
 import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
 import us.nusun.llmshare.framework.model.LlmJobResult;
 import us.nusun.llmshare.framework.model.LlmJobStatus;
+import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.model.Mission;
 import us.nusun.llmshare.framework.model.Persona;
 import us.nusun.llmshare.framework.model.RoutineDefinition;
@@ -35,6 +35,12 @@ public final class FrameworkFixtures {
     public static final String PERSONA_B = "persona-b";
     public static final String ROUTINE_A = "routine-a";
     public static final String ROUTINE_B = "routine-b";
+    public static final String SERVER_ALPHA = "alpha-mcp";
+    public static final String SERVER_BETA = "beta-mcp";
+    public static final String SERVER_GAMMA = "gamma-mcp";
+    public static final String PROFILE_ALPHA = "profile-alpha";
+    public static final String PROFILE_BETA = "profile-beta";
+    public static final String PROFILE_GAMMA = "profile-gamma";
 
     private FrameworkFixtures() {
     }
@@ -47,9 +53,9 @@ public final class FrameworkFixtures {
                         .label("PA")
                         .color("38;2;106;169;255")
                         .trait("Builds framework test scenarios")
-                        .identity("mattermost", "mattermost-token", "@persona-a")
-                        .identity("gitea", "gitea-token", "@persona-a")
-                        .identity("plane", "plane-token", "@persona-a")
+                        .identity(SERVER_ALPHA, "alpha-secret", "@persona-a")
+                        .identity(SERVER_BETA, "beta-secret", "@persona-a")
+                        .identity(SERVER_GAMMA, "gamma-secret", "@persona-a")
                         .build(),
                 Persona.builder(PERSONA_B)
                         .name("Persona B")
@@ -71,15 +77,13 @@ public final class FrameworkFixtures {
                         .name("Routine A")
                         .description("Synthetic framework routine A")
                         .routeUri("direct:routine-a")
-                        .defaultToolRuntime("tool-low")
-                        .defaultSynthesisRuntime("synthesis-low")
+                        .defaultLane("low-pass")
                         .build(),
                 RoutineDefinition.builder(ROUTINE_B)
                         .name("Routine B")
                         .description("Synthetic framework routine B")
                         .routeUri("direct:routine-b")
-                        .defaultToolRuntime("tool-high")
-                        .defaultSynthesisRuntime("synthesis-high")
+                        .defaultLane("high-pass")
                         .build());
     }
 
@@ -89,19 +93,19 @@ public final class FrameworkFixtures {
 
     public static List<ToolProfile> toolProfiles() {
         return List.of(
-                ToolProfile.builder("team-chat")
-                        .allowTools("mattermost", "create_post", "get_channel")
-                        .promptGuidance("Read recent context before posting.")
+                ToolProfile.builder(PROFILE_ALPHA)
+                        .allowTools(SERVER_ALPHA, "alpha_post", "alpha_get")
+                        .promptGuidance("Read recent synthetic context before posting.")
                         .maxResultTokens(1500)
                         .build(),
-                ToolProfile.builder("project-management")
-                        .allowTools("plane", "list_projects", "create_issue")
-                        .defaultArgument("plane", "list_projects", "fields", "id,name,identifier")
-                        .promptGuidance("Find existing work before creating new items.")
+                ToolProfile.builder(PROFILE_BETA)
+                        .allowTools(SERVER_BETA, "beta_list", "beta_create")
+                        .defaultArgument(SERVER_BETA, "beta_list", "fields", "id,name,identifier")
+                        .promptGuidance("Find existing synthetic work before creating new items.")
                         .maxResultTokens(1500)
                         .build(),
-                ToolProfile.builder("source-control")
-                        .allowTools("gitea", "get_repository", "get_pull_request")
+                ToolProfile.builder(PROFILE_GAMMA)
+                        .allowTools(SERVER_GAMMA, "gamma_get_repository", "gamma_get_pull_request")
                         .promptGuidance("Read before writing and avoid duplicate branches or pull requests.")
                         .maxResultTokens(1500)
                         .build());
@@ -131,32 +135,8 @@ public final class FrameworkFixtures {
                         .build());
     }
 
-    public static List<ExecutionRuntimeDefinition> executionRuntimes() {
-        return List.of(
-                ExecutionRuntimeDefinition.builder("tool-low")
-                        .lane("low-pass")
-                        .toolCalling(true)
-                        .agentFactoryBeanName("executionRuntimeAgentFactory")
-                        .build(),
-                ExecutionRuntimeDefinition.builder("tool-high")
-                        .lane("high-pass")
-                        .toolCalling(true)
-                        .agentFactoryBeanName("executionRuntimeAgentFactory")
-                        .build(),
-                ExecutionRuntimeDefinition.builder("synthesis-low")
-                        .lane("low-pass")
-                        .toolCalling(false)
-                        .agentFactoryBeanName("executionRuntimeAgentFactory")
-                        .build(),
-                ExecutionRuntimeDefinition.builder("synthesis-high")
-                        .lane("high-pass")
-                        .toolCalling(false)
-                        .agentFactoryBeanName("executionRuntimeAgentFactory")
-                        .build());
-    }
-
-    public static ExecutionRuntimeRegistry executionRuntimeRegistry() {
-        return new ExecutionRuntimeRegistry(inferenceLanes(), executionRuntimes());
+    public static InferenceLaneRegistry inferenceLaneRegistry() {
+        return new InferenceLaneRegistry(inferenceLanes());
     }
 
     public static PrimitiveSupport primitiveSupport() {
@@ -174,7 +154,7 @@ public final class FrameworkFixtures {
         set(support, "routines", routines);
         set(support, "toolProfiles", toolProfileRegistry());
         set(support, "missionRoster", missionRosterService(agentRuns, personas, routines));
-        set(support, "runtimes", executionRuntimeRegistry());
+        set(support, "lanes", inferenceLaneRegistry());
         set(support, "projections", new NoopProjectionManager());
         return support;
     }
@@ -205,7 +185,6 @@ public final class FrameworkFixtures {
         set(manager, "store", store);
         set(manager, "personas", personaCatalog());
         set(manager, "routines", routineCatalog());
-        set(manager, "runtimes", executionRuntimeRegistry());
         return manager;
     }
 
@@ -216,9 +195,9 @@ public final class FrameworkFixtures {
         return exchange;
     }
 
-    public static LlmJobResult llmResult(String runtimeId, String content) {
+    public static LlmJobResult llmResult(String laneId, String content) {
         Instant now = Instant.now();
-        return new LlmJobResult(UUID.randomUUID(), LlmJobStatus.SUCCEEDED, runtimeId, "test", "mock", content, content, now, now, now, 0, null);
+        return new LlmJobResult(UUID.randomUUID(), LlmJobStatus.SUCCEEDED, laneId, LlmPassType.SYNTHESIS, "test", "test", "mock", content, content, now, now, now, 0, null);
     }
 
     public static void set(Object target, String name, Object value) {

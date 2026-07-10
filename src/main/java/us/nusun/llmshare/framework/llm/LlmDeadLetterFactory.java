@@ -2,11 +2,11 @@ package us.nusun.llmshare.framework.llm;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import org.apache.camel.Exchange;
-import us.nusun.llmshare.framework.model.ExecutionRuntimeDefinition;
 import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
 import us.nusun.llmshare.framework.model.LlmJobDeadLetter;
 import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.LlmJobResult;
+import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.model.Persona;
 
 import java.time.Instant;
@@ -31,7 +31,7 @@ public class LlmDeadLetterFactory {
         return new LlmJobDeadLetter(
                 job.jobId(),
                 laneId(exchange, job),
-                runtimeId(exchange, job),
+                passType(exchange, job),
                 job.requester(),
                 job.role(),
                 modelId(exchange, globalModelFallback),
@@ -59,11 +59,9 @@ public class LlmDeadLetterFactory {
 
     public String contextSummary(Exchange exchange, String globalModelFallback) {
         LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
-        ExecutionRuntimeDefinition runtime = exchange.getProperty("executionRuntime", ExecutionRuntimeDefinition.class);
         return "jobId=" + firstNonBlank(exchange.getProperty("llmJobId", String.class), job == null ? null : String.valueOf(job.jobId()))
                 + " laneId=" + laneId(exchange, job)
-                + " runtimeId=" + runtimeId(exchange, job)
-                + " agentName=" + (runtime == null ? null : runtime.agentName())
+                + " passType=" + passType(exchange, job)
                 + " model=" + modelId(exchange, globalModelFallback);
     }
 
@@ -89,20 +87,26 @@ public class LlmDeadLetterFactory {
             return id;
         }
         return firstNonBlank(
-                metadataValue(job, "inferenceLane"),
+                exchange.getProperty("laneId", String.class),
+                job == null ? null : job.laneId(),
                 metadataValue(job, "laneId"),
-                metadataValue(job, "lane"),
+                metadataValue(job, "inferenceLane"),
                 "unknown");
     }
 
-    private String runtimeId(Exchange exchange, LlmJobEnvelope job) {
-        ExecutionRuntimeDefinition runtime = exchange.getProperty("executionRuntime", ExecutionRuntimeDefinition.class);
-        return firstNonBlank(
-                exchange.getProperty("executionRuntimeId", String.class),
-                runtime == null ? null : runtime.id(),
-                metadataValue(job, "executionRuntimeId"),
-                job == null ? null : job.requester(),
-                "unknown");
+    private LlmPassType passType(Exchange exchange, LlmJobEnvelope job) {
+        Object passType = exchange.getProperty("passType");
+        if (passType instanceof LlmPassType typed) {
+            return typed;
+        }
+        if (passType instanceof String text && !text.isBlank()) {
+            return LlmPassType.valueOf(text.strip().toUpperCase());
+        }
+        if (job != null && job.passType() != null) {
+            return job.passType();
+        }
+        String metadata = metadataValue(job, "passType");
+        return metadata == null || metadata.isBlank() ? null : LlmPassType.valueOf(metadata.strip().toUpperCase());
     }
 
     private static Map<String, Object> normalizeDlqMetadata(Map<String, Object> metadata) {
@@ -123,9 +127,6 @@ public class LlmDeadLetterFactory {
         }
         if (value instanceof InferenceLaneDefinition lane) {
             return lane.id();
-        }
-        if (value instanceof ExecutionRuntimeDefinition runtime) {
-            return runtime.id();
         }
         if (value instanceof Persona persona) {
             return persona.id();
@@ -219,7 +220,7 @@ public class LlmDeadLetterFactory {
     }
 
     private static String globalModelFallback(Exchange exchange) {
-        return resolveOptionalPlaceholder(exchange, "{{llm.runtime-default.openai.model:}}");
+        return resolveOptionalPlaceholder(exchange, "{{llm.model-default.openai.model:}}");
     }
 
     private static String firstNonBlank(String... values) {

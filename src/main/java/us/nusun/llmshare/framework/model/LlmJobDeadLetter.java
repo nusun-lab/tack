@@ -7,7 +7,7 @@ import java.util.UUID;
 public record LlmJobDeadLetter(
         UUID jobId,
         String laneId,
-        String runtimeId,
+        LlmPassType passType,
         String requester,
         String role,
         String model,

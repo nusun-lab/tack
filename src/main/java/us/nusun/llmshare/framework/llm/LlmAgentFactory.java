@@ -24,17 +24,18 @@ import org.eclipse.microprofile.config.ConfigProvider;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import us.nusun.llmshare.framework.inventory.InferenceLaneRegistry;
 import us.nusun.llmshare.framework.inventory.PersonaCatalog;
-import us.nusun.llmshare.framework.mcp.McpClientFactory;
-import us.nusun.llmshare.framework.model.ToolProfile;
 import us.nusun.llmshare.framework.inventory.ToolProfileRegistry;
+import us.nusun.llmshare.framework.mcp.McpClientFactory;
 import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
 import us.nusun.llmshare.framework.memory.EphemeralToolPassChatMemoryProvider;
-import us.nusun.llmshare.framework.model.Persona;
-import us.nusun.llmshare.framework.model.ExecutionRuntimeDefinition;
-import us.nusun.llmshare.framework.inventory.ExecutionRuntimeRegistry;
 import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
 import us.nusun.llmshare.framework.model.LlmJobEnvelope;
+import us.nusun.llmshare.framework.model.LlmPassType;
+import us.nusun.llmshare.framework.model.Persona;
+import us.nusun.llmshare.framework.model.RoutineDefinition;
+import us.nusun.llmshare.framework.model.ToolProfile;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -50,7 +51,7 @@ public class LlmAgentFactory {
 
     @Produces
     @Singleton
-    TokenCountEstimator toolPassTokenCountEstimator(@ConfigProperty(name = "llm.runtime-default.openai.model") String model) {
+    TokenCountEstimator toolPassTokenCountEstimator(@ConfigProperty(name = "llm.model-default.openai.model") String model) {
         try {
             return new OpenAiTokenCountEstimator(model);
         } catch (IllegalArgumentException e) {
@@ -61,28 +62,28 @@ public class LlmAgentFactory {
 
     @Produces
     @Singleton
-    @Named("executionRuntimeAgentFactory")
-    AgentFactory executionRuntimeAgentFactory(
-            ExecutionRuntimeRegistry runtimes,
+    @Named("dynamicAgentFactory")
+    AgentFactory dynamicAgentFactory(
+            InferenceLaneRegistry lanes,
             McpClientFactory mcpClientFactory,
             ToolProfileRegistry toolProfiles,
             PersonaCatalog personas,
             TokenCountEstimator tokenCountEstimator,
-            @ConfigProperty(name = "llm.runtime-default.openai.base-url") String defaultBaseUrl,
-            @ConfigProperty(name = "llm.runtime-default.openai.api-key") String defaultApiKey,
-            @ConfigProperty(name = "llm.runtime-default.openai.model") String defaultModel,
-            @ConfigProperty(name = "llm.runtime-default.openai.temperature") double temperature,
-            @ConfigProperty(name = "llm.runtime-default.openai.max-tokens") int maxTokens,
-            @ConfigProperty(name = "llm.runtime-default.openai.timeout-ms") long timeoutMs,
-            @ConfigProperty(name = "llm.runtime-default.openai.thinking-off.enabled") boolean thinkingOffEnabled,
-            @ConfigProperty(name = "llm.runtime-default.openai.strict-json-schema", defaultValue = "true") boolean strictJsonSchema,
-            @ConfigProperty(name = "llm.runtime-default.tool-memory.max-tokens", defaultValue = "12000") int memoryMaxTokens) {
-        Map<String, ChatModel> runtimeModels = runtimeModels(runtimes, defaultBaseUrl, defaultApiKey, defaultModel, temperature, maxTokens, timeoutMs, thinkingOffEnabled, strictJsonSchema);
-        return new ExecutionRuntimeAgentFactory(runtimes, runtimeModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator, memoryMaxTokens);
+            @ConfigProperty(name = "llm.model-default.openai.base-url") String defaultBaseUrl,
+            @ConfigProperty(name = "llm.model-default.openai.api-key") String defaultApiKey,
+            @ConfigProperty(name = "llm.model-default.openai.model") String defaultModel,
+            @ConfigProperty(name = "llm.model-default.openai.temperature") double temperature,
+            @ConfigProperty(name = "llm.model-default.openai.max-tokens") int maxTokens,
+            @ConfigProperty(name = "llm.model-default.openai.timeout-ms") long timeoutMs,
+            @ConfigProperty(name = "llm.model-default.openai.thinking-off.enabled") boolean thinkingOffEnabled,
+            @ConfigProperty(name = "llm.model-default.openai.strict-json-schema", defaultValue = "true") boolean strictJsonSchema,
+            @ConfigProperty(name = "llm.model-default.tool-memory.max-tokens", defaultValue = "12000") int memoryMaxTokens) {
+        Map<String, ChatModel> laneModels = laneModels(lanes, defaultBaseUrl, defaultApiKey, defaultModel, temperature, maxTokens, timeoutMs, thinkingOffEnabled, strictJsonSchema);
+        return new DynamicAgentFactory(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator, memoryMaxTokens);
     }
 
-    private static Map<String, ChatModel> runtimeModels(
-            ExecutionRuntimeRegistry runtimes,
+    private static Map<String, ChatModel> laneModels(
+            InferenceLaneRegistry lanes,
             String defaultBaseUrl,
             String defaultApiKey,
             String defaultModel,
@@ -92,12 +93,11 @@ public class LlmAgentFactory {
             boolean thinkingOffEnabled,
             boolean strictJsonSchema) {
         LinkedHashMap<String, ChatModel> models = new LinkedHashMap<>();
-        for (ExecutionRuntimeDefinition runtime : runtimes.allRuntimes()) {
-            InferenceLaneDefinition lane = runtimes.laneRequired(runtime.laneId());
-            models.put(runtime.id(), chatModel(
+        for (InferenceLaneDefinition lane : lanes.allLanes()) {
+            models.put(lane.id(), chatModel(
                     firstNonBlank(lane.endpoint(), defaultBaseUrl),
                     firstNonBlank(resolveLaneApiKey(lane), defaultApiKey),
-                    selectedModel(runtime, lane, defaultModel),
+                    selectedModel(lane, defaultModel),
                     temperature,
                     maxTokens,
                     timeoutMs,
@@ -107,8 +107,8 @@ public class LlmAgentFactory {
         return Map.copyOf(models);
     }
 
-    public static String selectedModel(ExecutionRuntimeDefinition runtime, InferenceLaneDefinition lane, String globalFallback) {
-        return firstNonBlank(runtime == null ? null : runtime.model(), firstNonBlank(lane == null ? null : lane.model(), globalFallback));
+    public static String selectedModel(InferenceLaneDefinition lane, String globalFallback) {
+        return firstNonBlank(lane == null ? null : lane.model(), globalFallback);
     }
 
     private static OpenAiChatModel chatModel(String baseUrl, String apiKey, String model, double temperature, int maxTokens, long timeoutMs, boolean thinkingOffEnabled, boolean strictJsonSchema) {
@@ -137,17 +137,22 @@ public class LlmAgentFactory {
         return blank(lane.apiKeyEnvVariable()) ? null : System.getenv(lane.apiKeyEnvVariable());
     }
 
-    private static String firstNonBlank(String first, String second) {
-        return blank(first) ? second : first;
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (!blank(value)) {
+                return value;
+            }
+        }
+        return null;
     }
 
     private static boolean blank(String value) {
         return value == null || value.isBlank();
     }
 
-    public static class ExecutionRuntimeAgentFactory implements AgentFactory {
-        private final ExecutionRuntimeRegistry runtimes;
-        private final Map<String, ChatModel> runtimeModels;
+    public static class DynamicAgentFactory implements AgentFactory {
+        private final InferenceLaneRegistry lanes;
+        private final Map<String, ChatModel> laneModels;
         private final McpClientFactory mcpClientFactory;
         private final ToolProfileRegistry toolProfiles;
         private final PersonaCatalog personas;
@@ -155,9 +160,9 @@ public class LlmAgentFactory {
         private final int memoryMaxTokens;
         private CamelContext camelContext;
 
-        public ExecutionRuntimeAgentFactory(ExecutionRuntimeRegistry runtimes, Map<String, ChatModel> runtimeModels, McpClientFactory mcpClientFactory, ToolProfileRegistry toolProfiles, PersonaCatalog personas, TokenCountEstimator tokenCountEstimator, int memoryMaxTokens) {
-            this.runtimes = runtimes;
-            this.runtimeModels = runtimeModels;
+        public DynamicAgentFactory(InferenceLaneRegistry lanes, Map<String, ChatModel> laneModels, McpClientFactory mcpClientFactory, ToolProfileRegistry toolProfiles, PersonaCatalog personas, TokenCountEstimator tokenCountEstimator, int memoryMaxTokens) {
+            this.lanes = lanes;
+            this.laneModels = laneModels;
             this.mcpClientFactory = mcpClientFactory;
             this.toolProfiles = toolProfiles;
             this.personas = personas;
@@ -168,19 +173,17 @@ public class LlmAgentFactory {
         @Override
         public Agent createAgent(Exchange exchange) {
             if (exchange == null) {
-                throw new IllegalArgumentException("ExecutionRuntimeAgentFactory requires the active Camel exchange");
+                throw new IllegalArgumentException("DynamicAgentFactory requires the active Camel exchange");
             }
-            String runtimeId = exchange.getProperty("executionRuntimeId", String.class);
-            if (blank(runtimeId)) {
-                throw new IllegalStateException("No executionRuntimeId on exchange");
-            }
-            ExecutionRuntimeDefinition runtime = runtimes.getRequired(runtimeId);
-            ChatModel model = runtimeModels.get(runtime.id());
+            String laneId = firstNonBlank(exchange.getProperty("laneId", String.class), job(exchange) == null ? null : job(exchange).laneId(), RoutineDefinition.FRAMEWORK_DEFAULT_LANE);
+            lanes.getRequired(laneId);
+            ChatModel model = laneModels.get(laneId);
             if (model == null) {
-                throw new IllegalStateException("No chat model configured for execution runtime " + runtime.id());
+                throw new IllegalStateException("No chat model configured for inference lane " + laneId);
             }
+            LlmPassType passType = passType(exchange);
             AgentConfiguration configuration = new AgentConfiguration().withChatModel(model);
-            if (runtime.toolCalling()) {
+            if (passType == LlmPassType.TOOL) {
                 configuration.withChatMemoryProvider(new EphemeralToolPassChatMemoryProvider(memoryMaxTokens, tokenCountEstimator, true));
                 List<McpClient> clients = mcpClients(exchange);
                 if (!clients.isEmpty()) {
@@ -188,13 +191,13 @@ public class LlmAgentFactory {
                 }
             }
             Agent agent = configuration.getChatMemoryProvider() == null ? new AgentWithoutMemory(configuration) : new AgentWithMemory(configuration);
-            applyProviderSchemaIfRequired(exchange, runtime, agent);
+            applyProviderSchemaIfRequired(exchange, laneId, passType, agent);
             ResponseFormat responseFormat = agent instanceof AbstractAgent<?> abstractAgent
                     ? abstractAgent.getResponseFormat()
                     : null;
             configuration.withAiServicesCustomizer(aiServices -> {
                 aiServices.hallucinatedToolNameStrategy(HALLUCINATED_TOOL_NAME_RECOVERY_STRATEGY);
-                if (runtime.toolCalling()) {
+                if (passType == LlmPassType.TOOL) {
                     aiServices.chatRequestTransformer(request -> forceInitialToolChoice(request, responseFormat));
                 }
             });
@@ -219,7 +222,7 @@ public class LlmAgentFactory {
         private List<McpClient> mcpClients(Exchange exchange) {
             String personaId = exchange.getProperty("personaId", String.class);
             if (blank(personaId)) {
-                throw new IllegalStateException("No personaId on exchange for tool-capable execution runtime");
+                throw new IllegalStateException("No personaId on exchange for tool-capable LLM pass");
             }
             String profileId = exchange.getProperty("toolProfile", "none", String.class);
             Persona persona = personas.getRequired(personaId);
@@ -227,36 +230,52 @@ public class LlmAgentFactory {
             return mcpClientFactory.clientsFor(persona, profile);
         }
 
-        private void applyProviderSchemaIfRequired(Exchange exchange, ExecutionRuntimeDefinition runtime, Agent agent) {
+        private void applyProviderSchemaIfRequired(Exchange exchange, String laneId, LlmPassType passType, Agent agent) {
             LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
             boolean schemaPresent = ProviderStructuredOutputSupport.hasResponseSchema(job);
             boolean schemaEnabled = ProviderStructuredOutputSupport.providerSchemaEnabled(exchange, job);
             if (!schemaPresent || !schemaEnabled) {
                 if (schemaPresent) {
-                    LOG.info("Provider schema enforcement skipped jobId={} runtime={} schemaEnabled=false",
-                            jobId(job), runtime.id());
+                    LOG.info("Provider schema enforcement skipped jobId={} lane={} passType={} schemaEnabled=false",
+                            jobId(job), laneId, passType);
                 } else {
-                    LOG.debug("Provider schema enforcement skipped jobId={} runtime={} schemaEnabled={} schemaPresent=false",
-                            jobId(job), runtime.id(), schemaEnabled);
+                    LOG.debug("Provider schema enforcement skipped jobId={} lane={} passType={} schemaEnabled={} schemaPresent=false",
+                            jobId(job), laneId, passType, schemaEnabled);
                 }
                 return;
             }
             if (!(agent instanceof AbstractAgent<?> abstractAgent)) {
-                throw new IllegalStateException("Provider structured output requires a Camel AbstractAgent for runtime "
-                        + runtime.id());
+                throw new IllegalStateException("Provider structured output requires a Camel AbstractAgent for lane "
+                        + laneId + " passType=" + passType);
             }
             try {
                 abstractAgent.setResponseFormat(ProviderStructuredOutputSupport.responseFormat(camelContext(exchange), job.responseSchema()));
-                LOG.info("Provider schema enforcement applied jobId={} runtime={} schemaEnabled=true",
-                        jobId(job), runtime.id());
+                LOG.info("Provider schema enforcement applied jobId={} lane={} passType={} schemaEnabled=true",
+                        jobId(job), laneId, passType);
             } catch (IOException e) {
                 throw new IllegalArgumentException("Unable to resolve responseSchema for provider structured output: jobId="
-                        + jobId(job) + " runtime=" + runtime.id(), e);
+                        + jobId(job) + " lane=" + laneId + " passType=" + passType, e);
             }
         }
 
         private CamelContext camelContext(Exchange exchange) {
             return camelContext == null ? exchange.getContext() : camelContext;
+        }
+
+        private static LlmJobEnvelope job(Exchange exchange) {
+            return exchange.getProperty("llmJob", LlmJobEnvelope.class);
+        }
+
+        private static LlmPassType passType(Exchange exchange) {
+            Object value = exchange.getProperty("passType");
+            if (value instanceof LlmPassType passType) {
+                return passType;
+            }
+            if (value instanceof String text && !text.isBlank()) {
+                return LlmPassType.valueOf(text.strip().toUpperCase());
+            }
+            LlmJobEnvelope job = job(exchange);
+            return job == null || job.passType() == null ? LlmPassType.SYNTHESIS : job.passType();
         }
 
         private static Object jobId(LlmJobEnvelope job) {

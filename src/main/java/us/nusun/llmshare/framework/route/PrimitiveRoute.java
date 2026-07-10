@@ -15,7 +15,7 @@ public class PrimitiveRoute extends RouteBuilder {
     public void configure() {
         from("direct:act")
                 .routeId("primitive-act")
-                .process(primitive.resolveActRuntimes())
+                .process(primitive.resolveActLane())
                 .process(primitive.markCurrent("act", "actId"))
                 .process(primitive.prepareToolPassPromptContext())
                 .setProperty("primitivePrompt", simple("""
@@ -83,7 +83,7 @@ public class PrimitiveRoute extends RouteBuilder {
 
         from("direct:decide")
                 .routeId("primitive-decide")
-                .process(primitive.resolveSynthesisRuntime("synthesisRuntime"))
+                .process(primitive.resolveLane())
                 .process(primitive.markCurrent("decide", "decisionId"))
                 .process(primitive.prepareDecisionPromptContext())
                 .setProperty("primitivePrompt", simple("""
@@ -112,7 +112,7 @@ public class PrimitiveRoute extends RouteBuilder {
 
         from("direct:create")
                 .routeId("primitive-create")
-                .process(primitive.resolveSynthesisRuntime("synthesisRuntime"))
+                .process(primitive.resolveLane())
                 .process(primitive.markCurrent("create", "createId"))
                 .process(primitive.prepareCreatePromptContext())
                 .setProperty("primitivePrompt", simple("""

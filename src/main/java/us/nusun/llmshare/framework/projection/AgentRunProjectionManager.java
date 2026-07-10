@@ -10,7 +10,6 @@ import us.nusun.llmshare.framework.state.AgentRun;
 import us.nusun.llmshare.framework.model.Persona;
 import us.nusun.llmshare.framework.model.RoutineDefinition;
 import us.nusun.llmshare.framework.model.ThoughtFrame;
-import us.nusun.llmshare.framework.inventory.ExecutionRuntimeRegistry;
 import us.nusun.llmshare.framework.state.ThoughtStack;
 import us.nusun.llmshare.framework.routine.ThoughtStackSupport;
 
@@ -27,7 +26,6 @@ public class AgentRunProjectionManager {
     @Inject ProjectionStore store;
     @Inject PersonaCatalog personas;
     @Inject RoutineCatalog routines;
-    @Inject ExecutionRuntimeRegistry runtimes;
 
     public void record(Exchange exchange, String eventType) {
         AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
@@ -35,7 +33,7 @@ public class AgentRunProjectionManager {
             return;
         }
         ProjectionTimeline timeline = timeline(exchange);
-        timeline.add(eventType);
+        timeline.add(eventType, run);
         store.put(build(exchange, run, timeline.entries()));
     }
 
@@ -43,8 +41,10 @@ public class AgentRunProjectionManager {
         Persona persona = personas.getRequired(run.personaId());
         RoutineDefinition routine = routines.getRequired(run.routineId());
         ThoughtStack stack = exchange.getProperty(ThoughtStackSupport.STACK_PROPERTY, ThoughtStack.class);
-        String toolRuntime = exchange.getProperty("resolvedToolRuntime", String.class);
-        String synthesisRuntime = exchange.getProperty("resolvedSynthesisRuntime", String.class);
+        String laneId = exchange.getProperty("resolvedLane", String.class);
+        if (laneId == null || laneId.isBlank()) {
+            laneId = exchange.getProperty("laneId", String.class);
+        }
         return new AgentRunProjection(
                 run.id(),
                 run.missionId(),
@@ -54,19 +54,11 @@ public class AgentRunProjectionManager {
                 routineSummary(routine),
                 current(run, exchange),
                 exchange.getProperty("toolProfile", String.class),
-                compactMap("toolRuntime", toolRuntime, "synthesisRuntime", synthesisRuntime),
-                compactMap("toolLane", lane(toolRuntime), "synthesisLane", lane(synthesisRuntime)),
+                laneId,
                 thoughtFrames(exchange, stack),
                 latest(exchange, run),
                 timeline == null ? List.of() : timeline,
                 Instant.now());
-    }
-
-    private String lane(String runtimeId) {
-        if (runtimeId == null || runtimeId.isBlank()) {
-            return null;
-        }
-        return runtimes.getRequired(runtimeId).laneId();
     }
 
     private static Map<String, Object> personaSummary(Persona persona) {
@@ -164,7 +156,7 @@ public class AgentRunProjectionManager {
     private static String firstNonBlank(String... values) {
         for (String value : values) {
             if (value != null && !value.isBlank()) {
-                return value.length() <= 180 ? value : value.substring(0, 177) + "...";
+                return value;
             }
         }
         return null;
@@ -180,8 +172,17 @@ public class AgentRunProjectionManager {
                 trim();
             }
         }
-        void add(String type) {
-            entries.add(Map.of("type", type, "at", Instant.now().toString()));
+        void add(String type, AgentRun run) {
+            LinkedHashMap<String, Object> entry = new LinkedHashMap<>();
+            entry.put("type", type);
+            entry.put("at", Instant.now().toString());
+            if (run != null && run.currentPrimitive() != null) {
+                entry.put("primitive", run.currentPrimitive());
+            }
+            if (run != null && run.currentId() != null) {
+                entry.put("stepId", run.currentId());
+            }
+            entries.add(Map.copyOf(entry));
             trim();
         }
         List<Map<String, Object>> entries() {

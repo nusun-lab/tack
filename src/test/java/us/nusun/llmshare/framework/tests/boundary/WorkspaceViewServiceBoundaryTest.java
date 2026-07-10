@@ -14,6 +14,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 class WorkspaceViewServiceBoundaryTest {
     @Test
@@ -24,7 +25,7 @@ class WorkspaceViewServiceBoundaryTest {
 
         assertTrue(assertInstanceOf(List.class, view.get("personas")).size() >= 2);
         assertTrue(assertInstanceOf(List.class, view.get("routines")).size() >= 2);
-        assertTrue(assertInstanceOf(List.class, view.get("executionRuntimes")).size() >= 4);
+        assertFalse(view.containsKey("execution" + "Runtimes"));
         assertTrue(assertInstanceOf(List.class, view.get("inferenceLanes")).size() >= 2);
         assertTrue(assertInstanceOf(List.class, view.get("toolProfiles")).size() >= 3);
         assertEquals(List.of(), view.get("agentRunProjections"));
@@ -71,7 +72,7 @@ class WorkspaceViewServiceBoundaryTest {
         WorkspaceViewService service = new WorkspaceViewService();
         FrameworkFixtures.set(service, "personas", FrameworkFixtures.personaCatalog());
         FrameworkFixtures.set(service, "routines", FrameworkFixtures.routineCatalog());
-        FrameworkFixtures.set(service, "runtimes", FrameworkFixtures.executionRuntimeRegistry());
+        FrameworkFixtures.set(service, "lanes", FrameworkFixtures.inferenceLaneRegistry());
         FrameworkFixtures.set(service, "toolProfiles", FrameworkFixtures.toolProfileRegistry());
         FrameworkFixtures.set(service, "projections", store);
         return service;
