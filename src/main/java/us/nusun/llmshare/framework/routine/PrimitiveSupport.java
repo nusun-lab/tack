@@ -1,5 +1,8 @@
 package us.nusun.llmshare.framework.routine;
 
+import static us.nusun.llmshare.framework.model.FrameworkText.firstNonBlank;
+import static us.nusun.llmshare.framework.model.FrameworkText.putIfNonBlank;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.networknt.schema.Error;
@@ -240,29 +243,26 @@ public class PrimitiveSupport {
         AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
         Mission mission = exchange.getProperty("mission", Mission.class);
         if (run != null) {
-            putIfPresent(metadata, "agentRunId", run.id());
-            putIfPresent(metadata, "personaId", run.personaId());
-            putIfPresent(metadata, "primitive", run.currentPrimitive());
-            putIfPresent(metadata, "primitiveId", run.currentId());
+            putIfNonBlank(metadata, "agentRunId", run.id());
+            putIfNonBlank(metadata, "personaId", run.personaId());
+            putIfNonBlank(metadata, "primitive", run.currentPrimitive());
+            putIfNonBlank(metadata, "primitiveId", run.currentId());
         }
         if (mission != null) {
-            putIfPresent(metadata, "missionId", mission.id());
+            putIfNonBlank(metadata, "missionId", mission.id());
         }
-        putIfPresent(metadata, "actId", exchange.getProperty("actId", String.class));
-        putIfPresent(metadata, "decisionId", exchange.getProperty("decisionId", String.class));
-        putIfPresent(metadata, "createId", exchange.getProperty("createId", String.class));
-        putIfPresent(metadata, "toolProfile", exchange.getProperty("toolProfile", String.class));
-        putIfPresent(metadata, "laneId", laneId);
-        putIfPresent(metadata, "passType", passType == null ? null : passType.name());
+        putIfNonBlank(metadata, "actId", exchange.getProperty("actId", String.class));
+        putIfNonBlank(metadata, "decisionId", exchange.getProperty("decisionId", String.class));
+        putIfNonBlank(metadata, "createId", exchange.getProperty("createId", String.class));
+        putIfNonBlank(metadata, "toolProfile", exchange.getProperty("toolProfile", String.class));
+        putIfNonBlank(metadata, "laneId", laneId);
+        putIfNonBlank(metadata, "passType", passType == null ? null : passType.name());
         if (schema != null && !schema.isBlank()) {
             metadata.put(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY, true);
         }
         return Map.copyOf(metadata);
     }
 
-    private static void putIfPresent(Map<String, Object> metadata, String key, String value) {
-        if (value != null && !value.isBlank()) metadata.put(key, value);
-    }
 
     private static String primitiveRequester(Exchange exchange) {
         AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
@@ -768,11 +768,5 @@ public class PrimitiveSupport {
         try { return value == null ? "null" : objectMapper.writeValueAsString(value); }
         catch (Exception e) { return String.valueOf(value); }
     }
-
-    private static String firstNonBlank(String... values) {
-        for (String value : values) if (value != null && !value.isBlank()) return value;
-        return null;
-    }
-
     private record ResolvedSchema(String raw, String json, String uri) {}
 }

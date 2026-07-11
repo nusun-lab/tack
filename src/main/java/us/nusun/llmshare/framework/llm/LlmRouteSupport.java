@@ -1,5 +1,7 @@
 package us.nusun.llmshare.framework.llm;
 
+import static us.nusun.llmshare.framework.model.FrameworkText.firstNonBlank;
+
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.Body;
@@ -144,14 +146,5 @@ public class LlmRouteSupport {
 
     private static String agentLogColor(Exchange exchange) {
         return exchange.getProperty("agentLogColor", String.class);
-    }
-
-    private static String firstNonBlank(String... values) {
-        for (String value : values) {
-            if (value != null && !value.isBlank()) {
-                return value;
-            }
-        }
-        return null;
     }
 }

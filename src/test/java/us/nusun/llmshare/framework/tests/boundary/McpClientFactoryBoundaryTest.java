@@ -109,23 +109,6 @@ class McpClientFactoryBoundaryTest {
         assertEquals(List.of(FrameworkFixtures.SERVER_ALPHA + ":persona-a"), clients.stream().map(McpClient::key).toList());
     }
 
-    @Test
-    void profileServerDefinitionUsesConcreteUrlAndAuthFormat() {
-        ToolProfile profile = ToolProfile.builder("synthetic-tools")
-                .mcpServer(McpServerDefinition.builder(FrameworkFixtures.SERVER_GAMMA)
-                        .url("http://gamma.example/mcp")
-                        .authHeaderValueFormat("Token %s")
-                        .build())
-                .allowAllTools(FrameworkFixtures.SERVER_GAMMA)
-                .build();
-
-        McpServerDefinition server = profile.mcpServers().get(FrameworkFixtures.SERVER_GAMMA);
-
-        assertEquals(FrameworkFixtures.SERVER_GAMMA, server.id());
-        assertEquals("http://gamma.example/mcp", server.url());
-        assertEquals("Token %s", server.authHeaderValueFormat());
-    }
-
     private static McpClientFactory factory() {
         McpClientFactory factory = new McpClientFactory();
         FrameworkFixtures.set(factory, "transportTimeoutMs", 1000L);

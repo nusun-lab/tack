@@ -8,7 +8,6 @@ import jakarta.inject.Named;
 import us.nusun.llmshare.framework.model.RoutineDefinition;
 
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -28,13 +27,7 @@ public class RoutineCatalog {
     }
 
     public RoutineCatalog(List<RoutineDefinition> routines, ObjectMapper objectMapper) {
-        LinkedHashMap<String, RoutineDefinition> rows = new LinkedHashMap<>();
-        for (RoutineDefinition routine : routines) {
-            if (rows.put(routine.id(), routine) != null) {
-                throw new IllegalArgumentException("Duplicate routine id: " + routine.id());
-            }
-        }
-        this.routines = Map.copyOf(rows);
+        this.routines = CatalogIndex.uniqueById(routines, RoutineDefinition::id, "Duplicate routine id: ");
         this.json = new CatalogJson(objectMapper);
     }
 

@@ -1,7 +1,12 @@
-package us.nusun.llmshare.framework.llm;
+package us.nusun.llmshare.framework.tests.component;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import us.nusun.llmshare.framework.llm.HallucinatedToolNameRecoveryStrategy;
+import us.nusun.llmshare.framework.llm.InFlightReplyManager;
+import us.nusun.llmshare.framework.llm.LlmAgentFactory;
+import us.nusun.llmshare.framework.llm.LlmDeadLetterFactory;
+import us.nusun.llmshare.framework.llm.LlmJobFactory;
+import us.nusun.llmshare.framework.llm.LlmRouteSupport;
+
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
@@ -30,6 +35,7 @@ import us.nusun.llmshare.framework.routine.PrimitiveSupport;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 import us.nusun.llmshare.framework.tests.support.StubKafkaComponent;
 import us.nusun.llmshare.framework.tests.support.TestCamelContexts;
+import us.nusun.llmshare.framework.tests.support.TestJson;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -107,9 +113,7 @@ class HallucinatedToolNameRecoveryStrategyTest {
                             "laneId", "low-pass",
                             "passType", "TOOL"),
                     null).normalized());
-            String json = new ObjectMapper()
-                    .registerModule(new JavaTimeModule())
-                    .writeValueAsString(job);
+            String json = TestJson.write(job);
 
             assertDoesNotThrow(() -> kafka.emit("llm.requests.low", json));
 
@@ -117,9 +121,7 @@ class HallucinatedToolNameRecoveryStrategyTest {
             assertFalse(kafka.sentTopics().contains("llm.dead-letter"));
             Exchange replyExchange = kafka.sentTo("llm.replies.low").getFirst();
             assertFalse(replyExchange.isFailed());
-            LlmJobResult result = new ObjectMapper()
-                    .registerModule(new JavaTimeModule())
-                    .readValue(replyExchange.getIn().getBody(String.class), LlmJobResult.class);
+            LlmJobResult result = TestJson.read(replyExchange.getIn().getBody(String.class), LlmJobResult.class);
             assertNotNull(result);
             assertEquals(LlmJobStatus.SUCCEEDED, result.status());
             assertEquals("final response", result.content());

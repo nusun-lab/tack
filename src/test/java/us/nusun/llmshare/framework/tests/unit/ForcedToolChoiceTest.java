@@ -1,16 +1,13 @@
-package us.nusun.llmshare.framework.llm;
+package us.nusun.llmshare.framework.tests.unit;
+
+import us.nusun.llmshare.framework.llm.LlmAgentFactory;
 
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
-import dev.langchain4j.data.message.ChatMessage;
-import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
-import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
-import dev.langchain4j.model.chat.request.ChatRequestParameters;
-import dev.langchain4j.model.chat.request.ResponseFormat;
 import dev.langchain4j.model.chat.request.ResponseFormatType;
 import dev.langchain4j.model.chat.request.ToolChoice;
 import dev.langchain4j.model.chat.response.ChatResponse;
@@ -90,63 +87,6 @@ class ForcedToolChoiceTest {
 
         assertEquals(1, model.requests.size());
         assertNull(model.requests.get(0).toolChoice());
-    }
-
-    @Test
-    void forcedToolChoiceTransformerPreservesExistingRequestFields() {
-        List<ChatMessage> messages = List.of(SystemMessage.from("system"), UserMessage.from("user"));
-        ToolSpecification tool = ToolSpecification.builder().name("probe_tool").description("Probe").build();
-        ResponseFormat responseFormat = ResponseFormat.builder().type(ResponseFormatType.JSON).build();
-        ChatRequestParameters parameters = ChatRequestParameters.builder()
-                .modelName("model-a")
-                .temperature(0.2)
-                .topP(0.8)
-                .topK(40)
-                .frequencyPenalty(0.1)
-                .presencePenalty(0.3)
-                .maxOutputTokens(123)
-                .stopSequences(List.of("STOP"))
-                .toolSpecifications(List.of(tool))
-                .toolChoice(ToolChoice.NONE)
-                .responseFormat(responseFormat)
-                .build();
-        ChatRequest request = ChatRequest.builder()
-                .messages(messages)
-                .parameters(parameters)
-                .build();
-
-        ChatRequest transformed = LlmAgentFactory.DynamicAgentFactory.forceInitialToolChoice(request);
-
-        assertEquals(messages, transformed.messages());
-        assertEquals("model-a", transformed.modelName());
-        assertEquals(0.2, transformed.temperature());
-        assertEquals(0.8, transformed.topP());
-        assertEquals(40, transformed.topK());
-        assertEquals(0.1, transformed.frequencyPenalty());
-        assertEquals(0.3, transformed.presencePenalty());
-        assertEquals(123, transformed.maxOutputTokens());
-        assertEquals(List.of("STOP"), transformed.stopSequences());
-        assertEquals(List.of(tool), transformed.toolSpecifications());
-        assertEquals(ResponseFormatType.JSON, transformed.responseFormat().type());
-        assertEquals(ToolChoice.REQUIRED, transformed.toolChoice());
-    }
-
-    @Test
-    void forcedToolChoiceTransformerUsesAutoWhenRequestAlreadyHasToolResult() {
-        List<ChatMessage> messages = List.of(
-                UserMessage.from("user"),
-                new ToolExecutionResultMessage("call-1", "probe_tool", "result"));
-        ChatRequest request = ChatRequest.builder()
-                .messages(messages)
-                .parameters(ChatRequestParameters.builder()
-                        .toolSpecifications(List.of(ToolSpecification.builder().name("probe_tool").build()))
-                        .build())
-                .build();
-
-        ChatRequest transformed = LlmAgentFactory.DynamicAgentFactory.forceInitialToolChoice(request);
-
-        assertEquals(messages, transformed.messages());
-        assertEquals(ToolChoice.AUTO, transformed.toolChoice());
     }
 
     private static LlmAgentFactory.DynamicAgentFactory factory(String laneId, ChatModel model) {

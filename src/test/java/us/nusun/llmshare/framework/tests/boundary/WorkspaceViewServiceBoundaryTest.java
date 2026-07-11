@@ -5,7 +5,7 @@ import us.nusun.llmshare.framework.model.AgentRunProjection;
 import us.nusun.llmshare.framework.projection.AgentRunProjectionManager;
 import us.nusun.llmshare.framework.projection.ProjectionStore;
 import us.nusun.llmshare.framework.state.AgentRun;
-import us.nusun.llmshare.framework.workspace.WorkspaceViewService;
+import us.nusun.llmshare.framework.service.WorkspaceViewService;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 
 import java.util.List;

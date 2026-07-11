@@ -7,7 +7,6 @@ import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import us.nusun.llmshare.framework.model.ToolProfile;
 
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -30,16 +29,12 @@ public class ToolProfileRegistry {
     }
 
     public ToolProfileRegistry(List<ToolProfile> profiles, ObjectMapper objectMapper) {
-        LinkedHashMap<String, ToolProfile> rows = new LinkedHashMap<>();
-        for (ToolProfile profile : profiles) {
+        for (ToolProfile profile : profiles == null ? List.<ToolProfile>of() : profiles) {
             if (NONE_ID.equals(profile.id())) {
                 throw new IllegalArgumentException("Tool profile id 'none' is reserved by the framework");
             }
-            if (rows.put(profile.id(), profile) != null) {
-                throw new IllegalArgumentException("Duplicate tool profile id: " + profile.id());
-            }
         }
-        this.profiles = Map.copyOf(rows);
+        this.profiles = CatalogIndex.uniqueById(profiles, ToolProfile::id, "Duplicate tool profile id: ");
         this.json = new CatalogJson(objectMapper);
     }
 

@@ -29,13 +29,7 @@ public class PersonaCatalog {
     }
 
     public PersonaCatalog(List<Persona> personas, ObjectMapper objectMapper) {
-        LinkedHashMap<String, Persona> rows = new LinkedHashMap<>();
-        for (Persona persona : personas) {
-            if (rows.put(persona.id(), persona) != null) {
-                throw new IllegalArgumentException("Duplicate persona id: " + persona.id());
-            }
-        }
-        this.personas = Map.copyOf(rows);
+        this.personas = CatalogIndex.uniqueById(personas, Persona::id, "Duplicate persona id: ");
         this.json = new CatalogJson(objectMapper);
     }
 

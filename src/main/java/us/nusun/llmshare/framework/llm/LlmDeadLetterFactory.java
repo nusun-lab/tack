@@ -1,5 +1,7 @@
 package us.nusun.llmshare.framework.llm;
 
+import static us.nusun.llmshare.framework.model.FrameworkText.firstNonBlank;
+
 import jakarta.enterprise.context.ApplicationScoped;
 import org.apache.camel.Exchange;
 import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
@@ -221,14 +223,5 @@ public class LlmDeadLetterFactory {
 
     private static String globalModelFallback(Exchange exchange) {
         return resolveOptionalPlaceholder(exchange, "{{llm.model-default.openai.model:}}");
-    }
-
-    private static String firstNonBlank(String... values) {
-        for (String value : values) {
-            if (value != null && !value.isBlank()) {
-                return value;
-            }
-        }
-        return null;
     }
 }

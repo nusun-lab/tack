@@ -1,7 +1,5 @@
 package us.nusun.llmshare.framework.tests.component;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import dev.langchain4j.service.Result;
 import org.apache.camel.CamelContext;
 import org.apache.camel.CamelExecutionException;
@@ -24,6 +22,7 @@ import us.nusun.llmshare.framework.route.LlmRoute;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 import us.nusun.llmshare.framework.tests.support.StubKafkaComponent;
 import us.nusun.llmshare.framework.tests.support.TestCamelContexts;
+import us.nusun.llmshare.framework.tests.support.TestJson;
 
 import java.time.Instant;
 import java.util.List;
@@ -168,9 +167,7 @@ class LlmRouteFrameworkRouteTest {
                     null,
                     Map.of(),
                     null).normalized());
-            String json = new ObjectMapper()
-                    .registerModule(new JavaTimeModule())
-                    .writeValueAsString(queued);
+            String json = TestJson.write(queued);
 
             kafka.emit("llm.requests.low", json);
 

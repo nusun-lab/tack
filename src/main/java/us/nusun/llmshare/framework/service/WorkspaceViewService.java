@@ -1,4 +1,4 @@
-package us.nusun.llmshare.framework.workspace;
+package us.nusun.llmshare.framework.service;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;

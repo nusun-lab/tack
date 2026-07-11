@@ -1,5 +1,7 @@
 package us.nusun.llmshare.framework.model;
 
+import static us.nusun.llmshare.framework.model.FrameworkText.firstNonBlankStripped;
+
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
@@ -29,7 +31,7 @@ public record LlmJobRequest(
     }
 
     public LlmJobRequest withLaneAndPass(String newLaneId, LlmPassType newPassType) {
-        return new LlmJobRequest(jobId, firstNonBlank(newLaneId, laneId), newPassType == null ? passType : newPassType, requester, role, priority, prompt, systemPrompt, responseSchema, metadata, requestedAt);
+        return new LlmJobRequest(jobId, firstNonBlankStripped(newLaneId, laneId), newPassType == null ? passType : newPassType, requester, role, priority, prompt, systemPrompt, responseSchema, metadata, requestedAt);
     }
 
     public LlmJobRequest normalized() {
@@ -70,14 +72,5 @@ public record LlmJobRequest(
 
     private static String blankToDefault(String value, String defaultValue) {
         return value == null || value.isBlank() ? defaultValue : value.strip();
-    }
-
-    private static String firstNonBlank(String... values) {
-        for (String value : values) {
-            if (value != null && !value.isBlank()) {
-                return value.strip();
-            }
-        }
-        return null;
     }
 }

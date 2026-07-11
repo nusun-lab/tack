@@ -1,5 +1,7 @@
 package us.nusun.llmshare.framework.llm;
 
+import static us.nusun.llmshare.framework.model.FrameworkText.firstNonBlank;
+
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.mcp.client.McpClient;
 import dev.langchain4j.model.TokenCountEstimator;
@@ -137,16 +139,6 @@ public class LlmAgentFactory {
         }
         return blank(lane.apiKeyEnvVariable()) ? null : System.getenv(lane.apiKeyEnvVariable());
     }
-
-    private static String firstNonBlank(String... values) {
-        for (String value : values) {
-            if (!blank(value)) {
-                return value;
-            }
-        }
-        return null;
-    }
-
     private static boolean blank(String value) {
         return value == null || value.isBlank();
     }

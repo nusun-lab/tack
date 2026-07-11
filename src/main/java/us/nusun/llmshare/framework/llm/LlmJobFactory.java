@@ -1,5 +1,9 @@
 package us.nusun.llmshare.framework.llm;
 
+import static us.nusun.llmshare.framework.model.FrameworkText.firstNonBlank;
+import static us.nusun.llmshare.framework.model.FrameworkText.putIfNonBlank;
+import static us.nusun.llmshare.framework.model.FrameworkText.putIfPresent;
+
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.Exchange;
@@ -146,12 +150,12 @@ public class LlmJobFactory {
         if (request.metadata() != null) {
             metadata.putAll(request.metadata());
         }
-        putIfPresent(metadata, "laneId", lane.id());
-        putIfPresent(metadata, "passType", request.passType() == null ? null : request.passType().name());
-        putIfPresent(metadata, "model", selectedModel(lane, globalModelFallback));
-        putIfPresent(metadata, "partitionKeyStrategy", lane.partitionKeyStrategy().name());
-        putIfPresent(metadata, "personaId", exchange.getProperty("personaId", String.class));
-        putIfPresent(metadata, "toolProfile", exchange.getProperty("toolProfile", String.class));
+        putIfNonBlank(metadata, "laneId", lane.id());
+        putIfNonBlank(metadata, "passType", request.passType() == null ? null : request.passType().name());
+        putIfNonBlank(metadata, "model", selectedModel(lane, globalModelFallback));
+        putIfNonBlank(metadata, "partitionKeyStrategy", lane.partitionKeyStrategy().name());
+        putIfNonBlank(metadata, "personaId", exchange.getProperty("personaId", String.class));
+        putIfNonBlank(metadata, "toolProfile", exchange.getProperty("toolProfile", String.class));
         putIfPresent(metadata, ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY,
                 firstPresent(exchange.getProperty(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY),
                         exchange.getIn().getHeader(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY)));
@@ -261,17 +265,6 @@ public class LlmJobFactory {
         return mission == null ? null : mission.id();
     }
 
-    private static void putIfPresent(Map<String, Object> metadata, String key, String value) {
-        if (value != null && !value.isBlank()) {
-            metadata.put(key, value);
-        }
-    }
-
-    private static void putIfPresent(Map<String, Object> metadata, String key, Object value) {
-        if (value != null) {
-            metadata.put(key, value);
-        }
-    }
 
     private static boolean blank(String value) {
         return value == null || value.isBlank();
@@ -285,16 +278,6 @@ public class LlmJobFactory {
         }
         return null;
     }
-
-    private static String firstNonBlank(String... values) {
-        for (String value : values) {
-            if (value != null && !value.isBlank()) {
-                return value;
-            }
-        }
-        return null;
-    }
-
     private static String resolveOptionalPlaceholder(Exchange exchange, String placeholder) {
         try {
             return exchange.getContext().resolvePropertyPlaceholders(placeholder);

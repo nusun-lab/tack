@@ -1,5 +1,7 @@
 package us.nusun.llmshare.framework.projection;
 
+import static us.nusun.llmshare.framework.model.FrameworkText.firstNonBlank;
+
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.Exchange;
@@ -152,16 +154,6 @@ public class AgentRunProjectionManager {
         if (v2 != null) result.put(k2, v2);
         return result;
     }
-
-    private static String firstNonBlank(String... values) {
-        for (String value : values) {
-            if (value != null && !value.isBlank()) {
-                return value;
-            }
-        }
-        return null;
-    }
-
     static class ProjectionTimeline {
         private final ArrayList<Map<String, Object>> entries = new ArrayList<>();
         ProjectionTimeline() {

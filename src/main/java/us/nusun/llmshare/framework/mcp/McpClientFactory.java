@@ -1,5 +1,8 @@
 package us.nusun.llmshare.framework.mcp;
 
+import static us.nusun.llmshare.framework.model.FrameworkText.firstNonBlank;
+import static us.nusun.llmshare.framework.model.FrameworkText.isBlank;
+
 import dev.langchain4j.mcp.client.DefaultMcpClient;
 import dev.langchain4j.mcp.client.McpClient;
 import dev.langchain4j.mcp.client.McpHeadersSupplier;
@@ -18,10 +21,10 @@ import us.nusun.llmshare.framework.model.Persona;
 import us.nusun.llmshare.framework.model.ToolProfile;
 
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 @ApplicationScoped
 public class McpClientFactory {
@@ -49,42 +52,40 @@ public class McpClientFactory {
         if (profile == null || profile.none()) {
             return List.of();
         }
-        ArrayList<McpClient> clients = new ArrayList<>();
-        for (McpServerDefinition server : profile.mcpServers().values()) {
-            add(clients, persona, profile, server);
-        }
+        List<McpClient> clients = profile.mcpServers().values().stream()
+                .filter(server -> profile.allowsServer(server.id()))
+                .map(server -> profiledClient(persona, profile, server))
+                .flatMap(Stream::ofNullable)
+                .toList();
         if (clients.isEmpty() && !profile.mcpServers().isEmpty()) {
             LOG.warn("No MCP clients selected profile={} persona={} configuredServers={}",
                     profile.id(),
                     persona.id(),
                     profile.mcpServers().keySet());
         }
-        return List.copyOf(clients);
+        return clients;
     }
 
-    private void add(List<McpClient> clients, Persona persona, ToolProfile profile, McpServerDefinition server) {
-        if (!profile.allowsServer(server.id())) {
-            return;
-        }
+    private McpClient profiledClient(Persona persona, ToolProfile profile, McpServerDefinition server) {
         McpClient client = build(persona, profile, server);
-        if (client != null) {
-            clients.add(new ProfiledMcpClient(client, server.id(), profile, persona, logTokens, maxToolResultTokens, tokenCountEstimator));
-        }
+        return client == null
+                ? null
+                : new ProfiledMcpClient(client, server.id(), profile, persona, logTokens, maxToolResultTokens, tokenCountEstimator);
     }
 
     private McpClient build(Persona persona, ToolProfile profile, McpServerDefinition server) {
         ExternalIdentity identity = persona.identityFor(server.id());
-        String handle = identity == null || blank(identity.handle()) ? persona.id() : identity.handle();
+        String handle = identity == null || isBlank(identity.handle()) ? persona.id() : identity.handle();
         String token = identity == null ? null : identity.token();
         String url = server.url();
-        if (blank(url) || blank(token)) {
+        if (isBlank(url) || isBlank(token)) {
             LOG.info("Skipping MCP client profile={} server={} persona={} handle={} urlPresent={} tokenPresent={}",
                     profile.id(),
                     server.id(),
                     persona.id(),
                     handle,
-                    !blank(url),
-                    !blank(token));
+                    !isBlank(url),
+                    !isBlank(token));
             return null;
         }
         String transportType = firstNonBlank(server.transportType(), "streamableHttp");
@@ -129,11 +130,4 @@ public class McpClientFactory {
         }
     }
 
-    private static boolean blank(String value) {
-        return value == null || value.isBlank();
-    }
-
-    private static String firstNonBlank(String first, String second) {
-        return blank(first) ? second : first;
-    }
 }

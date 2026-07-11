@@ -43,7 +43,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:example-software-team-project-manager")
                 .routeId("example-software-team-project-manager")
                 .process(routine.enterThought("project-manager-routine", """
-                        Durable PM project anchors: documentation index URL/path, project-basics/current-work pages, team chat channel, Plane project, source repository, roster, persistent setup blockers.
+                        Durable PM project anchors: documentation index URL/path, project-basics/current-work pages,
+                        team chat channel, Plane project, source repository, roster, persistent setup blockers.
                         """, 500))
                 .process(routine.act("pm-workspace-basics-read")
                         .prompt("""
@@ -75,7 +76,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .loopDoWhile(exchangeProperty("decision.collaboration-setup-complete.result").isNotEqualTo(true))
                     .setProperty("collaborationSetupAttempt", simple("${exchangeProperty.collaborationSetupAttempt++}"))
                     .process(routine.enterThought("pm-bootstrap", """
-                        Current bootstrap checklist: documentation repository, team chat, Plane project, source repository, roster, blocker owner, next bootstrap action. Promote final URLs/blockers to project-manager-routine before bootstrap exits.
+                        Current bootstrap checklist: documentation repository, team chat, Plane project, source repository,
+                        roster, blocker owner, next bootstrap action. Promote final URLs/blockers to project-manager-routine
+                        before bootstrap exits.
                         """, 300))
                     .process(routine.act("plane-project-provisioning")
                             .prompt("""
@@ -157,7 +160,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .loopDoWhile(exchangeProperty("decision.project-manager-done.result").isNotEqualTo(true))
                     .setProperty("projectManagerCycle", simple("${exchangeProperty.projectManagerCycle++}"))
                     .process(routine.enterThought("pm-cycle", """
-                        Current PM pass: selected product handoff, selected developer task, status movement, owners, blockers, risks, next team action.
+                        Current PM pass: selected product handoff, selected developer task, status movement, owners,
+                        blockers, risks, next team action.
                         """, 300))
                     .to("direct:pm-documentation-status-sync")
                     .to("direct:pm-work-intake-loop")
@@ -192,7 +196,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .loopDoWhile(exchangeProperty("decision.pm-work-intake-done.result").isNotEqualTo(true))
                     .setProperty("pmWorkIntakeCycle", simple("${exchangeProperty.pmWorkIntakeCycle++}"))
                     .process(routine.enterThought("pm-intake", """
-                        One product handoff under review: Plane work item id/link, owner, priority, canonical acceptance page, readiness/blocker. Promote selected handoff to pm-cycle before intake exits.
+                        One product handoff under review: Plane work item id/link, owner, priority, canonical acceptance page,
+                        readiness/blocker. Promote selected handoff to pm-cycle before intake exits.
                         """, 250))
                     .process(routine.act("pm-intake-review")
                             .prompt("""
@@ -219,7 +224,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .loopDoWhile(exchangeProperty("decision.pm-task-planning-done.result").isNotEqualTo(true))
                     .setProperty("pmTaskPlanningCycle", simple("${exchangeProperty.pmTaskPlanningCycle++}"))
                     .process(routine.enterThought("pm-planning", """
-                        One developer task being planned: Plane work item id/link, assignee, repository, canonical documentation page, acceptance, next code step, blocker. Promote created/updated task to pm-cycle before planning exits.
+                        One developer task being planned: Plane work item id/link, assignee, repository, canonical documentation page,
+                        acceptance, next code step, blocker. Promote created/updated task to pm-cycle before planning exits.
                         """, 250))
                     .process(routine.act("pm-actionable-dev-task")
                             .prompt("""

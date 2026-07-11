@@ -1,7 +1,6 @@
 package us.nusun.llmshare.framework.tests.unit;
 
 import org.apache.camel.Exchange;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.framework.state.AgentRun;
 import us.nusun.llmshare.framework.model.StepResult;
@@ -12,6 +11,7 @@ import us.nusun.llmshare.framework.projection.ProjectionStore;
 import us.nusun.llmshare.framework.routine.PrimitiveSupport;
 import us.nusun.llmshare.framework.routine.RoutineSupport;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
+import us.nusun.llmshare.framework.tests.support.TestJson;
 import us.nusun.llmshare.framework.state.ThoughtStack;
 import us.nusun.llmshare.framework.routine.ThoughtStackSupport;
 
@@ -211,7 +211,7 @@ class ProjectionSemanticsTest {
         AgentRunProjection projection = store.get(run.id());
         assertNotNull(projection);
         assertEquals(fullThought, projection.thoughtStack().getFirst().get("content"));
-        String json = new ObjectMapper().findAndRegisterModules().writeValueAsString(projection);
+        String json = TestJson.write(projection);
         assertTrue(json.contains(fullThought.substring(0, 120)));
         assertFalse(json.contains("SECRET_TOKEN"));
         assertFalse(json.contains("Bearer SECRET_TOKEN"));

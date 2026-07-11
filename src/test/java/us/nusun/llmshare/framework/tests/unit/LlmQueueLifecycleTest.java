@@ -1,6 +1,5 @@
 package us.nusun.llmshare.framework.tests.unit;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.camel.CamelExecutionException;
 import org.apache.camel.Exchange;
 import org.apache.camel.builder.RouteBuilder;
@@ -25,6 +24,7 @@ import us.nusun.llmshare.framework.route.LlmRoute;
 import us.nusun.llmshare.framework.state.AgentRun;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 import us.nusun.llmshare.framework.tests.support.TestCamelContexts;
+import us.nusun.llmshare.framework.tests.support.TestJson;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -457,7 +457,7 @@ class LlmQueueLifecycleTest {
         assertEquals(job.requestedAt(), deadLetter.requestedAt());
         assertTrue(deadLetter.timestamp().isAfter(Instant.EPOCH));
 
-        String json = new ObjectMapper().findAndRegisterModules().writeValueAsString(deadLetter);
+        String json = TestJson.write(deadLetter);
         assertTrue(json.contains("\"jobId\""));
         assertTrue(json.contains("\"laneId\":\"low-pass\""));
         assertTrue(json.contains("\"passType\":\"TOOL\""));
@@ -570,7 +570,7 @@ class LlmQueueLifecycleTest {
         assertEquals(true, deadLetter.metadata().get("boolean"));
         assertTrue(deadLetter.metadata().containsKey("nullValue"));
         assertEquals(null, deadLetter.metadata().get("nullValue"));
-        String json = new ObjectMapper().findAndRegisterModules().writeValueAsString(deadLetter);
+        String json = TestJson.write(deadLetter);
         assertTrue(json.contains("\"nullValue\":null"));
     }
 
@@ -606,7 +606,7 @@ class LlmQueueLifecycleTest {
         LlmJobDeadLetter deadLetter = deadLetters().failedQueuedJobDeadLetter(exchange);
 
         assertEquals("high-pass", deadLetter.metadata().get("laneObject"));
-        String json = new ObjectMapper().findAndRegisterModules().writeValueAsString(deadLetter);
+        String json = TestJson.write(deadLetter);
         assertFalse(json.contains("InferenceLaneDefinition"));
         assertFalse(json.contains("requestTopic"));
     }
@@ -639,7 +639,7 @@ class LlmQueueLifecycleTest {
         String normalized = (String) deadLetter.metadata().get("unknown");
         assertTrue(normalized.contains(UnknownMetadataValue.class.getName()));
         assertTrue(normalized.contains("secret-ish-object-graph"));
-        String json = new ObjectMapper().findAndRegisterModules().writeValueAsString(deadLetter);
+        String json = TestJson.write(deadLetter);
         assertFalse(json.contains("\"value\""));
     }
 
