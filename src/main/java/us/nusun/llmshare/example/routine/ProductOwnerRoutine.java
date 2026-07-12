@@ -42,7 +42,8 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         from("direct:example-software-team-product-owner")
                 .routeId("example-software-team-product-owner")
                 .process(routine.enterThought("product-owner-routine", """
-                        Durable product anchors: product documentation pages, current-work page, Plane project, source repository, team chat, persistent product blockers.
+                        Durable product anchors: product documentation pages, current-work page, Plane project,
+                        source repository, and team chat.
                         """, 500))
                 .to("direct:po-project-basics-loop")
                 .to("direct:po-product-loop")
@@ -55,14 +56,15 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .loopDoWhile(exchangeProperty("decision.product-owner-has-project-basics.result").isNotEqualTo(true))
                     .setProperty("productOwnerProjectBasicsCycle", simple("${exchangeProperty.productOwnerProjectBasicsCycle++}"))
                     .process(routine.enterThought("po-basics", """
-                        Current product-basics read: documentation repository, current-work page, Plane project, source repository, team chat, product navigation, blockers. Promote durable anchors to product-owner-routine before basics exits.
+                        Current product-basics read: documentation repository, current-work page, Plane project, source repository,
+                        team chat, product navigation. Promote durable anchors to product-owner-routine before basics exits.
                         """, 300))
                     .process(routine.act("po-workspace-basics-read")
                             .prompt("""
                                     Verify product project basics without mutation.
                                     Check only direct anchors from active thoughts, documentation index/project-basics/current-work,
                                     product links, and the minimal Plane/Mattermost lookup needed. Capture team chat, Plane project,
-                                    source repository, current work, blockers, product navigation, or one exact missing-basic blocker.
+                                    source repository, current work, or product navigation.
                                     Do not scan whole projects, repositories, documentation repositories, or channels.
                                     """)
                             .toolProfile(WorkspaceReadonlyToolProfile.ID))
@@ -71,28 +73,19 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                             .prompt("""
                                     Are project basics present and linked enough to do product work: bootstrap status,
                                     Git organization agent-workspace, team chat, Plane project, source repository under
-                                    agent-workspace, current work, blockers, and product navigation?
+                                    agent-workspace, current work, and product navigation?
                                     """))
                     .to("direct:decide")
-                    .choice()
-                        .when(exchangeProperty("decision.product-owner-has-project-basics.result").isNotEqualTo(true))
-                            .to("direct:po-project-basics-blocker")
-                    .end()
+                    .process(routine.act("po-project-basics-communication")
+                            .prompt("""
+                                    Read the last 20 messages in the default or project Mattermost channel.
+                                    If PM/setup discussion exists, respond there only when a specific product/setup
+                                    answer is useful. Include the documentation index link if known.
+                                    Do not start product work; keep rechecking project basics in the next loop.
+                                    """)
+                            .toolProfile(TeamChatToolProfile.ID))
                     .process(routine.exitThought("po-basics"))
                 .end();
-
-        from("direct:po-project-basics-blocker")
-                .routeId("po-project-basics-blocker")
-                .process(routine.act("po-project-basics-blocker")
-                        .prompt("""
-                                Read the last 20 messages in the default or project Mattermost channel.
-                                If PM/setup discussion exists, respond there only when a specific product/setup
-                                answer is useful. Otherwise post one blocker asking PM to finish project basics
-                                only if no current blocker exists. Include the documentation index link if known.
-                                Do not start product work; keep rechecking project basics in the next loop.
-                                """)
-                        .toolProfile(TeamChatToolProfile.ID))
-                .to("direct:act");
 
         from("direct:po-product-loop")
                 .routeId("po-product-loop")
@@ -135,12 +128,13 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .loopDoWhile(exchangeProperty("decision.po-backlog-selection-done.result").isNotEqualTo(true))
                     .setProperty("poBacklogCycle", simple("${exchangeProperty.poBacklogCycle++}"))
                     .process(routine.enterThought("po-backlog", """
-                        Current item selection: Plane work item id/link, owner, priority, status, blocker, canonical page. Promote selected item to po-cycle before backlog exits.
+                        Current item selection: Plane work item id/link, owner, priority, status, canonical page.
+                        Promote selected item to po-cycle before backlog exits.
                         """, 250))
                     .process(routine.act("po-backlog-review")
                             .prompt("""
                                     Review exactly one PO-owned product/backlog work item needing scope or acceptance.
-                                    Do not select developer implementation tasks. Capture priority, status, owner, blocker,
+                                    Do not select developer implementation tasks. Capture priority, status, owner,
                                     and canonical documentation page.
                                     """)
                             .toolProfile(ProjectManagementToolProfile.ID))
@@ -194,7 +188,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .loopDoWhile(exchangeProperty("decision.po-priority-status-done.result").isNotEqualTo(true))
                     .setProperty("poPriorityCycle", simple("${exchangeProperty.poPriorityCycle++}"))
                     .process(routine.enterThought("po-priority", """
-                        Priority/status handoff: Plane work item status, priority, readiness for PM breakdown, remaining blocker, requested PM action.
+                        Priority/status handoff: Plane work item status, priority, readiness for PM breakdown, requested PM action.
                         """, 250))
                     .process(routine.act("po-plane-handoff-update")
                             .prompt("""

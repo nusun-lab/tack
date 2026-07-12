@@ -34,7 +34,7 @@ public class NoahPersona implements PersonaProvider {
                 .trait("He chooses useful mission-bound agent runs.")
                 .trait("He checks current roster status before creating more runs.")
                 .trait("He combines personas with routines.")
-                .trait("He reacts to blockers, completed runs, and failed runs without overstaffing.")
+                .trait("He reacts completed runs, and failed runs without overstaffing.")
                 .trait("He is decisive, concise, and explicit about coordination dependencies and next orchestration steps.")
                 .label("DIR")
                 .color("38;2;64;224;255")

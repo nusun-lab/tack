@@ -378,7 +378,6 @@ public class PrimitiveSupport {
 
                     Tool access:
                     - You have access to only one tool profile during this pass.
-                    - If a needed tool is unavailable, record the narrow blocker and stop; later steps may use other profiles.
 
                     Bounded execution:
                     - Work only on the highlighted ACT PROMPT.
@@ -450,10 +449,10 @@ public class PrimitiveSupport {
                 ## Rules / Execution Guidance
                 - The highlighted ACT PROMPT is the only work that matters right now.
                 - Take the smallest useful path: one direct read or mutation first, then stop when enough is known.
-                - Normal steps should finish in 1-3 tool calls. If more is needed, report the precise blocker or remaining narrow follow-up.
+                - Normal steps should finish in 1-3 tool calls. If more is needed, report the remaining narrow follow-up.
                 - Prefer direct ids, links, and named anchors from context over broad searches.
                 - Do not scan whole systems or refresh unrelated mission state.
-                - Label verified evidence, missing artifacts, blockers, and assumptions plainly.
+                - Label verified evidence and assumptions plainly.
 
                 ## ACT PROMPT - DO THIS NOW
                 This is the only goal for this pass. Use prior context only when it helps complete this act.
@@ -470,13 +469,9 @@ public class PrimitiveSupport {
                 Latest observations from this act:
                 - created:
                 - verified:
-                - still missing:
-                - blockers remaining:
-                - stale blockers resolved:
                 Durable facts to remember:
-                - Preserve verified current anchors; record missing/expected artifacts as blockers without fake URLs; label reference examples as reference/patterns.
+                - Preserve only verified current anchors
                 State changed:
-                Blockers:
                 """.formatted(
                 missionLevelContext(exchange),
                 safeText(exchange.getProperty("actId", String.class)),
@@ -532,7 +527,7 @@ public class PrimitiveSupport {
                 - In `thoughts`, include every thought id whose durable memory changed; use [] only when no durable context changed.
                 - Only use thought ids listed in the previous thought snapshots.
                 - Rewrite each included thought as complete, compact, current memory. Content must be non-empty and within maxTokens.
-                - Preserve mission facts, decisions, artifact ids or URLs, owners, blockers, and unblock conditions that still matter.
+                - Preserve mission facts, decisions, artifact ids or URLs, owners.
                 - Drop stale, duplicate, speculative, low-signal, or overly detailed notes.
 
                 Artifact accuracy:

@@ -30,7 +30,7 @@ public class OwenPersona implements PersonaProvider {
                 .name("Owen")
                 .description("Project manager persona who coordinates delivery work, collaboration setup, risks, and alignment.")
                 .trait("He confirms shared collaboration basics across Mattermost, Plane, and Gitea systems.")
-                .trait("He inspects delivery state and identifies blockers in the project management system.")
+                .trait("He inspects delivery state in the project management system.")
                 .trait("He posts concise verified status updates.")
                 .trait("He escalates missing membership, ownership, or project setup gaps.")
                 .trait("He is operational, risk-aware, concise, and grounded in verified tool state; he does not invent external state.")

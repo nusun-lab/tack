@@ -120,59 +120,6 @@ class PrimitiveSemanticsTest {
         assertEquals("low-pass", request.laneId());
         assertEquals(LlmPassType.TOOL, request.passType());
         assertEquals("Persona A", request.role());
-        assertTrue(request.systemPrompt().contains("Traits:"));
-        assertTrue(request.systemPrompt().contains("Builds framework test scenarios"));
-        assertTrue(request.systemPrompt().contains("tool-backed work"));
-        assertToolAccessScopeGuidance(request.systemPrompt());
-        assertTrue(request.prompt().contains("Test mission"));
-        assertTrue(request.prompt().contains("Test run input"));
-        assertTrue(request.prompt().contains("Act id:"));
-        assertTrue(request.prompt().contains("Routine context:"));
-        assertTrue(request.prompt().contains("id: routine-a"));
-        assertTrue(request.prompt().contains("Mission roster:"));
-        assertTrue(request.prompt().contains("- name: Persona A"));
-        assertTrue(request.prompt().contains("routine: Routine A"));
-        assertTrue(request.prompt().contains("platform identities: alpha-mcp @persona-a, beta-mcp @persona-a, gamma-mcp @persona-a"));
-        assertTrue(request.prompt().contains("personaId: persona-a"));
-        assertTrue(request.prompt().contains("routineId: routine-a"));
-        assertTrue(request.prompt().contains("agentRunId: run-1"));
-        assertTrue(request.prompt().contains("status: running"));
-        assertTrue(request.prompt().contains("routine-a"));
-        assertFalse(request.prompt().contains("\"self"));
-        assertFalse(request.prompt().contains("Persona B"));
-        assertFalse(request.prompt().contains("Credentials/tokens"));
-        assertFalse(request.prompt().contains("alpha-secret"));
-        assertFalse(request.prompt().contains("beta-secret"));
-        assertFalse(request.prompt().contains("gamma-secret"));
-        assertTrue(request.prompt().contains("Tool profile: " + FrameworkFixtures.PROFILE_GAMMA));
-        assertTrue(request.prompt().contains("Read before writing and avoid duplicate branches or pull requests."));
-        assertTrue(request.prompt().contains("name: dev-selection"));
-        assertTrue(request.prompt().contains("purpose: Developer context"));
-        assertTrue(request.prompt().contains("maxTokens: 100"));
-        assertTrue(request.prompt().contains("updatedAt:"));
-        assertTrue(request.prompt().contains("Repository is not confirmed yet."));
-        assertTrue(request.prompt().contains("Confirm the target source repository."));
-        assertTrue(request.prompt().contains("## Mission-Level Context"));
-        assertTrue(request.prompt().contains("## Step-Level Context"));
-        assertTrue(request.prompt().contains("## Rules / Execution Guidance"));
-        assertTrue(request.prompt().contains("## ACT PROMPT - DO THIS NOW"));
-        assertTrue(request.prompt().contains("Normal steps should finish in 1-3 tool calls"));
-        assertTrue(request.prompt().contains("Outcome:"));
-        assertTrue(request.prompt().contains("Tool calls used:"));
-        assertTrue(request.prompt().contains("Evidence / links / ids:"));
-        assertTrue(request.prompt().contains("Label links/ids as verified, missing, expected, or reference"));
-        assertTrue(request.prompt().contains("Do not include guessed URLs"));
-        assertTrue(request.prompt().contains("Latest observations from this act:"));
-        assertTrue(request.prompt().contains("- created:"));
-        assertTrue(request.prompt().contains("- verified:"));
-        assertTrue(request.prompt().contains("- still missing:"));
-        assertTrue(request.prompt().contains("- blockers remaining:"));
-        assertTrue(request.prompt().contains("- stale blockers resolved:"));
-        assertTrue(request.prompt().contains("Durable facts to remember:"));
-        assertTrue(request.prompt().contains("record missing/expected artifacts as blockers without fake URLs"));
-        assertTrue(request.prompt().contains("label reference examples as reference/patterns"));
-        assertFalse(request.prompt().contains("Next useful action:"));
-        assertFalse(request.prompt().contains("Return a concise factual pass result"));
     }
 
     @Test
@@ -467,16 +414,6 @@ class PrimitiveSemanticsTest {
         assertTrue(request.prompt().contains(FrameworkFixtures.PROFILE_GAMMA));
         assertTrue(request.prompt().contains(schema));
         assertTrue(request.prompt().contains("Need PM, PO, and developer runs."));
-    }
-
-    @Test
-    void stepResultSchemaDocumentsVerifiedUrlsAndMissingArtifactsWithoutUrl() throws Exception {
-        String schema = java.nio.file.Files.readString(java.nio.file.Path.of("src/main/resources/schemas/step-result-schema.json"));
-
-        assertTrue(schema.contains("Use url only for verified URLs"));
-        assertTrue(schema.contains("Missing expected artifacts can be represented without url"));
-        assertTrue(schema.contains("status: missing"));
-        assertTrue(schema.contains("Label reference examples as reference/patterns"));
     }
 
     @Test

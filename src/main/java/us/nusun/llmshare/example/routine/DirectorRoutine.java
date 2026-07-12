@@ -42,7 +42,8 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:example-software-team-director")
                 .routeId("example-software-team-director")
                 .process(routine.enterThought("orchestration-root", """
-                        Durable orchestration anchors: mission goal, roster by status, active/completed/failed coverage, verified project state, persistent staffing blockers, last provisioning decision.
+                        Durable orchestration anchors: mission goal, roster by status, active/completed/failed coverage,
+                        verified project state, last provisioning decision.
                         """, 500))
                 .to("direct:director-monitoring-loop")
                 .process(routine.exitThought("orchestration-root"));
@@ -70,8 +71,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                             .prompt("""
                                     Is the top-level mission 100% complete?
                                     Return true only when durable external evidence shows the mission goal is
-                                    fully satisfied, no accepted or running roster entries are still needed,
-                                    no failed run requires recovery, and no unresolved blocker remains.
+                                    fully satisfied.
                                     Return false if any required outcome is incomplete, unclear, blocked,
                                     merely planned, waiting for active teammates, or lacking verified evidence.
                                     """))
@@ -102,12 +102,11 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
 
                                 Use only catalog entries above and verified current roster/state.
                                 Return {"agentRuns":[]} unless a mission-required capability is missing from accepted/running coverage.
-                                Treat accepted and running roster entries as active coverage, including blocked agents unless a distinct
-                                catalog capability is required to unblock them. Do not schedule work that an active agent already owns.
-                                At most two new runs per cycle.
 
                                 For each proposed run, make the input name the mission focus, verified gap, why active coverage cannot
                                 handle it, and the distinct capability or execution stage added.
+                                
+                                Only one instance of a given persona should be active at a given time.
 
                                 """)))
                 .to("direct:create")

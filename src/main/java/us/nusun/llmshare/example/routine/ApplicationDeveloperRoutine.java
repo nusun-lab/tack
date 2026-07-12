@@ -42,7 +42,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         from("direct:example-software-team-application-developer")
                 .routeId("example-software-team-application-developer")
                 .process(routine.enterThought("application-developer-routine", """
-                        Durable developer anchors: documentation index, engineering documentation index, source repository URL, Plane project, team chat, current-work page, persistent repository/tool blockers.
+                        Durable developer anchors: documentation index, engineering documentation index, source repository URL,
+                        Plane project, team chat, current-work page..
                         """, 500))
                 .to("direct:dev-project-basics-loop")
                 .to("direct:dev-delivery-loop")
@@ -55,14 +56,15 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .loopDoWhile(exchangeProperty("decision.developer-has-project-basics.result").isNotEqualTo(true))
                     .setProperty("developerProjectBasicsCycle", simple("${exchangeProperty.developerProjectBasicsCycle++}"))
                     .process(routine.enterThought("dev-basics", """
-                        Current project-basics read: source repository, documentation repository, Plane project, team chat, current work, blockers, engineering navigation. Promote durable anchors to application-developer-routine before basics exits.
+                        Current project-basics read: source repository, documentation repository, Plane project, team chat,
+                        current work, engineering navigation. Promote durable anchors to application-developer-routine before basics exits.
                         """, 300))
                     .process(routine.act("dev-workspace-basics-read")
                             .prompt("""
                                     Verify developer project basics without mutation.
                                     Check only direct anchors from active thoughts, documentation index/project-basics/current-work,
                                     engineering links, and the minimal Plane/Mattermost lookup needed. Capture source repository,
-                                    Plane project, team chat, blockers, and engineering navigation, or one exact missing-basic blocker.
+                                    Plane project, team chat, and engineering navigation.
                                     Do not scan whole projects, repositories, documentation repositories, or channels.
                                     """)
                             .toolProfile(WorkspaceReadonlyToolProfile.ID))
@@ -71,28 +73,22 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             .prompt("""
                                     Are project basics present and linked enough to do development: bootstrap status,
                                     Git organization agent-workspace, Plane project, source repository under agent-workspace,
-                                    team chat channel, current work, blockers, and dev navigation?
+                                    team chat channel, current work, and dev navigation?
                                     """))
                     .to("direct:decide")
-                    .choice()
-                        .when(exchangeProperty("decision.developer-has-project-basics.result").isNotEqualTo(true))
-                            .to("direct:dev-project-basics-blocker")
-                    .end()
+                    .process(routine.act("dev-project-basics-communication")
+                    .prompt("""
+                                    Read the last 20 messages in the default or project Mattermost channel.
+                                    If PM/setup discussion exists, respond there only when a specific technical/setup
+                                    answer is useful. Include the documentation index link if known.
+                                    Do not start development work; keep rechecking project basics in the next loop.
+                                    """)
+                    .toolProfile(TeamChatToolProfile.ID))
+                    .to("direct:act")
                     .process(routine.exitThought("dev-basics"))
                 .end();
 
-        from("direct:dev-project-basics-blocker")
-                .routeId("dev-project-basics-blocker")
-                .process(routine.act("dev-project-basics-blocker")
-                        .prompt("""
-                                Read the last 20 messages in the default or project Mattermost channel.
-                                If PM/setup discussion exists, respond there only when a specific technical/setup
-                                answer is useful. Otherwise post one blocker asking PM to finish project basics
-                                only if no current blocker exists. Include the documentation index link if known.
-                                Do not start development work; keep rechecking project basics in the next loop.
-                                """)
-                        .toolProfile(TeamChatToolProfile.ID))
-                .to("direct:act");
+
 
         from("direct:dev-delivery-loop")
                 .routeId("dev-delivery-loop")
@@ -101,7 +97,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .loopDoWhile(exchangeProperty("decision.application-developer-done.result").isNotEqualTo(true))
                     .setProperty("applicationDeveloperCycle", simple("${exchangeProperty.applicationDeveloperCycle++}"))
                     .process(routine.enterThought("dev-cycle", """
-                        Current developer pass: selected assigned task, Plane work item id/link, canonical documentation page, branch/commit/pull request, validation state, blocker, next code step.
+                        Current developer pass: selected assigned task, Plane work item id/link, canonical documentation page,
+                        branch/commit/pull request, validation state.
                         """, 300))
                     .setProperty("decision.developer-has-work.result", constant(false))
                     .to("direct:dev-team-chat-sync")
@@ -129,7 +126,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .process(routine.act("dev-team-chat-sync")
                         .prompt("""
                                 Read the last 20 project Mattermost messages from the project-basics link. Reply first to a direct
-                                technical question, blocker, review request, or handoff. If blocked, ask at most one
+                                technical question, review request, or handoff. If blocked, ask at most one
                                 named question. Do not volunteer for unassigned work or repeat Plane/documentation data.
                                 """)
                         .toolProfile(TeamChatToolProfile.ID))
@@ -167,7 +164,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                             acceptance criteria, source repository under agent-workspace, priority,
                                             and next code step. If the selected task is assigned to this developer,
                                             currently to-do, and has a canonical documentation page, move exactly that task
-                                            to in-progress. Otherwise do not move it; add a blocker note instead.
+                                            to in-progress.
                                             """)
                                     .toolProfile(ProjectManagementToolProfile.ID))
                             .to("direct:act")
@@ -194,11 +191,12 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .loopDoWhile(exchangeProperty("decision.developer-implementation-complete.result").isNotEqualTo(true))
                     .setProperty("developerImplementationCycle", simple("${exchangeProperty.developerImplementationCycle++}"))
                     .process(routine.enterThought("dev-implementation", """
-                        Current implementation step: files inspected/changed, branch, commit/pull request, validation evidence, blocker, next patch. Promote branch/commit/validation/blocker to dev-cycle before implementation exits.
+                        Current implementation step: files inspected/changed, branch, commit/pull request, validation evidence.
+                        Promote branch/commit/validation to dev-cycle before implementation exits.
                         """, 250))
                     .process(routine.act("dev-task-context-read")
                             .prompt("""
-                                    Read the selected Plane task only. Verify current status, objective, blocker,
+                                    Read the selected Plane task only. Verify current status, objective,
                                     assignee is this developer, canonical documentation page, acceptance criteria,
                                     source repository under agent-workspace, and expected review evidence.
                                     """)
@@ -209,7 +207,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                     Read only direct documentation links and source files needed for the selected task.
                                     Verify the repository is under agent-workspace. Do not use personal namespaces.
                                     Identify one next coherent patch with files, test/validation target, and branch plan.
-                                    If context is missing, report the exact blocker. Do not modify source files in this planning step.
+                                    Do not modify source files in this planning step.
                                     """)
                             .toolProfile(SourceControlToolProfile.ID))
                     .to("direct:act")
@@ -217,7 +215,6 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             .prompt("""
                                     Apply exactly one coherent source-control patch for the selected task.
                                     Prefer production code plus a matching test/update. Use or create a task branch and commit if supported.
-                                    If no code change is possible, record the exact blocker and owner.
                                     """)
                             .toolProfile(SourceControlToolProfile.ID))
                     .to("direct:act")
@@ -233,7 +230,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             .prompt("""
                                     Check review readiness in source control: changed files, branch, commit,
                                     Gitea pull request link if supported, and validation status if available.
-                                    No review-ready status without a code diff or explicit source-control blocker.
+                                    No review-ready status without a code diff.
                                     """)
                             .toolProfile(SourceControlToolProfile.ID))
                     .to("direct:act")
@@ -255,7 +252,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                 Update exactly one selected Plane task after verifying current status and assignee.
                                 Move to-do -> in-progress only for this developer's selected task. Move in-progress -> review only
                                 with branch, commit or diff plus validation evidence. Otherwise keep status and add one compact note
-                                with source evidence, validation, blocker, next step, and canonical documentation link.
+                                with source evidence, validation, and canonical documentation link.
                                 """)
                         .toolProfile(ProjectManagementToolProfile.ID))
                 .to("direct:act");
@@ -274,7 +271,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .process(routine.act("dev-team-chat-closeout")
                         .prompt("""
                                 Read the last 20 messages in the project Mattermost channel from project basics.
-                                Post only if delivery evidence changed, a blocker needs a named owner, or a teammate is waiting.
+                                Post only if delivery evidence changed.
                                 Include Plane work item and canonical documentation links; otherwise stay quiet.
                                 """)
                         .toolProfile(TeamChatToolProfile.ID))
