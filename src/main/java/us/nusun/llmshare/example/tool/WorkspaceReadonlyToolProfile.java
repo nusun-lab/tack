@@ -68,6 +68,7 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                         "get_release")
                 .allowTools(MattermostMcpServer.ID,
                         "get_me",
+                        "list_teams",
                         "list_my_channels",
                         "get_channel",
                         "get_channel_by_name",

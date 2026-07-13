@@ -83,6 +83,24 @@ class SoftwareTeamExampleTest {
                 ApplicationDeveloperRoutine.ID), routeUris.keySet());
         assertTrue(routeUris.values().stream().allMatch(uri -> uri.startsWith("direct:example-software-team-")));
         assertTrue(routines.stream().allMatch(routine -> "high-pass".equals(routine.defaultLane())));
+        RoutineDefinition projectManager = routine(routines, ProjectManagerRoutine.ID);
+        assertTrue(projectManager.description().contains("Full Project Manager routine"));
+        assertEquals(List.of("bootstrap", "coordination", "task-planning"), projectManager.subroutines().stream().map(subroutine -> subroutine.id()).toList());
+        assertEquals("direct:example-software-team-project-manager-bootstrap", projectManager.requireSubroutine("bootstrap").routeUri());
+        assertEquals("direct:example-software-team-project-manager-coordination", projectManager.requireSubroutine("coordination").routeUri());
+        assertEquals("direct:example-software-team-project-manager-task-planning", projectManager.requireSubroutine("task-planning").routeUri());
+
+        RoutineDefinition productOwner = routine(routines, ProductOwnerRoutine.ID);
+        assertTrue(productOwner.description().contains("Full Product Owner routine"));
+        assertEquals(List.of("acceptance-refinement", "priority-handoff"), productOwner.subroutines().stream().map(subroutine -> subroutine.id()).toList());
+        assertEquals("direct:example-software-team-product-owner-acceptance-refinement", productOwner.requireSubroutine("acceptance-refinement").routeUri());
+        assertEquals("direct:example-software-team-product-owner-priority-handoff", productOwner.requireSubroutine("priority-handoff").routeUri());
+
+        RoutineDefinition applicationDeveloper = routine(routines, ApplicationDeveloperRoutine.ID);
+        assertTrue(applicationDeveloper.description().contains("Full Application Developer routine"));
+        assertEquals(List.of("work-selection", "implementation"), applicationDeveloper.subroutines().stream().map(subroutine -> subroutine.id()).toList());
+        assertEquals("direct:example-software-team-application-developer-work-selection", applicationDeveloper.requireSubroutine("work-selection").routeUri());
+        assertEquals("direct:example-software-team-application-developer-implementation", applicationDeveloper.requireSubroutine("implementation").routeUri());
 
         assertEquals(PROFILE_IDS, toolProfiles.stream().map(ToolProfile::id).collect(Collectors.toSet()));
         assertEquals(5, toolProfiles.size());
@@ -194,8 +212,13 @@ class SoftwareTeamExampleTest {
     @Test
     void routinesUseExistingProfilesAndExpectedConsolidatedPrimitiveIds() throws Exception {
         String source = routineSources();
-        assertFalse(source.contains(".toolProfile(\""));
-        var matcher = Pattern.compile("\\.toolProfile\\(([^)]+)\\)").matcher(source);
+        assertFalse(source.contains("routine."));
+        assertFalse(source.contains("direct:act"));
+        assertFalse(source.contains("direct:decide"));
+        assertFalse(source.contains("direct:create"));
+        assertTrue(source.contains("TackHeaders.PROMPT"));
+        assertTrue(source.contains("TackHeaders.THOUGHT_PURPOSE"));
+        var matcher = Pattern.compile("toolProfile=\\\" \\+ ([A-Za-z]+ToolProfile\\.ID)").matcher(source);
         Set<String> constants = Set.of("WorkspaceReadonlyToolProfile.ID", "WorkspaceCoordinationToolProfile.ID", "ProjectManagementToolProfile.ID", "SourceControlToolProfile.ID", "TeamChatToolProfile.ID");
         int profileReferences = 0;
         while (matcher.find()) {
@@ -205,6 +228,7 @@ class SoftwareTeamExampleTest {
         assertTrue(profileReferences > 0);
 
         assertTrue(source.contains("director-workspace-review"));
+        assertTrue(source.contains("director-team-guidance"));
         assertTrue(source.contains("plane-project-provisioning"));
         assertTrue(source.contains("documentation-repository-provisioning"));
         assertTrue(source.contains("source-repository-provisioning"));
@@ -216,6 +240,7 @@ class SoftwareTeamExampleTest {
         assertTrue(source.contains("dev-assigned-to-do-start"));
         assertTrue(source.contains("dev-source-context-plan"));
         assertTrue(source.contains("dev-plane-status-evidence-update"));
+        assertTrue(source.contains("forum-agents-chat"));
 
         for (String removed : List.of(
                 "director-source-control-review", "director-project-management-review", "director-team-chat-review",
@@ -232,12 +257,59 @@ class SoftwareTeamExampleTest {
 
     @Test
     void combinedRoutineStepsPreserveDecisionLoopAndThoughtBoundaries() throws Exception {
-        assertOrdered(source("ProjectManagerRoutine.java"), "enterThought(\"pm-intake\"", "act(\"pm-intake-review\"", "decide(\"pm-work-intake-done\"", "exitThought(\"pm-intake\"");
-        assertOrdered(source("ProjectManagerRoutine.java"), "enterThought(\"pm-planning\"", "act(\"pm-actionable-dev-task\"", "decide(\"pm-task-planning-done\"", "exitThought(\"pm-planning\"");
-        assertOrdered(source("ProductOwnerRoutine.java"), "enterThought(\"po-acceptance\"", "act(\"po-canonical-acceptance-update\"", "decide(\"po-acceptance-done\"", "exitThought(\"po-acceptance\"");
-        assertOrdered(source("ProductOwnerRoutine.java"), "enterThought(\"po-priority\"", "act(\"po-plane-handoff-update\"", "decide(\"po-priority-status-done\"", "exitThought(\"po-priority\"");
-        assertOrdered(source("ApplicationDeveloperRoutine.java"), "enterThought(\"dev-selection\"", "act(\"dev-assigned-to-do-start\"", "decide(\"developer-work-selection-done\"", "exitThought(\"dev-selection\"");
-        assertOrdered(source("ApplicationDeveloperRoutine.java"), "act(\"dev-plane-status-evidence-update\"", "direct:act");
+        assertTrue(source("ProjectManagerRoutine.java").contains(".main("));
+        assertTrue(source("ProductOwnerRoutine.java").contains(".main("));
+        assertTrue(source("ApplicationDeveloperRoutine.java").contains(".main("));
+        assertTrue(source("ProjectManagerRoutine.java").contains(".subroutine("));
+        assertTrue(source("ProductOwnerRoutine.java").contains(".subroutine("));
+        assertTrue(source("ApplicationDeveloperRoutine.java").contains(".subroutine("));
+        assertTrue(source("ProjectManagerRoutine.java").contains("direct:example-software-team-project-manager-bootstrap"));
+        assertTrue(source("ProductOwnerRoutine.java").contains("direct:example-software-team-product-owner-acceptance-refinement"));
+        assertTrue(source("ApplicationDeveloperRoutine.java").contains("direct:example-software-team-application-developer-work-selection"));
+        assertOrdered(source("ProjectManagerRoutine.java"), "routeId(\"example-software-team-project-manager\")", "direct:pm-project-basics-check", "direct:pm-project-bootstrap", "direct:pm-coordination-loop");
+        assertOrdered(source("ProjectManagerRoutine.java"), "routeId(\"example-software-team-project-manager-bootstrap\")", "direct:pm-project-basics-check", "direct:pm-project-bootstrap", "direct:pm-project-manager-root-exit");
+        assertOrdered(source("ProjectManagerRoutine.java"), "routeId(\"example-software-team-project-manager-coordination\")", "direct:pm-project-basics-check", "direct:pm-coordination-loop", "direct:pm-project-manager-root-exit");
+        assertOrdered(source("ProjectManagerRoutine.java"), "routeId(\"example-software-team-project-manager-task-planning\")", "direct:pm-project-basics-check", "tack:thought-enter?name=pm-cycle", "direct:pm-task-planning-loop", "direct:pm-project-manager-root-exit");
+        assertFalse(source("ProjectManagerRoutine.java").contains("routeId(\"example-software-team-project-manager-bootstrap\")\n                .to(\"direct:pm-coordination-loop\")"));
+        assertFalse(source("ProjectManagerRoutine.java").contains("routeId(\"pm-task-planning-pass\")"));
+        assertOrdered(source("ProjectManagerRoutine.java"), "tack:thought-enter?name=pm-intake", "tack:act?id=pm-intake-review", "tack:decide?id=pm-work-intake-done", "tack:thought-exit?name=pm-intake");
+        assertOrdered(source("ProductOwnerRoutine.java"), "routeId(\"example-software-team-product-owner-acceptance-refinement\")", "direct:po-project-basics-loop", "tack:thought-enter?name=po-cycle", "direct:po-acceptance-loop", "direct:po-product-owner-root-exit");
+        assertOrdered(source("ProductOwnerRoutine.java"), "routeId(\"example-software-team-product-owner-priority-handoff\")", "direct:po-project-basics-loop", "tack:thought-enter?name=po-cycle", "direct:po-priority-status-loop", "direct:po-product-owner-root-exit");
+        assertFalse(source("ProductOwnerRoutine.java").contains("routeId(\"example-software-team-product-owner-project-basics\")"));
+        assertFalse(source("ProductOwnerRoutine.java").contains("routeId(\"po-product-loop\")"));
+        assertFalse(source("ProductOwnerRoutine.java").contains("routeId(\"po-acceptance-refinement-pass\")"));
+        assertFalse(source("ProductOwnerRoutine.java").contains("routeId(\"po-priority-handoff-pass\")"));
+        assertOrdered(source("ProductOwnerRoutine.java"), "tack:thought-enter?name=po-acceptance", "tack:act?id=po-canonical-acceptance-update", "tack:decide?id=po-acceptance-done", "tack:thought-exit?name=po-acceptance");
+        assertOrdered(source("ProductOwnerRoutine.java"), "tack:thought-enter?name=po-priority", "tack:act?id=po-plane-handoff-update", "tack:decide?id=po-priority-status-done", "tack:thought-exit?name=po-priority");
+        assertOrdered(source("ApplicationDeveloperRoutine.java"), "routeId(\"example-software-team-application-developer-work-selection\")", "direct:dev-project-basics-loop", "tack:thought-enter?name=dev-cycle", "direct:dev-work-selection-loop", "direct:dev-application-developer-root-exit");
+        assertOrdered(source("ApplicationDeveloperRoutine.java"), "routeId(\"example-software-team-application-developer-implementation\")", "direct:dev-project-basics-loop", "direct:dev-delivery-loop", "direct:dev-application-developer-root-exit");
+        assertFalse(source("ApplicationDeveloperRoutine.java").contains("routeId(\"example-software-team-application-developer-project-basics\")"));
+        assertFalse(source("ApplicationDeveloperRoutine.java").contains("routeId(\"dev-work-selection-pass\")"));
+        assertFalse(source("ApplicationDeveloperRoutine.java").contains("routeId(\"dev-status-transition\")"));
+        assertOrdered(source("ApplicationDeveloperRoutine.java"), "tack:thought-enter?name=dev-selection", "tack:act?id=dev-assigned-to-do-start", "tack:decide?id=developer-work-selection-done", "tack:thought-exit?name=dev-selection");
+        assertTrue(source("ApplicationDeveloperRoutine.java").contains("tack:act?id=dev-plane-status-evidence-update&toolProfile="));
+        assertTrue(source("ForumAgentsChatRoutine.java").contains("tack:act?id=forum-agents-chat&toolProfile="));
+    }
+
+    @Test
+    void directorRoutineUsesCapacityBranchAndSubroutineAwarePrompting() throws Exception {
+        String source = source("DirectorRoutine.java");
+
+        assertTrue(source.contains("MAX_ACTIVE_MISSION_RUNS = 5"));
+        assertTrue(source.contains("AgentRunAdmissionService.CAPACITY_MAXIMUM_PROPERTY"));
+        assertTrue(source.contains("directorActiveRunCount"));
+        assertTrue(source.contains("directorRemainingRunCapacity"));
+        assertTrue(source.contains("activeMissionRosterPrompt"));
+        assertOrdered(source, "directorActiveRunCount", ".delay(900000)", ".otherwise()", "tack:thought-enter?name=orchestration-cycle", "tack:act?id=director-workspace-review", "tack:act?id=director-team-guidance");
+        assertTrue(source.contains("A full routine run gives a persona broad ownership"));
+        assertTrue(source.contains("A subroutine run targets one specific declared stage"));
+        assertTrue(source.contains("Select the full routine by omitting subroutineId"));
+        assertTrue(source.contains("Do not create runs for context gathering alone"));
+        assertTrue(source.contains("optional subroutineId"));
+        assertTrue(source.contains("Current accepted/scheduled/running runs"));
+        assertTrue(source.contains("remaining: ${exchangeProperty.directorRemainingRunCapacity}"));
+        assertTrue(source.contains("Return no more agent runs than remaining capacity"));
+        assertFalse(source.contains("Only one instance of a given persona should be active"));
     }
 
     @Test
@@ -263,6 +335,11 @@ class SoftwareTeamExampleTest {
         assertTrue(html.contains("function renderSafeIdentities"));
         assertTrue(html.contains("function renderLatestResult"));
         assertTrue(html.contains("function renderTimeline"));
+        assertTrue(html.contains("function renderContextDetails"));
+        assertTrue(html.contains("Agent input"));
+        assertTrue(html.contains("No input supplied."));
+        assertTrue(html.contains("Subroutine"));
+        assertTrue(html.contains("Subroutines (${arr(r.subroutines).length})"));
         assertTrue(html.contains("tool-profile:${p.id}:guidance"));
         assertTrue(html.contains("DETAILS_STORAGE_KEY"));
         assertFalse(html.contains("Raw profile JSON"));
@@ -278,6 +355,7 @@ class SoftwareTeamExampleTest {
             assertTrue(schema.contains("agentRuns"));
             assertTrue(schema.contains("personaId"));
             assertTrue(schema.contains("routineId"));
+            assertTrue(schema.contains("subroutineId"));
         }
     }
 
@@ -310,6 +388,13 @@ class SoftwareTeamExampleTest {
         return personas.stream().map(Persona::id).collect(Collectors.toSet());
     }
 
+    private static RoutineDefinition routine(List<RoutineDefinition> routines, String id) {
+        return routines.stream()
+                .filter(routine -> routine.id().equals(id))
+                .findFirst()
+                .orElseThrow();
+    }
+
     private static ToolProfile toolProfile(List<ToolProfile> profiles, String id) {
         return profiles.stream()
                 .filter(profile -> profile.id().equals(id))
@@ -331,7 +416,8 @@ class SoftwareTeamExampleTest {
 
     private static String routineSources() throws Exception {
         return source("DirectorRoutine.java") + source("ProjectManagerRoutine.java")
-                + source("ProductOwnerRoutine.java") + source("ApplicationDeveloperRoutine.java");
+                + source("ProductOwnerRoutine.java") + source("ApplicationDeveloperRoutine.java")
+                + source("ForumAgentsChatRoutine.java");
     }
 
     private static String source(String fileName) throws Exception {

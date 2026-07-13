@@ -241,7 +241,7 @@ class LlmQueueLifecycleTest {
                 0,
                 "synthesize step result",
                 "system",
-                "classpath:schemas/step-result-schema.json",
+                "classpath:schemas/thought-content-result-schema.json",
                 Map.of("personaId", FrameworkFixtures.PERSONA_A),
                 null));
 
@@ -432,6 +432,17 @@ class LlmQueueLifecycleTest {
         assertTrue(failure.getMessage().contains("after 1ms"));
         assertFalse(manager.contains(jobId));
         assertEquals(0, manager.inFlightCount());
+    }
+
+    @Test
+    void deadLetterFactoryCamelFacingMethodsAreNotOverloaded() {
+        for (String name : List.of("failedQueuedJobDeadLetter", "failedLlmResult", "contextSummary", "modelId")) {
+            long count = java.util.Arrays.stream(LlmDeadLetterFactory.class.getMethods())
+                    .filter(method -> method.getDeclaringClass().equals(LlmDeadLetterFactory.class))
+                    .filter(method -> method.getName().equals(name))
+                    .count();
+            assertEquals(1, count, name + " must stay unambiguous for Camel bean method resolution");
+        }
     }
 
     @Test

@@ -95,12 +95,51 @@ class MissionRosterServiceTest {
         assertTrue(roster.contains("agentRunId: run-c"));
         assertTrue(roster.contains("status: running"));
         assertFalse(roster.contains("PA"));
-        assertFalse(roster.contains("run-parent"));
+        assertTrue(roster.contains("parentAgentRunId: run-parent"));
         assertFalse(roster.contains("Routine A description"));
         assertFalse(roster.contains("alpha-secret"));
         assertFalse(roster.contains("beta-secret"));
         assertFalse(roster.contains("gamma-secret"));
         assertFalse(roster.toLowerCase().contains("credential"));
+    }
+
+
+    @Test
+    void missionRosterIncludesSubroutineAndFocusedInput() {
+        AgentRunStore store = new AgentRunStore();
+        store.putMission(new Mission("mission-1", "Build", List.of(), "active", Map.of(), Instant.now()));
+        AgentRun run = new AgentRun(
+                "run-phase-a",
+                "mission-1",
+                null,
+                "persona-a",
+                "routine-a",
+                "phase-a",
+                Map.of("input", Map.of("focus", "Validate phase A behavior.")));
+        run.status(AgentRun.STATUS_SCHEDULED);
+        store.putRun(run);
+        MissionRosterService service = service(store);
+
+        String roster = service.activeMissionRosterPrompt("mission-1");
+
+        assertTrue(roster.contains("subroutineId: phase-a"));
+        assertTrue(roster.contains("subroutine: Perform phase A."));
+        assertTrue(roster.contains("target: subroutine"));
+        assertTrue(roster.contains("input: {\"focus\":\"Validate phase A behavior.\"}"));
+    }
+
+    @Test
+    void activeMissionRosterExcludesTerminalRuns() {
+        AgentRunStore store = storeWithRuns();
+        AgentRun complete = new AgentRun("run-complete", "mission-1", "persona-a", "routine-a", Map.of());
+        complete.status(AgentRun.STATUS_COMPLETE);
+        store.putRun(complete);
+        MissionRosterService service = service(store);
+
+        String roster = service.activeMissionRosterPrompt("mission-1");
+
+        assertFalse(roster.contains("run-complete"));
+        assertEquals(2, entryCount(roster));
     }
 
     private static long entryCount(String roster) {
@@ -153,7 +192,8 @@ class MissionRosterServiceTest {
 
     private static RoutineCatalog routines() {
         return new RoutineCatalog(List.of(
-                RoutineDefinition.builder("routine-a").name("Routine A").description("Routine A description").routeUri("direct:a").build(),
+                RoutineDefinition.builder("routine-a").name("Routine A").description("Routine A description").routeUri("direct:a")
+                        .subroutine("phase-a", "Perform phase A.", "direct:a-phase-a").build(),
                 RoutineDefinition.builder("routine-b").name("Routine B").description("Routine B description").routeUri("direct:b").build()));
     }
 }

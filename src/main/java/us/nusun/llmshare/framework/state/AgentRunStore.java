@@ -12,13 +12,13 @@ public class AgentRunStore {
     private final ConcurrentHashMap<String, Mission> missions = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, AgentRun> runs = new ConcurrentHashMap<>();
 
-    public void putMission(Mission mission) {
+    public synchronized void putMission(Mission mission) {
         if (mission != null) {
             missions.put(mission.id(), mission);
         }
     }
 
-    public void putRun(AgentRun run) {
+    public synchronized void putRun(AgentRun run) {
         if (run != null) {
             runs.put(run.id(), run);
         }
@@ -48,6 +48,22 @@ public class AgentRunStore {
                 .filter(run -> missionId.equals(run.missionId()))
                 .sorted(java.util.Comparator.comparing(AgentRun::id))
                 .toList();
+    }
+
+    public synchronized int activeRunCount(String missionId) {
+        if (missionId == null || missionId.isBlank()) {
+            return 0;
+        }
+        return (int) runs.values().stream()
+                .filter(run -> missionId.equals(run.missionId()))
+                .filter(run -> isActiveStatus(run.status()))
+                .count();
+    }
+
+    public static boolean isActiveStatus(String status) {
+        return AgentRun.STATUS_ACCEPTED.equals(status)
+                || AgentRun.STATUS_SCHEDULED.equals(status)
+                || AgentRun.STATUS_RUNNING.equals(status);
     }
 
     public Mission requireMission(String missionId) {

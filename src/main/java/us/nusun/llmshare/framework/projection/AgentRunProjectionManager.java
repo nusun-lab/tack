@@ -8,12 +8,14 @@ import org.apache.camel.Exchange;
 import us.nusun.llmshare.framework.inventory.PersonaCatalog;
 import us.nusun.llmshare.framework.inventory.RoutineCatalog;
 import us.nusun.llmshare.framework.model.AgentRunProjection;
-import us.nusun.llmshare.framework.state.AgentRun;
+import us.nusun.llmshare.framework.model.Mission;
 import us.nusun.llmshare.framework.model.Persona;
 import us.nusun.llmshare.framework.model.RoutineDefinition;
+import us.nusun.llmshare.framework.model.SubroutineDefinition;
 import us.nusun.llmshare.framework.model.ThoughtFrame;
-import us.nusun.llmshare.framework.state.ThoughtStack;
 import us.nusun.llmshare.framework.routine.ThoughtStackSupport;
+import us.nusun.llmshare.framework.state.AgentRun;
+import us.nusun.llmshare.framework.state.ThoughtStack;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -30,18 +32,32 @@ public class AgentRunProjectionManager {
     @Inject RoutineCatalog routines;
 
     public void record(Exchange exchange, String eventType) {
+        record(exchange, eventType, Map.of());
+    }
+
+    public void record(Exchange exchange, String eventType, Map<String, Object> details) {
         AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
         if (run == null) {
             return;
         }
         ProjectionTimeline timeline = timeline(exchange);
         timeline.add(eventType, run);
-        store.put(build(exchange, run, timeline.entries()));
+        ThoughtHistory history = thoughtHistory(exchange);
+        if (eventType != null && eventType.startsWith("THOUGHT_")) {
+            history.add(eventType, details, run);
+        }
+        store.put(build(exchange, run, timeline.entries(), history.entries()));
     }
 
     public AgentRunProjection build(Exchange exchange, AgentRun run, List<Map<String, Object>> timeline) {
+        return build(exchange, run, timeline, thoughtHistory(exchange).entries());
+    }
+
+    public AgentRunProjection build(Exchange exchange, AgentRun run, List<Map<String, Object>> timeline, List<Map<String, Object>> thoughtHistory) {
+        Mission mission = exchange.getProperty("mission", Mission.class);
         Persona persona = personas.getRequired(run.personaId());
         RoutineDefinition routine = routines.getRequired(run.routineId());
+        SubroutineDefinition subroutine = run.subroutineId() == null ? null : routine.requireSubroutine(run.subroutineId());
         ThoughtStack stack = exchange.getProperty(ThoughtStackSupport.STACK_PROPERTY, ThoughtStack.class);
         String laneId = exchange.getProperty("resolvedLane", String.class);
         if (laneId == null || laneId.isBlank()) {
@@ -52,15 +68,33 @@ public class AgentRunProjectionManager {
                 run.missionId(),
                 run.parentAgentRunId(),
                 run.status(),
+                missionSummary(mission, run.missionId()),
                 personaSummary(persona),
                 routineSummary(routine),
+                subroutineSummary(subroutine),
+                run.input(),
                 current(run, exchange),
                 exchange.getProperty("toolProfile", String.class),
                 laneId,
-                thoughtFrames(exchange, stack),
+                thoughtFrames(stack),
+                thoughtHistory == null ? List.of() : thoughtHistory,
                 latest(exchange, run),
                 timeline == null ? List.of() : timeline,
                 Instant.now());
+    }
+
+
+    private static Map<String, Object> missionSummary(Mission mission, String missionId) {
+        LinkedHashMap<String, Object> summary = new LinkedHashMap<>();
+        if (mission != null) {
+            summary.put("id", mission.id());
+            summary.put("goal", mission.goal());
+            summary.put("status", mission.status());
+            summary.put("createdAt", mission.createdAt());
+        } else if (missionId != null && !missionId.isBlank()) {
+            summary.put("id", missionId);
+        }
+        return Map.copyOf(summary);
     }
 
     private static Map<String, Object> personaSummary(Persona persona) {
@@ -75,7 +109,20 @@ public class AgentRunProjectionManager {
     private static Map<String, Object> routineSummary(RoutineDefinition routine) {
         LinkedHashMap<String, Object> summary = new LinkedHashMap<>();
         summary.put("id", routine.id());
-        if (routine.name() != null) summary.put("name", routine.name());
+        summary.put("name", routine.name());
+        summary.put("description", routine.description());
+        summary.put("routeUri", routine.routeUri());
+        return summary;
+    }
+
+    private static Map<String, Object> subroutineSummary(SubroutineDefinition subroutine) {
+        if (subroutine == null) {
+            return Map.of();
+        }
+        LinkedHashMap<String, Object> summary = new LinkedHashMap<>();
+        summary.put("id", subroutine.id());
+        summary.put("description", subroutine.description());
+        summary.put("routeUri", subroutine.routeUri());
         return summary;
     }
 
@@ -107,7 +154,7 @@ public class AgentRunProjectionManager {
         return Map.of();
     }
 
-    private static List<Map<String, Object>> thoughtFrames(Exchange exchange, ThoughtStack stack) {
+    private static List<Map<String, Object>> thoughtFrames(ThoughtStack stack) {
         if (stack == null) {
             return List.of();
         }
@@ -148,22 +195,30 @@ public class AgentRunProjectionManager {
         return timeline;
     }
 
-    private static Map<String, String> compactMap(String k1, String v1, String k2, String v2) {
-        LinkedHashMap<String, String> result = new LinkedHashMap<>();
-        if (v1 != null) result.put(k1, v1);
-        if (v2 != null) result.put(k2, v2);
-        return result;
+    private ThoughtHistory thoughtHistory(Exchange exchange) {
+        ThoughtHistory history = exchange.getProperty("thoughtHistory", ThoughtHistory.class);
+        if (history == null) {
+            AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
+            AgentRunProjection current = run == null ? null : store.get(run.id());
+            history = new ThoughtHistory(current == null ? List.of() : current.thoughtHistory());
+            exchange.setProperty("thoughtHistory", history);
+        }
+        return history;
     }
+
     static class ProjectionTimeline {
         private final ArrayList<Map<String, Object>> entries = new ArrayList<>();
+
         ProjectionTimeline() {
         }
+
         ProjectionTimeline(List<Map<String, Object>> existing) {
             if (existing != null) {
                 entries.addAll(existing);
                 trim();
             }
         }
+
         void add(String type, AgentRun run) {
             LinkedHashMap<String, Object> entry = new LinkedHashMap<>();
             entry.put("type", type);
@@ -177,6 +232,7 @@ public class AgentRunProjectionManager {
             entries.add(Map.copyOf(entry));
             trim();
         }
+
         List<Map<String, Object>> entries() {
             return List.copyOf(entries);
         }
@@ -185,6 +241,36 @@ public class AgentRunProjectionManager {
             while (entries.size() > MAX_TIMELINE_ENTRIES) {
                 entries.remove(0);
             }
+        }
+    }
+
+    static class ThoughtHistory {
+        private final ArrayList<Map<String, Object>> entries = new ArrayList<>();
+
+        ThoughtHistory(List<Map<String, Object>> existing) {
+            if (existing != null) {
+                entries.addAll(existing);
+            }
+        }
+
+        void add(String type, Map<String, Object> details, AgentRun run) {
+            LinkedHashMap<String, Object> entry = new LinkedHashMap<>();
+            entry.put("type", type);
+            entry.put("at", Instant.now().toString());
+            if (run != null && run.currentPrimitive() != null) {
+                entry.put("primitive", run.currentPrimitive());
+            }
+            if (run != null && run.currentId() != null) {
+                entry.put("stepId", run.currentId());
+            }
+            if (details != null) {
+                entry.putAll(details);
+            }
+            entries.add(Map.copyOf(entry));
+        }
+
+        List<Map<String, Object>> entries() {
+            return List.copyOf(entries);
         }
     }
 }

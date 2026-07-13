@@ -18,7 +18,7 @@ import us.nusun.llmshare.framework.model.RoutineDefinition;
 import us.nusun.llmshare.framework.model.ToolProfile;
 import us.nusun.llmshare.framework.projection.AgentRunProjectionManager;
 import us.nusun.llmshare.framework.projection.ProjectionStore;
-import us.nusun.llmshare.framework.routine.PrimitiveSupport;
+import us.nusun.llmshare.framework.tack.PrimitiveExecutor;
 import us.nusun.llmshare.framework.service.MissionRosterService;
 import us.nusun.llmshare.framework.routine.ThoughtStackSupport;
 import us.nusun.llmshare.framework.state.AgentRun;
@@ -139,24 +139,30 @@ public final class FrameworkFixtures {
         return new InferenceLaneRegistry(inferenceLanes());
     }
 
-    public static PrimitiveSupport primitiveSupport() {
-        return primitiveSupport(defaultAgentRunStore());
+    public static PrimitiveExecutor primitiveExecutor() {
+        return primitiveExecutor(defaultAgentRunStore(), new NoopProjectionManager());
     }
 
-    public static PrimitiveSupport primitiveSupport(AgentRunStore agentRuns) {
+    public static PrimitiveExecutor primitiveExecutor(ProjectionStore store) {
+        return primitiveExecutor(defaultAgentRunStore(), projectionManager(store));
+    }
+
+    public static PrimitiveExecutor primitiveExecutor(AgentRunStore agentRuns, AgentRunProjectionManager projections) {
         ObjectMapper objectMapper = new ObjectMapper();
         PersonaCatalog personas = personaCatalog();
         RoutineCatalog routines = routineCatalog();
-        PrimitiveSupport support = new PrimitiveSupport();
-        set(support, "objectMapper", objectMapper);
-        set(support, "thoughts", new ThoughtStackSupport());
-        set(support, "personas", personas);
-        set(support, "routines", routines);
-        set(support, "toolProfiles", toolProfileRegistry());
-        set(support, "missionRoster", missionRosterService(agentRuns, personas, routines));
-        set(support, "lanes", inferenceLaneRegistry());
-        set(support, "projections", new NoopProjectionManager());
-        return support;
+        ThoughtStackSupport thoughts = new ThoughtStackSupport();
+        set(thoughts, "projections", projections);
+        PrimitiveExecutor executor = new PrimitiveExecutor();
+        set(executor, "objectMapper", objectMapper);
+        set(executor, "thoughts", thoughts);
+        set(executor, "personas", personas);
+        set(executor, "routines", routines);
+        set(executor, "toolProfiles", toolProfileRegistry());
+        set(executor, "missionRoster", missionRosterService(agentRuns, personas, routines));
+        set(executor, "lanes", inferenceLaneRegistry());
+        set(executor, "projections", projections);
+        return executor;
     }
 
     public static AgentRunStore defaultAgentRunStore() {

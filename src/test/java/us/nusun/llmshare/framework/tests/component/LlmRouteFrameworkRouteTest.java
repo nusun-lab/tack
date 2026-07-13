@@ -179,7 +179,49 @@ class LlmRouteFrameworkRouteTest {
         }
     }
 
+    @Test
+    void llmWorkerConvertsAgentValidationFailureToFailedReplyAndDeadLetter() throws Exception {
+        InFlightReplyManager replies = new InFlightReplyManager();
+        StubKafkaComponent kafka = new StubKafkaComponent();
+
+        try (DefaultCamelContext context = context(replies, kafka, nullBodyAgentFactory())) {
+            context.start();
+            LlmJobEnvelope queued = LlmJobEnvelope.queued(new LlmJobRequest(
+                    UUID.randomUUID(),
+                    "low-pass",
+                    LlmPassType.SYNTHESIS,
+                    "test",
+                    "test",
+                    0,
+                    "Return JSON.",
+                    "Return only JSON.",
+                    null,
+                    Map.of("primitive", "test-synthesis"),
+                    null).normalized());
+
+            kafka.emit("llm.requests.low", TestJson.write(queued));
+
+            await(() -> kafka.sentTopics().contains("llm.replies.low") && kafka.sentTopics().contains("llm.dead-letter"));
+            String replyJson = kafka.sentTo("llm.replies.low").getFirst().getIn().getBody(String.class);
+            assertTrue(replyJson.contains("\"jobId\":\"" + queued.jobId() + "\""));
+            assertTrue(replyJson.contains("\"status\":\"FAILED\""));
+            assertTrue(replyJson.contains("Validation failed for Predicate[body is not null]"));
+
+            Exchange deadLetterExchange = kafka.sentTo("llm.dead-letter").getFirst();
+            String deadLetterJson = deadLetterExchange.getIn().getBody(String.class);
+            assertTrue(deadLetterJson.contains("\"jobId\":\"" + queued.jobId() + "\""));
+            assertTrue(deadLetterJson.contains("\"laneId\":\"low-pass\""));
+            assertTrue(deadLetterJson.contains("\"passType\":\"SYNTHESIS\""));
+            assertTrue(deadLetterJson.contains("Validation failed for Predicate[body is not null]"));
+            assertTrue(deadLetterExchange.getIn().getHeader(KafkaConstants.KEY) instanceof UUID);
+        }
+    }
+
     private static DefaultCamelContext context(InFlightReplyManager replies, StubKafkaComponent kafka) throws Exception {
+        return context(replies, kafka, fakeAgentFactory());
+    }
+
+    private static DefaultCamelContext context(InFlightReplyManager replies, StubKafkaComponent kafka, AgentFactory agentFactory) throws Exception {
         DefaultCamelContext context = TestCamelContexts.quiet();
         context.setAutowiredEnabled(false);
         context.getShutdownStrategy().setTimeout(1);
@@ -192,7 +234,7 @@ class LlmRouteFrameworkRouteTest {
         context.getPropertiesComponent().setOverrideProperties(properties);
         context.addComponent("kafka", kafka);
         context.getRegistry().bind("inFlightReplyManager", replies);
-        context.getRegistry().bind("dynamicAgentFactory", fakeAgentFactory());
+        context.getRegistry().bind("dynamicAgentFactory", agentFactory);
         FrameworkFixtures.bindCatalogBeans(context);
         LlmRoute route = new LlmRoute();
         FrameworkFixtures.set(route, "lanes", FrameworkFixtures.inferenceLaneRegistry());
@@ -217,6 +259,27 @@ class LlmRouteFrameworkRouteTest {
                 return (aiAgentBody, toolProvider) -> Result.<String>builder()
                         .content("{\"result\":\"worker-ok\"}")
                         .build();
+            }
+
+            @Override
+            public CamelContext getCamelContext() {
+                return camelContext;
+            }
+
+            @Override
+            public void setCamelContext(CamelContext camelContext) {
+                this.camelContext = camelContext;
+            }
+        };
+    }
+
+    private static AgentFactory nullBodyAgentFactory() {
+        return new AgentFactory() {
+            private CamelContext camelContext;
+
+            @Override
+            public Agent createAgent(Exchange exchange) {
+                return (aiAgentBody, toolProvider) -> Result.<String>builder().build();
             }
 
             @Override

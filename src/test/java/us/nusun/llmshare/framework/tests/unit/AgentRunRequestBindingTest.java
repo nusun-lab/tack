@@ -23,6 +23,7 @@ class AgentRunRequestBindingTest {
         AgentRunRequest request = OBJECT_MAPPER.readValue(nestedRequestJson(), AgentRunRequest.class);
 
         Map<String, Object> input = request.input();
+        assertEquals("phase-a", request.subroutineId());
         assertEquals("pm", input.get("role"));
         assertInstanceOf(String.class, input.get("role"));
         assertEquals(true, input.get("enabled"));
@@ -81,8 +82,17 @@ class AgentRunRequestBindingTest {
         assertFalse(json.contains("missionId"));
         assertFalse(json.contains("parentAgentRunId"));
         assertFalse(json.contains("status"));
+        assertEquals("phase-a", roundTripped.subroutineId());
         assertInstanceOf(Map.class, roundTripped.input().get("config"));
         assertEquals(5, ((Number) ((Map<?, ?>) ((Map<?, ?>) roundTripped.input().get("config")).get("limits")).get("maxTasks")).intValue());
+    }
+
+
+    @Test
+    void blankSubroutineIdNormalizesToFullRoutineTarget() {
+        AgentRunRequest request = new AgentRunRequest("persona-a", "routine-a", "   ", Map.of());
+
+        assertNull(request.subroutineId());
     }
 
     private static String nestedRequestJson() {
@@ -90,6 +100,7 @@ class AgentRunRequestBindingTest {
                 {
                   "personaId": "persona-a",
                   "routineId": "routine-a",
+                  "subroutineId": "phase-a",
                   "input": {
                     "role": "pm",
                     "config": {

@@ -146,7 +146,8 @@ public class AgentRunRoute extends RouteBuilder {
         exchange.setProperty("agentRun", run);
         exchange.setProperty("persona", personas.getRequired(run.personaId()));
         exchange.setProperty("routine", routine);
-        exchange.setProperty("agentRunRouteUri", routine.routeUri());
+        exchange.setProperty("subroutine", run.subroutineId() == null ? null : routine.requireSubroutine(run.subroutineId()));
+        exchange.setProperty("agentRunRouteUri", routines.routeUriFor(run));
         exchange.getIn().setBody(initialRoutineBody(run));
     }
 

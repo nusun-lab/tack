@@ -27,6 +27,8 @@ import java.util.UUID;
 
 @ApplicationScoped
 public class AgentRunAdmissionService {
+    public static final String CAPACITY_MAXIMUM_PROPERTY = "agentRunCapacityMaximum";
+
     @Inject PersonaCatalog personas;
     @Inject RoutineCatalog routines;
     @Inject AgentRunProjectionManager projections;
@@ -59,7 +61,7 @@ public class AgentRunAdmissionService {
         List<PreparedAgentRun> prepared = requests.stream()
                 .map(request -> prepareAgentRun(mission, parent, request))
                 .toList();
-        return commitPrepared(exchange, mission, prepared);
+        return commitPrepared(exchange, mission, prepared, capacityMaximum(exchange));
     }
 
     public MissionAdmissionPlan prepareMission(@Body MissionRequest request, @Header("requestId") String requestedId) {
@@ -90,7 +92,7 @@ public class AgentRunAdmissionService {
         if (plan == null) {
             throw new IllegalArgumentException("Mission admission plan is required");
         }
-        return commitPrepared(exchange, plan.mission(), plan.agentRuns());
+        return commitPrepared(exchange, plan.mission(), plan.agentRuns(), capacityMaximum(exchange));
     }
 
     private PreparedAgentRun prepareAgentRun(Mission mission, AgentRun parent, AgentRunRequest request) {
@@ -102,7 +104,10 @@ public class AgentRunAdmissionService {
         }
 
         personas.getRequired(request.personaId());
-        routines.getRequired(request.routineId());
+        var routine = routines.getRequired(request.routineId());
+        if (request.subroutineId() != null) {
+            routine.requireSubroutine(request.subroutineId());
+        }
 
         AgentRun run = new AgentRun(
                 "run-" + UUID.randomUUID(),
@@ -110,6 +115,7 @@ public class AgentRunAdmissionService {
                 parent == null ? null : parent.id(),
                 request.personaId(),
                 request.routineId(),
+                request.subroutineId(),
                 request.workingState());
         run.status(AgentRun.STATUS_ACCEPTED);
 
@@ -119,15 +125,54 @@ public class AgentRunAdmissionService {
                 new AgentRunScheduled(run.missionId(), run.id()));
     }
 
-    private List<AgentRunAdmission> commitPrepared(Exchange exchange, Mission mission, List<PreparedAgentRun> preparedRuns) {
-        agentRuns.putMission(mission);
+    private List<AgentRunAdmission> commitPrepared(Exchange exchange, Mission mission, List<PreparedAgentRun> preparedRuns, Integer capacityMaximum) {
         List<AgentRunAdmission> admissions = new ArrayList<>();
-        for (PreparedAgentRun prepared : preparedRuns) {
-            agentRuns.putRun(prepared.run());
-            recordAccepted(exchange, mission, prepared.run());
-            admissions.add(new AgentRunAdmission(prepared.handle(), prepared.event()));
+        synchronized (agentRuns) {
+            validateCapacity(mission, preparedRuns, capacityMaximum);
+            agentRuns.putMission(mission);
+            for (PreparedAgentRun prepared : preparedRuns) {
+                agentRuns.putRun(prepared.run());
+                recordAccepted(exchange, mission, prepared.run());
+                admissions.add(new AgentRunAdmission(prepared.handle(), prepared.event()));
+            }
         }
         return List.copyOf(admissions);
+    }
+
+    private void validateCapacity(Mission mission, List<PreparedAgentRun> preparedRuns, Integer maximum) {
+        if (maximum == null || preparedRuns == null || preparedRuns.isEmpty()) {
+            return;
+        }
+        if (maximum < 0) {
+            throw new IllegalArgumentException(CAPACITY_MAXIMUM_PROPERTY + " must be non-negative");
+        }
+        int active = agentRuns.activeRunCount(mission.id());
+        int remaining = Math.max(0, maximum - active);
+        if (preparedRuns.size() > remaining) {
+            throw new IllegalStateException("Mission " + mission.id() + " active run capacity exceeded: maximum "
+                    + maximum + ", active " + active + ", requested " + preparedRuns.size());
+        }
+    }
+
+    private static Integer capacityMaximum(Exchange exchange) {
+        if (exchange == null) {
+            return null;
+        }
+        Object value = exchange.getProperty(CAPACITY_MAXIMUM_PROPERTY);
+        if (value == null) {
+            value = exchange.getIn().getHeader(CAPACITY_MAXIMUM_PROPERTY);
+        }
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        String text = String.valueOf(value);
+        if (text.isBlank()) {
+            return null;
+        }
+        return Integer.parseInt(text.trim());
     }
 
     public List<AgentRunHandle> handles(@Body List<AgentRunAdmission> admissions) {
@@ -160,6 +205,7 @@ public class AgentRunAdmissionService {
                 run == null ? null : run.parentAgentRunId(),
                 run == null ? "" : run.personaId(),
                 run == null ? "" : run.routineId(),
+                run == null ? null : run.subroutineId(),
                 status);
     }
 

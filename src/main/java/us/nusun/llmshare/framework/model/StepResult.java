@@ -6,11 +6,9 @@ import java.util.Map;
 public record StepResult(
         String actId,
         String summary,
-        List<Map<String, Object>> artifacts,
-        List<ThoughtUpdate> thoughts
+        List<Map<String, Object>> artifacts
 ) {
     public StepResult {
         artifacts = artifacts == null ? List.of() : List.copyOf(artifacts);
-        thoughts = thoughts == null ? List.of() : List.copyOf(thoughts);
     }
 }

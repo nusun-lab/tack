@@ -9,6 +9,8 @@ import us.nusun.llmshare.framework.projection.AgentRunProjectionManager;
 import us.nusun.llmshare.framework.state.ThoughtStack;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.UUID;
 
 @ApplicationScoped
@@ -27,8 +29,8 @@ public class ThoughtStackSupport {
 
     public Processor pop() {
         return exchange -> {
-            stack(exchange).pop();
-            record(exchange, "THOUGHT_POPPED");
+            ThoughtFrame popped = stack(exchange).pop();
+            record(exchange, "THOUGHT_EXITED", thoughtDetails(popped));
         };
     }
 
@@ -37,9 +39,15 @@ public class ThoughtStackSupport {
     }
 
     public ThoughtFrame push(Exchange exchange, String name, String context, int maxTokens) {
+        if (context == null || context.isBlank()) {
+            throw new IllegalArgumentException("thought purpose is required");
+        }
+        if (maxTokens <= 0) {
+            throw new IllegalArgumentException("thought maxTokens must be positive");
+        }
         ThoughtFrame frame = new ThoughtFrame("t_" + UUID.randomUUID().toString().replace("-", "").substring(0, 8), name, context, maxTokens, "", Instant.now());
         stack(exchange).push(frame);
-        record(exchange, "THOUGHT_PUSHED");
+        record(exchange, "THOUGHT_ENTERED", thoughtDetails(frame));
         return frame;
     }
 
@@ -52,9 +60,20 @@ public class ThoughtStackSupport {
         return stack;
     }
 
-    private void record(Exchange exchange, String eventType) {
+    private void record(Exchange exchange, String eventType, Map<String, Object> details) {
         if (projections != null) {
-            projections.record(exchange, eventType);
+            projections.record(exchange, eventType, details);
         }
+    }
+
+    private static Map<String, Object> thoughtDetails(ThoughtFrame frame) {
+        LinkedHashMap<String, Object> details = new LinkedHashMap<>();
+        details.put("thoughtName", frame.name());
+        details.put("thoughtId", frame.id());
+        details.put("purpose", frame.context());
+        details.put("maxTokens", frame.maxTokens());
+        details.put("content", frame.content());
+        details.put("timestamp", Instant.now().toString());
+        return details;
     }
 }

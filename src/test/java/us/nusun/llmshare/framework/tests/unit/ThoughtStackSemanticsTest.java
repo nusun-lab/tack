@@ -35,10 +35,10 @@ class ThoughtStackSemanticsTest {
     }
 
     @Test
-    void blankPoppedThoughtDoesNotModifyParent() {
+    void poppingAThoughtDoesNotMechanicallyModifyParent() {
         ThoughtStack stack = new ThoughtStack();
         stack.push(new ThoughtFrame("parent", "parent-scope", "Parent", 100, "parent memory"));
-        stack.push(new ThoughtFrame("child", "child-scope", "Child", 100, "   "));
+        stack.push(new ThoughtFrame("child", "child-scope", "Child", 100, "project tracker id PT-1"));
 
         ThoughtFrame popped = stack.pop();
 
@@ -48,30 +48,13 @@ class ThoughtStackSemanticsTest {
     }
 
     @Test
-    void nonEmptyPoppedThoughtCarriesForwardIntoParentWithScopeName() {
+    void leafAndParentExposeCurrentStackTargets() {
         ThoughtStack stack = new ThoughtStack();
         stack.push(new ThoughtFrame("parent", "parent-scope", "Parent", 100, "parent memory"));
-        stack.push(new ThoughtFrame("child", "child-scope", "Child", 100, "project tracker id PT-1"));
+        stack.push(new ThoughtFrame("child", "child-scope", "Child", 100, "child memory"));
 
-        stack.pop();
-
-        String parent = stack.frames().getFirst().content();
-        assertTrue(parent.contains("parent memory"));
-        assertTrue(parent.contains("From scope child-scope (child):"));
-        assertTrue(parent.contains("project tracker id PT-1"));
-    }
-
-    @Test
-    void carriedForwardThoughtContentIsBoundedByParentBudgetAndPrefersRecentContent() {
-        ThoughtStack stack = new ThoughtStack();
-        stack.push(new ThoughtFrame("parent", "parent-scope", "Parent", 12, "old ".repeat(50)));
-        stack.push(new ThoughtFrame("child", "child-scope", "Child", 100, "important durable anchor ABC-123"));
-
-        stack.pop();
-
-        String parent = stack.frames().getFirst().content();
-        assertTrue(parent.length() <= 48);
-        assertTrue(parent.contains("ABC-123"));
+        assertEquals("child", stack.leaf().id());
+        assertEquals("parent", stack.parentOfLeaf().id());
     }
 
     @Test

@@ -3,12 +3,13 @@
   "properties": {
     "agentRuns": {
       "type": "array",
-      "maxItems": 3,
+      "maxItems": 5,
       "items": {
         "type": "object",
         "properties": {
           "personaId": { "type": "string" },
           "routineId": { "type": "string" },
+          "subroutineId": { "type": "string" },
           "input": { "type": "object" }
         },
         "required": ["personaId", "routineId"],

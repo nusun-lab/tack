@@ -77,6 +77,15 @@ public final class AgentRunRouteTestSupport {
         return RoutineDefinition.builder(id).name(id).description(id).routeUri(routeUri).build();
     }
 
+    public static RoutineDefinition routineWithSubroutine(String id, String routeUri, String subroutineId, String subroutineRouteUri) {
+        return RoutineDefinition.builder(id)
+                .name(id)
+                .description(id)
+                .routeUri(routeUri)
+                .subroutine(subroutineId, "Run " + subroutineId, subroutineRouteUri)
+                .build();
+    }
+
     public static AgentRunScheduled scheduledEvent(StubKafkaComponent kafka, int index) throws Exception {
         Exchange exchange = kafka.sentTo(SCHEDULED_TOPIC).get(index);
         String json = exchange.getIn().getBody(String.class);

@@ -13,6 +13,7 @@ import us.nusun.llmshare.framework.model.AgentRunRequest;
 import us.nusun.llmshare.framework.model.AgentRunScheduled;
 import us.nusun.llmshare.framework.model.Mission;
 import us.nusun.llmshare.framework.projection.AgentRunProjectionManager;
+import us.nusun.llmshare.framework.service.AgentRunAdmissionService;
 import us.nusun.llmshare.framework.projection.ProjectionStore;
 import us.nusun.llmshare.framework.state.AgentRun;
 import us.nusun.llmshare.framework.state.AgentRunStore;
@@ -297,6 +298,52 @@ class AgentRunIsolationRouteTest {
             assertEquals(0, agentRuns.runs().size());
             assertEquals(0, store.all().size());
             assertEquals(List.of(), kafka.sentTopics());
+        }
+    }
+
+
+    @Test
+    void startAgentRunEnforcesOptionalCapacityAgainstAuthoritativeMissionState() throws Exception {
+        ProjectionStore store = FrameworkFixtures.projectionStore();
+        AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
+        AgentRunStore agentRuns = new AgentRunStore();
+        StubKafkaComponent kafka = new StubKafkaComponent();
+        RoutineCatalog routines = new RoutineCatalog(List.of(routine("test/parent", "direct:test-parent"), routine("test/child", "direct:test-child")));
+        FrameworkFixtures.set(manager, "routines", routines);
+        AgentRun parent = parentRun();
+        Mission mission = new Mission("mission-1", "Build", List.of(), "active", Map.of(), Instant.now());
+        agentRuns.putMission(mission);
+        agentRuns.putRun(parent);
+
+        try (DefaultCamelContext context = context(manager, routines, agentRuns, kafka, "agent-run-isolation-test")) {
+            context.addRoutes(new RouteBuilder() {
+                @Override
+                public void configure() {
+                    from("direct:test-child").setBody(constant("ok"));
+                }
+            });
+            context.start();
+
+            Exchange first = preparedExchange(context, parent, new AgentRunRequest(FrameworkFixtures.PERSONA_A, "test/child", Map.of("focus", "first")));
+            first.setProperty(AgentRunAdmissionService.CAPACITY_MAXIMUM_PROPERTY, 2);
+            context.createProducerTemplate().send("direct:start-agent-run", first);
+            AgentRunHandle firstHandle = first.getIn().getBody(AgentRunHandle.class);
+            assertEquals(2, agentRuns.activeRunCount("mission-1"));
+
+            Exchange over = preparedExchange(context, parent, new AgentRunRequest(FrameworkFixtures.PERSONA_A, "test/child", Map.of("focus", "second")));
+            over.setProperty(AgentRunAdmissionService.CAPACITY_MAXIMUM_PROPERTY, 2);
+            Exchange overResult = context.createProducerTemplate().send("direct:start-agent-run", over);
+            assertTrue(overResult.isFailed());
+            assertTrue(overResult.getException().getMessage().contains("active run capacity exceeded"));
+            assertEquals(2, agentRuns.runs().size());
+
+            agentRuns.getRun(firstHandle.agentRunId()).status(AgentRun.STATUS_COMPLETE);
+            Exchange afterRelease = preparedExchange(context, parent, new AgentRunRequest(FrameworkFixtures.PERSONA_A, "test/child", Map.of("focus", "after release")));
+            afterRelease.setProperty(AgentRunAdmissionService.CAPACITY_MAXIMUM_PROPERTY, 2);
+            Exchange accepted = context.createProducerTemplate().send("direct:start-agent-run", afterRelease);
+            assertFalse(accepted.isFailed());
+            assertEquals(2, agentRuns.activeRunCount("mission-1"));
+            assertEquals(3, agentRuns.runs().size());
         }
     }
 

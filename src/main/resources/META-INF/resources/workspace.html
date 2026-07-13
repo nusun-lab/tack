@@ -97,6 +97,7 @@
     .agent-run-detail-layout { display:grid; grid-template-columns:minmax(0,1.55fr) minmax(17rem,.8fr); gap:1rem; align-items:start; }
     .step-panel { border:1px solid var(--line); border-radius:8px; padding:.85rem; background:#151517; }
     .thought-column { display:grid; gap:.65rem; }
+    .context-panels { display:grid; gap:.65rem; }
     .timeline-terminal { scroll-behavior:auto; }
     .thought { border-left:4px solid var(--accent); }
     .terminal { background:#050505; color:#F2F0EA; border-color:#1D1D20; font-size:.78rem; max-height:21rem; }
@@ -304,11 +305,12 @@
     function renderAgentRunPreview(p) {
       const persona = obj(p.persona);
       const routine = obj(p.routine);
+      const subroutine = obj(p.subroutine);
       const selected = p.agentRunId === selectedAgentRunId;
       return `<button type="button" class="agent-run-preview ${selected ? 'selected' : ''}" data-agent-run-select="${esc(p.agentRunId)}">
         <span class="agent-run-preview-title"><span class="persona-dot" style="background:${ansiToCss(persona.color)}"></span><strong>${esc(persona.name || persona.id || 'AgentRun')}</strong></span>
         <span class="agent-run-preview-meta">
-          <span>${esc(routine.name || routine.id || '')}</span>
+          <span>${esc(routine.name || routine.id || '')}${subroutine.id ? ` / ${esc(subroutine.id)}` : ''}</span>
           <span><span class="label status ${p.status === 'failed' ? 'danger' : ''}">${esc(p.status)}</span></span>
           <span>${timeTag(p.updatedAt)}</span>
         </span>
@@ -318,6 +320,7 @@
     function renderAgentRunDetail(p) {
       const persona = obj(p.persona);
       const routine = obj(p.routine);
+      const subroutine = obj(p.subroutine);
       const current = obj(p.current);
       const thoughts = arr(p.thoughtStack);
       const fullTimeline = arr(p.timeline);
@@ -353,17 +356,46 @@
               <dl class="kv">
                 <dt>Persona</dt><dd>${esc(persona.name || persona.id || '')}</dd>
                 <dt>Routine</dt><dd>${esc(routine.name || routine.id || '')}</dd>
-                <dt>Mission</dt><dd><span class="pill subtle mono">${esc(p.missionId)}</span></dd>
+                ${subroutine.id ? `<dt>Subroutine</dt><dd><strong>${esc(subroutine.id)}</strong><br><span class="muted">${esc(subroutine.description || '')}</span></dd>` : ''}
                 ${p.parentAgentRunId ? `<dt>Parent</dt><dd><span class="pill subtle mono">${esc(p.parentAgentRunId)}</span></dd>` : ''}
+                <dt>Status</dt><dd><span class="label status ${p.status === 'failed' ? 'danger' : ''}">${esc(p.status)}</span></dd>
                 <dt>Tool profile</dt><dd class="mono">${esc(p.toolProfile || 'none')}</dd>
                 <dt>Lane</dt><dd class="mono">${esc(p.laneId || '')}</dd>
               </dl>
+            </div>
+            <div class="context-panels">
+              ${renderContextDetails(`projection:${p.agentRunId}:mission`, 'Mission', obj(p.mission), 'No mission context captured.')}
+              ${renderContextDetails(`projection:${p.agentRunId}:input`, 'Agent input', p.input, 'No input supplied.')}
             </div>
             <h4>ThoughtStack (${thoughts.length})</h4>
             ${thoughts.length ? thoughts.map((thought, index) => renderThought(p.agentRunId, thought, index)).join('') : '<div class="empty">No active ThoughtFrames on this projection.</div>'}
           </aside>
         </div>
       </article>`;
+    }
+
+
+    function renderContextDetails(key, label, value, emptyText) {
+      const empty = isEmptyValue(value);
+      return `<details data-global-detail ${detailAttrs(key)}>
+        <summary>${esc(label)}</summary>
+        ${empty ? `<div class="empty">${esc(emptyText)}</div>` : `<pre>${esc(formatReadableValue(value))}</pre>`}
+      </details>`;
+    }
+
+    function isEmptyValue(value) {
+      if (value == null) return true;
+      if (typeof value === 'string') return value.length === 0;
+      if (Array.isArray(value)) return value.length === 0;
+      if (typeof value === 'object') return Object.keys(value).length === 0;
+      return false;
+    }
+
+    function formatReadableValue(value) {
+      if (value == null) return '';
+      if (typeof value === 'string') return value;
+      try { return JSON.stringify(value, null, 2); }
+      catch { return String(value); }
     }
 
     function renderLatestResult(result) {
@@ -443,6 +475,7 @@
         <div class="inventory-title"><h3>${esc(r.name)}</h3><code>${esc(r.id)}</code></div>
         <p>${esc(r.description)}</p>
         <dl class="kv"><dt>Route URI</dt><dd class="mono">${esc(r.routeUri)}</dd><dt>Default lane</dt><dd class="mono">${esc(r.defaultLane)}</dd></dl>
+        ${arr(r.subroutines).length ? `<details data-global-detail ${detailAttrs(`routine:${r.id}:subroutines`)}><summary>Subroutines (${arr(r.subroutines).length})</summary><div class="stack">${arr(r.subroutines).map(s => `<div class="step-panel"><strong>${esc(s.id)}</strong><p>${esc(s.description)}</p><code>${esc(s.routeUri)}</code></div>`).join('')}</div></details>` : ''}
       </article>`).join('') || '<div class="empty">No routines registered.</div>';
     }
 

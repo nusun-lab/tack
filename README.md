@@ -9,8 +9,8 @@ The framework treats an agent run as application state, not as a single long-liv
 * **Mission-bound agent runs** with isolated parent/child state.
 * **Catalog-driven configuration** for personas, routines, tool profiles, and inference lanes.
 * **Kafka-backed LLM queueing** so model calls can be serialized and routed by lane.
-* **Reusable Camel primitives** for action, decision, schema-shaped creation, and child agent startup.
-* **Two-pass tool execution** for `direct:act`: one pass for tool use, one pass for structured `StepResult` synthesis.
+* **Reusable Camel primitives** through the `tack:` component for action, decision, schema-shaped creation, and thought lifecycle work.
+* **Complete action execution** through `tack:act`: tool use, structured synthesis, thought rewrite, and projection recording finish in one route step.
 * **Optional MCP integration** with persona-specific credentials, tool filtering, default arguments, and bounded tool results.
 * **Workspace projection API** for inspecting active missions and agent runs during local development.
 
@@ -22,7 +22,7 @@ A mission moves through the framework in a small number of explicit steps:
 2. The mission route creates and records each requested `AgentRun` as accepted, publishes one durable `AgentRunScheduled` start signal per run, and returns accepted handles quickly.
 3. The `AgentRunScheduled` Kafka consumer transitions accepted runs to running, launches routine execution asynchronously, and then finishes the Kafka route so the event can be committed.
 4. Async routine execution rebuilds the run context, runs the configured routine route, and records complete or failed state in the workspace projection.
-5. Routines call framework primitives such as `direct:act`, `direct:decide`, `direct:create`, and `direct:start-agent-run`.
+5. Routines call framework primitives through `tack:` endpoints, and use `direct:start-agent-run` when they schedule child runs.
 6. `direct:start-agent-run` records child agent runs, publishes the same scheduled event, and returns accepted handles immediately.
 7. LLM work is queued through Kafka by inference lane.
 8. Replies return through Kafka and update the agent run projection.
@@ -171,7 +171,7 @@ A routine is a Camel route plus catalog metadata. Routines should compose framew
 
 ### ToolProfile
 
-A tool profile defines which MCP servers and tools are visible during `direct:act`. Profiles can declare MCP server connection settings, allow tools, deny tools, add default arguments, and cap returned tool-result size. If an act omits a profile, the framework uses an internal no-tools profile; adopters do not need to publish a `none` profile.
+A tool profile defines which MCP servers and tools are visible during `tack:act`. Profiles can declare MCP server connection settings, allow tools, deny tools, add default arguments, and cap returned tool-result size. If an act omits a profile, the framework uses an internal no-tools profile; adopters do not need to publish a `none` profile.
 
 ### InferenceLane
 
@@ -179,27 +179,30 @@ An inference lane defines where LLM jobs are queued and which model endpoint/mod
 
 ## Framework primitives
 
-### `direct:act`
+Framework primitive operations are Camel producer endpoints on the `tack:` component. Short scalar configuration belongs in endpoint parameters; long prompt-like text belongs in documented headers. Each endpoint returns only after the semantic operation is complete.
 
-Use `direct:act` when the model may need tools and the routine needs a structured `StepResult` afterward.
+### `tack:act`
+
+Use `tack:act` when the model may need tools and the routine needs the current thought rewritten from the result.
 
 ```java
-.process(routine.act("source-readiness")
-        .prompt("Confirm the target repository exists and report blockers.")
-        .toolProfile(SourceToolProfile.SOURCE_CONTROL))
-.to("direct:act")
+.setHeader(TackHeaders.PROMPT, constant("""
+        Confirm the target repository exists and report blockers.
+        """))
+.to("tack:act?id=source-readiness&toolProfile=" + SourceToolProfile.SOURCE_CONTROL)
 ```
 
-`direct:act` performs a tool/action pass first, then synthesizes the result into the common `StepResult` schema. This keeps tool usage and structured route state separate.
+`tack:act` performs tool/action work, synthesizes one replacement for the current leaf thought, rewrites that known leaf, records projection history, and exposes a `StepResult` as the message body and `latestStepResult` exchange property.
 
-### `direct:decide`
+### `tack:decide`
 
-Use `direct:decide` for narrow control-flow questions.
+Use `tack:decide` for narrow control-flow questions.
 
 ```java
-.process(routine.decide("done")
-        .prompt("Is this routine complete or blocked for this pass?"))
-.to("direct:decide")
+.setHeader(TackHeaders.PROMPT, constant("""
+        Is this routine complete or blocked for this pass?
+        """))
+.to("tack:decide?id=done")
 .choice()
     .when(simple("${exchangeProperty[decision.done.result]} == true"))
         .stop()
@@ -211,51 +214,55 @@ The boolean result is exposed at:
 * `decisions.<decisionId>`
 * `decision.<decisionId>.result`
 
-### `direct:create`
+### `tack:create`
 
-Use `direct:create` for schema-shaped JSON generation.
-
-```java
-.process(routine.create("mvp-slice")
-        .schemaId("mvp-slice-schema")
-        .schemaJson("""
-                {
-                  "type": "object",
-                  "properties": {
-                    "component": { "type": "string" }
-                  },
-                  "required": ["component"]
-                }
-                """)
-        .prompt("Create a small MVP slice description."))
-.to("direct:create")
-```
-
-`direct:create` is generic. It does not automatically inject catalog data. If a prompt needs catalog context, compose the prompt explicitly with Camel Simple expressions:
+Use `tack:create` for schema-shaped JSON generation.
 
 ```java
-.process(routine.create("planned-agent-runs")
-        .schema("classpath:schemas/example/software-team/agent-run-requests-schema.json")
-        .prompt(simple("""
-                Given this mission, propose software-team AgentRunRequest objects to schedule.
+.setHeader(TackHeaders.PROMPT, simple("""
+        Given this mission, propose software-team AgentRunRequest objects to schedule.
 
-                Mission:
-                ${exchangeProperty.mission.goal}
+        Mission:
+        ${exchangeProperty.mission.goal}
 
-                Personas:
-                ${bean:personaCatalog.agentRunStartAssignableJson}
+        Personas:
+        ${bean:personaCatalog.agentRunStartAssignableJson}
 
-                Routines:
-                ${bean:routineCatalog.startableJson}
+        Routines:
+        ${bean:routineCatalog.startableJson}
 
-                Return only schema-compliant JSON.
-                """)))
-.to("direct:create")
+        Return only schema-compliant JSON.
+        """))
+.to("tack:create?id=planned-agent-runs&schemaId=agent-run-request-list&schema=classpath:schemas/example/software-team/agent-run-requests-schema.json")
 ```
+
+`tack:create` is generic. It does not automatically inject catalog data. If a prompt needs catalog context, compose the prompt explicitly with Camel Simple expressions.
+
+### `tack:thought-enter` and `tack:thought-exit`
+
+Use thought endpoints to create scoped memory and then consolidate completed child memory back into its parent.
+
+```java
+.setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+        Mission plan, current blockers, and next coordination move.
+        """))
+.to("tack:thought-enter?name=coordinator&maxTokens=800")
+
+.setHeader(TackHeaders.PROMPT, constant("""
+        Inspect current workspace state and decide the next coordination step.
+        """))
+.to("tack:act?id=coordination-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
+
+.to("tack:thought-exit?name=coordinator")
+```
+
+`thought-exit` validates the active leaf. A populated child is consolidated into its parent with a dedicated synchronous model call before the child is popped. A failed consolidation leaves parent and child state intact for route-level retry or error handling. Root exit and empty child exit are explicit non-consolidating cases.
+
+Thought history is observable separately from the active stack. Projection history records thought entry, rewrites, consolidation start/completion, and exit, so a child rewrite remains inspectable after the child has been popped.
 
 ### `direct:start-agent-run`
 
-Use `direct:start-agent-run` to schedule another agent run from the same `AgentRunRequest` shape used by mission requests.
+Use `direct:start-agent-run` to schedule another agent run from the same `AgentRunRequest` shape used by mission requests. A request without `subroutineId` targets the full routine.
 
 ```json
 {
@@ -267,7 +274,20 @@ Use `direct:start-agent-run` to schedule another agent run from the same `AgentR
 }
 ```
 
-The framework supplies mission id, agent run id, parent lineage, status, timestamps, and lifecycle projection data. The route records the child run, publishes `AgentRunScheduled`, returns an accepted `AgentRunHandle` immediately, and does not wait for the scheduled routine to complete. The `input` object is preserved as structured working state for the scheduled run.
+A request with `subroutineId` targets one declared public subroutine on that routine.
+
+```json
+{
+  "personaId": "software-team/owen",
+  "routineId": "software-team/project-manager",
+  "subroutineId": "bootstrap",
+  "input": {
+    "focus": "Verify or create the initial collaboration foundation."
+  }
+}
+```
+
+The framework supplies mission id, agent run id, parent lineage, status, timestamps, and lifecycle projection data. The route validates that the selected subroutine belongs to the selected routine, records the run, publishes `AgentRunScheduled`, returns an accepted `AgentRunHandle` immediately, and does not wait for the scheduled routine to complete. The `input` object is preserved as structured working state for the scheduled run.
 
 The scheduled event is intentionally small:
 
@@ -335,14 +355,13 @@ Use `agentRunStartAssignable(false)` when a persona should not be proposed by or
 public class CoordinatorRoutine extends RouteBuilder implements RoutineProvider {
     public static final String ID = "my-domain/coordinator-routine";
 
-    @Inject RoutineSupport routine;
-
     @Override
     public List<RoutineDefinition> routines() {
         return List.of(RoutineDefinition.builder(ID)
                 .name("Coordinator Routine")
-                .description("Decides what work should happen next for the mission.")
-                .routeUri("direct:my-domain-coordinator")
+                .main("Full coordinator routine: gather context, decide next work, communicate, and close out.",
+                        "direct:my-domain-coordinator")
+                .subroutine("phase-a", "Perform only phase A after gathering required context.", "direct:my-domain-coordinator-phase-a")
                 .defaultLane("low-pass")
                 .build());
     }
@@ -350,11 +369,15 @@ public class CoordinatorRoutine extends RouteBuilder implements RoutineProvider 
     @Override
     public void configure() {
         from("direct:my-domain-coordinator")
-                .process(routine.enterThought("coordinator", "Mission plan and current blockers.", 800))
-                .process(routine.decide("needs-worker")
-                        .prompt("Does this mission need another worker AgentRun?"))
-                .to("direct:decide")
-                .process(routine.exitThought("coordinator"));
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Mission plan and current blockers.
+                        """))
+                .to("tack:thought-enter?name=coordinator&maxTokens=800")
+                .setHeader(TackHeaders.PROMPT, constant("""
+                        Does this mission need another worker AgentRun?
+                        """))
+                .to("tack:decide?id=needs-worker")
+                .to("tack:thought-exit?name=coordinator");
     }
 }
 ```
@@ -513,7 +536,8 @@ Agent-run scheduling is event-driven:
 
 ```text
 direct:start-agent-run
-  -> validate AgentRunRequest
+  -> validate AgentRunRequest, including optional subroutineId
+  -> enforce any caller-supplied active-run capacity limit
   -> create/record AgentRun as accepted
   -> publish AgentRunScheduled
   -> return AgentRunHandle
@@ -590,7 +614,7 @@ The workspace API is intended for local development and debugging.
 
 `POST /missions` returns `202 Accepted` after mission creation, accepted run recording, and scheduled-event publication. Routine execution starts when `AgentRunScheduled` is consumed and continues asynchronously after the Kafka route commits. Later routine failures are visible through workspace projection state and normal logs, not as a delayed HTTP response.
 
-The projection includes mission IDs, agent-run IDs, persona/routine metadata, primitive state, selected inference lane, latest results, timeline entries, and thought-stack snapshots.
+The projection includes mission context, agent-run input, agent-run IDs, persona/routine/subroutine metadata, primitive state, selected inference lane, latest results, timeline entries, and thought-stack snapshots. Mission and input context are rendered as collapsed panels in the workspace UI.
 
 ## Project layout
 
@@ -626,8 +650,10 @@ Keep reusable framework behavior separate from example-team behavior.
 Framework code owns:
 
 * `AgentRunRequest` / `AgentRunHandle`
+* routine subroutine metadata and route resolution
+* optional active-run capacity checks for admission
 * `direct:start-agent-run`
-* `direct:act`, `direct:decide`, and `direct:create`
+* `tack:act`, `tack:decide`, `tack:create`, `tack:thought-enter`, and `tack:thought-exit`
 * `ThoughtStack`
 * `AgentRunProjection`
 * inference lanes

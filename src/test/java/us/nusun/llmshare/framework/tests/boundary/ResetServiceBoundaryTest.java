@@ -87,6 +87,7 @@ class ResetServiceBoundaryTest {
                 null,
                 "low-pass",
                 List.of(),
+                List.of(),
                 Map.of(),
                 List.of(),
                 Instant.now());

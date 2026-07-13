@@ -24,7 +24,7 @@ public class LlmDeadLetterFactory {
         return failedQueuedJobDeadLetter(exchange, globalModelFallback(exchange));
     }
 
-    public LlmJobDeadLetter failedQueuedJobDeadLetter(Exchange exchange, String globalModelFallback) {
+    private LlmJobDeadLetter failedQueuedJobDeadLetter(Exchange exchange, String globalModelFallback) {
         LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
         if (job == null) {
             throw new IllegalStateException("Cannot publish LLM DLQ entry without llmJob exchange property");
@@ -47,7 +47,7 @@ public class LlmDeadLetterFactory {
         return failedLlmResult(exchange, globalModelFallback(exchange));
     }
 
-    public LlmJobResult failedLlmResult(Exchange exchange, String globalModelFallback) {
+    private LlmJobResult failedLlmResult(Exchange exchange, String globalModelFallback) {
         Exception failure = exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class);
         LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
         String message = failureMessage(failure, "Unknown LLM worker failure");
@@ -59,7 +59,7 @@ public class LlmDeadLetterFactory {
         return contextSummary(exchange, globalModelFallback(exchange));
     }
 
-    public String contextSummary(Exchange exchange, String globalModelFallback) {
+    private String contextSummary(Exchange exchange, String globalModelFallback) {
         LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
         return "jobId=" + firstNonBlank(exchange.getProperty("llmJobId", String.class), job == null ? null : String.valueOf(job.jobId()))
                 + " laneId=" + laneId(exchange, job)
@@ -71,7 +71,7 @@ public class LlmDeadLetterFactory {
         return modelId(exchange, globalModelFallback(exchange));
     }
 
-    public String modelId(Exchange exchange, String globalModelFallback) {
+    private String modelId(Exchange exchange, String globalModelFallback) {
         return firstNonBlank(
                 exchange.getProperty("model", String.class),
                 exchange.getProperty("modelId", String.class),

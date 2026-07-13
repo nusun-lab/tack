@@ -82,6 +82,7 @@ public class WorkspaceCoordinationToolProfile implements ToolProfileProvider {
                         "get_release")
                 .allowTools(MattermostMcpServer.ID,
                         "get_me",
+                        "list_teams",
                         "list_my_channels",
                         "list_public_channels",
                         "get_channel",

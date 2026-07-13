@@ -31,7 +31,6 @@ import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.mcp.McpClientFactory;
 import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
 import us.nusun.llmshare.framework.route.LlmRoute;
-import us.nusun.llmshare.framework.routine.PrimitiveSupport;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 import us.nusun.llmshare.framework.tests.support.StubKafkaComponent;
 import us.nusun.llmshare.framework.tests.support.TestCamelContexts;
@@ -125,10 +124,6 @@ class HallucinatedToolNameRecoveryStrategyTest {
             assertNotNull(result);
             assertEquals(LlmJobStatus.SUCCEEDED, result.status());
             assertEquals("final response", result.content());
-            PrimitiveSupport primitive = FrameworkFixtures.primitiveSupport();
-            Exchange primitiveExchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
-            primitiveExchange.getIn().setBody(result);
-            assertDoesNotThrow(() -> primitive.captureToolPassResult().process(primitiveExchange));
         }
     }
 

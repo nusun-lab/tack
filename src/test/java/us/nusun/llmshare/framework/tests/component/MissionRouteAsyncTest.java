@@ -31,6 +31,7 @@ import static us.nusun.llmshare.framework.tests.support.AgentRunRouteTestSupport
 import static us.nusun.llmshare.framework.tests.support.AgentRunRouteTestSupport.events;
 import static us.nusun.llmshare.framework.tests.support.AgentRunRouteTestSupport.noopRoute;
 import static us.nusun.llmshare.framework.tests.support.AgentRunRouteTestSupport.routine;
+import static us.nusun.llmshare.framework.tests.support.AgentRunRouteTestSupport.routineWithSubroutine;
 import static us.nusun.llmshare.framework.tests.support.AgentRunRouteTestSupport.scheduledEvent;
 import static us.nusun.llmshare.framework.tests.support.AgentRunRouteTestSupport.waitForEvent;
 
@@ -134,6 +135,79 @@ class MissionRouteAsyncTest {
             context.createProducerTemplate().sendBody("direct:handle-agent-run-scheduled", scheduledEvent(kafka, 1));
             assertTrue(waitForEvent(store, handles.get(0).agentRunId(), "AGENT_RUN_COMPLETED"));
             assertTrue(waitForEvent(store, handles.get(1).agentRunId(), "AGENT_RUN_COMPLETED"));
+        }
+    }
+
+
+    @Test
+    void subroutineTargetedMissionRunDispatchesToDeclaredSubroutineRouteAndProjectsContext() throws Exception {
+        ProjectionStore store = FrameworkFixtures.projectionStore();
+        AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
+        AgentRunStore agentRuns = new AgentRunStore();
+        StubKafkaComponent kafka = new StubKafkaComponent();
+        RoutineCatalog routines = new RoutineCatalog(List.of(
+                routineWithSubroutine(FrameworkFixtures.ROUTINE_A, "direct:full-routine", "phase-a", "direct:phase-a")));
+        FrameworkFixtures.set(manager, "routines", routines);
+        AtomicInteger fullStarts = new AtomicInteger();
+        AtomicInteger phaseStarts = new AtomicInteger();
+
+        try (DefaultCamelContext context = context(manager, routines, agentRuns, kafka, "mission-route-test")) {
+            context.addRoutes(new RouteBuilder() {
+                @Override
+                public void configure() {
+                    from("direct:full-routine").process(exchange -> fullStarts.incrementAndGet());
+                    from("direct:phase-a").process(exchange -> {
+                        phaseStarts.incrementAndGet();
+                        exchange.setProperty("phaseInput", exchange.getIn().getBody());
+                    });
+                }
+            });
+            context.start();
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> response = context.createProducerTemplate().requestBody(
+                    "direct:start-mission",
+                    new MissionRequest("Build", List.of(new AgentRunRequest(
+                            FrameworkFixtures.PERSONA_A,
+                            FrameworkFixtures.ROUTINE_A,
+                            "phase-a",
+                            Map.of("focus", "Validate phase A behavior.")))),
+                    Map.class);
+
+            AgentRunHandle handle = firstHandle(response);
+            assertEquals("phase-a", handle.subroutineId());
+            assertEquals("phase-a", agentRuns.getRun(handle.agentRunId()).subroutineId());
+            assertEquals("phase-a", store.get(handle.agentRunId()).subroutine().get("id"));
+            assertEquals("Run phase-a", store.get(handle.agentRunId()).subroutine().get("description"));
+            assertEquals("Validate phase A behavior.", ((Map<?, ?>) store.get(handle.agentRunId()).input()).get("focus"));
+
+            context.createProducerTemplate().sendBody("direct:handle-agent-run-scheduled", scheduledEvent(kafka, 0));
+            assertTrue(waitForEvent(store, handle.agentRunId(), "AGENT_RUN_COMPLETED"));
+            assertEquals(0, fullStarts.get());
+            assertEquals(1, phaseStarts.get());
+        }
+    }
+
+    @Test
+    void unknownOrCrossRoutineSubroutineFailsBeforeAnyMissionSideEffects() throws Exception {
+        ProjectionStore store = FrameworkFixtures.projectionStore();
+        AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
+        AgentRunStore agentRuns = new AgentRunStore();
+        StubKafkaComponent kafka = new StubKafkaComponent();
+        RoutineCatalog routines = new RoutineCatalog(List.of(
+                routineWithSubroutine(FrameworkFixtures.ROUTINE_A, "direct:routine-a", "phase-a", "direct:phase-a"),
+                routineWithSubroutine(FrameworkFixtures.ROUTINE_B, "direct:routine-b", "phase-b", "direct:phase-b")));
+        FrameworkFixtures.set(manager, "routines", routines);
+
+        try (DefaultCamelContext context = context(manager, routines, agentRuns, kafka, "mission-route-test")) {
+            context.start();
+
+            assertMissionFailsBeforeSideEffects(context, agentRuns, store, kafka,
+                    new MissionRequest("Build", List.of(new AgentRunRequest(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A, "missing", Map.of()))),
+                    "Unknown subroutine missing for routine " + FrameworkFixtures.ROUTINE_A);
+            assertMissionFailsBeforeSideEffects(context, agentRuns, store, kafka,
+                    new MissionRequest("Build", List.of(new AgentRunRequest(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A, "phase-b", Map.of()))),
+                    "Unknown subroutine phase-b for routine " + FrameworkFixtures.ROUTINE_A);
         }
     }
 

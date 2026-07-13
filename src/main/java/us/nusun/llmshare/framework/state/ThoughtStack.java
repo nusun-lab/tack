@@ -17,39 +17,42 @@ public class ThoughtStack {
         if (frames.isEmpty()) {
             throw new IllegalStateException("Cannot pop an empty ThoughtStack");
         }
-        ThoughtFrame popped = frames.remove(frames.size() - 1);
-        carryForwardIntoParent(popped);
-        return popped;
-    }
-
-    private void carryForwardIntoParent(ThoughtFrame popped) {
-        if (frames.isEmpty() || popped.content() == null || popped.content().isBlank()) {
-            return;
-        }
-        int parentIndex = frames.size() - 1;
-        ThoughtFrame parent = frames.get(parentIndex);
-        String carry = "From scope " + popped.name() + " (" + popped.id() + "):\n" + popped.content().strip();
-        frames.set(parentIndex, parent.withContent(mergeCarryForward(parent.content(), carry, parent.maxTokens()), Instant.now()));
+        return frames.remove(frames.size() - 1);
     }
 
     public List<ThoughtFrame> frames() {
         return List.copyOf(frames);
     }
 
+    public ThoughtFrame leaf() {
+        if (frames.isEmpty()) {
+            return null;
+        }
+        return frames.getLast();
+    }
+
+    public ThoughtFrame parentOfLeaf() {
+        if (frames.size() < 2) {
+            return null;
+        }
+        return frames.get(frames.size() - 2);
+    }
+
     public boolean contains(String id) {
         return frames.stream().anyMatch(frame -> frame.id().equals(id));
     }
 
-    public void rewrite(String id, String content) {
-        rewrite(id, content, Instant.now());
+    public ThoughtFrame rewrite(String id, String content) {
+        return rewrite(id, content, Instant.now());
     }
 
-    public void rewrite(String id, String content, Instant updatedAt) {
+    public ThoughtFrame rewrite(String id, String content, Instant updatedAt) {
         for (int i = 0; i < frames.size(); i++) {
             ThoughtFrame frame = frames.get(i);
             if (frame.id().equals(id)) {
-                frames.set(i, frame.withContent(clampToApproxTokens(content, frame.maxTokens()), updatedAt));
-                return;
+                ThoughtFrame rewritten = frame.withContent(clampToApproxTokens(content, frame.maxTokens()), updatedAt);
+                frames.set(i, rewritten);
+                return rewritten;
             }
         }
         throw new IllegalArgumentException("Unknown ThoughtFrame id: " + id);
@@ -64,16 +67,5 @@ public class ThoughtStack {
             return value.strip();
         }
         return value.substring(0, Math.max(0, maxChars - 12)).strip() + " [truncated]";
-    }
-
-    private static String mergeCarryForward(String existing, String carry, int maxTokens) {
-        String merged = (existing == null || existing.isBlank() ? "" : existing.strip() + "\n") + carry.strip();
-        int maxChars = Math.max(1, maxTokens) * 4;
-        if (merged.length() <= maxChars) {
-            return merged;
-        }
-        String marker = "[earlier thought content truncated]\n";
-        int keep = Math.max(0, maxChars - marker.length());
-        return marker + merged.substring(Math.max(0, merged.length() - keep)).strip();
     }
 }

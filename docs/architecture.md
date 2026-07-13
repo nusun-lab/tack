@@ -19,7 +19,8 @@ AgentRun scheduling is event-driven. Admission is deliberately short:
 
 ```text
 direct:start-agent-run
-  -> validate AgentRunRequest
+  -> validate AgentRunRequest, including optional subroutineId
+  -> enforce any caller-supplied active-run capacity limit
   -> create/record AgentRun as accepted
   -> publish AgentRunScheduled
   -> return AgentRunHandle
@@ -36,9 +37,9 @@ direct:start-agent-run
 
 The Kafka consumer unmarshals the event, performs an idempotent accepted/scheduled-to-running transition, launches `direct:execute-agent-run` asynchronously, and returns. It does not hold the Kafka message open for the full routine.
 
-`direct:execute-agent-run` rebuilds mission and AgentRun context from state, invokes the configured routine route, and records complete or failed projection state. Duplicate scheduled events for running, complete, failed, or otherwise ineligible runs are ignored.
+`direct:execute-agent-run` rebuilds mission and AgentRun context from state, resolves either the full routine route or the selected declared subroutine route, invokes that route, and records complete or failed projection state. Duplicate scheduled events for running, complete, failed, or otherwise ineligible runs are ignored.
 
-This mode intentionally has no framework-level AgentRun concurrency limit. Each eligible scheduled event launches an async routine execution. LLM/model concurrency remains controlled by inference lanes.
+There is no global hard-coded AgentRun concurrency limit. The framework exposes active-run counting and an optional admission capacity property so routines can enforce a mission-specific limit. Active runs are accepted, scheduled, and running; complete and failed runs are terminal for capacity. LLM/model concurrency remains controlled by inference lanes.
 
 Lifecycle hardening is future work. AgentRun admission records accepted state and then publishes `AgentRunScheduled`. If publication fails after admission, a run can remain accepted without a scheduled event. That is acceptable for this local/in-memory prototype; a future reconciler should scan stale accepted runs and republish `AgentRunScheduled`.
 
