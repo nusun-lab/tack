@@ -92,7 +92,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         .to("tack:thought-enter?name=pm-cycle&maxTokens=300")
                         .to("direct:pm-documentation-status-sync")
                         .to("direct:pm-work-intake-loop")
-                        .to("direct:pm-task-planning-loop")
+                        .choice()
+                            .when(exchangeProperty("decision.pm-has-ready-product-handoff.result").isEqualTo(true))
+                                .to("direct:pm-task-planning-loop")
+                        .end()
                         .to("direct:pm-team-sync")
                         .to("direct:pm-cycle-closeout")
                         .to("tack:thought-exit?name=pm-cycle")
@@ -117,14 +120,15 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                 Verify project basics without mutation.
                                 Check only direct anchors from active thoughts, the documentation index/project-basics links,
                                 and the minimal Plane/Mattermost lookup needed to confirm missing basics. Capture bootstrap status,
-                                team chat, Plane project, source repository, documentation repository, roster.
+                                team chat, Plane project, source repository under agent-workspace, documentation repository,
+                                and documentation index/project-basics navigation.
                                 Do not scan whole projects, repositories, documentation repositories, or channels.
                                 """))
                 .to("tack:act?id=pm-workspace-basics-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Are project basics verified and current enough for delivery coordination, with
                                 Git organization agent-workspace and a working link for team chat, Plane project,
-                                documentation repository, source repository, and roster?
+                                documentation repository, source repository, and documentation index/project-basics navigation?
                                 """))
                 .to("tack:decide?id=collaboration-setup-complete");
 
@@ -135,7 +139,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .setProperty("collaborationSetupAttempt", simple("${exchangeProperty.collaborationSetupAttempt++}"))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
                         Current bootstrap checklist: documentation repository, team chat, Plane project, source repository,
-                        and roster. Promote final URLs to project-manager-routine before bootstrap exits.
+                        and documentation index/project-basics navigation. Promote final URLs to project-manager-routine before bootstrap exits.
                         """))
                     .to("tack:thought-enter?name=pm-bootstrap&maxTokens=300")
                     .setHeader(TackHeaders.PROMPT, constant("""
@@ -166,7 +170,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     Create or update the canonical documentation bootstrap pages.
                                     Index: navigation only, linking project-basics.
                                     Project-basics: mission, Git organization agent-workspace, documentation repository URL,
-                                    team chat, Plane project, source repository, roster and roles.
+                                    team chat, Plane project, source repository, and stable role directory/responsibilities.
+                                    Do not document a supposedly current active-run roster; current staffing comes from mission roster context.
                                     Before marking any project basic missing, search active thoughts for a verified
                                     current-mission anchor for that artifact.
                                     """))
@@ -189,7 +194,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     After this bootstrap pass, does the documentation index and project-basics page link
                                     Git organization agent-workspace, team chat, Plane project, documentation repository,
-                                    source repository, and roster?
+                                    source repository, and documentation index/project-basics navigation?
                                     """))
                     .to("tack:decide?id=collaboration-setup-complete")
                     .to("tack:thought-exit?name=pm-bootstrap")
@@ -206,13 +211,19 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         """))
                     .to("tack:thought-enter?name=pm-cycle&maxTokens=300")
                     .to("direct:pm-documentation-status-sync")
+                    .to("direct:pm-active-delivery-check")
                     .to("direct:pm-work-intake-loop")
-                    .to("direct:pm-task-planning-loop")
+                    .choice()
+                        .when(exchangeProperty("decision.pm-has-ready-product-handoff.result").isEqualTo(true))
+                            .to("direct:pm-task-planning-loop")
+                    .end()
                     .to("direct:pm-team-sync")
                     .to("direct:pm-cycle-closeout")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Is this PM pass complete with setup, current work, status movement,
-                                    owners, and documentation links clear enough for PO and DEV?
+                                    Is this PM pass locally complete because collaboration basics are established and one of these occurred:
+                                    active review/blocker work was coordinated, one ready PO handoff became an assigned actionable
+                                    developer task, no ready PO handoff exists and that was clearly determined, or one exact PO input,
+                                    assignment, or infrastructure blocker was recorded? Do not wait for PO or DEV to consume PM output.
                                     """))
                     .to("tack:decide?id=project-manager-done")
                     .to("tack:thought-exit?name=pm-cycle")
@@ -228,63 +239,82 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                 """))
                 .to("tack:act?id=pm-workspace-status-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID);
 
+        from("direct:pm-active-delivery-check")
+                .routeId("pm-active-delivery-check")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Active delivery coordination: one highest-priority developer item in Review, Blocked, or In Progress;
+                        PM REVIEW: READY evidence, DEV BLOCKER: owner, status decision, and next coordination action.
+                        """))
+                .to("tack:thought-enter?name=pm-active-delivery&maxTokens=250")
+                .setHeader(TackHeaders.PROMPT, constant("""
+                                Inspect at most one highest-priority active developer item, in this order: Review, Blocked,
+                                then In Progress. Use minimal direct Plane evidence and any linked Gitea/source evidence.
+                                For Review, recognize PM REVIEW: READY and verify branch, commit/PR or diff, changed files,
+                                validation evidence, and acceptance criteria before moving Done. If evidence is insufficient,
+                                leave it in Review and record one exact missing review requirement.
+                                For Blocked, recognize DEV BLOCKER:, identify the required owner, add PO INPUT REQUIRED: only
+                                for a product decision, otherwise record the exact coordination action without inventing a solution.
+                                Do not create duplicate replacement tasks for active, review, or blocked work.
+                                """))
+                .to("tack:act?id=pm-active-delivery-check&toolProfile=" + ProjectManagementToolProfile.ID)
+                .to("tack:thought-exit?name=pm-active-delivery");
+
         from("direct:pm-work-intake-loop")
                 .routeId("pm-work-intake-loop")
-                .setProperty("pmWorkIntakeCycle", constant(0))
-                .setProperty("decision.pm-work-intake-done.result", constant(false))
-                .loopDoWhile(exchangeProperty("decision.pm-work-intake-done.result").isNotEqualTo(true))
-                    .setProperty("pmWorkIntakeCycle", simple("${exchangeProperty.pmWorkIntakeCycle++}"))
-                    .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        One product handoff under review: Plane work item id/link, owner, priority, canonical acceptance page,
-                        readiness. Promote selected handoff to pm-cycle before intake exits.
+                .setProperty("decision.pm-has-ready-product-handoff.result", constant(false))
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        One product handoff under review: Plane work item id/link, PO, priority, canonical acceptance page,
+                        PM HANDOFF: READY content, and requested PM action. Promote selected handoff to pm-cycle before intake exits.
                         """))
-                    .to("tack:thought-enter?name=pm-intake&maxTokens=250")
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                                    Review exactly one PO work item marked ready for PM breakdown or waiting on PM.
-                                    Capture status, priority, product owner, canonical acceptance page, and requested handoff.
-                                    Verify current status before changing it. If the owner or acceptance page is missing, leave status
-                                    or mark blocked only if that state exists. Do not start developer work.
-                                    """))
-                    .to("tack:act?id=pm-intake-review&toolProfile=" + ProjectManagementToolProfile.ID)
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                                    Is intake complete for now: one PO handoff reviewed, readiness clear,
-                                    and the canonical acceptance page recorded or requested?
-                                    """))
-                    .to("tack:decide?id=pm-work-intake-done")
-                    .to("tack:thought-exit?name=pm-intake")
-                .end();
+                .to("tack:thought-enter?name=pm-intake&maxTokens=250")
+                .setHeader(TackHeaders.PROMPT, constant("""
+                                Determine whether exactly one ready PO handoff exists now.
+                                Select one product item only when it contains a current PM HANDOFF: READY comment.
+                                Capture Plane item, priority, PO, canonical acceptance page, acceptance summary, unresolved
+                                product questions, and requested PM action. If no ready handoff exists, do not invent acceptance
+                                criteria, do not enter task planning, and optionally reply once to an active PO with one precise request.
+                                """))
+                .to("tack:act?id=pm-intake-review&toolProfile=" + ProjectManagementToolProfile.ID)
+                .setHeader(TackHeaders.PROMPT, constant("""
+                                Does one current product item with PM HANDOFF: READY exist and have enough acceptance context
+                                for PM task planning? Return false when no ready PO handoff exists.
+                                """))
+                .to("tack:decide?id=pm-has-ready-product-handoff")
+                .to("tack:thought-exit?name=pm-intake");
 
         from("direct:pm-task-planning-loop")
                 .routeId("pm-task-planning-loop")
-                .setProperty("pmTaskPlanningCycle", constant(0))
                 .setProperty("decision.pm-task-planning-done.result", constant(false))
-                .loopDoWhile(exchangeProperty("decision.pm-task-planning-done.result").isNotEqualTo(true))
-                    .setProperty("pmTaskPlanningCycle", simple("${exchangeProperty.pmTaskPlanningCycle++}"))
-                    .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        One developer task being planned: Plane work item id/link, assignee, repository, canonical documentation page,
-                        acceptance. Promote created/updated task to pm-cycle before planning exits.
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        One developer task being planned: Plane work item id/link, assignee, repository, canonical acceptance page,
+                        acceptance criteria, dependencies, next code step, and expected review evidence.
                         """))
-                    .to("tack:thought-enter?name=pm-planning&maxTokens=250")
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                                    Create or update exactly one small developer implementation Plane work item from one ready PO item.
-                                    Put it in to-do only when assignee, priority, agent-workspace source repository, canonical page,
-                                    acceptance, dependencies, and one concrete next code step are present.
-                                    Do not plan multiple tasks in this step.
-                                    """))
-                    .to("tack:act?id=pm-actionable-dev-task&toolProfile=" + ProjectManagementToolProfile.ID)
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                                    Is task planning complete for now with at least one assigned actionable to-do?
-                                    """))
-                    .to("tack:decide?id=pm-task-planning-done")
-                    .to("tack:thought-exit?name=pm-planning")
-                .end();
+                .to("tack:thought-enter?name=pm-planning&maxTokens=250")
+                .setHeader(TackHeaders.PROMPT, constant("""
+                                From the selected PM HANDOFF: READY product slice, verify that an equivalent actionable developer
+                                task does not already exist. Create or update exactly one small developer task.
+                                The task may enter To Do only when it has developer assignee using Miles/Plane identity Dev when
+                                available, priority, agent-workspace source repository, canonical acceptance page, acceptance criteria,
+                                dependencies, one concrete next code step, expected review evidence, and a comment beginning exactly
+                                DEV HANDOFF: READY containing those details. Assign the task even if Miles has no active AgentRun.
+                                If the expected developer identity is unavailable, record the exact assignment blocker and finish.
+                                Do not create duplicate replacement tasks for active, review, or blocked work.
+                                """))
+                .to("tack:act?id=pm-actionable-dev-task&toolProfile=" + ProjectManagementToolProfile.ID)
+                .setHeader(TackHeaders.PROMPT, constant("""
+                                Is task planning complete because one assigned actionable developer task is ready with
+                                DEV HANDOFF: READY, or because one exact missing input/assignment blocker was durably recorded?
+                                """))
+                .to("tack:decide?id=pm-task-planning-done")
+                .to("tack:thought-exit?name=pm-planning");
 
         from("direct:pm-team-sync")
                 .routeId("pm-team-sync")
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Read the last 20 project Mattermost messages from the project-basics link.
-                                Reply first to a direct  PM question, or handoff. If no reply is needed, ask at most one named
-                                coordination question. Do not post generic status.
+                                Reply first to a direct PM question, PO INPUT REQUIRED:, PM REVIEW: READY, DEV BLOCKER:, or handoff.
+                                If no reply is needed, ask at most one named coordination question. Do not post generic status or
+                                substitute chat reminders for durable Plane handoffs.
                                 Link the Plane work item or canonical documentation page.
                                 """))
                 .to("tack:act?id=pm-team-chat-sync&toolProfile=" + TeamChatToolProfile.ID);
@@ -298,8 +328,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                 """))
                 .to("tack:act?id=pm-status-note&toolProfile=" + SourceControlToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Update one Plane work item only if verified status, risk, or blocker changed.
-                                Preserve explicit status flow: to-do, in-progress, review/done, or blocked as defined.
+                                Update one Plane work item only if verified status, risk, review requirement, PO INPUT REQUIRED:,
+                                DEV HANDOFF: READY, PM REVIEW: READY, or DEV BLOCKER: changed. Do not depend on custom states or labels.
                                 """))
                 .to("tack:act?id=pm-release-risk-update&toolProfile=" + ProjectManagementToolProfile.ID);
     }

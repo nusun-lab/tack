@@ -48,25 +48,36 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .routeId("example-software-team-product-owner")
                 .to("direct:po-product-owner-root-enter")
                 .to("direct:po-project-basics-loop")
-                .setProperty("productOwnerCycle", constant(0))
-                .setProperty("decision.product-owner-done.result", constant(false))
-                .loopDoWhile(exchangeProperty("decision.product-owner-done.result").isNotEqualTo(true))
-                    .setProperty("productOwnerCycle", simple("${exchangeProperty.productOwnerCycle++}"))
-                    .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Current PO pass: selected product Plane work item, canonical item page, acceptance status, priority/readiness, PM handoff request, next product action.
-                        """))
-                    .to("tack:thought-enter?name=po-cycle&maxTokens=300")
-                    .to("direct:po-team-chat-sync")
-                    .to("direct:po-backlog-selection-loop")
-                    .to("direct:po-acceptance-loop")
-                    .to("direct:po-priority-status-loop")
-                    .to("direct:po-cycle-closeout")
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                                    Is this PO pass complete with scope, acceptance, priority,
-                                    follow-up, and documentation links clear enough for PM and DEV?
-                                    """))
-                    .to("tack:decide?id=product-owner-done")
-                    .to("tack:thought-exit?name=po-cycle")
+                .choice()
+                    .when(exchangeProperty("decision.product-owner-has-project-basics.result").isEqualTo(true))
+                        .setProperty("productOwnerCycle", constant(0))
+                        .setProperty("decision.product-owner-done.result", constant(false))
+                        .loopDoWhile(exchangeProperty("decision.product-owner-done.result").isNotEqualTo(true))
+                            .setProperty("productOwnerCycle", simple("${exchangeProperty.productOwnerCycle++}"))
+                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                                Current PO pass: selected product Plane work item, canonical item page, acceptance status, priority/readiness, PM handoff request, next product action.
+                                """))
+                            .to("tack:thought-enter?name=po-cycle&maxTokens=300")
+                            .to("direct:po-team-chat-sync")
+                            .to("direct:po-backlog-selection-loop")
+                            .to("direct:po-acceptance-loop")
+                            .to("direct:po-priority-status-loop")
+                            .to("direct:po-cycle-closeout")
+                            .setHeader(TackHeaders.PROMPT, constant("""
+                                            Is this PO pass locally complete because the thin product pipeline exists
+                                            with at least one small vertical slice marked PM HANDOFF: READY and major
+                                            mission outcomes represented or explicitly deferred, or because one exact
+                                            product blocker/user decision was recorded?
+                                            Do not wait for PM or DEV to consume the handoff.
+                                            If more PO work remains, the next cycle must choose a distinct unfinished
+                                            product outcome rather than refining the same handed-off item again.
+                                            """))
+                            .to("tack:decide?id=product-owner-done")
+                            .to("tack:thought-exit?name=po-cycle")
+                        .end()
+                    .endChoice()
+                    .otherwise()
+                        .to("direct:po-missing-basics-closeout")
                 .end()
                 .to("direct:po-product-owner-root-exit");
 
@@ -74,30 +85,40 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .routeId("example-software-team-product-owner-acceptance-refinement")
                 .to("direct:po-product-owner-root-enter")
                 .to("direct:po-project-basics-loop")
-                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused PO acceptance pass: selected product item, canonical page, scope, users, acceptance criteria, decisions, and open questions.
-                        """))
-                .to("tack:thought-enter?name=po-cycle&maxTokens=300")
-                .to("direct:po-team-chat-sync")
-                .to("direct:po-backlog-selection-loop")
-                .to("direct:po-acceptance-loop")
-                .to("direct:po-cycle-closeout")
-                .to("tack:thought-exit?name=po-cycle")
+                .choice()
+                    .when(exchangeProperty("decision.product-owner-has-project-basics.result").isEqualTo(true))
+                        .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                            Focused PO acceptance pass: selected product item, canonical page, scope, users, acceptance criteria, decisions, and open questions.
+                            """))
+                        .to("tack:thought-enter?name=po-cycle&maxTokens=300")
+                        .to("direct:po-team-chat-sync")
+                        .to("direct:po-backlog-selection-loop")
+                        .to("direct:po-acceptance-loop")
+                        .to("direct:po-cycle-closeout")
+                        .to("tack:thought-exit?name=po-cycle")
+                    .otherwise()
+                        .to("direct:po-missing-basics-closeout")
+                .end()
                 .to("direct:po-product-owner-root-exit");
 
         from("direct:example-software-team-product-owner-priority-handoff")
                 .routeId("example-software-team-product-owner-priority-handoff")
                 .to("direct:po-product-owner-root-enter")
                 .to("direct:po-project-basics-loop")
-                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused PO handoff pass: selected product item, priority, readiness, PM request, Plane state, and canonical page.
-                        """))
-                .to("tack:thought-enter?name=po-cycle&maxTokens=300")
-                .to("direct:po-team-chat-sync")
-                .to("direct:po-backlog-selection-loop")
-                .to("direct:po-priority-status-loop")
-                .to("direct:po-cycle-closeout")
-                .to("tack:thought-exit?name=po-cycle")
+                .choice()
+                    .when(exchangeProperty("decision.product-owner-has-project-basics.result").isEqualTo(true))
+                        .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                            Focused PO handoff pass: selected product item, priority, readiness, PM request, Plane state, and canonical page.
+                            """))
+                        .to("tack:thought-enter?name=po-cycle&maxTokens=300")
+                        .to("direct:po-team-chat-sync")
+                        .to("direct:po-backlog-selection-loop")
+                        .to("direct:po-priority-status-loop")
+                        .to("direct:po-cycle-closeout")
+                        .to("tack:thought-exit?name=po-cycle")
+                    .otherwise()
+                        .to("direct:po-missing-basics-closeout")
+                .end()
                 .to("direct:po-product-owner-root-exit");
 
         from("direct:po-product-owner-root-enter")
@@ -114,36 +135,37 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
 
         from("direct:po-project-basics-loop")
                 .routeId("po-project-basics-loop")
-                .setProperty("productOwnerProjectBasicsCycle", constant(0))
                 .setProperty("decision.product-owner-has-project-basics.result", constant(false))
-                .loopDoWhile(exchangeProperty("decision.product-owner-has-project-basics.result").isNotEqualTo(true))
-                    .setProperty("productOwnerProjectBasicsCycle", simple("${exchangeProperty.productOwnerProjectBasicsCycle++}"))
-                    .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
                         Current product-basics read: documentation repository, current-work page, Plane project, source repository,
                         team chat, product navigation. Promote durable anchors to product-owner-routine before basics exits.
                         """))
-                    .to("tack:thought-enter?name=po-basics&maxTokens=300")
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                                    Verify product project basics without mutation, including:
-                                    Git organization agent-workspace, team chat, Plane project, source repository under
-                                    agent-workspace
-                                    """))
-                    .to("tack:act?id=po-workspace-basics-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                                    Are project basics present and linked enough to do product work?
-                                    Git organization agent-workspace, team chat, Plane project, source repository under
-                                    agent-workspace
-                                    """))
-                    .to("tack:decide?id=product-owner-has-project-basics")
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                                    Read the last 20 messages in the default or project Mattermost channel.
-                                    If PM/setup discussion exists, respond there only when a specific product/setup
-                                    answer is useful. Include the documentation index link if known.
-                                    Do not start product work.
-                                    """))
-                    .to("tack:act?id=po-project-basics-communication&toolProfile=" + TeamChatToolProfile.ID)
-                    .to("tack:thought-exit?name=po-basics")
-                .end();
+                .to("tack:thought-enter?name=po-basics&maxTokens=300")
+                .setHeader(TackHeaders.PROMPT, constant("""
+                                Verify product project basics once without mutation.
+                                Product work may begin only when there is a Plane project, source repository under
+                                agent-workspace, documentation repository with usable index/current-work navigation,
+                                and a usable team chat/project-basics link. A static active-roster snapshot is not a basic.
+                                Do not repeatedly reread the workspace and do not begin product work when any basic is missing.
+                                """))
+                .to("tack:act?id=po-workspace-basics-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
+                .setHeader(TackHeaders.PROMPT, constant("""
+                                Are project basics present and linked enough to do product work: Plane project,
+                                source repository under agent-workspace, documentation repository, and usable navigation/chat?
+                                """))
+                .to("tack:decide?id=product-owner-has-project-basics")
+                .to("tack:thought-exit?name=po-basics");
+
+        from("direct:po-missing-basics-closeout")
+                .routeId("po-missing-basics-closeout")
+                .setHeader(TackHeaders.PROMPT, constant("""
+                                Project basics are not usable for product work. Read recent Mattermost only if needed.
+                                Reply once to an existing PM/setup thread when a concise product/setup answer helps;
+                                otherwise stay quiet. Do not repost setup requests, do not staff Owen, and do not begin
+                                product work without Plane, source repository, documentation repository, and usable navigation.
+                                Noah is responsible for staffing Owen when PM coverage is missing.
+                                """))
+                .to("tack:act?id=po-missing-basics-closeout&toolProfile=" + TeamChatToolProfile.ID);
 
         from("direct:po-team-chat-sync")
                 .routeId("po-team-chat-sync")
@@ -166,9 +188,13 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         """))
                     .to("tack:thought-enter?name=po-backlog&maxTokens=250")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Review exactly one PO-owned product/backlog work item needing scope or acceptance.
-                                    Do not select developer implementation tasks. Capture priority, status, owner,
-                                    and canonical documentation page.
+                                    Review existing PO/product Plane items before creating anything.
+                                    Ignore developer implementation tasks. Select a small user-facing vertical slice that still
+                                    needs PO work. Do not reselect an item already containing PM HANDOFF: READY unless PM added
+                                    PO INPUT REQUIRED: or the acceptance information became stale.
+                                    If no appropriate unfinished product item exists, create exactly one small vertical slice,
+                                    link it to the mission epic/container when supported, and avoid duplicate mission outcomes.
+                                    A lone epic is not sufficient or PM-ready backlog.
                                     """))
                     .to("tack:act?id=po-backlog-review&toolProfile=" + ProjectManagementToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
@@ -177,8 +203,8 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                                     """))
                     .to("tack:act?id=po-product-context-read&toolProfile=" + SourceControlToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Is one product item selected with enough Plane and documentation context to refine it,
-                                    or is the missing context clearly identified?
+                                    Is exactly one unfinished product slice selected or created for PO work, with Plane and
+                                    documentation context captured, or is the missing context clearly identified?
                                     """))
                     .to("tack:decide?id=po-backlog-selection-done")
                     .to("tack:thought-exit?name=po-backlog")
@@ -195,10 +221,11 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         """))
                     .to("tack:thought-enter?name=po-acceptance&maxTokens=250")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Update exactly one canonical documentation page for the selected item.
-                                    Include Plane link, owner, goal, users, in/out of scope, compact Gherkin acceptance criteria,
-                                    and either one product decision or one open question. Keep it small and linked from current-work
-                                    and the product index. Do not fan out to other pages unless needed for navigation.
+                                    Update exactly one canonical acceptance page for the selected product slice.
+                                    Include Plane link, owner, goal, users, in/out of scope, compact acceptance criteria,
+                                    and either one product decision or one exact open question. Keep it small, linked from
+                                    current-work and the product index, and focused on user-facing acceptance rather than
+                                    developer task decomposition.
                                     """))
                     .to("tack:act?id=po-canonical-acceptance-update&toolProfile=" + SourceControlToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
@@ -219,15 +246,18 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         """))
                     .to("tack:thought-enter?name=po-priority&maxTokens=250")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Update priority or product readiness on exactly one Plane work item after verifying current status.
-                                    If acceptance is ready, move or annotate it for PM breakdown only if that workflow state exists.
-                                    Add one compact PM handoff note with canonical page, priority, acceptance summary, remaining
-                                    questions, and requested PM action. Do not create, assign, or start developer tasks.
+                                    Update priority and readiness on exactly one selected product Plane item after verifying current status.
+                                    Do not depend on custom workflow states or labels. Use an appropriate existing product status and priority.
+                                    When acceptance is usable, create or update one comment beginning exactly PM HANDOFF: READY.
+                                    The comment must include canonical acceptance page, priority, short acceptance summary,
+                                    unresolved product questions or none, and requested PM action.
+                                    When a product decision prevents readiness, record one exact open question and do not claim ready.
+                                    Do not repeatedly ask the same question. Do not create, assign, or start developer tasks.
                                     """))
                     .to("tack:act?id=po-plane-handoff-update&toolProfile=" + ProjectManagementToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Is the product item ready for PM handoff, with priority/readiness in Plane
-                                    and the canonical documentation page linked?
+                                    Is the selected product slice ready for PM handoff with priority, canonical page,
+                                    and an exact PM HANDOFF: READY comment, or has one exact product blocker/question been recorded?
                                     """))
                     .to("tack:decide?id=po-priority-status-done")
                     .to("tack:thought-exit?name=po-priority")
@@ -237,8 +267,9 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .routeId("po-cycle-closeout")
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Read the last 20 messages in the project Mattermost channel from project basics.
-                                Post only if the canonical item page changed materially or a teammate is waiting.
-                                Include the canonical documentation page and who it unblocks; otherwise stay quiet.
+                                Post only if the canonical item page changed materially, PM asked a direct PO question,
+                                or a teammate is waiting on product input. Include the canonical documentation page and
+                                who it unblocks; otherwise stay quiet. Mattermost is secondary to Plane handoff comments.
                                 """))
                 .to("tack:act?id=po-team-chat-closeout&toolProfile=" + TeamChatToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
