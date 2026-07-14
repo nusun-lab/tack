@@ -96,6 +96,14 @@ public class LlmRoute extends RouteBuilder {
                 .bean(jobFactory, "restoreFrameworkMetadata")
                 .bean(routeSupport, "prepareAgentCall")
                 .toD("${exchangeProperty.agentInvocationUri}")
+                .log(
+                        LoggingLevel.INFO,
+                        "LLM agent pass completed: "
+                                + "finishReason=${header.CamelLangChain4jAgentFinishReason} "
+                                + "inputTokens=${header.CamelLangChain4jAgentInputTokenCount} "
+                                + "outputTokens=${header.CamelLangChain4jAgentOutputTokenCount} "
+                                + "totalTokens=${header.CamelLangChain4jAgentTotalTokenCount}"
+                )
                 .validate(body().isNotNull())
                 .setBody(method(routeSupport, "succeededResult"));
 
