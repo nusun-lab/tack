@@ -1,47 +1,189 @@
-# LLM Share Camel Kafka
+# Camel Tack
 
-A Quarkus and Apache Camel framework for running mission-bound LLM agents through structured workflows, Kafka-backed model execution, and optional MCP tools.
+![Camel Tack](src/main/resources/META-INF/resources/camel-tack-logo.png)
 
-The framework treats an agent run as application state, not as a single long-lived LangChain4j object. Camel routes define the workflow, Kafka serializes model work, and the catalog describes the personas, routines, tool profiles, and inference lanes available to the system.
+Camel Tack is a Camel-native runtime for mission-bound LLM agents.
 
-## Highlights
+Application authors express agent behavior as ordinary Camel routes. Tack adds a small producer component for agent primitives, a catalog for personas and routines, Kafka-backed inference lanes, optional MCP tools, and observable mission and AgentRun state.
 
-* **Mission-bound agent runs** with isolated parent/child state.
-* **Catalog-driven configuration** for personas, routines, tool profiles, and inference lanes.
-* **Kafka-backed LLM queueing** so model calls can be serialized and routed by lane.
-* **Reusable Camel primitives** through the `tack:` component for action, decision, schema-shaped creation, and thought lifecycle work.
-* **Complete action execution** through `tack:act`: tool use, structured synthesis, thought rewrite, and projection recording finish in one route step.
-* **Optional MCP integration** with persona-specific credentials, tool filtering, default arguments, and bounded tool results.
-* **Workspace projection API** for inspecting active missions and agent runs during local development.
+The public authoring contract is the `tack:` component. The runtime underneath it is intentionally built from Camel routes and Camel components. Kafka routes provide durable scheduling, bounded model concurrency, partition-key ordering, request/reply correlation, and worker isolation. Those routes are framework-owned runtime infrastructure, not routes that application authors are expected to call or customize casually.
+
+> **Project status:** Tack is an evolving local/runtime prototype. Agent state and LLM reply waiters are currently in memory, and synchronous request/reply assumes one active orchestrator process. See [Current boundaries](#current-boundaries).
+
+## Why Tack
+
+Agent systems often hide orchestration inside imperative services, executor pools, and long-lived agent objects. Tack keeps orchestration in Camel, where control flow, asynchronous boundaries, error handling, transport, and observability remain explicit.
+
+Tack is designed around four ideas:
+
+- **Routes are the workflow language.** A routine is a Camel route, not an opaque agent loop.
+- **The component is the authoring boundary.** Routine authors invoke semantic operations such as `tack:act`, `tack:decide`, and `tack:create`.
+- **Kafka is the model concurrency boundary.** Inference lanes queue work and enforce the configured number of active model calls.
+- **Agent state is runtime state.** Missions, AgentRuns, thoughts, decisions, created values, and projection history are stored independently from any one LangChain4j invocation.
 
 ## Architecture
 
-A mission moves through the framework in a small number of explicit steps:
+Tack has two deliberately different surfaces:
 
-1. `POST /missions` accepts a goal plus one or more explicit `AgentRunRequest` entries.
-2. The mission route creates and records each requested `AgentRun` as accepted, publishes one durable `AgentRunScheduled` start signal per run, and returns accepted handles quickly.
-3. The `AgentRunScheduled` Kafka consumer transitions accepted runs to running, launches routine execution asynchronously, and then finishes the Kafka route so the event can be committed.
-4. Async routine execution rebuilds the run context, runs the configured routine route, and records complete or failed state in the workspace projection.
-5. Routines call framework primitives through `tack:` endpoints, and use `direct:start-agent-run` when they schedule child runs.
-6. `direct:start-agent-run` records child agent runs, publishes the same scheduled event, and returns accepted handles immediately.
-7. LLM work is queued through Kafka by inference lane.
-8. Replies return through Kafka and update the agent run projection.
+### Application surface
 
-During execution, a mission is a goal/context container. An `AgentRun` is one persona/routine execution scheduled inside that mission. Parent/child agent runs are lineage only; no agent run synchronously waits for another agent run to complete.
+Application code owns:
 
-## Requirements
+- personas;
+- routines and subroutines;
+- prompts and JSON schemas;
+- inference-lane declarations;
+- MCP server declarations and tool profiles;
+- domain-specific route logic.
 
-* Java 21
-* Maven
-* Kafka
-* An OpenAI-compatible chat/completions endpoint, such as vLLM
-* Optional MCP server definitions declared by tool profiles. The bundled example profiles include Mattermost, Gitea, and Plane.
+A routine looks like normal Camel DSL:
 
-The project currently uses Quarkus 3.36.0 and a snapshot Camel LangChain4j agent dependency because endpoint-level agent configuration and JSON schema support are still ahead of the released Camel Quarkus line used by the rest of the application.
+```java
+from("direct:my-domain-coordinator")
+        .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                Mission plan, known evidence, blockers, and next move.
+                """))
+        .to("tack:thought-enter?name=coordinator&maxTokens=1200")
+        .setHeader(TackHeaders.PROMPT, constant("""
+                Inspect the available project evidence and identify the next useful action.
+                """))
+        .to("tack:act?id=review-workspace&toolProfile=workspace-readonly")
+        .setHeader(TackHeaders.PROMPT, constant("""
+                Is this routine complete for the current pass?
+                """))
+        .to("tack:decide?id=done")
+        .to("tack:thought-exit?name=coordinator");
+```
+
+### Runtime surface
+
+Tack owns the execution machinery needed to fulfill those operations:
+
+- mission admission routes;
+- AgentRun scheduling and execution routes;
+- Kafka request and reply routes for every inference lane;
+- model-worker routes;
+- LLM request/reply correlation;
+- primitive execution and thought management;
+- MCP client construction and tool-result limiting;
+- workspace projection updates.
+
+These routes exist in the application `CamelContext`, so they remain inspectable with normal Camel tooling. They should be understood as **synthetic runtime routes owned by Tack**, not as application workflow routes authored by the adopter.
+
+### End-to-end flow
+
+```text
+POST /missions
+  -> admit Mission and AgentRuns
+  -> publish AgentRunScheduled to Kafka
+
+AgentRunScheduled consumer
+  -> transition accepted AgentRun to running
+  -> launch its routine asynchronously
+
+application routine route
+  -> tack:thought-enter
+  -> tack:act / tack:decide / tack:create
+  -> tack:thought-exit
+
+Tack primitive
+  -> prepare an LLM job
+  -> direct:llm
+  -> publish to the selected lane request topic
+
+lane worker route
+  -> invoke the configured model and optional MCP tools
+  -> publish LlmJobResult to the lane reply topic
+
+reply consumer
+  -> correlate by jobId
+  -> resume the waiting primitive
+  -> update AgentRun state and projection history
+```
+
+### What the component owns—and what it does not
+
+The `tack:` component is producer-only. It validates endpoint parameters and required Tack headers, then delegates the requested primitive to the shared Tack runtime.
+
+Creating a `tack:` endpoint does **not** create a private Kafka consumer or a new worker pool. All Tack endpoints in one application share the runtime routes and inference lanes registered in that `CamelContext`.
+
+The current implementation delegates primitive choreography to `PrimitiveExecutor`, which submits model work through the internal `direct:llm` route. That is an implementation boundary, not a promise that primitive orchestration must remain imperative. The public `tack:` endpoint contract can remain stable while internal choreography evolves between processors, beans, route templates, or explicit internal routes.
+
+## Core model
+
+### Mission
+
+A `Mission` is the top-level goal and context container. It owns the mission ID, goal, status, metadata, and the AgentRuns admitted for that mission.
+
+### AgentRun
+
+An `AgentRun` is one execution of one persona on one routine or declared subroutine.
+
+It carries:
+
+- persona, routine, and optional subroutine identity;
+- structured input and working state;
+- primitive state and latest results;
+- thought-stack state;
+- lifecycle status and timestamps;
+- projection and timeline data;
+- parent lineage when another AgentRun scheduled it.
+
+Parent/child lineage does not imply synchronous waiting. Scheduling a child AgentRun returns an accepted handle; the parent continues unless its own routine chooses to observe later state.
+
+### Persona
+
+A `Persona` defines the actor presented to the model: name, description, behavioral traits, display metadata, and external identity mappings. A persona does not directly own tools.
+
+### Routine
+
+A `RoutineDefinition` maps a catalog ID to a Camel route URI. It may declare one main route and named public subroutines. A routine also selects a default inference lane.
+
+### ToolProfile
+
+A `ToolProfile` defines which MCP servers and tools are available during an act. Profiles can:
+
+- attach concrete MCP server definitions;
+- allow or deny tools;
+- add default tool arguments;
+- provide prompt guidance;
+- cap tool-result tokens.
+
+When `tack:act` omits a profile, Tack uses the built-in no-tools profile.
+
+### InferenceLane
+
+An `InferenceLaneDefinition` is a Kafka-backed model work pool. It declares:
+
+- request and reply topics;
+- model endpoint, model name, and API-key resolution;
+- worker parallelism;
+- Kafka partition-key strategy.
+
+Lanes are shared runtime resources. They are not created per routine or per endpoint.
+
+### Thought stack
+
+Each AgentRun owns a stack of scoped `ThoughtFrame` values. A thought has a name, purpose, token budget, content, identity, and timestamps.
+
+- `thought-enter` pushes a child scope.
+- `act` rewrites the active leaf from newly observed evidence.
+- `thought-exit` consolidates a populated child into its parent before popping it.
+- projection history preserves prior rewrites and exits even after a child leaves the active stack.
 
 ## Quick start
 
-Start Kafka and your OpenAI-compatible model endpoint, then configure the local run:
+### Requirements
+
+- Java 21
+- Maven
+- Kafka
+- an OpenAI-compatible chat-completions endpoint, such as vLLM
+- optional MCP servers when tool-enabled profiles are used
+
+The project currently uses Quarkus `3.36.0`, LangChain4j `1.16.3`, and a narrow Camel LangChain4j Agent snapshot dependency for endpoint-level agent configuration and JSON-schema support.
+
+### Configure a local runtime
 
 ```bash
 export KAFKA_BOOTSTRAP_SERVERS=localhost:9092
@@ -55,7 +197,7 @@ export LLM_LOCAL_WORKER_ROUTE_VERIFICATION_ENABLED=true
 export LLM_KAFKA_PROVISION_TOPICS=true
 ```
 
-Run the application:
+Start Quarkus:
 
 ```bash
 ./mvnw quarkus:dev
@@ -67,14 +209,17 @@ Submit a mission:
 curl -s -X POST http://localhost:8080/missions \
   -H 'content-type: application/json' \
   --data '{
-    "goal": "Build a small parking lot manager app. The team should clarify scope, coordinate work, and start one implementation path.",
+    "goal": "Build a small parking lot manager app. Clarify scope, coordinate the work, and begin one implementation path.",
     "agentRuns": [
-      { "personaId": "software-team/noah", "routineId": "software-team/director" }
+      {
+        "personaId": "software-team/noah",
+        "routineId": "software-team/director"
+      }
     ]
   }' | jq
 ```
 
-Example response:
+The API returns `202 Accepted` after admission and scheduled-event publication:
 
 ```json
 {
@@ -93,114 +238,215 @@ Example response:
 }
 ```
 
-Inspect the workspace:
+Inspect runtime state:
 
 ```bash
 curl -s http://localhost:8080/workspace/view | jq
 ```
 
-Reset local workspace state between experiments:
+Reset in-memory workspace state between experiments:
 
 ```bash
 curl -s -X POST http://localhost:8080/workspace/reset | jq
 ```
 
-## Bundled example
+## Writing a Tack application
 
-The bundled `us.nusun.llmshare.example` package demonstrates a software-team catalog. It is an example namespace, not a framework requirement.
+Catalog entries are discovered from CDI beans.
 
-| Persona | Persona ID            | Routine ID                            | Purpose                                   |
-| ------- | --------------------- | ------------------------------------- | ----------------------------------------- |
-| Noah    | `software-team/noah`  | `software-team/director`              | Starts and coordinates the mission.       |
-| Owen    | `software-team/owen`  | `software-team/project-manager`       | Coordinates work and project setup.       |
-| Ethan   | `software-team/ethan` | `software-team/product-owner`         | Clarifies scope and acceptance criteria.  |
-| Miles   | `software-team/miles` | `software-team/application-developer` | Implements and reports delivery progress. |
+| Provider | Registers |
+| --- | --- |
+| `PersonaProvider` | Personas |
+| `RoutineProvider` | Routine definitions and route URIs |
+| `ToolProfileProvider` | MCP capability profiles |
+| `InferenceLaneProvider` | Kafka/model inference lanes |
 
-Mission requests explicitly choose which `AgentRunRequest` objects to schedule. To start the bundled example, submit Noah on the Director routine in the `agentRuns` array.
+At minimum, an adopter supplies personas, routines, inference lanes, and the `AgentRunRequest` values submitted to a mission.
 
-### Bundled Git organization
+### Define a persona
 
-The bundled software-team example expects all shared Git work to live under the `agent-workspace` organization.
+```java
+@ApplicationScoped
+public class CoordinatorPersona implements PersonaProvider {
+    public static final String ID = "my-domain/coordinator";
 
-* The PM bootstrap routine records `agent-workspace` as a project basic in the canonical documentation repository.
-* The shared documentation repository and target source repository should be created or reused under `agent-workspace`.
-* Agents should not create project repositories in their personal Git namespaces.
-* If an agent cannot access `agent-workspace`, it should record a setup blocker instead of creating a duplicate repository elsewhere.
+    @Override
+    public List<Persona> personas() {
+        return List.of(Persona.builder(ID)
+                .name("Coordinator")
+                .description("Coordinates mission work and starts useful AgentRuns.")
+                .trait("Keeps plans concrete and reports blockers clearly.")
+                .label("COORD")
+                .color("38;2;100;180;255")
+                .build());
+    }
+}
+```
 
-### Software-team tool profiles
+External tool identities can be attached with `identity(...)`. Use `agentRunStartAssignable(false)` when orchestration prompts should not propose that persona for new runs.
 
-The bundled software-team example publishes exactly five tool profiles. Public profile ID constants live on the individual `*ToolProfile` classes, and routines reference those constants rather than duplicating literals.
+### Define a routine
 
-| Profile | MCP servers | Policy | Intended use |
-| ------- | ----------- | ------ | ------------ |
-| `workspace-readonly` | Plane, Gitea, Mattermost | Explicit allow lists on every server | Small read-only orientation across planned work, implementation evidence, and conversation context. |
-| `workspace-coordination` | Plane, Gitea, Mattermost | Explicit allow lists on every server | Bounded coordination: Plane updates, Gitea repository discovery/creation, and concise Mattermost handoffs. |
-| `project-management` | Plane | Broad Plane access with deny list | Deep Plane planning, work item breakdown, assignments, dependencies, states, blockers, priorities, and delivery planning. |
-| `source-control` | Gitea | Broad Gitea access with deny list | Repository, file, branch, commit, pull request, build, tag, and release work. |
-| `team-chat` | Mattermost | Broad Mattermost access with deny list | Focused conversation, questions, handoffs, notifications, channel setup, and membership work. |
+```java
+@ApplicationScoped
+public class CoordinatorRoutine extends RouteBuilder implements RoutineProvider {
+    public static final String ID = "my-domain/coordinator-routine";
 
-Ownership boundaries are strict:
+    @Override
+    public List<RoutineDefinition> routines() {
+        return List.of(RoutineDefinition.builder(ID)
+                .name("Coordinator Routine")
+                .main(
+                        "Gather context, choose the next work, coordinate it, and close out.",
+                        "direct:my-domain-coordinator")
+                .subroutine(
+                        "bootstrap",
+                        "Perform only initial collaboration setup.",
+                        "direct:my-domain-coordinator-bootstrap")
+                .defaultLane("low-pass")
+                .build());
+    }
 
-* Plane owns projects, planned work, assignments, status, dependencies, priorities, blockers, and delivery planning.
-* Gitea owns repositories, files, branches, commits, pull requests, builds, tags, and releases.
-* Mattermost owns conversation, questions, handoffs, and concise notifications.
+    @Override
+    public void configure() {
+        from("direct:my-domain-coordinator")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Mission plan, evidence, blockers, and next coordination move.
+                        """))
+                .to("tack:thought-enter?name=coordinator&maxTokens=1000")
+                .setHeader(TackHeaders.PROMPT, constant("""
+                        Inspect current workspace state and identify the next useful move.
+                        """))
+                .to("tack:act?id=workspace-review&toolProfile=workspace-readonly")
+                .to("tack:thought-exit?name=coordinator");
+    }
+}
+```
 
-Gitea issue tracking, labels, milestones, and time tracking are intentionally unavailable. They would create a second project-management system and split ownership from Plane. Mattermost messages should link to authoritative Plane work items, Gitea artifacts, or canonical documentation pages rather than recreating durable state.
+The route URI is an application-owned entry point. Tack resolves it when an AgentRun starts and restores mission, persona, routine, subroutine, and AgentRun state onto the exchange.
 
-The cross-system profiles use explicit allow lists because a single act can otherwise receive too much authority across three systems. The three domain profiles use broad access with deny lists because their jobs are intentionally domain-specific and need room to use new non-conflicting tools added by those MCP servers.
+### Define an inference lane
 
-Routine authors should choose the narrowest profile that fully supports the act. Use `workspace-readonly` for cross-system orientation, `workspace-coordination` for bounded Plane/Gitea/Mattermost coordination, a full domain profile for deep domain work, and `team-chat` for chat administration not included in coordination. Composite profiles should reduce redundant passes when one coherent operation needs multiple systems; they should not become universal all-tools profiles.
+```java
+@ApplicationScoped
+public class LowLane implements InferenceLaneProvider {
+    @Override
+    public InferenceLaneDefinition inferenceLane() {
+        return InferenceLaneDefinition.builder("low-pass")
+                .requestTopic("llm.requests.low")
+                .responseTopic("llm.replies.low")
+                .parallelism(1)
+                .partitionKeyStrategy(PartitionKeyStrategy.AGENT_RUN)
+                .endpoint("http://localhost:8000/v1")
+                .model("qwen-low")
+                .apiKeyConfigKey("llm.inference-lane.low.api-key")
+                .apiKeyEnvVariable("LLM_LOW_API_KEY")
+                .build();
+    }
+}
+```
 
-## Core concepts
+Lane-specific endpoint, model, and API-key values override the global model defaults.
 
-### Mission
+### Define an MCP server and tool profile
 
-A mission is the top-level goal/context container. It owns the mission ID, goal text, status, and metadata. It schedules one or more agent runs.
+```java
+@ApplicationScoped
+public class RepositoryMcpServer {
+    public static final String ID = "repository";
 
-### AgentRun
+    private final McpServerDefinition definition;
 
-An `AgentRun` is one execution of one persona on one routine. It carries working state, current primitive state, thought-stack state, latest results, and projection data. Agent runs may schedule more agent runs. Parent/child means lineage, not blocking. Starting an agent run returns an accepted handle immediately; output is eventual projection/result state. Admission records accepted state, `AgentRunScheduled` consumption records running state, and the async routine records complete or failed state.
+    @Inject
+    public RepositoryMcpServer(
+            @ConfigProperty(name = "agent.tool.mcp.repository.url", defaultValue = "") String url) {
+        definition = McpServerDefinition.builder(ID)
+                .url(url)
+                .transportType("streamableHttp")
+                .authHeaderName("Authorization")
+                .authHeaderValueFormat("token %s")
+                .build();
+    }
 
-### Persona
+    public McpServerDefinition definition() {
+        return definition;
+    }
+}
+```
 
-A persona defines the actor: name, description, behavioral traits, display metadata, and external identity mappings. It does not directly own tools.
+```java
+@ApplicationScoped
+public class SourceControlToolProfile implements ToolProfileProvider {
+    public static final String ID = "source-control";
 
-### Routine
+    private final RepositoryMcpServer repository;
 
-A routine is a Camel route plus catalog metadata. Routines should compose framework primitives and domain-specific route logic. Framework core should stay generic.
+    @Inject
+    public SourceControlToolProfile(RepositoryMcpServer repository) {
+        this.repository = repository;
+    }
 
-### ToolProfile
+    @Override
+    public List<ToolProfile> toolProfiles() {
+        return List.of(ToolProfile.builder(ID)
+                .mcpServer(repository.definition())
+                .denyTools(RepositoryMcpServer.ID, "delete_repository", "delete_branch")
+                .maxResultTokens(6000)
+                .build());
+    }
+}
+```
 
-A tool profile defines which MCP servers and tools are visible during `tack:act`. Profiles can declare MCP server connection settings, allow tools, deny tools, add default arguments, and cap returned tool-result size. If an act omits a profile, the framework uses an internal no-tools profile; adopters do not need to publish a `none` profile.
+A server without an allow list exposes its tools except those explicitly denied. Cross-system profiles should generally use explicit allow lists; broad domain-specific profiles can use deny lists when one system clearly owns the domain.
 
-### InferenceLane
+## The `tack:` component
 
-An inference lane defines where LLM jobs are queued and which model endpoint/model serves them. The bundled example provides `low-pass` and `high-pass` lanes.
+All primitive endpoints are synchronous from the calling route's perspective: the endpoint returns only after its semantic operation has completed or failed.
 
-## Framework primitives
+Long prompt-like text belongs in Tack headers. Short scalar configuration belongs in the endpoint URI.
 
-Framework primitive operations are Camel producer endpoints on the `tack:` component. Short scalar configuration belongs in endpoint parameters; long prompt-like text belongs in documented headers. Each endpoint returns only after the semantic operation is complete.
+| Header | Purpose |
+| --- | --- |
+| `TackHeaders.PROMPT` (`TackPrompt`) | Prompt consumed by `act`, `decide`, and `create` |
+| `TackHeaders.THOUGHT_PURPOSE` (`TackThoughtPurpose`) | Purpose consumed by `thought-enter` |
+
+Required Tack headers are removed after the component consumes them so they do not leak into later route steps.
 
 ### `tack:act`
 
-Use `tack:act` when the model may need tools and the routine needs the current thought rewritten from the result.
+Use `act` when the model may need tools and the active thought should be rewritten from the resulting evidence.
 
 ```java
 .setHeader(TackHeaders.PROMPT, constant("""
-        Confirm the target repository exists and report blockers.
+        Confirm that the target repository exists and report any blocker.
         """))
-.to("tack:act?id=source-readiness&toolProfile=" + SourceToolProfile.SOURCE_CONTROL)
+.to("tack:act?id=source-readiness&toolProfile=source-control")
 ```
 
-`tack:act` performs tool/action work, synthesizes one replacement for the current leaf thought, rewrites that known leaf, records projection history, and exposes a `StepResult` as the message body and `latestStepResult` exchange property.
+Parameters:
+
+| Parameter | Required | Purpose |
+| --- | --- | --- |
+| `id` | yes | Stable operation identifier |
+| `toolProfile` | no | MCP tool profile; defaults to no tools |
+| `lane` | no | Per-call inference-lane override |
+
+`act` performs two model passes:
+
+1. a tool/action pass with the selected profile;
+2. a schema-shaped synthesis pass that replaces the active leaf thought.
+
+It records projection events for the act, tool pass, synthesis pass, and thought rewrite. The message body and `latestStepResult` exchange property contain the resulting `StepResult`.
+
+An active thought is required. Tack rewrites the known leaf by identity rather than assuming that whichever frame is current later is the same frame that began the act.
 
 ### `tack:decide`
 
-Use `tack:decide` for narrow control-flow questions.
+Use `decide` for a narrow boolean control-flow decision.
 
 ```java
 .setHeader(TackHeaders.PROMPT, constant("""
-        Is this routine complete or blocked for this pass?
+        Is this routine complete or blocked for the current pass?
         """))
 .to("tack:decide?id=done")
 .choice()
@@ -209,18 +455,27 @@ Use `tack:decide` for narrow control-flow questions.
 .end()
 ```
 
-The boolean result is exposed at:
+Parameters:
 
-* `decisions.<decisionId>`
-* `decision.<decisionId>.result`
+| Parameter | Required | Purpose |
+| --- | --- | --- |
+| `id` | yes | Decision identifier |
+| `lane` | no | Per-call inference-lane override |
+
+The structured `DecisionResult` becomes the message body and is stored under:
+
+```text
+decisions.<decisionId>
+decision.<decisionId>.result
+```
 
 ### `tack:create`
 
-Use `tack:create` for schema-shaped JSON generation.
+Use `create` for schema-shaped JSON generation.
 
 ```java
 .setHeader(TackHeaders.PROMPT, simple("""
-        Given this mission, propose software-team AgentRunRequest objects to schedule.
+        Propose AgentRunRequest objects for this mission.
 
         Mission:
         ${exchangeProperty.mission.goal}
@@ -230,39 +485,71 @@ Use `tack:create` for schema-shaped JSON generation.
 
         Routines:
         ${bean:routineCatalog.startableJson}
-
-        Return only schema-compliant JSON.
         """))
-.to("tack:create?id=planned-agent-runs&schemaId=agent-run-request-list&schema=classpath:schemas/example/software-team/agent-run-requests-schema.json")
+.to("tack:create"
+        + "?id=planned-agent-runs"
+        + "&schemaId=agent-run-request-list"
+        + "&schema=classpath:schemas/example/software-team/agent-run-requests-schema.json")
 ```
 
-`tack:create` is generic. It does not automatically inject catalog data. If a prompt needs catalog context, compose the prompt explicitly with Camel Simple expressions.
+Parameters:
 
-### `tack:thought-enter` and `tack:thought-exit`
+| Parameter | Required | Purpose |
+| --- | --- | --- |
+| `id` | yes | Creation identifier |
+| `schemaId` | no | Logical result-schema identifier |
+| `schema` | one schema form | Inline JSON or a schema URI |
+| `schemaJson` | one schema form | Explicit inline JSON schema |
+| `schemaUri` | one schema form | Explicit schema URI |
+| `lane` | no | Per-call inference-lane override |
 
-Use thought endpoints to create scoped memory and then consolidate completed child memory back into its parent.
+Tack does not inject domain catalog data automatically. Compose all required context into the prompt with normal Camel expressions and beans.
+
+The generated content is validated against the schema. The message body is the resulting JSON text, and `latestCreateResult` plus `creates.<createId>` contain the `CreateResult`.
+
+### `tack:thought-enter`
 
 ```java
 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
         Mission plan, current blockers, and next coordination move.
         """))
-.to("tack:thought-enter?name=coordinator&maxTokens=800")
+.to("tack:thought-enter?name=coordinator&maxTokens=1000")
+```
 
-.setHeader(TackHeaders.PROMPT, constant("""
-        Inspect current workspace state and decide the next coordination step.
-        """))
-.to("tack:act?id=coordination-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
+Parameters:
 
+| Parameter | Required | Purpose |
+| --- | --- | --- |
+| `name` | yes | Thought-frame name |
+| `maxTokens` | yes | Positive approximate token budget |
+
+The new `ThoughtFrame` becomes the message body.
+
+### `tack:thought-exit`
+
+```java
 .to("tack:thought-exit?name=coordinator")
 ```
 
-`thought-exit` validates the active leaf. A populated child is consolidated into its parent with a dedicated synchronous model call before the child is popped. A failed consolidation leaves parent and child state intact for route-level retry or error handling. Root exit and empty child exit are explicit non-consolidating cases.
+Parameters:
 
-Thought history is observable separately from the active stack. Projection history records thought entry, rewrites, consolidation start/completion, and exit, so a child rewrite remains inspectable after the child has been popped.
+| Parameter | Required | Purpose |
+| --- | --- | --- |
+| `name` | yes | Must match the active leaf name |
+| `lane` | no | Lane used when child-to-parent consolidation requires a model call |
 
-### `direct:start-agent-run`
+Behavior depends on the active frame:
 
-Use `direct:start-agent-run` to schedule another agent run from the same `AgentRunRequest` shape used by mission requests. A request without `subroutineId` targets the full routine.
+- exiting the root pops it without consolidation;
+- exiting an empty child pops it without consolidation;
+- exiting a populated child synthesizes replacement parent content, rewrites the parent, and then pops the child;
+- failed consolidation leaves both frames intact so route-level error handling can retry or fail safely.
+
+## Scheduling AgentRuns
+
+Mission admission and child scheduling use the same `AgentRunRequest` shape.
+
+A full-routine request:
 
 ```json
 {
@@ -274,7 +561,7 @@ Use `direct:start-agent-run` to schedule another agent run from the same `AgentR
 }
 ```
 
-A request with `subroutineId` targets one declared public subroutine on that routine.
+A declared-subroutine request:
 
 ```json
 {
@@ -287,9 +574,29 @@ A request with `subroutineId` targets one declared public subroutine on that rou
 }
 ```
 
-The framework supplies mission id, agent run id, parent lineage, status, timestamps, and lifecycle projection data. The route validates that the selected subroutine belongs to the selected routine, records the run, publishes `AgentRunScheduled`, returns an accepted `AgentRunHandle` immediately, and does not wait for the scheduled routine to complete. The `input` object is preserved as structured working state for the scheduled run.
+Routines currently schedule child runs through the framework route entry points:
 
-The scheduled event is intentionally small:
+```java
+.setBody(exchangeProperty("plannedAgentRun"))
+.to("direct:start-agent-run")
+```
+
+or for a list:
+
+```java
+.setBody(exchangeProperty("plannedAgentRuns"))
+.to("direct:start-agent-runs")
+```
+
+These are framework scheduling contracts, not application implementation routes. They:
+
+1. validate the request and optional subroutine;
+2. enforce any caller-supplied active-run capacity constraint;
+3. record the AgentRun as accepted;
+4. publish a durable `AgentRunScheduled` event;
+5. return accepted handle data without waiting for routine completion.
+
+The scheduled event remains intentionally small:
 
 ```json
 {
@@ -298,285 +605,177 @@ The scheduled event is intentionally small:
 }
 ```
 
-The default topic is `agent-runs.scheduled`. The event is a durable start signal, not the routine execution payload.
+The Kafka consumer restores authoritative state from the runtime store, transitions the run to `running` only when eligible, launches routine execution with `wireTap`, and returns so Kafka can commit. Duplicate or terminal scheduled events are ignored.
 
-## Defining catalog entries
+Tack currently imposes no global AgentRun execution limit. Many routines may be active or blocked waiting for model replies. Actual model-call concurrency is governed separately by inference lanes.
 
-Catalog entries are discovered from CDI beans. The main provider interfaces are:
+## Kafka inference lanes
 
-| Provider                   | Registers                 |
-| -------------------------- | ------------------------- |
-| `PersonaProvider`          | Personas                  |
-| `RoutineProvider`          | Routine definitions       |
-| `ToolProfileProvider`      | MCP tool profiles         |
-| `InferenceLaneProvider`    | LLM queue/model lanes     |
+### Concurrency
 
-## Create your own catalog
-
-At minimum, a framework adopter provides:
-
-* `PersonaProvider` for the actors available to missions.
-* `RoutineProvider` for Camel routes those actors can run.
-* `InferenceLaneProvider` for queue topics, endpoint overrides, and optional lane model names.
-* `AgentRunRequest` entries in each `POST /missions` request for the AgentRuns the framework should schedule.
-
-Optional pieces:
-
-* `ToolProfileProvider` when routines need MCP tools. Tool profiles can include `McpServerDefinition` entries for each server they expose, including concrete URL, transport, auth header format, extra headers, default tool arguments, deny lists, and result limits.
-
-### Persona example
-
-```java
-@ApplicationScoped
-public class CoordinatorPersona implements PersonaProvider {
-    @ConfigProperty(name = "persona.coordinator.identity.gitea.token", defaultValue = "")
-    String giteaToken = "";
-
-    @Override
-    public List<Persona> personas() {
-        return List.of(Persona.builder("my-domain/coordinator")
-                .name("Coordinator")
-                .description("Coordinates mission work and starts useful child AgentRuns.")
-                .trait("Keeps plans concrete and reports blockers clearly.")
-                .label("COORD")
-                .color("38;2;100;180;255")
-                .identity("gitea", giteaToken, "coordinator-agent")
-                .build());
-    }
-}
-```
-
-Use `agentRunStartAssignable(false)` when a persona should not be proposed by orchestration prompts that start child runs.
-
-### Routine example
-
-```java
-@ApplicationScoped
-public class CoordinatorRoutine extends RouteBuilder implements RoutineProvider {
-    public static final String ID = "my-domain/coordinator-routine";
-
-    @Override
-    public List<RoutineDefinition> routines() {
-        return List.of(RoutineDefinition.builder(ID)
-                .name("Coordinator Routine")
-                .main("Full coordinator routine: gather context, decide next work, communicate, and close out.",
-                        "direct:my-domain-coordinator")
-                .subroutine("phase-a", "Perform only phase A after gathering required context.", "direct:my-domain-coordinator-phase-a")
-                .defaultLane("low-pass")
-                .build());
-    }
-
-    @Override
-    public void configure() {
-        from("direct:my-domain-coordinator")
-                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Mission plan and current blockers.
-                        """))
-                .to("tack:thought-enter?name=coordinator&maxTokens=800")
-                .setHeader(TackHeaders.PROMPT, constant("""
-                        Does this mission need another worker AgentRun?
-                        """))
-                .to("tack:decide?id=needs-worker")
-                .to("tack:thought-exit?name=coordinator");
-    }
-}
-```
-
-### Tool profile example
-
-```java
-@ApplicationScoped
-public class RepositoryMcpServer {
-    public static final String ID = "repository";
-
-    private final McpServerDefinition definition;
-
-    @Inject
-    public RepositoryMcpServer(
-            @ConfigProperty(name = "agent.tool.mcp.repository.url", defaultValue = "") String url) {
-        this.definition = McpServerDefinition.builder(ID)
-                .url(url)
-                .transportType("streamableHttp")
-                .authHeaderName("Authorization")
-                .authHeaderValueFormat("token %s")
-                .build();
-    }
-
-    public McpServerDefinition definition() {
-        return definition;
-    }
-}
-
-@ApplicationScoped
-public class SourceToolProfile implements ToolProfileProvider {
-    public static final String SOURCE_CONTROL = "source-control";
-
-    private final RepositoryMcpServer repository;
-
-    @Inject
-    public SourceToolProfile(RepositoryMcpServer repository) {
-        this.repository = repository;
-    }
-
-    @Override
-    public List<ToolProfile> toolProfiles() {
-        return List.of(ToolProfile.builder(SOURCE_CONTROL)
-                .mcpServer(repository.definition())
-                .denyTools(RepositoryMcpServer.ID, "delete_repository", "delete_branch")
-                .maxResultTokens(6000)
-                .build());
-    }
-}
-```
-
-If a listed server has no allow-list, its tools are allowed unless explicitly denied. Use `allowTool`, `allowTools`, `denyTool`, `denyTools`, default arguments, and result limits to make profiles narrower. Declare each reusable MCP server definition in its own `McpServer` class, inject that class into the `ToolProfile` classes that need it, and keep capability policy in each profile. The reserved profile id `none` is built into the framework and is intentionally excluded from catalog listings.
-
-### Inference lane example
-
-```java
-@ApplicationScoped
-public class LowLane implements InferenceLaneProvider {
-    @Override
-    public InferenceLaneDefinition inferenceLane() {
-        return InferenceLaneDefinition.builder("low-pass")
-                .requestTopic("llm.requests.low")
-                .responseTopic("llm.replies.low")
-                .parallelism(1)
-                .endpoint("http://localhost:8000/v1")
-                .model("qwen-low")
-                .apiKeyConfigKey("llm.inference-lane.low.api-key")
-                .apiKeyEnvVariable("LLM_LOW_API_KEY")
-                .build();
-    }
-}
-```
-
-## Run configuration
-
-### Kafka and LLM
-
-| Environment variable         | Default                    | Purpose                              |
-| ---------------------------- | -------------------------- | ------------------------------------ |
-| `KAFKA_BOOTSTRAP_SERVERS`    | `localhost:9092`           | Kafka bootstrap servers.             |
-| `LLM_LOW_REQUEST_TOPIC`      | `llm.requests.low`         | Low-lane request topic.              |
-| `LLM_LOW_REPLY_TOPIC`        | `llm.replies.low`          | Low-lane reply topic.                |
-| `LLM_HIGH_REQUEST_TOPIC`     | `llm.requests.high`        | High-lane request topic.             |
-| `LLM_HIGH_REPLY_TOPIC`       | `llm.replies.high`         | High-lane reply topic.               |
-| `AGENT_RUN_SCHEDULED_TOPIC`  | `agent-runs.scheduled`     | Durable `AgentRunScheduled` start-signal topic. |
-| `AGENT_RUN_SCHEDULED_CONSUMER_GROUP` | `agent-run-scheduler` | Consumer group for scheduled agent-run start signals. |
-| `AGENT_RUN_SCHEDULED_CONSUMER_ENABLED` | `true`              | Enables the scheduled-event consumer route. |
-| `LLM_TOPIC_DEAD_LETTER`      | `llm.dead-letter`          | Failed queued-job topic.             |
-| `LLM_KAFKA_PROVISION_TOPICS` | `true`                     | Create configured topics at startup. |
-| `LLM_KAFKA_TOPIC_PARTITIONS` | `1`                        | Scheduled-event and dead-letter topic partitions. Lane request topics use lane parallelism; reply topics are single-partition. |
-| `LLM_MODEL_DEFAULT_OPENAI_BASE_URL` | `http://localhost:8000/v1` | Global fallback OpenAI-compatible endpoint. |
-| `LLM_MODEL_DEFAULT_OPENAI_MODEL` | `qwen-36-27b`           | Global fallback model name. |
-| `LLM_MODEL_DEFAULT_OPENAI_API_KEY` | `not-needed`           | Global fallback API key.  |
-| `LLM_MODEL_DEFAULT_OPENAI_TEMPERATURE` | `0`                  | Default temperature for lane-created OpenAI chat models. |
-| `LLM_MODEL_DEFAULT_OPENAI_MAX_TOKENS` | `4096`               | Default max output tokens for lane-created OpenAI chat models. |
-| `LLM_MODEL_DEFAULT_OPENAI_TIMEOUT_MS` | `300000`             | Default OpenAI request timeout. |
-| `LLM_MODEL_DEFAULT_OPENAI_STRICT_JSON_SCHEMA` | `true`         | Default strict JSON-schema mode for OpenAI chat models. |
-| `LLM_MODEL_DEFAULT_OPENAI_THINKING_OFF_ENABLED` | `true`       | Default `enable_thinking=false` custom parameter for compatible models. |
-| `LLM_MODEL_DEFAULT_STRUCTURED_OUTPUT_PROVIDER_SCHEMA_ENABLED` | `false` | Default provider-schema mode for structured output calls. |
-| `LLM_MODEL_DEFAULT_TOOL_MEMORY_MAX_TOKENS` | `12000`          | Default ephemeral tool-pass memory window. |
-| `LLM_MODEL_DEFAULT_MAX_TOOL_CALLING_ROUND_TRIPS` | `4`       | Default maximum tool-calling round trips per tool pass. |
-| `LLM_LOW_MODEL`              | blank                      | Low-lane model override.             |
-| `LLM_HIGH_MODEL`             | blank                      | High-lane model override.            |
-| `LLM_LOW_PARALLELISM`        | `1`                        | Low-lane worker parallelism and request-topic partition count. |
-| `LLM_HIGH_PARALLELISM`       | `1`                        | High-lane worker parallelism and request-topic partition count. |
-| `LLM_LOW_PARTITION_KEY_STRATEGY` | `AGENT_RUN`             | Low-lane partition key strategy: `AGENT_RUN`, `MISSION`, or `JOB`. |
-| `LLM_HIGH_PARTITION_KEY_STRATEGY` | `AGENT_RUN`            | High-lane partition key strategy: `AGENT_RUN`, `MISSION`, or `JOB`. |
-| `LLM_REPLY_TIMEOUT_MS`       | `900000`                   | Synchronous reply wait timeout.      |
-| `AGENT_TOOL_PROFILE_WORKSPACE_READONLY_MAX_RESULT_TOKENS` | `4000` | Result budget for the read-only cross-system software-team profile. |
-| `AGENT_TOOL_PROFILE_WORKSPACE_COORDINATION_MAX_RESULT_TOKENS` | `5000` | Result budget for the bounded cross-system coordination profile. |
-
-
-Model selection precedence is:
+For each lane, Tack creates a Kafka worker consumer route with:
 
 ```text
-inference lane model > LLM_MODEL_DEFAULT_OPENAI_MODEL fallback
+consumersCount = lane.parallelism
+maxPollRecords = 1
 ```
 
-The selected model is copied into LLM request metadata and preserved on worker failures and DLQ entries.
+A lane with `parallelism(1)` serializes model calls. A lane with `parallelism(n)` allows up to `n` records to be processed concurrently, subject to topic partitioning and Kafka consumer assignment.
 
-Per-lane endpoints, model names, and API keys override the global fallback values when set:
+When automatic topic provisioning is enabled:
+
+- a missing request topic is created with partitions equal to lane parallelism;
+- an existing request topic must already have at least that many partitions or startup fails;
+- reply topics remain single-partition in the current topology;
+- scheduled-event and dead-letter topics use `LLM_KAFKA_TOPIC_PARTITIONS`.
+
+### Ordering
+
+Lane-wide FIFO is guaranteed only when the lane has one effective partition/consumer path. With parallelism greater than one, ordering is preserved only for messages sharing a Kafka key.
+
+Partition-key strategies:
+
+| Strategy | Key fallback |
+| --- | --- |
+| `AGENT_RUN` | `agentRunId -> missionId -> jobId` |
+| `MISSION` | `missionId -> agentRunId -> jobId` |
+| `JOB` | `jobId` |
+
+The default is `AGENT_RUN`, which keeps one AgentRun's LLM jobs on the same partition while allowing unrelated runs to use other partitions.
+
+Reply records are keyed and correlated by `jobId`.
+
+### Request/reply lifecycle
+
+Before publishing a request, the local orchestrator registers an in-memory waiter for the job ID. The request is sent to the selected lane topic, a worker invokes the model, and the reply consumer completes that waiter.
+
+The waiting route resumes when the reply arrives or when `LLM_REPLY_TIMEOUT_MS` expires. Failed queue work is represented as an `LlmJobResult` failure and is also published to the configured dead-letter topic when enough job context exists.
+
+### Local and split-worker modes
+
+The default local mode expects the selected lane's worker and reply-consumer routes in the same process:
 
 ```bash
-export LLM_LOW_ENDPOINT=http://localhost:8000/v1
-export LLM_LOW_MODEL=qwen-low
-export LLM_LOW_API_KEY=not-needed
-export LLM_HIGH_ENDPOINT=http://localhost:8001/v1
-export LLM_HIGH_MODEL=qwen-high
-export LLM_HIGH_API_KEY=not-needed
+export LLM_WORKER_ENABLED=true
+export LLM_LOCAL_WORKER_ROUTE_VERIFICATION_ENABLED=true
 ```
 
-An inference lane is a shared Kafka-backed model work pool. `parallelism(1)` behaves like the original serialized lane. `parallelism(n)` creates the worker consumer route with `consumersCount=n&maxPollRecords=1`.
-
-When topic provisioning is enabled, missing lane request topics are created with partitions equal to lane parallelism. Existing request topics are not silently expanded; they must already have at least `lane.parallelism()` partitions or startup fails clearly. Reply topics remain single-partition in the current single-orchestrator topology.
-
-Lane-wide FIFO ordering is not guaranteed when `parallelism > 1`. Ordering is preserved only for jobs with the same Kafka partition key. The default partition key strategy is `AGENT_RUN`, with fallback:
-
-```text
-agentRunId -> missionId -> jobId
-```
-
-Other strategies are:
-
-```text
-MISSION: missionId -> agentRunId -> jobId
-JOB:     jobId
-```
-
-Request messages use the selected partition key as the Kafka key. Reply messages continue to use `jobId` as the Kafka key and are correlated in memory by `jobId`.
-
-Current topology assumption: the request/reply implementation assumes one active orchestrator process owns the in-memory LLM reply waiters. Lane worker parallelism is supported within that topology. Horizontally scaled orchestrator instances require reply-to routing or durable reply storage and are out of scope for this mode.
-
-### AgentRun scheduling
-
-Agent-run scheduling is event-driven:
-
-```text
-direct:start-agent-run
-  -> validate AgentRunRequest, including optional subroutineId
-  -> enforce any caller-supplied active-run capacity limit
-  -> create/record AgentRun as accepted
-  -> publish AgentRunScheduled
-  -> return AgentRunHandle
-
-Kafka consumer: AgentRunScheduled
-  -> accepted/scheduled -> running when eligible
-  -> launch direct:execute-agent-run asynchronously
-  -> return so Kafka can commit
-
-direct:execute-agent-run
-  -> rebuild mission + AgentRun context
-  -> execute the routine route
-  -> record complete or failed
-```
-
-Duplicate scheduled events are idempotent. Accepted or scheduled runs transition to running and launch once. Running, complete, failed, or otherwise ineligible runs are ignored.
-
-The framework does not impose an AgentRun concurrency limit in this mode. Every eligible scheduled event launches an async routine execution. LLM/model concurrency is controlled separately by inference lanes.
-
-Lifecycle hardening is intentionally future work. AgentRun admission records accepted state and then publishes `AgentRunScheduled`. If publication fails after admission, a run can remain accepted without a scheduled event. That is acceptable for this local/in-memory prototype; a future reconciler should scan stale accepted runs and republish `AgentRunScheduled`.
-
-### Local worker verification
-
-By default, `direct:llm` assumes a local single-process run mode. Before queueing an LLM request, it verifies that the selected lane has a local worker route and a local reply-consumer route available.
-
-For an API process that queues jobs while another process runs the workers, disable the local worker check:
+An API/orchestrator process may queue work while another process hosts workers:
 
 ```bash
 export LLM_WORKER_ENABLED=false
 export LLM_LOCAL_WORKER_ROUTE_VERIFICATION_ENABLED=false
 ```
 
-This skips the selected lane worker-route verification only. The local response consumer is still required because the current API remains synchronous request/reply.
+This disables only local worker-route verification. The orchestrator still needs its local reply consumer because reply correlation is currently in memory.
 
-## MCP configuration
+## Configuration
 
-MCP servers are optional. Framework code builds clients from generic `McpServerDefinition` entries attached to the active `ToolProfile`. The bundled software-team profiles use individual example-side `PlaneMcpServer`, `GiteaMcpServer`, and `MattermostMcpServer` classes for connection definitions; each `ToolProfile` class composes the immutable definitions it needs and owns its own capability policy. Adopters can add other servers by adding a `McpServerDefinition` through `ToolProfile.builder(...).mcpServer(...)`, without editing `McpClientFactory` or defining LangChain4j MCP server beans. `ToolProfile.server(...)` only declares a logical server id for allow/deny/default-argument rules; it does not create a buildable MCP client by itself.
+### Kafka and runtime
 
-If a server URL or persona token is blank, that MCP client is skipped.
+| Environment variable | Default | Purpose |
+| --- | --- | --- |
+| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Kafka bootstrap servers |
+| `AGENT_RUN_SCHEDULED_TOPIC` | `agent-runs.scheduled` | Durable AgentRun start-signal topic |
+| `AGENT_RUN_SCHEDULED_CONSUMER_GROUP` | `agent-run-scheduler` | Scheduler consumer group |
+| `AGENT_RUN_SCHEDULED_CONSUMER_ENABLED` | `true` | Enables the scheduler consumer route |
+| `LLM_TOPIC_DEAD_LETTER` | `llm.dead-letter` | Failed queued-job topic |
+| `LLM_CONSUMER_GROUP` | `llm-share-workers` | Base worker consumer group |
+| `LLM_RESPONSE_CONSUMER_GROUP` | generated per Quarkus process | Base reply-consumer group |
+| `LLM_KAFKA_PROVISION_TOPICS` | `true` | Provision and validate configured topics |
+| `LLM_KAFKA_TOPIC_PARTITIONS` | `1` | Partitions for scheduled-event and DLQ topics |
+| `LLM_KAFKA_TOPIC_REPLICATION_FACTOR` | `1` | Replication factor for provisioned topics |
+| `LLM_WORKER_ENABLED` | `true` | Starts local lane worker routes |
+| `LLM_LOCAL_WORKER_ROUTE_VERIFICATION_ENABLED` | `true` | Requires selected local worker routes before queueing |
+| `LLM_REPLY_TIMEOUT_MS` | `900000` | Maximum wait for a correlated LLM reply |
+| `LLM_LOG_ANSI_ENABLED` | `true` | Enables ANSI formatting in Tack LLM logs |
+
+### Global model defaults
+
+| Environment variable | Default |
+| --- | --- |
+| `LLM_MODEL_DEFAULT_OPENAI_BASE_URL` | `http://localhost:8000/v1` |
+| `LLM_MODEL_DEFAULT_OPENAI_API_KEY` | `not-needed` |
+| `LLM_MODEL_DEFAULT_OPENAI_MODEL` | `qwen-36-27b` |
+| `LLM_MODEL_DEFAULT_OPENAI_TEMPERATURE` | `0` |
+| `LLM_MODEL_DEFAULT_OPENAI_MAX_TOKENS` | `20000` |
+| `LLM_MODEL_DEFAULT_OPENAI_TIMEOUT_MS` | `300000` |
+| `LLM_MODEL_DEFAULT_OPENAI_STRICT_JSON_SCHEMA` | `true` |
+| `LLM_MODEL_DEFAULT_OPENAI_THINKING_OFF_ENABLED` | `true` |
+| `LLM_MODEL_DEFAULT_STRUCTURED_OUTPUT_PROVIDER_SCHEMA_ENABLED` | `false` |
+| `LLM_MODEL_DEFAULT_TOOL_MEMORY_MAX_TOKENS` | `50000` |
+| `LLM_MODEL_DEFAULT_MAX_TOOL_CALLING_ROUND_TRIPS` | `50` |
+
+### Example lane overrides
+
+```bash
+export AGENT_FRAMEWORK_DEFAULT_LANE=low-pass
+
+export LLM_LOW_REQUEST_TOPIC=llm.requests.low
+export LLM_LOW_REPLY_TOPIC=llm.replies.low
+export LLM_LOW_ENDPOINT=http://localhost:8000/v1
+export LLM_LOW_MODEL=qwen-low
+export LLM_LOW_API_KEY=not-needed
+export LLM_LOW_PARALLELISM=1
+export LLM_LOW_PARTITION_KEY_STRATEGY=AGENT_RUN
+
+export LLM_HIGH_REQUEST_TOPIC=llm.requests.high
+export LLM_HIGH_REPLY_TOPIC=llm.replies.high
+export LLM_HIGH_ENDPOINT=http://localhost:8001/v1
+export LLM_HIGH_MODEL=qwen-high
+export LLM_HIGH_API_KEY=not-needed
+export LLM_HIGH_PARALLELISM=1
+export LLM_HIGH_PARTITION_KEY_STRATEGY=AGENT_RUN
+```
+
+### MCP runtime
+
+| Environment variable | Default | Purpose |
+| --- | --- | --- |
+| `AGENT_MCP_TRANSPORT_TIMEOUT_MS` | `60000` | MCP transport timeout |
+| `AGENT_MCP_INITIALIZATION_TIMEOUT_MS` | `30000` | MCP initialization timeout |
+| `AGENT_MCP_MAX_TOOL_RESULT_TOKENS` | `1000` | Global fallback tool-result budget |
+| `AGENT_MCP_LOG_TRANSPORT_REQUESTS` | `false` | Logs MCP transport requests |
+| `AGENT_MCP_LOG_TRANSPORT_RESPONSES` | `false` | Logs MCP transport responses |
+
+A profile-specific `maxResultTokens` overrides the global fallback.
+
+## Bundled software-team example
+
+The `us.nusun.llmshare.example` package is a demonstration catalog, not part of Tack's generic contract.
+
+| Persona | Persona ID | Routine ID | Responsibility |
+| --- | --- | --- | --- |
+| Noah | `software-team/noah` | `software-team/director` | Starts and coordinates mission work |
+| Owen | `software-team/owen` | `software-team/project-manager` | Coordinates delivery and project setup |
+| Ethan | `software-team/ethan` | `software-team/product-owner` | Clarifies scope, value, and acceptance criteria |
+| Miles | `software-team/miles` | `software-team/application-developer` | Implements and reports delivery evidence |
+
+The example expects shared Git work under the `agent-workspace` organization. Agents should record a setup blocker rather than create duplicate repositories in personal namespaces when access is missing.
+
+### Example tool ownership
+
+The example deliberately assigns one authoritative system to each kind of durable state:
+
+- **Plane:** projects, work items, assignments, status, dependencies, priorities, blockers, and delivery planning.
+- **Gitea:** repositories, files, branches, commits, pull requests, builds, tags, and releases.
+- **Mattermost:** conversation, questions, handoffs, and concise notifications.
+
+Gitea issue tracking, labels, milestones, and time tracking are intentionally excluded so Plane remains the single project-management system.
+
+### Example tool profiles
+
+| Profile | Scope |
+| --- | --- |
+| `workspace-readonly` | Read-only orientation across Plane, Gitea, and Mattermost |
+| `workspace-coordination` | Bounded cross-system coordination |
+| `project-management` | Deep Plane planning and work management |
+| `source-control` | Gitea source and delivery operations |
+| `team-chat` | Mattermost conversation and channel operations |
+
+Routine authors should choose the narrowest profile that supports one coherent act.
+
+Example MCP configuration:
 
 ```bash
 export MATTERMOST_MCP_URL=http://localhost:8001/mcp
@@ -585,47 +784,78 @@ export PLANE_MCP_URL=http://localhost:8003/mcp
 export PLANE_WORKSPACE_SLUG=my-workspace
 
 export NOAH_MATTERMOST_TOKEN=...
-export OWEN_MATTERMOST_TOKEN=...
-export ETHAN_MATTERMOST_TOKEN=...
-export MILES_MATTERMOST_TOKEN=...
-
 export NOAH_GITEA_TOKEN=...
-export OWEN_GITEA_TOKEN=...
-export ETHAN_GITEA_TOKEN=...
-export MILES_GITEA_TOKEN=...
-
 export NOAH_PLANE_TOKEN=...
-export OWEN_PLANE_TOKEN=...
-export ETHAN_PLANE_TOKEN=...
-export MILES_PLANE_TOKEN=...
 ```
 
-Additional identity configuration examples are available in `docs/local-agent-identities.env.example` and `docs/local-mcp-agent-identities.md`.
+Equivalent identity variables exist for Owen, Ethan, and Miles. See:
+
+- `docs/local-agent-identities.env.example`
+- `docs/local-mcp-agent-identities.md`
 
 ## Workspace API
 
 The workspace API is intended for local development and debugging.
 
-| Endpoint           | Method | Purpose                                    |
-| ------------------ | ------ | ------------------------------------------ |
-| `/missions`        | `POST` | Accept and schedule a new mission.         |
-| `/workspace/view`  | `GET`  | Inspect catalog and agent-run projections. |
-| `/workspace/reset` | `POST` | Reset local workspace state.               |
+| Endpoint | Method | Purpose |
+| --- | --- | --- |
+| `/missions` | `POST` | Admit and schedule a mission |
+| `/workspace/view` | `GET` | Inspect catalogs, missions, AgentRuns, thoughts, and timelines |
+| `/workspace/reset` | `POST` | Reset local in-memory workspace state |
 
-`POST /missions` returns `202 Accepted` after mission creation, accepted run recording, and scheduled-event publication. Routine execution starts when `AgentRunScheduled` is consumed and continues asynchronously after the Kafka route commits. Later routine failures are visible through workspace projection state and normal logs, not as a delayed HTTP response.
+Routine execution is asynchronous after mission admission. Later failures appear in AgentRun projection state and normal logs; they do not turn the already accepted HTTP response into a delayed failure response.
 
-The projection includes mission context, agent-run input, agent-run IDs, persona/routine/subroutine metadata, primitive state, selected inference lane, latest results, timeline entries, and thought-stack snapshots. Mission and input context are rendered as collapsed panels in the workspace UI.
+The workspace projection includes mission context, structured AgentRun input, persona/routine/subroutine metadata, current primitive state, selected lane, latest results, timeline events, and thought-stack snapshots.
+
+## Runtime route ownership
+
+Tack currently installs route builders as CDI beans in the same `CamelContext` as application routines. This is intentional: the runtime uses Camel to implement transport and orchestration rather than hiding them in a separate executor framework.
+
+Framework-owned route entry points include areas such as:
+
+```text
+direct:start-mission
+direct:start-agent-run
+direct:start-agent-runs
+direct:llm
+```
+
+The runtime also creates Kafka consumer and publisher routes for AgentRun scheduling and every registered inference lane.
+
+Application authors should treat undocumented runtime routes as private implementation details. Route IDs and internal `direct:` names may change as Tack improves namespacing and encapsulation. The supported primitive authoring API is the `tack:` component; `direct:start-agent-run` and `direct:start-agent-runs` are the current explicit scheduling seams.
+
+Because these routes are real Camel routes, they remain visible for troubleshooting, metrics, startup diagnostics, and failure analysis. Visibility is a feature; ownership and namespacing are the encapsulation boundary.
+
+## Current boundaries
+
+Tack is presently optimized for a local or single-orchestrator deployment.
+
+- Mission, AgentRun, and projection state are in memory.
+- LLM reply waiters are in memory and owned by one orchestrator process.
+- Reply topics are single-partition in the current topology.
+- Horizontally scaled orchestrators require reply-to routing or durable reply storage.
+- AgentRun admission and scheduled-event publication are not transactional. A publish failure after admission can leave a stale accepted run.
+- A future reconciler should republish stale accepted runs and recover interrupted running work.
+- AgentRun execution has no global hard limit; inference lanes control model concurrency instead.
+- Kafka lane parallelism does not imply global FIFO ordering.
+- MCP clients are created from the active persona identity and selected tool profile; blank URLs or identity tokens cause that server client to be skipped.
+
+These are explicit prototype constraints, not hidden guarantees.
 
 ## Project layout
 
-| Path                                        | Purpose                                             |
-| ------------------------------------------- | --------------------------------------------------- |
-| `src/main/java/us/nusun/llmshare/framework` | Reusable framework code.                            |
-| `src/main/java/us/nusun/llmshare/example`   | Bundled software-team example catalog and routines. |
-| `src/main/resources/schemas`                | JSON schemas used by primitives and examples.       |
-| `docs/architecture.md`                      | Additional architecture notes.                      |
-| `docs/local-agent-identities.env.example`   | Local persona identity template.                    |
-| `docs/local-mcp-agent-identities.md`        | MCP identity setup notes.                           |
+| Path | Purpose |
+| --- | --- |
+| `src/main/java/us/nusun/llmshare/framework/tack` | `tack:` component and primitive execution |
+| `src/main/java/us/nusun/llmshare/framework/route` | Mission, AgentRun, API, and LLM runtime routes |
+| `src/main/java/us/nusun/llmshare/framework/llm` | LLM jobs, workers, correlation, topic provisioning, and model setup |
+| `src/main/java/us/nusun/llmshare/framework/mcp` | MCP client construction, filtering, and result limits |
+| `src/main/java/us/nusun/llmshare/framework/state` | Mission/AgentRun working state and thought stack |
+| `src/main/java/us/nusun/llmshare/framework/projection` | Observable AgentRun projection history |
+| `src/main/java/us/nusun/llmshare/framework/inventory` | Persona, routine, tool-profile, and lane catalogs |
+| `src/main/java/us/nusun/llmshare/example` | Bundled software-team example |
+| `src/main/resources/schemas` | Primitive JSON schemas |
+| `docs/architecture.md` | Additional architecture notes |
 
 ## Development
 
@@ -635,52 +865,56 @@ Run tests:
 ./mvnw test
 ```
 
-Run with coverage:
+Run the full Maven verification lifecycle:
 
 ```bash
 ./mvnw verify
 ```
 
-Component tests should fake LLM and MCP behavior at route boundaries. They should not require live vLLM, Kafka, Plane, Gitea, Mattermost, or MCP servers unless they are explicitly integration tests.
-
-## Design boundaries
-
-Keep reusable framework behavior separate from example-team behavior.
-
-Framework code owns:
-
-* `AgentRunRequest` / `AgentRunHandle`
-* routine subroutine metadata and route resolution
-* optional active-run capacity checks for admission
-* `direct:start-agent-run`
-* `tack:act`, `tack:decide`, `tack:create`, `tack:thought-enter`, and `tack:thought-exit`
-* `ThoughtStack`
-* `AgentRunProjection`
-* inference lanes
-* tool-profile enforcement and MCP client wrapping
-
-Example or application namespaces own:
-
-* personas
-* routines
-* prompts and schemas
-* tool-profile choices
-* domain orchestration patterns such as the bundled Director routine
+Tests should normally fake LLM and MCP behavior at clear route or service boundaries. Live vLLM, Kafka, Plane, Gitea, Mattermost, and MCP servers belong in explicit integration tests rather than ordinary component tests.
 
 ## Troubleshooting
 
-### A mission fails before the first LLM call
+### A mission is accepted but never starts
 
-Check that `AGENT_FRAMEWORK_INITIAL_AGENT_RUN_PERSONA_ID` and `AGENT_FRAMEWORK_INITIAL_AGENT_RUN_ROUTINE_ID` point to catalog entries that exist at startup.
+Check:
 
-### `direct:llm` says a lane route is not available
+- `AGENT_RUN_SCHEDULED_CONSUMER_ENABLED`;
+- Kafka connectivity;
+- the `agent-runs.scheduled` topic;
+- scheduler consumer-group logs;
+- whether the run remains `accepted` in `/workspace/view`.
 
-In local mode, the selected lane must have both a worker route and a response-consumer route running. Check `LLM_WORKER_ENABLED`, `LLM_LOCAL_WORKER_ROUTE_VERIFICATION_ENABLED`, and the configured inference lanes.
+Admission and publication are not yet transactional, so a publication failure can leave an accepted run without a start signal.
+
+### Tack reports that an LLM lane route is unavailable
+
+In local mode, the selected lane must have both a worker route and a reply-consumer route. Check:
+
+- `LLM_WORKER_ENABLED`;
+- `LLM_LOCAL_WORKER_ROUTE_VERIFICATION_ENABLED`;
+- the registered `InferenceLaneDefinition` values;
+- lane route startup errors;
+- topic provisioning and partition validation.
+
+### An LLM request times out
+
+Check the selected lane's worker logs, reply topic, reply-consumer group, model endpoint timeout, and `LLM_REPLY_TIMEOUT_MS`. A model request can complete remotely while the caller still times out if its reply is not consumed and correlated by the owning orchestrator process.
 
 ### MCP tools do not appear
 
-Confirm that the MCP server URL is set, the persona has a token for that server, and the selected `ToolProfile` includes the server/tool.
+Confirm that:
+
+- the selected `ToolProfile` includes the server;
+- the server URL is not blank;
+- the current persona has a token for that server;
+- the tool is allowed and not denied;
+- MCP initialization did not time out.
 
 ### Tool results are truncated
 
-Tool result size is bounded by the selected `ToolProfile.maxResultTokens` when set, otherwise by `AGENT_MCP_MAX_TOOL_RESULT_TOKENS`. Set a profile-specific limit when one workflow needs more context than the global default.
+The selected profile's `maxResultTokens` takes precedence. Otherwise Tack uses `AGENT_MCP_MAX_TOOL_RESULT_TOKENS`.
+
+### Jobs from one AgentRun execute out of order
+
+Use `PartitionKeyStrategy.AGENT_RUN`, verify the request topic has the expected partition count, and remember that ordering applies only within one Kafka partition. Different lanes are independent queues.
