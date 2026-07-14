@@ -3,6 +3,8 @@ package us.nusun.llmshare.framework.llm;
 import static us.nusun.llmshare.framework.model.FrameworkText.firstNonBlank;
 
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
+import dev.langchain4j.http.client.jdk.JdkHttpClient;
+import dev.langchain4j.http.client.jdk.JdkHttpClientBuilder;
 import dev.langchain4j.mcp.client.McpClient;
 import dev.langchain4j.model.TokenCountEstimator;
 import dev.langchain4j.model.chat.ChatModel;
@@ -40,6 +42,7 @@ import us.nusun.llmshare.framework.model.RoutineDefinition;
 import us.nusun.llmshare.framework.model.ToolProfile;
 
 import java.io.IOException;
+import java.net.http.HttpClient;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -122,11 +125,19 @@ public class LlmAgentFactory {
                 .temperature(temperature)
                 .maxTokens(maxTokens)
                 .strictJsonSchema(strictJsonSchema)
-                .timeout(Duration.ofMillis(timeoutMs));
+                .timeout(Duration.ofMillis(timeoutMs))
+                .httpClientBuilder(http11ClientBuilder());
         if (thinkingOffEnabled) {
             builder.customParameters(Map.of("chat_template_kwargs", Map.of("enable_thinking", false)));
         }
         return builder.build();
+    }
+
+    private static JdkHttpClientBuilder http11ClientBuilder() {
+        return JdkHttpClient.builder()
+                .httpClientBuilder(
+                        HttpClient.newBuilder()
+                                .version(HttpClient.Version.HTTP_1_1));
     }
 
     private static String resolveLaneApiKey(InferenceLaneDefinition lane) {
