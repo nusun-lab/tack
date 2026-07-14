@@ -1,9 +1,0 @@
-{
-  "goal": "Build a small parking lot manager app.",
-  "agentRuns": [
-    {
-      "personaId": "software-team/noah",
-      "routineId": "software-team/director"
-    }
-  ]
-}
