@@ -68,6 +68,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .when(exchangeProperty("decision.collaboration-setup-complete.result").isNotEqualTo(true))
                         .to("direct:pm-project-bootstrap")
                 .end()
+                .choice()
+                    .when(exchangeProperty("decision.collaboration-setup-complete.result").isEqualTo(true))
+                        .to("direct:pm-team-onboarding")
+                .end()
                 .to("direct:pm-project-manager-root-exit");
 
         from("direct:example-software-team-project-manager-coordination")
@@ -266,7 +270,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .routeId("pm-team-onboarding")
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Keep team access current for the verified project.
-                                Add missing current teammates to the Plane project and Mattermost channel; remove nobody unless the mission clearly says they left.
+                                Compare current mission/team members with Plane project members and Mattermost channel members.
+                                Add every missing teammate to the Plane project and project channel; remove nobody unless the mission clearly says they left.
                                 Note Gitea access gaps, but do not block PM work on repository membership.
                                 """))
                 .to("tack:act?id=pm-team-onboarding&toolProfile=" + WorkspaceCoordinationToolProfile.ID);
