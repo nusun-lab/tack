@@ -36,8 +36,10 @@ public class SourceControlToolProfile implements ToolProfileProvider {
                                  - always create repositories in the agent-workspace organization
                                  - avoid duplicate repositories, branches, pull requests, tags, or releases
                                  - do not use native wiki features
-                                 - canonical documentation should live in its own markdown repository
+                                 - canonical documentation should describe the product, not the daily work log
                                  - documentation should be navigable from the index (readme.md)
+                                 - keep individual markdown files compact, usually under 200-300 lines; split or summarize before appending long logs
+                                 - small navigation and organization improvements are valuable documentation work
                                  - do not read entire documentation repositories
                                  - generally reference the url attribute of repositories, not clone or ssh
                                  """)

@@ -27,8 +27,8 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .name("Product Owner")
                 .main("""
                         Full Product Owner routine: self-directed product ownership cycle. Gather current project context,
-                        select product work, refine scope and acceptance, update priority/readiness, hand off to PM,
-                        communicate only useful product guidance, and close out durable documentation.
+                        shape Backlog product work, refine scope and acceptance, hand ready slices to PM, accept finished outcomes,
+                        keep product documentation useful, and talk with teammates when interaction improves the work.
                         """, "direct:example-software-team-product-owner")
                 .subroutine(
                         "acceptance-refinement",
@@ -64,7 +64,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                             .to("direct:po-priority-status-loop")
                             .to("direct:po-cycle-closeout")
                             .setHeader(TackHeaders.PROMPT, constant("""
-                                            Is this PO pass locally complete because the thin product pipeline exists
+                                            Is your PO pass locally complete because the thin product pipeline exists
                                             with at least one small vertical slice marked PM HANDOFF: READY and major
                                             mission outcomes represented or explicitly deferred, or because one exact
                                             product blocker/user decision was recorded?
@@ -161,18 +161,18 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Project basics are not usable for product work. Read recent Mattermost only if needed.
                                 Reply once to an existing PM/setup thread when a concise product/setup answer helps;
-                                otherwise stay quiet. Do not repost setup requests, do not staff Owen, and do not begin
-                                product work without Plane, source repository, documentation repository, and usable navigation.
-                                Noah is responsible for staffing Owen when PM coverage is missing.
+                                otherwise stay quiet. Do not repost setup requests and do not begin product work without
+                                Plane, source repository, documentation repository, and usable navigation.
+                                The director covers missing PM staffing.
                                 """))
                 .to("tack:act?id=po-missing-basics-closeout&toolProfile=" + TeamChatToolProfile.ID);
 
         from("direct:po-team-chat-sync")
                 .routeId("po-team-chat-sync")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Read the last 20 project Mattermost messages from the project-basics link. Reply first to a direct
-                                product, scope, priority, or acceptance question. If a clarification is needed,
-                                ask at most one named question. Do not post generic status or duplicate documentation content.
+                                Read recent project chat and join real product conversations.
+                                Answer direct scope or acceptance questions, or ask one named question that improves the backlog.
+                                Avoid generic status and duplicated documentation.
                                 """))
                 .to("tack:act?id=po-team-chat-sync&toolProfile=" + TeamChatToolProfile.ID);
 
@@ -188,13 +188,10 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         """))
                     .to("tack:thought-enter?name=po-backlog&maxTokens=250")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Review existing PO/product Plane items before creating anything.
-                                    Ignore developer implementation tasks. Select a small user-facing vertical slice that still
-                                    needs PO work. Do not reselect an item already containing PM HANDOFF: READY unless PM added
-                                    PO INPUT REQUIRED: or the acceptance information became stale.
-                                    If no appropriate unfinished product item exists, create exactly one small vertical slice,
-                                    link it to the mission epic/container when supported, and avoid duplicate mission outcomes.
-                                    A lone epic is not sufficient or PM-ready backlog.
+                                    Work only in the Plane Backlog when creating or refining product work.
+                                    Select one small user-facing slice needing PO attention; ignore implementation tasks and To Do work.
+                                    If none exists, create one Backlog slice linked to the mission container when useful.
+                                    Do not reselect PM-ready work unless PO input was requested or acceptance became stale.
                                     """))
                     .to("tack:act?id=po-backlog-review&toolProfile=" + ProjectManagementToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
@@ -221,11 +218,9 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         """))
                     .to("tack:thought-enter?name=po-acceptance&maxTokens=250")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Update exactly one canonical acceptance page for the selected product slice.
-                                    Include Plane link, owner, goal, users, in/out of scope, compact acceptance criteria,
-                                    and either one product decision or one exact open question. Keep it small, linked from
-                                    current-work and the product index, and focused on user-facing acceptance rather than
-                                    developer task decomposition.
+                                    Curate exactly one compact product page for the selected Backlog slice.
+                                    Include Plane link, user value, scope boundaries, acceptance criteria, and one decision or open question.
+                                    Keep pages product-focused, linked, and small; split or summarize before appending long logs.
                                     """))
                     .to("tack:act?id=po-canonical-acceptance-update&toolProfile=" + SourceControlToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
@@ -246,13 +241,10 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         """))
                     .to("tack:thought-enter?name=po-priority&maxTokens=250")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Update priority and readiness on exactly one selected product Plane item after verifying current status.
-                                    Do not depend on custom workflow states or labels. Use an appropriate existing product status and priority.
-                                    When acceptance is usable, create or update one comment beginning exactly PM HANDOFF: READY.
-                                    The comment must include canonical acceptance page, priority, short acceptance summary,
-                                    unresolved product questions or none, and requested PM action.
-                                    When a product decision prevents readiness, record one exact open question and do not claim ready.
-                                    Do not repeatedly ask the same question. Do not create, assign, or start developer tasks.
+                                    Keep the selected product slice in Backlog and update its priority/readiness after verifying status.
+                                    When acceptance is usable, add or refresh PM HANDOFF: READY with page, priority, summary, questions, and PM request.
+                                    When reviewing finished work, accept or move only genuinely complete product outcomes to Done.
+                                    Never create, assign, or start developer tasks; PM moves ready work to To Do.
                                     """))
                     .to("tack:act?id=po-plane-handoff-update&toolProfile=" + ProjectManagementToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
@@ -266,16 +258,14 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         from("direct:po-cycle-closeout")
                 .routeId("po-cycle-closeout")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Read the last 20 messages in the project Mattermost channel from project basics.
-                                Post only if the canonical item page changed materially, PM asked a direct PO question,
-                                or a teammate is waiting on product input. Include the canonical documentation page and
-                                who it unblocks; otherwise stay quiet. Mattermost is secondary to Plane handoff comments.
+                                Read recent project chat and continue useful product conversations.
+                                Reply when a teammate needs scope, acceptance, or product judgment; otherwise ask nothing.
+                                Link the Plane item or product page when it helps the conversation.
                                 """))
                 .to("tack:act?id=po-team-chat-closeout&toolProfile=" + TeamChatToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                If needed, add one small follow-up note to the canonical documentation page.
-                                Preserve navigation: current-work, product index, Plane work item, and decisions links.
-                                Capture durable product outcomes from Mattermost; leave ephemeral discussion in Mattermost.
+                                Make one small documentation curation improvement if it clarifies the product.
+                                Preserve navigation and durable decisions; leave day-to-day work tracking in Plane.
                                 """))
                 .to("tack:act?id=po-follow-up-note&toolProfile=" + SourceControlToolProfile.ID);
     }

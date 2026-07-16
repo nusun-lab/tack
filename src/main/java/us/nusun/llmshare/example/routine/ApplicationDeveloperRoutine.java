@@ -132,9 +132,9 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Project basics are not usable for development. Read recent Mattermost only if needed.
                                 Reply once to an existing PM/setup thread when a concise technical setup answer helps;
-                                otherwise stay quiet. Do not repost setup requests, do not claim work, and do not begin
-                                development without Plane, source repository, documentation repository, and usable navigation.
-                                Noah is responsible for staffing Owen when PM coverage is missing.
+                                otherwise stay quiet. Do not repost setup requests, claim work, or begin development without
+                                Plane, source repository, documentation repository, and usable navigation.
+                                The director covers missing PM staffing.
                                 """))
                 .to("tack:act?id=dev-missing-basics-closeout&toolProfile=" + TeamChatToolProfile.ID);
 
@@ -160,10 +160,10 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             .to("direct:dev-no-work-closeout")
                     .end()
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Is this DEV pass complete because one assigned task reached Review, Done, or a durable
+                                    Is your DEV pass complete because one assigned task reached Review, Done, or a durable
                                     blocked state with evidence, or because no eligible assigned work exists?
-                                    If Owen is active, asking once for one assigned actionable task is enough; if Owen is absent,
-                                    simply record that no eligible assigned work exists so Noah can supply PM coverage.
+                                    If active PM coverage exists, asking once for assigned actionable work is enough; otherwise
+                                    record that no eligible assigned work exists so director coverage can respond.
                                     Do not finish merely because one small code step landed while a clear next implementation patch remains.
                                     """))
                     .to("tack:decide?id=application-developer-done")
@@ -173,9 +173,9 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         from("direct:dev-team-chat-sync")
                 .routeId("dev-team-chat-sync")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Read the last 20 project Mattermost messages from the project-basics link. Reply first to a direct
-                                technical question, review request, or handoff. If blocked, ask at most one
-                                named question. Do not volunteer for unassigned work or repeat Plane/documentation data.
+                                Read recent project chat and join real technical conversations.
+                                Answer direct questions, review requests, or handoffs; if blocked, ask one named question.
+                                Do not volunteer for unassigned work or repeat Plane/documentation data.
                                 """))
                 .to("tack:act?id=dev-team-chat-sync&toolProfile=" + TeamChatToolProfile.ID);
 
@@ -190,30 +190,26 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                         """))
                     .to("tack:thought-enter?name=dev-selection&maxTokens=250")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    In the Plane project from project basics, review only In Progress tasks assigned to this developer.
-                                    Prefer assigned In Progress work before assigned To Do work. Choose the highest-priority assigned
-                                    task with source repository, canonical acceptance page, DEV HANDOFF: READY or equivalent details,
-                                    and one concrete next code step. Do not claim unassigned backlog, product items, or work assigned to others.
+                                    In Plane, review only tasks assigned to you.
+                                    Continue assigned In Progress work before starting the highest-priority assigned To Do task.
+                                    Require source repo, acceptance page, handoff details, and one concrete next code step.
+                                    Ignore Backlog, unassigned work, product items, and work assigned to others.
                                     """))
                     .to("tack:act?id=dev-in-progress-review&toolProfile=" + ProjectManagementToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Is an in-progress task assigned to this developer selected for implementation now?
+                                    Is one of your assigned in-progress tasks selected for implementation now?
                                     """))
                     .to("tack:decide?id=developer-has-work")
                     .choice()
                         .when(exchangeProperty("decision.developer-has-work.result").isNotEqualTo(true))
                             .setHeader(TackHeaders.PROMPT, constant("""
-                                            Review one To Do task assigned to this developer only.
-                                            Ignore unassigned tasks, backlog/product items, and tasks assigned to others.
-                                            Select only actionable implementation work with canonical acceptance page,
-                                            acceptance criteria, source repository under agent-workspace, priority,
-                                            dependencies, expected review evidence, and one concrete next code step.
+                                            Review one assigned To Do implementation task only.
+                                            Select it only when it has acceptance, source repo, priority, dependencies, review evidence, and a next code step.
                                             If selected, move exactly that assigned task to In Progress.
                                             """))
                             .to("tack:act?id=dev-assigned-to-do-start&toolProfile=" + ProjectManagementToolProfile.ID)
                             .setHeader(TackHeaders.PROMPT, constant("""
-                                            Is there now a selected task assigned to this developer that was already
-                                            in-progress or moved from to-do to in-progress?
+                                            Is one of your assigned tasks now selected and in progress?
                                             """))
                             .to("tack:decide?id=developer-has-work")
                     .end()
@@ -238,7 +234,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .to("tack:thought-enter?name=dev-implementation&maxTokens=250")
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Read the selected Plane task only. Verify current status, objective,
-                                    assignee is this developer, canonical documentation page, acceptance criteria,
+                                    assignee is you, canonical documentation page, acceptance criteria,
                                     source repository under agent-workspace, and expected review evidence.
                                     """))
                     .to("tack:act?id=dev-task-context-read&toolProfile=" + ProjectManagementToolProfile.ID)
@@ -268,7 +264,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .to("tack:act?id=dev-review-readiness&toolProfile=" + SourceControlToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Update exactly one selected Plane task after verifying current status and assignee.
-                                    Move To Do -> In Progress only for this developer's selected task. Move In Progress -> Review only
+                                    Move To Do -> In Progress only for your selected task. Move In Progress -> Review only
                                     with a real diff plus branch, commit, or PR and available validation evidence.
                                     When review-ready, create or update a comment beginning exactly PM REVIEW: READY with branch,
                                     commit/PR or diff, changed files, validation result or limitation, and canonical acceptance page.
@@ -288,28 +284,22 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         from("direct:dev-work-closeout")
                 .routeId("dev-work-closeout")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Update one focused engineering note if needed: changed files, code outcome,
-                                tests or validation gaps, review evidence, and next step.
-                                Link source-control evidence from the canonical item page and engineering index.
-                                The documentation summarizes durable code knowledge; it does not replace source changes.
+                                Make one focused documentation improvement if it preserves durable engineering knowledge.
+                                Link source evidence from the item page or engineering index; do not create activity logs.
+                                Keep files compact and split or summarize when they grow too large.
                                 """))
                 .to("tack:act?id=dev-documentation-closeout&toolProfile=" + SourceControlToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Read the last 20 messages in the project Mattermost channel from project basics.
-                                Post only if delivery evidence changed.
-                                Include Plane work item, PM REVIEW: READY or DEV BLOCKER: evidence, and canonical documentation links;
-                                otherwise stay quiet.
+                                Read recent project chat and reply when delivery evidence, a blocker, or a teammate's question needs interaction.
+                                Link the Plane item and review/blocker evidence when useful; avoid generic status.
                                 """))
                 .to("tack:act?id=dev-team-chat-closeout&toolProfile=" + TeamChatToolProfile.ID);
 
         from("direct:dev-no-work-closeout")
                 .routeId("dev-no-work-closeout")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Read the last 20 messages in the project Mattermost channel from project basics.
-                                If no eligible assigned In Progress or To Do implementation task exists, reply to an existing active PM
-                                thread only when Owen appears active and one precise assigned-task request is useful.
-                                If Owen is absent, simply record no eligible assigned work and stay quiet. Noah will supply PM coverage.
-                                Include the documentation index link only when posting.
+                                Read recent project chat. If no assigned In Progress or To Do task exists, ask the active PM once for assigned To Do work when useful.
+                                Otherwise stay quiet and leave backlog shaping to PO and assignment to PM.
                                 """))
                 .to("tack:act?id=dev-no-work-note&toolProfile=" + TeamChatToolProfile.ID);
     }

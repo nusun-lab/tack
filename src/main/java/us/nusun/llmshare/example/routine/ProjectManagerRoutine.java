@@ -33,7 +33,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         """, "direct:example-software-team-project-manager")
                 .subroutine(
                         "bootstrap",
-                        "Provision and verify an agile project, wiki repo, and chat channel before delivery work management starts.",
+                        "Provision and verify an agile project, documentation repo, and chat channel before delivery work management starts.",
                         "direct:example-software-team-project-manager-bootstrap")
                 .subroutine(
                         "coordination",
@@ -91,6 +91,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                             """))
                         .to("tack:thought-enter?name=pm-cycle&maxTokens=300")
                         .to("direct:pm-documentation-status-sync")
+                        .to("direct:pm-team-onboarding")
                         .to("direct:pm-work-intake-loop")
                         .choice()
                             .when(exchangeProperty("decision.pm-has-ready-product-handoff.result").isEqualTo(true))
@@ -138,8 +139,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .loopDoWhile(exchangeProperty("decision.collaboration-setup-complete.result").isNotEqualTo(true))
                     .setProperty("collaborationSetupAttempt", simple("${exchangeProperty.collaborationSetupAttempt++}"))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Current bootstrap checklist: documentation repository, team chat, Plane project, source repository,
-                        and documentation index/project-basics navigation. Promote final URLs to project-manager-routine before bootstrap exits.
+                        Current bootstrap checklist: Plane project, team chat, team membership, repositories, and documentation navigation.
+                        Promote final URLs to project-manager-routine before bootstrap exits.
                         """))
                     .to("tack:thought-enter?name=pm-bootstrap&maxTokens=300")
                     .setHeader(TackHeaders.PROMPT, constant("""
@@ -161,11 +162,11 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .to("tack:act?id=source-repository-provisioning&toolProfile=" + WorkspaceCoordinationToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Create or confirm one private project Mattermost channel.
-                                    Invite the team and David Gordon (@aphelio).
-                                    Never create a duplicate channel.
+                                    Invite the current team and David Gordon (@aphelio). Never create a duplicate channel.
                                     Do not post setup status yet.
                                     """))
                     .to("tack:act?id=chat-channel-setup&toolProfile=" + TeamChatToolProfile.ID)
+                    .to("direct:pm-team-onboarding")
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Create or update the canonical documentation bootstrap pages.
                                     Index: navigation only, linking project-basics.
@@ -211,6 +212,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         """))
                     .to("tack:thought-enter?name=pm-cycle&maxTokens=300")
                     .to("direct:pm-documentation-status-sync")
+                    .to("direct:pm-team-onboarding")
                     .to("direct:pm-active-delivery-check")
                     .to("direct:pm-work-intake-loop")
                     .choice()
@@ -220,7 +222,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .to("direct:pm-team-sync")
                     .to("direct:pm-cycle-closeout")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Is this PM pass locally complete because collaboration basics are established and one of these occurred:
+                                    Is your PM pass locally complete because collaboration basics are established and one of these occurred:
                                     active review/blocker work was coordinated, one ready PO handoff became an assigned actionable
                                     developer task, no ready PO handoff exists and that was clearly determined, or one exact PO input,
                                     assignment, or infrastructure blocker was recorded? Do not wait for PO or DEV to consume PM output.
@@ -259,6 +261,16 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .to("tack:act?id=pm-active-delivery-check&toolProfile=" + ProjectManagementToolProfile.ID)
                 .to("tack:thought-exit?name=pm-active-delivery");
 
+
+        from("direct:pm-team-onboarding")
+                .routeId("pm-team-onboarding")
+                .setHeader(TackHeaders.PROMPT, constant("""
+                                Keep team access current for the verified project.
+                                Add missing current teammates to the Plane project and Mattermost channel; remove nobody unless the mission clearly says they left.
+                                Note Gitea access gaps, but do not block PM work on repository membership.
+                                """))
+                .to("tack:act?id=pm-team-onboarding&toolProfile=" + WorkspaceCoordinationToolProfile.ID);
+
         from("direct:pm-work-intake-loop")
                 .routeId("pm-work-intake-loop")
                 .setProperty("decision.pm-has-ready-product-handoff.result", constant(false))
@@ -291,14 +303,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         """))
                 .to("tack:thought-enter?name=pm-planning&maxTokens=250")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                From the selected PM HANDOFF: READY product slice, verify that an equivalent actionable developer
-                                task does not already exist. Create or update exactly one small developer task.
-                                The task may enter To Do only when it has developer assignee using Miles/Plane identity Dev when
-                                available, priority, agent-workspace source repository, canonical acceptance page, acceptance criteria,
-                                dependencies, one concrete next code step, expected review evidence, and a comment beginning exactly
-                                DEV HANDOFF: READY containing those details. Assign the task even if Miles has no active AgentRun.
-                                If the expected developer identity is unavailable, record the exact assignment blocker and finish.
-                                Do not create duplicate replacement tasks for active, review, or blocked work.
+                                Turn the selected PM HANDOFF: READY slice into one small assigned To Do developer task.
+                                Split oversized Plane content by moving details into smaller child items; keep parents as summaries.
+                                Include assignee, priority, source repo, acceptance page, dependencies, next code step, review evidence,
+                                and a DEV HANDOFF: READY comment. Do not create duplicates or leave ready work unassigned.
                                 """))
                 .to("tack:act?id=pm-actionable-dev-task&toolProfile=" + ProjectManagementToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
@@ -311,20 +319,17 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-team-sync")
                 .routeId("pm-team-sync")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Read the last 20 project Mattermost messages from the project-basics link.
-                                Reply first to a direct PM question, PO INPUT REQUIRED:, PM REVIEW: READY, DEV BLOCKER:, or handoff.
-                                If no reply is needed, ask at most one named coordination question. Do not post generic status or
-                                substitute chat reminders for durable Plane handoffs.
-                                Link the Plane work item or canonical documentation page.
+                                Read recent project chat and participate when a real coordination exchange helps.
+                                Reply to direct questions, review/blocker handoffs, or ask one named question that unblocks work.
+                                Avoid generic status; link the Plane item or product documentation when useful.
                                 """))
                 .to("tack:act?id=pm-team-chat-sync&toolProfile=" + TeamChatToolProfile.ID);
 
         from("direct:pm-cycle-closeout")
                 .routeId("pm-cycle-closeout")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Update current-work or one small status page and keep it linked from the index.
-                                Record owner, Plane state, Plane work item link, canonical documentation page,
-                                and any durable outcome from recent Mattermost messages. Leave ephemeral chatter out.
+                                Curate one small product documentation improvement only when it helps navigation or understanding.
+                                Keep daily work state in Plane, leave ephemeral chat out, and split pages before they grow past a readable size.
                                 """))
                 .to("tack:act?id=pm-status-note&toolProfile=" + SourceControlToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""

@@ -33,10 +33,9 @@ public class ProjectManagementToolProfile implements ToolProfileProvider {
                         - Plane is the sole source of truth for planned work, assignments, status, blockers, dependencies, priorities, and delivery planning
                         - avoid duplicate projects or work items
                         - record blockers plainly with owner and evidence
-                        - keep each work item small; split only the one item in scope
+                        - keep each work item small; split oversized items and move detail into children instead of copying it
                         - when splitting work, make the parent summarize instead of duplicating child content
-                        - workspace members are automatically members of public projects
-                        - do not attempt to add members to public projects; membership is opt-in""")
+                        - keep product discovery in Backlog, PM-ready implementation work in To Do, active assigned work in In Progress, and verified outcomes in Done""")
                 .denyTools(PlaneMcpServer.ID,
                         "delete_project",
                         "delete_work_item",

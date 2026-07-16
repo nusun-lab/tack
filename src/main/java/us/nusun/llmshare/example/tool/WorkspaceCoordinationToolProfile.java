@@ -42,6 +42,11 @@ public class WorkspaceCoordinationToolProfile implements ToolProfileProvider {
                         "retrieve_project",
                         "update_project",
                         "get_project_members",
+                        "add_project_member",
+                        "create_project_member",
+                        "update_project_member",
+                        "remove_project_member",
+                        "delete_project_member",
                         "get_workspace_members",
                         "list_work_items",
                         "create_work_item",
@@ -88,6 +93,10 @@ public class WorkspaceCoordinationToolProfile implements ToolProfileProvider {
                         "get_channel",
                         "get_channel_by_name",
                         "get_channel_members",
+                        "add_channel_member",
+                        "add_user_to_channel",
+                        "remove_channel_member",
+                        "remove_user_from_channel",
                         "get_channel_messages",
                         "get_thread",
                         "search_messages",
@@ -102,8 +111,9 @@ public class WorkspaceCoordinationToolProfile implements ToolProfileProvider {
                         - create or update only the artifact named by the current step, then stop
                         - Plane is the sole system for projects, planned work, assignments, status, and blockers
                         - never create or manage planned work through Gitea issues
-                        - use Gitea only for repository discovery, repository creation, and implementation evidence
+                        - use Gitea only for repository discovery, repository creation, and implementation evidence; do not block on Gitea team onboarding
                         - use Mattermost for concise questions, handoffs, and notifications
+                        - keep Plane project and Mattermost channel membership aligned with the current team
                         - link to durable Plane or Gitea artifacts instead of duplicating their contents
                         - update existing artifacts rather than creating near-duplicates
                         """)

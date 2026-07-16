@@ -23,6 +23,7 @@ public class ForumAgentsChatRoutine extends RouteBuilder implements RoutineProvi
                 .description("""
                         Chat-only continuous routine for the hard-coded forum-agents room.
                         Use it to run multiple personas in the same conversation and exercise thought management.
+                        This routine is mostly for testing.
                         """)
                 .routeUri("direct:example-forum-agents-chat")
                 .defaultLane("high-pass")
