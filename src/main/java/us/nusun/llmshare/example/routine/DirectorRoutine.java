@@ -83,25 +83,38 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                             .to("tack:act?id=director-team-guidance&toolProfile=" + TeamChatToolProfile.ID)
                             .setHeader(TackHeaders.PROMPT, simple("""
                                 Decide whether the mission needs more agent runs.
+                                
+                                Mission:
+                                ${exchangeProperty.mission.goal}
 
-                                Mission: ${exchangeProperty.mission.goal}
+                                Assignable personas:
+                                ${bean:personaCatalog.agentRunStartAssignablePromptJson}
+                                
+                                Available routines:
+                                ${bean:routineCatalog.startableJson}
+                                
+                                Current Runtime State:
+                                The following describes the active runtime state. It supersedes tool evidence as the source
+                                of truth for the runtime. Work may be in an unfinished state.
+                                
                                 Capacity: ${exchangeProperty.directorActiveRunCount}/${exchangeProperty.agentRunCapacityMaximum} active, ${exchangeProperty.directorRemainingRunCapacity} remaining.
                                 Current accepted/scheduled/running runs: ${exchangeProperty.directorActiveMissionRoster}
-                                Assignable personas: ${bean:personaCatalog.agentRunStartAssignablePromptJson}
-                                Available routines: ${bean:routineCatalog.startableJson}
-
-                                Use the mission evidence, roster, persona catalog, and routine catalog to cover the next missing capability.
+                                
+                                Note: Completed runs are not "idle" agents that will start again on their own. They have completed
+                                their routine with the instructions provided. If you want them to continue, you must
+                                start them with new instructions.
+                                
+                                Goals:
+                                Your end-goal is launch the full team running their main routine with high-level directives
+                                so that you can be as low-touch as possible. That may not be appropriate when the project
+                                is in early stages, but you should work toward that outcome with each pass.
+                                
+                                Instructions:
+                                Use the current runtime state, mission evidence, persona catalog, and routine catalog to cover the next missing capability.
                                 Prefer full main routines, avoid duplicate active coverage, and use subroutines only for explicit narrow needs.
                                 Start no more runs than remaining capacity; return {"agentRuns":[]} when active coverage is enough for now.
                                 For each run, name the missing capability, durable evidence, and why this persona/routine is the right next consumer.
                                 
-                                Completed runs are not "idle" agents that will start again on their own. They have completed
-                                their routine with the instructions you provided. If you want them to continue, you must
-                                start them with new instructions.
-                                
-                                Your end-goal is launch the full team running their main routine with high-level directives
-                                so that you can be as low-touch as possible. That may not be appropriate when the project
-                                is in early stages, but you should work toward that outcome with each pass.
                                 """))
                             .to("tack:create?id=planned-agent-runs&schemaId=agent-run-request-list&schema=classpath:schemas/example/software-team/agent-run-requests-schema.json")
                             .unmarshal().json(JsonLibrary.Jackson, MissionRequest.class)
