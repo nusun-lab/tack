@@ -94,6 +94,14 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                                 Prefer full main routines, avoid duplicate active coverage, and use subroutines only for explicit narrow needs.
                                 Start no more runs than remaining capacity; return {"agentRuns":[]} when active coverage is enough for now.
                                 For each run, name the missing capability, durable evidence, and why this persona/routine is the right next consumer.
+                                
+                                Completed runs are not "idle" agents that will start again on their own. They have completed
+                                their routine with the instructions you provided. If you want them to continue, you must
+                                start them with new instructions.
+                                
+                                Your end-goal is launch the full team running their main routine with high-level directives
+                                so that you can be as low-touch as possible. That may not be appropriate when the project
+                                is in early stages, but you should work toward that outcome with each pass.
                                 """))
                             .to("tack:create?id=planned-agent-runs&schemaId=agent-run-request-list&schema=classpath:schemas/example/software-team/agent-run-requests-schema.json")
                             .unmarshal().json(JsonLibrary.Jackson, MissionRequest.class)
