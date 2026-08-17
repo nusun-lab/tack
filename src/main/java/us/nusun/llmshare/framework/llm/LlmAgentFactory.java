@@ -124,16 +124,26 @@ public class LlmAgentFactory {
             boolean strictJsonSchema) {
         LinkedHashMap<String, ChatModel> models = new LinkedHashMap<>();
         for (InferenceLaneDefinition lane : lanes.allLanes()) {
+            String configPrefix = laneConfigPrefix(lane);
+            double laneTemperature = laneDouble(configPrefix, "temperature", temperature);
+            double laneTopP = laneDouble(configPrefix, "top-p", topP);
+            double lanePresencePenalty = laneDouble(configPrefix, "presence-penalty", presencePenalty);
+            int laneTopK = laneInt(configPrefix, "top-k", topK);
+            double laneMinP = laneDouble(configPrefix, "min-p", minP);
+            double laneRepetitionPenalty = laneDouble(configPrefix, "repetition-penalty", repetitionPenalty);
+            String model = selectedModel(lane, defaultModel);
+            LOG.info("Configured inference lane {} model={} sampling temperature={} topP={} presencePenalty={} topK={} minP={} repetitionPenalty={}",
+                    lane.id(), model, laneTemperature, laneTopP, lanePresencePenalty, laneTopK, laneMinP, laneRepetitionPenalty);
             models.put(lane.id(), chatModel(
                     firstNonBlank(lane.endpoint(), defaultBaseUrl),
                     firstNonBlank(resolveLaneApiKey(lane), defaultApiKey),
-                    selectedModel(lane, defaultModel),
-                    temperature,
-                    topP,
-                    presencePenalty,
-                    topK,
-                    minP,
-                    repetitionPenalty,
+                    model,
+                    laneTemperature,
+                    laneTopP,
+                    lanePresencePenalty,
+                    laneTopK,
+                    laneMinP,
+                    laneRepetitionPenalty,
                     maxTokens,
                     timeoutMs,
                     thinkingOffEnabled,
@@ -200,6 +210,34 @@ public class LlmAgentFactory {
         }
         return blank(lane.apiKeyEnvVariable()) ? null : System.getenv(lane.apiKeyEnvVariable());
     }
+
+    private static String laneConfigPrefix(InferenceLaneDefinition lane) {
+        String configKey = lane == null ? null : lane.apiKeyConfigKey();
+        if (blank(configKey)) {
+            return null;
+        }
+        int separator = configKey.lastIndexOf('.');
+        return separator <= 0 ? null : configKey.substring(0, separator);
+    }
+
+    private static double laneDouble(String configPrefix, String property, double fallback) {
+        if (blank(configPrefix)) {
+            return fallback;
+        }
+        return ConfigProvider.getConfig()
+                .getOptionalValue(configPrefix + "." + property, Double.class)
+                .orElse(fallback);
+    }
+
+    private static int laneInt(String configPrefix, String property, int fallback) {
+        if (blank(configPrefix)) {
+            return fallback;
+        }
+        return ConfigProvider.getConfig()
+                .getOptionalValue(configPrefix + "." + property, Integer.class)
+                .orElse(fallback);
+    }
+
     private static boolean blank(String value) {
         return value == null || value.isBlank();
     }
