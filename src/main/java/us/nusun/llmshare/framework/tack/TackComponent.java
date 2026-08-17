@@ -12,17 +12,23 @@ import java.util.Map;
 @Named("tack")
 public class TackComponent extends DefaultComponent {
     @Inject PrimitiveExecutor executor;
+    @Inject ActExecutor actExecutor;
 
     public TackComponent() {
     }
 
     public TackComponent(PrimitiveExecutor executor) {
+        this(executor, null);
+    }
+
+    public TackComponent(PrimitiveExecutor executor, ActExecutor actExecutor) {
         this.executor = executor;
+        this.actExecutor = actExecutor;
     }
 
     @Override
     protected Endpoint createEndpoint(String uri, String remaining, Map<String, Object> parameters) throws Exception {
-        TackEndpoint endpoint = new TackEndpoint(uri, this, executor);
+        TackEndpoint endpoint = new TackEndpoint(uri, this, executor, actExecutor);
         endpoint.setOperation(remaining);
         setProperties(endpoint, parameters);
         return endpoint;

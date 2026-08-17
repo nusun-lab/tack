@@ -74,7 +74,7 @@ public class LlmRouteSupport {
         exchange.setProperty("laneId", lane.id());
         exchange.setProperty("passType", job.passType());
         exchange.setProperty("llmStartedAt", Instant.now());
-        exchange.setProperty("agentInvocationUri", DYNAMIC_AGENT_URI);
+        exchange.setProperty("agentInvocationUri", agentInvocationUri(job));
         exchange.getIn().setBody(new AiAgentBody<>(job.prompt(), firstNonBlank(job.systemPrompt(), """
                 You are a precise worker in a shared LLM queue. Return only what the requester asked for.
                 """.strip()), job.jobId()));
@@ -114,6 +114,29 @@ public class LlmRouteSupport {
 
     public static String routeSuffix(String laneId) {
         return laneId == null ? "" : laneId.replaceAll("[^A-Za-z0-9_-]", "-");
+    }
+
+    private static String agentInvocationUri(LlmJobEnvelope job) {
+        String tags = metadataText(job, "camelToolTags");
+        if (tags == null) {
+            return DYNAMIC_AGENT_URI;
+        }
+        if (!tags.matches("[A-Za-z0-9_-]+(?:,[A-Za-z0-9_-]+)*")) {
+            throw new IllegalArgumentException("Invalid Camel tool tags on LLM job: " + tags);
+        }
+        return DYNAMIC_AGENT_URI + "&tags=" + tags;
+    }
+
+    private static String metadataText(LlmJobEnvelope job, String key) {
+        if (job == null || job.metadata() == null) {
+            return null;
+        }
+        Object value = job.metadata().get(key);
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value).strip();
+        return text.isBlank() ? null : text;
     }
 
     private void verifyRouteStarted(Exchange exchange, String routeId) {

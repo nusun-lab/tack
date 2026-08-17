@@ -12,6 +12,7 @@ import org.apache.camel.support.DefaultEndpoint;
 @UriEndpoint(firstVersion = "0.1.0", scheme = "tack", title = "Tack", syntax = "tack:operation", producerOnly = true, category = {Category.CORE})
 public class TackEndpoint extends DefaultEndpoint {
     private final PrimitiveExecutor executor;
+    private final ActExecutor actExecutor;
 
     @UriPath(description = "Primitive operation to execute")
     private String operation;
@@ -43,14 +44,15 @@ public class TackEndpoint extends DefaultEndpoint {
     @UriParam(description = "Create result schema URI")
     private String schemaUri;
 
-    public TackEndpoint(String endpointUri, TackComponent component, PrimitiveExecutor executor) {
+    public TackEndpoint(String endpointUri, TackComponent component, PrimitiveExecutor executor, ActExecutor actExecutor) {
         super(endpointUri, component);
         this.executor = executor;
+        this.actExecutor = actExecutor;
     }
 
     @Override
     public Producer createProducer() {
-        return new TackProducer(this, executor);
+        return new TackProducer(this, executor, actExecutor);
     }
 
     @Override

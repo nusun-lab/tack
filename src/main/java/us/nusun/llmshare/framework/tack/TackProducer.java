@@ -8,12 +8,14 @@ import org.apache.camel.support.service.ServiceHelper;
 public class TackProducer extends DefaultProducer {
     private final TackEndpoint endpoint;
     private final PrimitiveExecutor executor;
+    private final ActExecutor actExecutor;
     private ProducerTemplate producerTemplate;
 
-    public TackProducer(TackEndpoint endpoint, PrimitiveExecutor executor) {
+    public TackProducer(TackEndpoint endpoint, PrimitiveExecutor executor, ActExecutor actExecutor) {
         super(endpoint);
         this.endpoint = endpoint;
         this.executor = executor;
+        this.actExecutor = actExecutor;
     }
 
     @Override
@@ -37,11 +39,23 @@ public class TackProducer extends DefaultProducer {
         }
         String operation = requiredOperation();
         switch (operation) {
-            case "act" -> executor.act(exchange, new PrimitiveExecutor.ActRequest(
-                    requiredParameter("id", endpoint.getId(), operation),
-                    consumeRequiredHeader(exchange, TackHeaders.PROMPT, operation),
-                    endpoint.getToolProfile(),
-                    endpoint.getLane()), producerTemplate);
+            case "act" -> {
+                String id = requiredParameter("id", endpoint.getId(), operation);
+                String prompt = consumeRequiredHeader(exchange, TackHeaders.PROMPT, operation);
+                if (actExecutor != null) {
+                    actExecutor.execute(exchange, new ActExecutor.Request(
+                            id,
+                            prompt,
+                            endpoint.getToolProfile(),
+                            endpoint.getLane()), producerTemplate);
+                } else {
+                    executor.act(exchange, new PrimitiveExecutor.ActRequest(
+                            id,
+                            prompt,
+                            endpoint.getToolProfile(),
+                            endpoint.getLane()), producerTemplate);
+                }
+            }
             case "decide" -> executor.decide(exchange, new PrimitiveExecutor.DecideRequest(
                     requiredParameter("id", endpoint.getId(), operation),
                     consumeRequiredHeader(exchange, TackHeaders.PROMPT, operation),

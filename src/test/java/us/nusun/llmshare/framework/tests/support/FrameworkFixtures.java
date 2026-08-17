@@ -18,6 +18,7 @@ import us.nusun.llmshare.framework.model.RoutineDefinition;
 import us.nusun.llmshare.framework.model.ToolProfile;
 import us.nusun.llmshare.framework.projection.AgentRunProjectionManager;
 import us.nusun.llmshare.framework.projection.ProjectionStore;
+import us.nusun.llmshare.framework.tack.ActExecutor;
 import us.nusun.llmshare.framework.tack.PrimitiveExecutor;
 import us.nusun.llmshare.framework.service.MissionRosterService;
 import us.nusun.llmshare.framework.routine.ThoughtStackSupport;
@@ -154,6 +155,26 @@ public final class FrameworkFixtures {
         ThoughtStackSupport thoughts = new ThoughtStackSupport();
         set(thoughts, "projections", projections);
         PrimitiveExecutor executor = new PrimitiveExecutor();
+        set(executor, "objectMapper", objectMapper);
+        set(executor, "thoughts", thoughts);
+        set(executor, "personas", personas);
+        set(executor, "routines", routines);
+        set(executor, "toolProfiles", toolProfileRegistry());
+        set(executor, "missionRoster", missionRosterService(agentRuns, personas, routines));
+        set(executor, "lanes", inferenceLaneRegistry());
+        set(executor, "projections", projections);
+        return executor;
+    }
+
+    public static ActExecutor actExecutor(ProjectionStore store) {
+        AgentRunStore agentRuns = defaultAgentRunStore();
+        AgentRunProjectionManager projections = projectionManager(store);
+        ObjectMapper objectMapper = new ObjectMapper();
+        PersonaCatalog personas = personaCatalog();
+        RoutineCatalog routines = routineCatalog();
+        ThoughtStackSupport thoughts = new ThoughtStackSupport();
+        set(thoughts, "projections", projections);
+        ActExecutor executor = new ActExecutor();
         set(executor, "objectMapper", objectMapper);
         set(executor, "thoughts", thoughts);
         set(executor, "personas", personas);
