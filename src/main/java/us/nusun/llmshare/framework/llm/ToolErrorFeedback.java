@@ -7,7 +7,7 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 
 /**
- * Converts tool failures into concise, actionable feedback that LangChain4j sends back to the model.
+ * Converts tool failures into concise feedback that LangChain4j sends back to the model.
  */
 public final class ToolErrorFeedback {
     private static final int MAX_REASON_LENGTH = 1500;
@@ -16,13 +16,11 @@ public final class ToolErrorFeedback {
     }
 
     public static ToolErrorHandlerResult execution(Throwable error, ToolErrorContext context) {
-        return ToolErrorHandlerResult.text("Tool '" + toolName(context) + "' failed. Reason: " + reason(error)
-                + " Use this error to correct the next action. Do not repeat the same tool call unchanged unless the error indicates that retrying may succeed.");
+        return ToolErrorHandlerResult.text("Tool '" + toolName(context) + "' failed. Reason: " + reason(error));
     }
 
     public static ToolErrorHandlerResult arguments(Throwable error, ToolErrorContext context) {
-        return ToolErrorHandlerResult.text("Tool '" + toolName(context) + "' received invalid arguments. Reason: " + reason(error)
-                + " Correct the arguments to match the tool contract before retrying. Do not repeat the same invalid arguments unchanged.");
+        return ToolErrorHandlerResult.text("Tool '" + toolName(context) + "' received invalid arguments. Reason: " + reason(error));
     }
 
     private static String toolName(ToolErrorContext context) {
