@@ -15,10 +15,9 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
-        <quarkus.platform.version>3.36.0</quarkus.platform.version>
+        <quarkus.platform.version>3.38.0</quarkus.platform.version>
         <camel-quarkus.platform.artifact-id>quarkus-camel-bom</camel-quarkus.platform.artifact-id>
         <langchain4j.version>1.16.3</langchain4j.version>
-        <camel.langchain4j.agent.version>4.22.0-SNAPSHOT</camel.langchain4j.agent.version>
         <surefire-plugin.version>3.5.3</surefire-plugin.version>
         <jacoco-plugin.version>0.8.13</jacoco-plugin.version>
     </properties>
@@ -46,39 +45,8 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-            <dependency>
-                <groupId>org.apache.camel</groupId>
-                <artifactId>camel-langchain4j-agent</artifactId>
-                <version>${camel.langchain4j.agent.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.camel</groupId>
-                <artifactId>camel-langchain4j-agent-api</artifactId>
-                <version>${camel.langchain4j.agent.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.camel</groupId>
-                <artifactId>camel-langchain4j-tools</artifactId>
-                <version>${camel.langchain4j.agent.version}</version>
-            </dependency>
         </dependencies>
     </dependencyManagement>
-
-    <repositories>
-        <!-- Temporary until a released Camel Quarkus line exposes camel-langchain4j-agent with
-             endpoint-level agentConfiguration + jsonSchema support. Keep the snapshot scope as
-             narrow as possible and do not use this repository for general dependency upgrades. -->
-        <repository>
-            <id>apache-snapshots</id>
-            <url>https://repository.apache.org/content/repositories/snapshots</url>
-            <releases>
-                <enabled>false</enabled>
-            </releases>
-            <snapshots>
-                <enabled>true</enabled>
-            </snapshots>
-        </repository>
-    </repositories>
 
     <dependencies>
         <dependency>
@@ -140,17 +108,6 @@
             <artifactId>camel-langchain4j-agent</artifactId>
             <!-- Force only the LangChain4j agent runtime to snapshot API support while the
                  surrounding Camel Quarkus platform remains on its released 4.20-based line. -->
-            <version>${camel.langchain4j.agent.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.camel</groupId>
-            <artifactId>camel-langchain4j-agent-api</artifactId>
-            <version>${camel.langchain4j.agent.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.camel</groupId>
-            <artifactId>camel-langchain4j-tools</artifactId>
-            <version>${camel.langchain4j.agent.version}</version>
         </dependency>
         <dependency>
             <groupId>org.apache.camel.quarkus</groupId>

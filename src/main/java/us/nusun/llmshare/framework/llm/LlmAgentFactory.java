@@ -13,6 +13,8 @@ import dev.langchain4j.model.chat.request.ResponseFormat;
 import dev.langchain4j.model.chat.request.ToolChoice;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiTokenCountEstimator;
+import dev.langchain4j.service.AiServices;
+import dev.langchain4j.service.tool.ToolProvider;
 import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Named;
 import jakarta.inject.Singleton;
@@ -23,6 +25,7 @@ import org.apache.camel.component.langchain4j.agent.api.Agent;
 import org.apache.camel.component.langchain4j.agent.api.AgentConfiguration;
 import org.apache.camel.component.langchain4j.agent.api.AgentFactory;
 import org.apache.camel.component.langchain4j.agent.api.AgentWithMemory;
+import org.apache.camel.component.langchain4j.agent.api.AiAgentWithMemoryService;
 import org.apache.camel.component.langchain4j.agent.api.AgentWithoutMemory;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -285,25 +288,13 @@ public class LlmAgentFactory {
             AgentConfiguration configuration = new AgentConfiguration().withChatModel(model);
             if (passType == LlmPassType.TOOL) {
                 configuration.withChatMemoryProvider(new EphemeralToolPassChatMemoryProvider(memoryMaxTokens, tokenCountEstimator, true));
-                if (maxToolCallingRoundTrips > 0) {
-                    configuration.withMaxToolCallingRoundTrips(maxToolCallingRoundTrips);
-                }
                 List<McpClient> clients = mcpClients(exchange);
                 if (!clients.isEmpty()) {
                     configuration.withMcpClients(clients);
                 }
             }
-            Agent agent = configuration.getChatMemoryProvider() == null ? new AgentWithoutMemory(configuration) : new AgentWithMemory(configuration);
+            Agent agent = configuration.getChatMemoryProvider() == null ? new AgentWithoutMemory(configuration) : new TackToolAgent(configuration, maxToolCallingRoundTrips);
             applyProviderSchemaIfRequired(exchange, laneId, passType, agent);
-            ResponseFormat responseFormat = agent instanceof AbstractAgent<?> abstractAgent
-                    ? abstractAgent.getResponseFormat()
-                    : null;
-            configuration.withAiServicesCustomizer(aiServices -> {
-                aiServices.hallucinatedToolNameStrategy(HALLUCINATED_TOOL_NAME_RECOVERY_STRATEGY);
-                if (passType == LlmPassType.TOOL) {
-                    aiServices.chatRequestTransformer(request -> forceInitialToolChoice(request, responseFormat));
-                }
-            });
             return agent;
         }
 
@@ -320,6 +311,26 @@ public class LlmAgentFactory {
                 builder.responseFormat(responseFormat);
             }
             return builder.build();
+        }
+
+        private static final class TackToolAgent extends AgentWithMemory {
+            private final int maxToolCallingRoundTrips;
+
+            private TackToolAgent(AgentConfiguration configuration, int maxToolCallingRoundTrips) {
+                super(configuration);
+                this.maxToolCallingRoundTrips = maxToolCallingRoundTrips;
+            }
+
+            @Override
+            protected void configureBuilder(AiServices<AiAgentWithMemoryService> builder, ToolProvider toolProvider) {
+                super.configureBuilder(builder, toolProvider);
+                builder.hallucinatedToolNameStrategy(HALLUCINATED_TOOL_NAME_RECOVERY_STRATEGY);
+                if (maxToolCallingRoundTrips > 0) {
+                    builder.maxToolCallingRoundTrips(maxToolCallingRoundTrips);
+                }
+                ResponseFormat responseFormat = getResponseFormat();
+                builder.chatRequestTransformer(request -> forceInitialToolChoice(request, responseFormat));
+            }
         }
 
         private List<McpClient> mcpClients(Exchange exchange) {
