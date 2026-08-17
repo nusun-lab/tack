@@ -78,13 +78,32 @@ public class LlmAgentFactory {
             @ConfigProperty(name = "llm.model-default.openai.api-key") String defaultApiKey,
             @ConfigProperty(name = "llm.model-default.openai.model") String defaultModel,
             @ConfigProperty(name = "llm.model-default.openai.temperature") double temperature,
+            @ConfigProperty(name = "llm.model-default.openai.top-p") double topP,
+            @ConfigProperty(name = "llm.model-default.openai.presence-penalty") double presencePenalty,
+            @ConfigProperty(name = "llm.model-default.openai.top-k") int topK,
+            @ConfigProperty(name = "llm.model-default.openai.min-p") double minP,
+            @ConfigProperty(name = "llm.model-default.openai.repetition-penalty") double repetitionPenalty,
             @ConfigProperty(name = "llm.model-default.openai.max-tokens") int maxTokens,
             @ConfigProperty(name = "llm.model-default.openai.timeout-ms") long timeoutMs,
             @ConfigProperty(name = "llm.model-default.openai.thinking-off.enabled") boolean thinkingOffEnabled,
             @ConfigProperty(name = "llm.model-default.openai.strict-json-schema", defaultValue = "true") boolean strictJsonSchema,
             @ConfigProperty(name = "llm.model-default.tool-memory.max-tokens", defaultValue = "12000") int memoryMaxTokens,
             @ConfigProperty(name = "llm.model-default.max-tool-calling-round-trips", defaultValue = "4") int maxToolCallingRoundTrips) {
-        Map<String, ChatModel> laneModels = laneModels(lanes, defaultBaseUrl, defaultApiKey, defaultModel, temperature, maxTokens, timeoutMs, thinkingOffEnabled, strictJsonSchema);
+        Map<String, ChatModel> laneModels = laneModels(
+                lanes,
+                defaultBaseUrl,
+                defaultApiKey,
+                defaultModel,
+                temperature,
+                topP,
+                presencePenalty,
+                topK,
+                minP,
+                repetitionPenalty,
+                maxTokens,
+                timeoutMs,
+                thinkingOffEnabled,
+                strictJsonSchema);
         return new DynamicAgentFactory(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator, memoryMaxTokens, maxToolCallingRoundTrips);
     }
 
@@ -94,6 +113,11 @@ public class LlmAgentFactory {
             String defaultApiKey,
             String defaultModel,
             double temperature,
+            double topP,
+            double presencePenalty,
+            int topK,
+            double minP,
+            double repetitionPenalty,
             int maxTokens,
             long timeoutMs,
             boolean thinkingOffEnabled,
@@ -105,6 +129,11 @@ public class LlmAgentFactory {
                     firstNonBlank(resolveLaneApiKey(lane), defaultApiKey),
                     selectedModel(lane, defaultModel),
                     temperature,
+                    topP,
+                    presencePenalty,
+                    topK,
+                    minP,
+                    repetitionPenalty,
                     maxTokens,
                     timeoutMs,
                     thinkingOffEnabled,
@@ -117,19 +146,40 @@ public class LlmAgentFactory {
         return firstNonBlank(lane == null ? null : lane.model(), globalFallback);
     }
 
-    private static OpenAiChatModel chatModel(String baseUrl, String apiKey, String model, double temperature, int maxTokens, long timeoutMs, boolean thinkingOffEnabled, boolean strictJsonSchema) {
+    private static OpenAiChatModel chatModel(
+            String baseUrl,
+            String apiKey,
+            String model,
+            double temperature,
+            double topP,
+            double presencePenalty,
+            int topK,
+            double minP,
+            double repetitionPenalty,
+            int maxTokens,
+            long timeoutMs,
+            boolean thinkingOffEnabled,
+            boolean strictJsonSchema) {
         var builder = OpenAiChatModel.builder()
                 .baseUrl(baseUrl)
                 .apiKey(apiKey)
                 .modelName(model)
                 .temperature(temperature)
+                .topP(topP)
+                .presencePenalty(presencePenalty)
                 .maxTokens(maxTokens)
                 .strictJsonSchema(strictJsonSchema)
                 .timeout(Duration.ofMillis(timeoutMs))
                 .httpClientBuilder(http11ClientBuilder());
+
+        Map<String, Object> customParameters = new LinkedHashMap<>();
+        customParameters.put("top_k", topK);
+        customParameters.put("min_p", minP);
+        customParameters.put("repetition_penalty", repetitionPenalty);
         if (thinkingOffEnabled) {
-            builder.customParameters(Map.of("chat_template_kwargs", Map.of("enable_thinking", false)));
+            customParameters.put("chat_template_kwargs", Map.of("enable_thinking", false));
         }
+        builder.customParameters(customParameters);
         return builder.build();
     }
 
