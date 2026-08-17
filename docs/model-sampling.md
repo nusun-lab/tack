@@ -1,36 +1,51 @@
 # Model sampling configuration
 
-Tack exposes the model-default sampling profile through environment-backed application properties.
+Tack supports global model-default sampling values plus per-lane overrides.
 
-| Environment variable | Property | Default |
-| --- | --- | --- |
-| `LLM_MODEL_DEFAULT_OPENAI_TEMPERATURE` | `llm.model-default.openai.temperature` | `0` |
-| `LLM_MODEL_DEFAULT_OPENAI_TOP_P` | `llm.model-default.openai.top-p` | `1.0` |
-| `LLM_MODEL_DEFAULT_OPENAI_PRESENCE_PENALTY` | `llm.model-default.openai.presence-penalty` | `0.0` |
-| `LLM_MODEL_DEFAULT_OPENAI_TOP_K` | `llm.model-default.openai.top-k` | `-1` |
-| `LLM_MODEL_DEFAULT_OPENAI_MIN_P` | `llm.model-default.openai.min-p` | `0.0` |
-| `LLM_MODEL_DEFAULT_OPENAI_REPETITION_PENALTY` | `llm.model-default.openai.repetition-penalty` | `1.0` |
+Global defaults:
+
+| Environment variable | Default |
+| --- | --- |
+| `LLM_MODEL_DEFAULT_OPENAI_TEMPERATURE` | `0` |
+| `LLM_MODEL_DEFAULT_OPENAI_TOP_P` | `1.0` |
+| `LLM_MODEL_DEFAULT_OPENAI_PRESENCE_PENALTY` | `0.0` |
+| `LLM_MODEL_DEFAULT_OPENAI_TOP_K` | `-1` |
+| `LLM_MODEL_DEFAULT_OPENAI_MIN_P` | `0.0` |
+| `LLM_MODEL_DEFAULT_OPENAI_REPETITION_PENALTY` | `1.0` |
+
+High-pass overrides:
+
+```bash
+LLM_HIGH_TEMPERATURE=0.7
+LLM_HIGH_TOP_P=0.8
+LLM_HIGH_PRESENCE_PENALTY=1.0
+LLM_HIGH_TOP_K=20
+LLM_HIGH_MIN_P=0.0
+LLM_HIGH_REPETITION_PENALTY=1.05
+```
+
+Low-pass equivalents use the `LLM_LOW_` prefix. Any unset lane value falls back to the matching global model-default value.
 
 `temperature`, `top_p`, and `presence_penalty` are sent as standard OpenAI-compatible request parameters. `top_k`, `min_p`, and `repetition_penalty` are sent as custom request parameters supported by vLLM.
 
-## Qwen 3.8 agent-tooling profile
+## Qwen 3.8 high-pass profile
 
-This profile resolved repeated equivalent tool searches observed with Qwen 3.8 under deterministic sampling:
-
-```bash
-LLM_MODEL_DEFAULT_OPENAI_TEMPERATURE=0.7
-LLM_MODEL_DEFAULT_OPENAI_TOP_P=0.8
-LLM_MODEL_DEFAULT_OPENAI_PRESENCE_PENALTY=1.0
-LLM_MODEL_DEFAULT_OPENAI_TOP_K=20
-LLM_MODEL_DEFAULT_OPENAI_MIN_P=0.0
-LLM_MODEL_DEFAULT_OPENAI_REPETITION_PENALTY=1.05
-```
-
-These are runtime tuning values, not framework invariants. Different models may require different sampling profiles.
+The high-pass profile above resolved repeated equivalent tool searches observed with Qwen 3.8 under deterministic sampling. These are runtime tuning values, not framework invariants.
 
 ## Local `.env`
 
-Add the values above to `.env`, then export them before starting Tack:
+Add only the high-pass values when tuning Qwen 3.8 independently:
+
+```bash
+LLM_HIGH_TEMPERATURE=0.7
+LLM_HIGH_TOP_P=0.8
+LLM_HIGH_PRESENCE_PENALTY=1.0
+LLM_HIGH_TOP_K=20
+LLM_HIGH_MIN_P=0.0
+LLM_HIGH_REPETITION_PENALTY=1.05
+```
+
+Then export them before starting Tack:
 
 ```bash
 set -a
@@ -42,21 +57,21 @@ set +a
 
 ## OpenShift Secret
 
-The Tack deployment imports all environment variables from Secret `tack` through `envFrom`. Update only the sampling keys so existing credentials and endpoint settings remain untouched:
+The Tack deployment imports all environment variables from Secret `tack` through `envFrom`. Patch only the high-pass sampling keys so the low-pass model retains its existing sampling profile:
 
 ```bash
 oc -n tack patch secret tack --type=merge -p '{
   "stringData": {
-    "LLM_MODEL_DEFAULT_OPENAI_TEMPERATURE": "0.7",
-    "LLM_MODEL_DEFAULT_OPENAI_TOP_P": "0.8",
-    "LLM_MODEL_DEFAULT_OPENAI_PRESENCE_PENALTY": "1.0",
-    "LLM_MODEL_DEFAULT_OPENAI_TOP_K": "20",
-    "LLM_MODEL_DEFAULT_OPENAI_MIN_P": "0.0",
-    "LLM_MODEL_DEFAULT_OPENAI_REPETITION_PENALTY": "1.05"
+    "LLM_HIGH_TEMPERATURE": "0.7",
+    "LLM_HIGH_TOP_P": "0.8",
+    "LLM_HIGH_PRESENCE_PENALTY": "1.0",
+    "LLM_HIGH_TOP_K": "20",
+    "LLM_HIGH_MIN_P": "0.0",
+    "LLM_HIGH_REPETITION_PENALTY": "1.05"
   }
 }'
 oc -n tack rollout restart deployment/tack
 oc -n tack rollout status deployment/tack
 ```
 
-Patching `stringData` avoids reconstructing the full Secret and therefore preserves unrelated keys.
+Patching `stringData` preserves unrelated Secret keys. Existing pods must be restarted to receive changed environment variables.
