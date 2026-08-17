@@ -325,6 +325,8 @@ public class LlmAgentFactory {
             protected void configureBuilder(AiServices<AiAgentWithMemoryService> builder, ToolProvider toolProvider) {
                 super.configureBuilder(builder, toolProvider);
                 builder.hallucinatedToolNameStrategy(HALLUCINATED_TOOL_NAME_RECOVERY_STRATEGY);
+                builder.toolArgumentsErrorHandler(ToolErrorFeedback::arguments);
+                builder.toolExecutionErrorHandler(ToolErrorFeedback::execution);
                 if (maxToolCallingRoundTrips > 0) {
                     builder.maxToolCallingRoundTrips(maxToolCallingRoundTrips);
                 }
