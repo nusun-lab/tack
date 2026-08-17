@@ -124,14 +124,18 @@ public class ProfiledMcpClient implements McpClient {
         checkAllowed(request.name());
         ToolExecutionRequest profiled = applyProfile(request);
         logDim("TOOL " + server + "." + profiled.name() + " REQUEST " + abbreviate(profiled.arguments()));
-        ToolExecutionResult result = invocationContext == null
-                ? delegate.executeTool(profiled)
-                : delegate.executeTool(profiled, invocationContext);
-        result = limitResult(result);
-        logDim("TOOL " + server + "." + profiled.name() + " RESPONSE isError=" + result.isError() + " " + abbreviate(resultText(result)));
-        return result;
+        try {
+            ToolExecutionResult result = invocationContext == null
+                    ? delegate.executeTool(profiled)
+                    : delegate.executeTool(profiled, invocationContext);
+            result = limitResult(result);
+            logDim("TOOL " + server + "." + profiled.name() + " RESPONSE isError=" + result.isError() + " " + abbreviate(resultText(result)));
+            return result;
+        } catch (RuntimeException e) {
+            logDim("TOOL " + server + "." + profiled.name() + " ERROR " + abbreviate(e.getMessage()));
+            throw e;
+        }
     }
-
 
     private boolean qualifiesToolNames() {
         return profile.mcpServers().size() > 1;
