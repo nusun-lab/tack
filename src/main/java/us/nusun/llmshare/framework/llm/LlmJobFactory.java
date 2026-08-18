@@ -46,11 +46,11 @@ public class LlmJobFactory {
         applyLogPersona(exchange, job);
     }
 
-    public void restoreFrameworkMetadata(Exchange exchange) {
-        restoreFrameworkMetadata(exchange, exchange.getProperty("llmJob", LlmJob.class));
+    public void prepareWorkerContext(Exchange exchange) {
+        prepareWorkerContext(exchange, exchange.getProperty("llmJob", LlmJob.class));
     }
 
-    public void restoreFrameworkMetadata(Exchange exchange, LlmJob job) {
+    public void prepareWorkerContext(Exchange exchange, LlmJob job) {
         if (job == null) {
             return;
         }
@@ -88,10 +88,6 @@ public class LlmJobFactory {
     }
 
     public UUID jobIdKafkaKey(Exchange exchange) {
-        UUID jobId = exchange.getProperty("llmJobId", UUID.class);
-        if (jobId != null) {
-            return jobId;
-        }
         LlmJob job = exchange.getProperty("llmJob", LlmJob.class);
         return job == null ? null : job.jobId();
     }

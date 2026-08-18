@@ -28,7 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 
 class LlmJobMetadataBoundaryTest {
     @Test
-    void workerExchangeRestoresFrameworkMetadataFromSerializedJob() throws Exception {
+    void serializedJobMetadataRemainsAuthoritativeForWorkerToolSelection() throws Exception {
         LlmJob job = new LlmJob(
                 UUID.randomUUID(),
                 "low-pass",
@@ -48,7 +48,7 @@ class LlmJobMetadataBoundaryTest {
         Exchange worker = new DefaultExchange(new DefaultCamelContext());
 
         new LlmJobFactory(FrameworkFixtures.inferenceLaneRegistry(), FrameworkFixtures.personaCatalog())
-                .restoreFrameworkMetadata(worker, restoredJob);
+                .prepareWorkerContext(worker, restoredJob);
         worker.setProperty("llmJob", restoredJob);
 
         assertNull(worker.getProperty("agentRunId"));
@@ -77,7 +77,7 @@ class LlmJobMetadataBoundaryTest {
     }
 
     @Test
-    void workerExchangeRestoresPersonaLogLabelAndColorFromSerializedEnvelope() throws Exception {
+    void serializedJobMetadataProvidesWorkerPersonaLogContext() throws Exception {
         LlmJob job = new LlmJob(
                 UUID.randomUUID(),
                 "low-pass",
@@ -89,7 +89,7 @@ class LlmJobMetadataBoundaryTest {
         Exchange worker = new DefaultExchange(new DefaultCamelContext());
 
         new LlmJobFactory(FrameworkFixtures.inferenceLaneRegistry(), FrameworkFixtures.personaCatalog())
-                .restoreFrameworkMetadata(worker, job);
+                .prepareWorkerContext(worker, job);
 
         assertEquals("PA", worker.getProperty("agentLabel"));
         assertEquals("38;2;106;169;255", worker.getProperty("agentLogColor"));

@@ -284,7 +284,7 @@ class LlmQueueLifecycleTest {
     }
 
     @Test
-    void kafkaKeyHelpersUsePartitionKeyForRequestsAndJobIdForReplies() {
+    void kafkaKeyHelpersUsePartitionKeyForRequestsAndAuthoritativeJobIdForReplies() {
         DefaultCamelContext context = TestCamelContexts.quiet();
         UUID jobId = UUID.randomUUID();
         Exchange exchange = new DefaultExchange(context);
@@ -295,9 +295,8 @@ class LlmQueueLifecycleTest {
         assertEquals("agent/run:1?stable=true", jobFactory().requestKafkaKey(exchange));
         assertEquals(jobId, jobFactory().jobIdKafkaKey(exchange));
 
-        UUID overrideJobId = UUID.randomUUID();
-        exchange.setProperty("llmJobId", overrideJobId);
-        assertEquals(overrideJobId, jobFactory().jobIdKafkaKey(exchange));
+        exchange.setProperty("llmJobId", UUID.randomUUID());
+        assertEquals(jobId, jobFactory().jobIdKafkaKey(exchange));
     }
 
     @Test

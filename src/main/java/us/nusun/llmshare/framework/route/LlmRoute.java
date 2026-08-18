@@ -107,7 +107,7 @@ public class LlmRoute extends RouteBuilder {
 
         from("direct:call-llm-agent")
                 .routeId("call-llm-agent")
-                .bean(jobFactory, "restoreFrameworkMetadata")
+                .bean(jobFactory, "prepareWorkerContext")
                 .bean(routeSupport, "prepareAgentCall")
                 .toD("${exchangeProperty.agentInvocationUri}")
                 .log(
@@ -141,7 +141,7 @@ public class LlmRoute extends RouteBuilder {
                 .autoStartup("{{llm.worker.enabled:true}}")
                 .unmarshal(llmJson(LlmJob.class))
                 .setProperty("llmJob", body())
-                .bean(jobFactory, "restoreFrameworkMetadata")
+                .bean(jobFactory, "prepareWorkerContext")
                 .doTry()
                     .to("direct:call-llm-agent")
                     .to(publishReplyUri)

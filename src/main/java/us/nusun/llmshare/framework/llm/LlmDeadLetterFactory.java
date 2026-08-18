@@ -57,7 +57,7 @@ public class LlmDeadLetterFactory {
 
     private String contextSummary(Exchange exchange, String globalModelFallback) {
         LlmJob job = exchange.getProperty("llmJob", LlmJob.class);
-        return "jobId=" + firstNonBlank(exchange.getProperty("llmJobId", String.class), job == null ? null : String.valueOf(job.jobId()))
+        return "jobId=" + firstNonBlank(job == null ? null : String.valueOf(job.jobId()), exchange.getProperty("llmJobId", String.class))
                 + " laneId=" + laneId(exchange, job)
                 + " model=" + modelId(exchange, globalModelFallback);
     }
