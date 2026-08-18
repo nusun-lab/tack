@@ -28,8 +28,9 @@ public final class StubKafkaComponent extends DefaultComponent {
     }
 
     @Override
-    protected Endpoint createEndpoint(String uri, String remaining, Map<String, Object> parameters) {
-        return new StubKafkaEndpoint(uri, this, remaining);
+    protected Endpoint createEndpoint(String uri, String remaining, Map<String, Object> parameters) throws Exception {
+        String resolvedRemaining = getCamelContext().resolvePropertyPlaceholders(remaining);
+        return new StubKafkaEndpoint(uri, this, resolvedRemaining);
     }
 
     public List<String> sentTopics() {
