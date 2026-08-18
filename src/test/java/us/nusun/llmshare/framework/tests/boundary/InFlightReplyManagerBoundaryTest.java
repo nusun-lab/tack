@@ -6,7 +6,6 @@ import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.LlmJobRequest;
 import us.nusun.llmshare.framework.model.LlmJobResult;
 import us.nusun.llmshare.framework.model.LlmJobStatus;
-import us.nusun.llmshare.framework.model.LlmPassType;
 
 import java.time.Instant;
 import java.util.Map;
@@ -81,7 +80,7 @@ class InFlightReplyManagerBoundaryTest {
         manager.register(job);
 
         IllegalStateException failure = assertThrows(IllegalStateException.class, () -> manager.await(job.jobId(), 1));
-        manager.complete(new LlmJobResult(job.jobId(), LlmJobStatus.SUCCEEDED, job.laneId(), job.passType(), job.requester(), job.role(), "mock", "late", "late", job.requestedAt(), Instant.now(), Instant.now(), 0, null));
+        manager.complete(new LlmJobResult(job.jobId(), LlmJobStatus.SUCCEEDED, job.laneId(), job.requester(), job.role(), "mock", "late", "late", job.requestedAt(), Instant.now(), Instant.now(), 0, null));
 
         assertTrue(failure.getMessage().contains("Timed out waiting for LLM reply"));
         assertFalse(manager.contains(job.jobId()));
@@ -92,14 +91,13 @@ class InFlightReplyManagerBoundaryTest {
         return LlmJobEnvelope.queued(new LlmJobRequest(
                 jobId,
                 "low-pass",
-                LlmPassType.TOOL,
                 "developer",
                 "developer",
                 0,
                 "prompt",
                 "system",
                 null,
-                Map.of("laneId", "low-pass", "passType", "TOOL"),
+                Map.of("laneId", "low-pass", "primitive", "act"),
                 Instant.now()));
     }
 }

@@ -11,6 +11,8 @@ import com.networknt.schema.SpecificationVersion;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.Exchange;
+import org.apache.camel.ExchangeProperty;
+import org.apache.camel.Header;
 import org.apache.camel.ProducerTemplate;
 import us.nusun.llmshare.framework.inventory.InferenceLaneRegistry;
 import us.nusun.llmshare.framework.inventory.PersonaCatalog;
@@ -22,7 +24,7 @@ import us.nusun.llmshare.framework.model.DecisionResult;
 import us.nusun.llmshare.framework.model.LlmJobRequest;
 import us.nusun.llmshare.framework.model.LlmJobResult;
 import us.nusun.llmshare.framework.model.LlmJobStatus;
-import us.nusun.llmshare.framework.model.LlmPassType;
+import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.Mission;
 import us.nusun.llmshare.framework.model.Persona;
 import us.nusun.llmshare.framework.model.RoutineDefinition;
@@ -43,6 +45,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @ApplicationScoped
@@ -90,61 +93,77 @@ public class PrimitiveExecutor {
         ThoughtFrame leaf = requireLeaf(stack, "tack:act");
         AgentRun run = currentRun(exchange);
         String laneId = resolveLane(exchange, request.lane());
-        String toolProfileId = firstNonBlank(request.toolProfile(), ToolProfileRegistry.NONE_ID);
-        ToolProfile profile = toolProfiles().getRequired(toolProfileId);
-        markCurrent(exchange, "act", request.id());
-        exchange.setProperty("actId", request.id());
-        exchange.setProperty("actPrompt", request.prompt());
-        exchange.setProperty("toolProfile", toolProfileId);
-        exchange.setProperty("toolProfileId", profile.id());
-        exchange.setProperty("toolProfileGuidance", profile.promptGuidance().isBlank() ? "(none)" : profile.promptGuidance());
+        ToolProfile profile = toolProfiles().getRequired(firstNonBlank(request.toolProfile(), ToolProfileRegistry.NONE_ID));
+        markCurrent(exchange, "act", request.id(), request.prompt());
+        exchange.setProperty("toolProfile", profile.id());
         projections.record(exchange, "ACT_STARTED");
+        projections.record(exchange, "AGENT_INVOCATION_QUEUED");
 
-        projections.record(exchange, "TOOL_PASS_QUEUED");
-        LlmJobResult toolResult = callLlm(
+        LlmJobResult llmResult = callLlm(
                 exchange,
                 llm,
-                llmRequest(exchange, laneId, LlmPassType.TOOL, "tool", renderToolPassPrompt(exchange, request, profile), null),
-                "tool/action pass");
-        Instant observedAt = Instant.now();
-        exchange.setProperty("toolPassObservedAt", observedAt);
-        exchange.setProperty("toolPassResult", toolResult.content());
-        projections.record(exchange, "TOOL_PASS_COMPLETED");
+                llmRequest(exchange, laneId, "act", renderActPrompt(exchange, request, profile, leaf), null),
+                "act agent invocation");
+        projections.record(exchange, "AGENT_INVOCATION_COMPLETED");
 
-        projections.record(exchange, "SYNTHESIS_PASS_QUEUED");
-        LlmJobResult synthesisResult = callLlm(
-                exchange,
-                llm,
-                llmRequest(exchange, laneId, LlmPassType.SYNTHESIS, "synthesis", renderActSynthesisPrompt(exchange, request, leaf, toolResult, observedAt), THOUGHT_CONTENT_SCHEMA),
-                "act thought synthesis pass");
-        projections.record(exchange, "SYNTHESIS_PASS_COMPLETED");
-        ThoughtContentResult rewrite = parse(synthesisResult.content(), ThoughtContentResult.class);
-        if (rewrite.content() == null || rewrite.content().isBlank()) {
-            throw new FrameworkPrimitiveException("Act synthesis returned blank thought content");
-        }
-        ThoughtFrame rewritten = stack.rewrite(leaf.id(), rewrite.content(), Instant.now());
+        ActCompletion completion = parseActCompletion(llmResult);
+        ThoughtFrame rewritten = stack.rewrite(leaf.id(), completion.content(), Instant.now());
         recordThoughtRewritten(exchange, rewritten, "act", request.id());
 
-        StepResult result = new StepResult(request.id(), toolResult.content(), List.of());
+        StepResult result = new StepResult(request.id(), completion.summary(), List.of());
         run.apply(result);
         exchange.setProperty("latestStepResult", result);
         exchange.getMessage().setBody(result);
         projections.record(exchange, "ACT_COMPLETED");
     }
 
+    public String finishAct(
+            @Header("summary") String summary,
+            @Header("content") String content,
+            @ExchangeProperty("llmJob") LlmJobEnvelope job) {
+        if (job == null || job.metadata() == null || !"act".equals(job.metadata().get("primitive"))) {
+            throw new FrameworkPrimitiveException("finish_act is only available to a Tack act invocation");
+        }
+        validateCompletion(summary, content);
+        try {
+            return mapper().writeValueAsString(new ActCompletion(job.jobId(), summary.strip(), content.strip()));
+        } catch (Exception e) {
+            throw new FrameworkPrimitiveException("Unable to encode finish_act result", e);
+        }
+    }
+
+    private ActCompletion parseActCompletion(LlmJobResult result) {
+        final ActCompletion completion;
+        try {
+            completion = mapper().readValue(result.content(), ActCompletion.class);
+        } catch (Exception e) {
+            throw new FrameworkPrimitiveException("Act agent did not reach finish_act: invalid terminal result", e);
+        }
+        if (completion.jobId() == null || !completion.jobId().equals(result.jobId())) {
+            throw new FrameworkPrimitiveException("Act agent did not reach finish_act: terminal job id is missing or wrong");
+        }
+        validateCompletion(completion.summary(), completion.content());
+        return completion;
+    }
+
+    private static void validateCompletion(String summary, String content) {
+        if (summary == null || summary.isBlank()) {
+            throw new FrameworkPrimitiveException("finish_act.summary must not be blank");
+        }
+        if (content == null || content.isBlank()) {
+            throw new FrameworkPrimitiveException("finish_act.content must not be blank");
+        }
+    }
+
     public void decide(Exchange exchange, DecideRequest request, ProducerTemplate llm) throws Exception {
         String laneId = resolveLane(exchange, request.lane());
-        markCurrent(exchange, "decide", request.id());
-        exchange.setProperty("decisionId", request.id());
-        exchange.setProperty("decisionPrompt", request.prompt());
+        markCurrent(exchange, "decide", request.id(), request.prompt());
         projections.record(exchange, "DECIDE_STARTED");
-        projections.record(exchange, "SYNTHESIS_PASS_QUEUED");
         LlmJobResult llmResult = callLlm(
                 exchange,
                 llm,
-                llmRequest(exchange, laneId, LlmPassType.SYNTHESIS, "decision", renderDecisionPrompt(exchange, request), "classpath:schemas/decision-result-schema.json"),
-                "decision synthesis pass");
-        projections.record(exchange, "SYNTHESIS_PASS_COMPLETED");
+                llmRequest(exchange, laneId, "decision", renderDecisionPrompt(exchange, request), "classpath:schemas/decision-result-schema.json"),
+                "decision call");
         DecisionResult result = parse(llmResult.content(), DecisionResult.class);
         if (result.decisionId() == null || !result.decisionId().equals(request.id())) {
             throw new FrameworkPrimitiveException("Decision result id " + result.decisionId() + " does not match requested id " + request.id());
@@ -159,21 +178,13 @@ public class PrimitiveExecutor {
     public void create(Exchange exchange, CreateRequest request, ProducerTemplate llm) throws Exception {
         String laneId = resolveLane(exchange, request.lane());
         ResolvedSchema schema = resolveCreateSchema(request);
-        markCurrent(exchange, "create", request.id());
-        exchange.setProperty("createId", request.id());
-        exchange.setProperty("schemaId", firstNonBlank(request.schemaId(), "caller-schema"));
-        exchange.setProperty("createPrompt", request.prompt());
-        exchange.setProperty("createSchema", schema.raw());
-        exchange.setProperty("createSchemaJson", schema.json());
-        exchange.setProperty("createSchemaUri", schema.uri());
+        markCurrent(exchange, "create", request.id(), request.prompt());
         projections.record(exchange, "CREATE_STARTED");
-        projections.record(exchange, "SYNTHESIS_PASS_QUEUED");
         LlmJobResult llmResult = callLlm(
                 exchange,
                 llm,
-                llmRequest(exchange, laneId, LlmPassType.SYNTHESIS, "create", renderCreatePrompt(exchange, request, schema), schema.uri()),
-                "create synthesis pass");
-        projections.record(exchange, "SYNTHESIS_PASS_COMPLETED");
+                llmRequest(exchange, laneId, "create", renderCreatePrompt(exchange, request, schema), schema.uri()),
+                "create call");
         JsonNode object = mapper().readTree(llmResult.content());
         validateAgainstSchema(schema.json(), object);
         CreateResult result = new CreateResult(request.id(), firstNonBlank(request.schemaId(), "caller-schema"), object);
@@ -185,13 +196,13 @@ public class PrimitiveExecutor {
     }
 
     public void enterThought(Exchange exchange, ThoughtEnterRequest request) {
-        markCurrent(exchange, "thought-enter", request.name());
+        markCurrent(exchange, "thought-enter", request.name(), null);
         ThoughtFrame frame = thoughts().push(exchange, request.name(), request.purpose(), request.maxTokens());
         exchange.getMessage().setBody(frame);
     }
 
     public void exitThought(Exchange exchange, ThoughtExitRequest request, ProducerTemplate llm) throws Exception {
-        markCurrent(exchange, "thought-exit", request.name());
+        markCurrent(exchange, "thought-exit", request.name(), null);
         ThoughtStack stack = stack(exchange);
         ThoughtFrame child = stack.leaf();
         if (child == null) {
@@ -219,8 +230,8 @@ public class PrimitiveExecutor {
         LlmJobResult llmResult = callLlm(
                 exchange,
                 llm,
-                llmRequest(exchange, laneId, LlmPassType.SYNTHESIS, "thought-consolidation", renderConsolidationPrompt(exchange, parent, child), THOUGHT_CONTENT_SCHEMA),
-                "thought consolidation pass");
+                llmRequest(exchange, laneId, "thought-consolidation", renderConsolidationPrompt(exchange, parent, child), THOUGHT_CONTENT_SCHEMA),
+                "thought consolidation call");
         ThoughtContentResult consolidated = parse(llmResult.content(), ThoughtContentResult.class);
         if (consolidated.content() == null || consolidated.content().isBlank()) {
             throw new FrameworkPrimitiveException("Thought consolidation returned blank parent content");
@@ -233,7 +244,7 @@ public class PrimitiveExecutor {
         exchange.getMessage().setBody(popped);
     }
 
-    private LlmJobResult callLlm(Exchange exchange, ProducerTemplate llm, LlmJobRequest request, String passDescription) {
+    private LlmJobResult callLlm(Exchange exchange, ProducerTemplate llm, LlmJobRequest request, String callDescription) {
         try {
             clearLlmExchangeState(exchange);
             exchange.getMessage().setBody(request);
@@ -241,14 +252,14 @@ public class PrimitiveExecutor {
             if (routed.getException() != null) {
                 throw routed.getException();
             }
-            return requireSucceeded(exchange, routed.getMessage().getBody(LlmJobResult.class), passDescription);
+            return requireSucceeded(exchange, routed.getMessage().getBody(LlmJobResult.class), callDescription);
         } catch (Exception e) {
             exchange.setProperty("latestPrimitiveFailure", firstNonBlank(e.getMessage(), e.getClass().getSimpleName()));
-            projections.record(exchange, "LLM_PASS_FAILED");
+            projections.record(exchange, "LLM_CALL_FAILED");
             if (e instanceof RuntimeException runtime) {
                 throw runtime;
             }
-            throw new FrameworkPrimitiveException("LLM " + passDescription + " failed: " + e.getMessage(), e);
+            throw new FrameworkPrimitiveException("LLM " + callDescription + " failed: " + e.getMessage(), e);
         }
     }
 
@@ -259,40 +270,39 @@ public class PrimitiveExecutor {
         exchange.removeProperty("llmQueueFailureHandling");
     }
 
-    private LlmJobResult requireSucceeded(Exchange exchange, LlmJobResult llm, String pass) {
+    private LlmJobResult requireSucceeded(Exchange exchange, LlmJobResult llm, String call) {
         if (llm == null) {
-            exchange.setProperty("latestPrimitiveFailure", "LLM " + pass + " did not return a result");
-            throw new FrameworkPrimitiveException("LLM " + pass + " did not return a result");
+            exchange.setProperty("latestPrimitiveFailure", "LLM " + call + " did not return a result");
+            throw new FrameworkPrimitiveException("LLM " + call + " did not return a result");
         }
         if (llm.status() != LlmJobStatus.SUCCEEDED) {
             exchange.setProperty("latestPrimitiveFailure", firstNonBlank(llm.error(), "unknown error"));
-            throw new FrameworkPrimitiveException("LLM " + pass + " failed: " + firstNonBlank(llm.error(), "unknown error"));
+            throw new FrameworkPrimitiveException("LLM " + call + " failed: " + firstNonBlank(llm.error(), "unknown error"));
         }
         if (llm.content() == null || llm.content().isBlank()) {
             exchange.setProperty("latestPrimitiveFailure", "empty LLM content");
-            throw new FrameworkPrimitiveException("LLM " + pass + " returned empty content");
+            throw new FrameworkPrimitiveException("LLM " + call + " returned empty content");
         }
         return llm;
     }
 
-    private LlmJobRequest llmRequest(Exchange exchange, String laneId, LlmPassType passType, String systemContract, String prompt, String schema) {
+    private LlmJobRequest llmRequest(Exchange exchange, String laneId, String systemContract, String prompt, String schema) {
         AgentRun run = currentRun(exchange);
         Persona persona = personas.getRequired(run.personaId());
         return new LlmJobRequest(
                 null,
                 laneId,
-                passType,
                 primitiveRequester(run),
                 persona.name(),
                 0,
                 prompt,
                 primitiveSystemPrompt(exchange, systemContract),
                 schema,
-                frameworkMetadata(exchange, laneId, passType, schema),
+                frameworkMetadata(exchange, laneId, schema),
                 null);
     }
 
-    private Map<String, Object> frameworkMetadata(Exchange exchange, String laneId, LlmPassType passType, String schema) {
+    private Map<String, Object> frameworkMetadata(Exchange exchange, String laneId, String schema) {
         LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
         AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
         Mission mission = exchange.getProperty("mission", Mission.class);
@@ -307,7 +317,6 @@ public class PrimitiveExecutor {
         }
         putIfNonBlank(metadata, "toolProfile", exchange.getProperty("toolProfile", String.class));
         putIfNonBlank(metadata, "laneId", laneId);
-        putIfNonBlank(metadata, "passType", passType == null ? null : passType.name());
         if (schema != null && !schema.isBlank()) {
             metadata.put(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY, true);
         }
@@ -322,78 +331,60 @@ public class PrimitiveExecutor {
         RoutineDefinition routine = currentRoutine(exchange);
         String laneId = firstNonBlank(requestedLane, routine.defaultLane(), RoutineDefinition.FRAMEWORK_DEFAULT_LANE);
         lanes().getRequired(laneId);
-        exchange.setProperty("resolvedLane", laneId);
         exchange.setProperty("laneId", laneId);
         return laneId;
     }
 
-    private void markCurrent(Exchange exchange, String primitive, String id) {
+    private void markCurrent(Exchange exchange, String primitive, String id, String prompt) {
         AgentRun run = currentRun(exchange);
         run.currentPrimitive(primitive);
         run.currentId(id);
         exchange.setProperty("personaId", run.personaId());
         exchange.removeProperty("latestPrimitiveFailure");
-        clearPromptProperties(exchange);
-    }
-
-    private void clearPromptProperties(Exchange exchange) {
-        exchange.removeProperty("actPrompt");
-        exchange.removeProperty("decisionPrompt");
-        exchange.removeProperty("createPrompt");
-        exchange.removeProperty("primitivePrompt");
+        if (prompt == null || prompt.isBlank()) {
+            exchange.removeProperty("primitivePrompt");
+        } else {
+            exchange.setProperty("primitivePrompt", prompt);
+        }
+        if (!"act".equals(primitive)) {
+            exchange.removeProperty("toolProfile");
+        }
     }
 
     private String primitiveSystemPrompt(Exchange exchange, String primitive) {
         Persona persona = personas.getRequired(currentRun(exchange).personaId());
         return renderPersonaBehavior(persona)
                 + switch (primitive) {
-            case "tool" -> """
-
-                    Tool access:
-                    - You have access to only one tool profile during this pass.
-
-                    Bounded execution:
-                    - Work only on the highlighted ACT PROMPT.
-                    - Use the fewest useful tool calls; target 1-3 calls for normal steps.
-                    - Stop when the requested evidence, mutation, or blocker is known.
-                    - Do not browse entire projects, repositories, documentation trees, or channels.
-                    - Do not re-check mission context unless this act prompt requires it.
+            case "act" -> """
 
                     Contract:
-                    - Do tool-backed work using available tools.
-                    - Never do anything except the specific act.
+                    - Complete exactly one ACT using only the available tools.
+                    - Use the smallest useful number of application tool calls.
                     - Do not claim external state unless tool-backed.
-                    - Return only a compact plain-text pass report.
-                    """;
-            case "synthesis" -> """
-
-                    Contract:
-                    - Synthesize the completed action result into the required JSON.
-                    - Return only valid JSON matching the supplied schema.
-                    - This pass has no tools; do not call tools, reason about tool availability, or retry the action.
-                    - The preceding action has already completed; do not repeat it.
-                    - Treat the supplied latest observation as the newest evidence.
-                    - Rewrite the current thought as current-state memory, not hidden chain-of-thought.
+                    - Finish by calling finish_act exactly once.
+                    - finish_act.summary is the compact externally useful step result.
+                    - finish_act.content is the complete replacement for the current durable thought.
+                    - Do not expose raw tool conversation or hidden reasoning in either argument.
                     """;
             case "decision" -> """
 
                     Contract:
                     - Answer one narrow routine control-flow question.
-                    - Use only supplied context; this pass has no tools.
+                    - Use only supplied context; this call has no tools.
                     - Return only a DecisionResult JSON object.
                     """;
             case "create" -> """
 
                     Contract:
                     - Create caller-schema-shaped JSON for the highlighted prompt only.
-                    - Use only supplied context; this pass has no tools.
+                    - Use only supplied context; this call has no tools.
                     - Return only a JSON object matching the caller schema.
                     """;
             case "thought-consolidation" -> """
 
                     Contract:
                     - Consolidate a completed child thought into its parent.
-                    - Use only supplied context; this pass has no tools.
+                    - Use only supplied context; this call has no tools.
                     - Return only valid JSON matching the supplied schema.
                     - The framework has already selected the parent; do not reference framework ids in content.
                     """;
@@ -411,7 +402,7 @@ public class PrimitiveExecutor {
                 persona.traits().isEmpty() ? "(none)" : String.join("; ", persona.traits())).strip();
     }
 
-    private String renderToolPassPrompt(Exchange exchange, ActRequest request, ToolProfile profile) {
+    private String renderActPrompt(Exchange exchange, ActRequest request, ToolProfile profile, ThoughtFrame leaf) {
         return """
                 %s
 
@@ -420,7 +411,13 @@ public class PrimitiveExecutor {
                 - Act id: %s
                 - Tool profile: %s
 
-                ### Current thought:
+                ### Current thought purpose:
+                %s
+
+                ### Current durable thought:
+                %s
+
+                ### Current thought token budget:
                 %s
 
                 ### Ancestor context:
@@ -429,89 +426,28 @@ public class PrimitiveExecutor {
                 ### Tool-profile guidance:
                 %s
 
-                ## Rules / Execution Guidance
-                - The highlighted ACT PROMPT is the only work that matters right now.
-                - Take the smallest useful path: one direct read or mutation first, then stop when enough is known.
-                - Normal steps should finish in 1-3 tool calls. If more is needed, report the remaining narrow follow-up.
-                - Prefer direct ids, links, and named anchors from context over broad searches.
-                - Do not scan whole systems or refresh unrelated mission state.
-                - Label verified evidence and assumptions plainly.
-
                 ## ACT PROMPT - DO THIS NOW
-                This is the only goal for this pass. Use prior context only when it helps complete this act.
-
                 %s
 
-                ## Response Format
-                Return a compact pass report in this shape:
-                Outcome:
-                Tool calls used:
-                Actions taken:
-                Evidence / links / ids:
-                - Label links/ids as verified, missing, expected, or reference. Do not include guessed URLs.
-                Latest observations from this act:
-                - created:
-                - verified:
-                Durable facts to remember:
-                - Preserve only verified current anchors
-                State changed:
+                ## Completion
+                Use zero or more application tools as needed. When the act is complete, call finish_act.
+                Set summary to a compact externally useful outcome.
+                Set content to one coherent replacement durable thought that:
+                - preserves still-relevant prior content
+                - incorporates verified durable facts learned in this act
+                - resolves conflicts in favor of newer evidence
+                - excludes transient reasoning and raw tool mechanics
+                - fits the thought purpose and token budget
                 """.formatted(
                 missionLevelContext(exchange),
                 safeText(request.id()),
                 safeText(profile.id()),
-                renderCurrentThought(stack(exchange).leaf()),
-                renderAncestorThoughts(stack(exchange).frames()),
-                profile.promptGuidance().isBlank() ? "(none)" : profile.promptGuidance(),
-                safeText(request.prompt()));
-    }
-
-    private String renderActSynthesisPrompt(Exchange exchange, ActRequest request, ThoughtFrame leaf, LlmJobResult toolResult, Instant observedAt) {
-        return """
-                %s
-
-                ## Step-Level Context
-                - Primitive: act synthesis
-                - Act id: %s
-
-                ### Act objective:
-                %s
-
-                ### Tool evidence observedAt: %s
-                %s
-
-                ### Current leaf thought purpose:
-                %s
-
-                ### Current leaf existing content:
-                %s
-
-                ### Current leaf token budget:
-                %s
-
-                ### Useful ancestor context:
-                %s
-
-                ## SYNTHESIS PROMPT - DO THIS NOW
-                Rewrite the current thought as complete, compact, current memory.
-
-                Preserve still-relevant prior content.
-                Incorporate durable facts learned during this operation.
-                Resolve conflicts in favor of newer evidence.
-                Exclude transient reasoning, raw tool mechanics, and irrelevant detail.
-                Fit the stated thought purpose and token budget.
-
-                Return JSON only:
-                {"content":"One coherent updated thought."}
-                """.formatted(
-                missionLevelContext(exchange),
-                safeText(request.id()),
-                safeText(request.prompt()),
-                observedAt,
-                safeText(toolResult.content()),
                 safeText(leaf.context()),
                 safeText(leaf.content()),
                 leaf.maxTokens(),
-                renderAncestorThoughts(stack(exchange).frames()));
+                renderAncestorThoughts(stack(exchange).frames()),
+                profile.promptGuidance().isBlank() ? "(none)" : profile.promptGuidance(),
+                safeText(request.prompt()));
     }
 
     private String renderDecisionPrompt(Exchange exchange, DecideRequest request) {
@@ -740,16 +676,16 @@ public class PrimitiveExecutor {
         String explicitUri = request.schemaUri();
         String raw = request.schema();
         if (explicitJson != null && !explicitJson.isBlank()) {
-            return new ResolvedSchema(firstNonBlank(raw, explicitJson), explicitJson, explicitUri);
+            return new ResolvedSchema(explicitJson, explicitUri);
         }
         String candidate = firstNonBlank(explicitUri, raw);
         if (candidate == null || candidate.isBlank()) {
             throw new IllegalArgumentException("Missing required schema parameter for tack:create");
         }
         if (isSchemaUri(candidate)) {
-            return new ResolvedSchema(candidate, loadSchema(candidate), candidate);
+            return new ResolvedSchema(loadSchema(candidate), candidate);
         }
-        return new ResolvedSchema(candidate, candidate, explicitUri);
+        return new ResolvedSchema(candidate, explicitUri);
     }
 
     private boolean isSchemaUri(String value) {
@@ -879,6 +815,9 @@ public class PrimitiveExecutor {
         return value.strip().replaceAll("\\s+", " ");
     }
 
-    private record ResolvedSchema(String raw, String json, String uri) {
+    private record ActCompletion(UUID jobId, String summary, String content) {
+    }
+
+    private record ResolvedSchema(String json, String uri) {
     }
 }

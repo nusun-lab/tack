@@ -11,7 +11,6 @@ import us.nusun.llmshare.framework.logging.LogTokens;
 import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.LlmJobRequest;
 import us.nusun.llmshare.framework.model.LlmJobResult;
-import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 
 import java.time.Instant;
@@ -58,7 +57,6 @@ class LoggingSemanticsTest {
         return LlmJobEnvelope.queued(new LlmJobRequest(
                 null,
                 "low-pass",
-                LlmPassType.SYNTHESIS,
                 "test",
                 "test",
                 0,

@@ -8,7 +8,6 @@ import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
 import us.nusun.llmshare.framework.model.LlmJobDeadLetter;
 import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.LlmJobResult;
-import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.model.Persona;
 
 import java.time.Instant;
@@ -33,7 +32,6 @@ public class LlmDeadLetterFactory {
         return new LlmJobDeadLetter(
                 job.jobId(),
                 laneId(exchange, job),
-                passType(exchange, job),
                 job.requester(),
                 job.role(),
                 modelId(exchange, globalModelFallback),
@@ -63,7 +61,6 @@ public class LlmDeadLetterFactory {
         LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
         return "jobId=" + firstNonBlank(exchange.getProperty("llmJobId", String.class), job == null ? null : String.valueOf(job.jobId()))
                 + " laneId=" + laneId(exchange, job)
-                + " passType=" + passType(exchange, job)
                 + " model=" + modelId(exchange, globalModelFallback);
     }
 
@@ -94,21 +91,6 @@ public class LlmDeadLetterFactory {
                 metadataValue(job, "laneId"),
                 metadataValue(job, "inferenceLane"),
                 "unknown");
-    }
-
-    private LlmPassType passType(Exchange exchange, LlmJobEnvelope job) {
-        Object passType = exchange.getProperty("passType");
-        if (passType instanceof LlmPassType typed) {
-            return typed;
-        }
-        if (passType instanceof String text && !text.isBlank()) {
-            return LlmPassType.valueOf(text.strip().toUpperCase());
-        }
-        if (job != null && job.passType() != null) {
-            return job.passType();
-        }
-        String metadata = metadataValue(job, "passType");
-        return metadata == null || metadata.isBlank() ? null : LlmPassType.valueOf(metadata.strip().toUpperCase());
     }
 
     private static Map<String, Object> normalizeDlqMetadata(Map<String, Object> metadata) {

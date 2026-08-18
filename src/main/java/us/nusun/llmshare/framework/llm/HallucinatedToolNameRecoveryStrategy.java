@@ -25,7 +25,7 @@ public final class HallucinatedToolNameRecoveryStrategy implements Function<Tool
     static String message(String toolName) {
         return """
                 No tool named '%s' is available in the current tool profile.
-                Do not retry this exact tool name during this pass.
+                Do not retry this exact tool name during this act.
                 Use only the currently available tools. Choose another approach or continue without this operation.
                 """.formatted(toolName).strip();
     }

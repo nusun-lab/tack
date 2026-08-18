@@ -9,7 +9,6 @@ import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.LlmJobRequest;
 import us.nusun.llmshare.framework.model.LlmJobResult;
 import us.nusun.llmshare.framework.model.LlmJobStatus;
-import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.model.Mission;
 import us.nusun.llmshare.framework.model.StepResult;
 import us.nusun.llmshare.framework.model.ThoughtFrame;
@@ -26,7 +25,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
+import java.util.function.BiFunction;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -36,14 +35,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TackComponentContractTest {
     @Test
-    void tackActReadsEndpointParametersConsumesPromptHeaderAndCompletesBeforeNextRouteStep() throws Exception {
+    void tackActUsesOneLlmJobAndTerminalResultCompletesBeforeNextRouteStep() throws Exception {
         ProjectionStore store = FrameworkFixtures.projectionStore();
-        ScriptedLlm llm = new ScriptedLlm(request -> {
-            if (request.passType() == LlmPassType.TOOL) {
-                return "verified evidence for " + request.metadata().get("primitiveId") + " using " + request.metadata().get("toolProfile");
-            }
-            return "{\"content\":\"leaf memory after " + request.metadata().get("primitiveId") + "\"}";
-        });
+        ScriptedLlm llm = new ScriptedLlm((request, job) -> terminal(
+                job,
+                "verified evidence for " + request.metadata().get("primitiveId"),
+                "leaf memory after " + request.metadata().get("primitiveId")));
 
         try (DefaultCamelContext context = context(store, llm)) {
             context.addRoutes(new RouteBuilder() {
@@ -62,24 +59,22 @@ class TackComponentContractTest {
 
             Exchange result = send(context, "direct:tack-act-contract");
 
-            assertInstanceOf(StepResult.class, result.getMessage().getBody());
+            StepResult step = assertInstanceOf(StepResult.class, result.getMessage().getBody());
+            assertEquals("verified evidence for contract-act", step.summary());
             assertEquals("leaf memory after contract-act", result.getProperty("afterActContent"));
             assertNull(result.getProperty("promptAfterAct"));
-            assertEquals(2, llm.requests.size());
-            assertEquals(LlmPassType.TOOL, llm.requests.get(0).passType());
-            assertEquals(FrameworkFixtures.PROFILE_GAMMA, llm.requests.get(0).metadata().get("toolProfile"));
-            assertTrue(llm.requests.get(0).prompt().contains("Inspect contract state."));
-            assertEquals(LlmPassType.SYNTHESIS, llm.requests.get(1).passType());
-            assertTrue(llm.requests.get(1).prompt().contains("Rewrite the current thought"));
-            assertFalse(llm.requests.get(1).prompt().contains("t_"));
+            assertEquals(1, llm.requests.size());
+            assertEquals(FrameworkFixtures.PROFILE_GAMMA, llm.requests.getFirst().metadata().get("toolProfile"));
+            assertTrue(llm.requests.getFirst().prompt().contains("Inspect contract state."));
+            assertTrue(llm.requests.getFirst().prompt().contains("finish_act"));
+            assertNull(llm.requests.getFirst().responseSchema());
+            assertFalse(llm.requests.getFirst().prompt().contains("t_"));
         }
     }
 
     @Test
     void validationFailuresAreClearAndDynamicEndpointParametersWork() throws Exception {
-        ScriptedLlm llm = new ScriptedLlm(request -> request.passType() == LlmPassType.TOOL
-                ? "dynamic evidence"
-                : "{\"content\":\"dynamic memory\"}");
+        ScriptedLlm llm = new ScriptedLlm((request, job) -> terminal(job, "dynamic evidence", "dynamic memory"));
         try (DefaultCamelContext context = context(FrameworkFixtures.projectionStore(), llm)) {
             context.addRoutes(new RouteBuilder() {
                 @Override
@@ -117,8 +112,31 @@ class TackComponentContractTest {
     }
 
     @Test
+    void failureBeforeFinishActDoesNotRewriteDurableThought() throws Exception {
+        assertActFailurePreservesThought(
+                (request, job) -> "ordinary final model text",
+                "Act agent did not reach finish_act: invalid terminal result");
+    }
+
+    @Test
+    void wrongMissingAndBlankTerminalFieldsFailWithoutRewritingDurableThought() throws Exception {
+        assertActFailurePreservesThought(
+                (request, job) -> "{\"jobId\":\"00000000-0000-0000-0000-000000000000\",\"summary\":\"done\",\"content\":\"after\"}",
+                "terminal job id is missing or wrong");
+        assertActFailurePreservesThought(
+                (request, job) -> "{\"summary\":\"done\",\"content\":\"after\"}",
+                "terminal job id is missing or wrong");
+        assertActFailurePreservesThought(
+                (request, job) -> terminal(job, " ", "after"),
+                "finish_act.summary must not be blank");
+        assertActFailurePreservesThought(
+                (request, job) -> terminal(job, "done", " "),
+                "finish_act.content must not be blank");
+    }
+
+    @Test
     void decideAndCreateEndpointsReturnTypedResultsFromPromptHeaders() throws Exception {
-        ScriptedLlm llm = new ScriptedLlm(request -> {
+        ScriptedLlm llm = new ScriptedLlm((request, job) -> {
             if (request.responseSchema() != null && request.responseSchema().contains("decision-result")) {
                 return "{\"decisionId\":\"ready\",\"result\":true,\"confidence\":0.87,\"reason\":\"evidence is present\"}";
             }
@@ -152,18 +170,15 @@ class TackComponentContractTest {
     @Test
     void repeatedChildActAndExitRewritesEachChildAndConsolidatesEachTurn() throws Exception {
         ProjectionStore store = FrameworkFixtures.projectionStore();
-        ScriptedLlm llm = new ScriptedLlm(new Function<>() {
+        ScriptedLlm llm = new ScriptedLlm(new BiFunction<>() {
             int act = 0;
             int consolidation = 0;
 
             @Override
-            public String apply(LlmJobRequest request) {
-                if (request.passType() == LlmPassType.TOOL) {
-                    return "tool evidence turn " + (act + 1);
-                }
+            public String apply(LlmJobRequest request, LlmJobEnvelope job) {
                 if ("act".equals(request.metadata().get("primitive"))) {
                     act++;
-                    return "{\"content\":\"child memory turn " + act + "\"}";
+                    return terminal(job, "tool evidence turn " + act, "child memory turn " + act);
                 }
                 consolidation++;
                 return "{\"content\":\"root memory after turn " + consolidation + "\"}";
@@ -194,9 +209,8 @@ class TackComponentContractTest {
             assertEquals(1, stack.frames().size());
             assertEquals("root", stack.leaf().name());
             assertEquals("root memory after turn 2", stack.leaf().content());
-            assertEquals(6, llm.requests.size());
-            assertEquals(2, llm.requests.stream().filter(r -> r.passType() == LlmPassType.TOOL).count());
-            assertEquals(2, llm.requests.stream().filter(r -> "act".equals(r.metadata().get("primitive")) && r.passType() == LlmPassType.SYNTHESIS).count());
+            assertEquals(4, llm.requests.size());
+            assertEquals(2, llm.requests.stream().filter(r -> "act".equals(r.metadata().get("primitive"))).count());
             assertEquals(2, llm.requests.stream().filter(r -> "thought-exit".equals(r.metadata().get("primitive"))).count());
             assertTrue(llm.requests.stream().noneMatch(r -> r.prompt().contains("t_")));
 
@@ -215,7 +229,7 @@ class TackComponentContractTest {
     @Test
     void failedConsolidationLeavesParentAndChildIntact() throws Exception {
         ProjectionStore store = FrameworkFixtures.projectionStore();
-        ScriptedLlm llm = new ScriptedLlm(request -> "{\"content\":\"unused\"}");
+        ScriptedLlm llm = new ScriptedLlm((request, job) -> "{\"content\":\"unused\"}");
         llm.failConsolidation = true;
 
         try (DefaultCamelContext context = context(store, llm)) {
@@ -240,7 +254,7 @@ class TackComponentContractTest {
             Exchange failure = context.createProducerTemplate().send("direct:failed-exit", exchange);
 
             assertTrue(failure.isFailed());
-            assertTrue(failure.getException().getMessage().contains("thought consolidation pass failed"));
+            assertTrue(failure.getException().getMessage().contains("thought consolidation call failed"));
             assertEquals(2, stack.frames().size());
             assertEquals("parent before", stack.frames().get(0).content());
             assertEquals("child final", stack.frames().get(1).content());
@@ -254,7 +268,7 @@ class TackComponentContractTest {
     @Test
     void rootAndEmptyChildExitDoNotAttemptConsolidation() throws Exception {
         ProjectionStore store = FrameworkFixtures.projectionStore();
-        ScriptedLlm llm = new ScriptedLlm(request -> {
+        ScriptedLlm llm = new ScriptedLlm((request, job) -> {
             throw new AssertionError("No LLM call expected");
         });
         try (DefaultCamelContext context = context(store, llm)) {
@@ -288,6 +302,45 @@ class TackComponentContractTest {
     }
 
 
+    private static void assertActFailurePreservesThought(
+            BiFunction<LlmJobRequest, LlmJobEnvelope, String> response,
+            String expectedMessage) throws Exception {
+        ScriptedLlm llm = new ScriptedLlm(response);
+        try (DefaultCamelContext context = context(FrameworkFixtures.projectionStore(), llm)) {
+            context.addRoutes(new RouteBuilder() {
+                @Override
+                public void configure() {
+                    errorHandler(defaultErrorHandler()
+                            .maximumRedeliveries(0)
+                            .logExhausted(false)
+                            .logStackTrace(false));
+                    from("direct:invalid-act")
+                            .to("tack:act?id=invalid&toolProfile=" + FrameworkFixtures.PROFILE_GAMMA);
+                }
+            });
+            context.start();
+
+            Exchange exchange = seededExchange(context);
+            ThoughtStack stack = new ThoughtStack();
+            stack.push(new ThoughtFrame("leaf-id", "leaf", "Preserve this.", 100, "before"));
+            exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
+            exchange.getMessage().setHeader(TackHeaders.PROMPT, "Try the act.");
+
+            Exchange failure = context.createProducerTemplate().send("direct:invalid-act", exchange);
+
+            assertTrue(failure.isFailed());
+            assertTrue(failure.getException().getMessage().contains(expectedMessage));
+            assertEquals("before", stack.leaf().content());
+            assertEquals(1, llm.requests.size());
+        }
+    }
+
+    private static String terminal(LlmJobEnvelope job, String summary, String content) {
+        return "{\"jobId\":\"" + job.jobId()
+                + "\",\"summary\":\"" + summary
+                + "\",\"content\":\"" + content + "\"}";
+    }
+
     private static Exchange send(DefaultCamelContext context, String uri) {
         return context.createProducerTemplate().request(uri, TackComponentContractTest::seedRun);
     }
@@ -320,7 +373,7 @@ class TackComponentContractTest {
                         exchange.getMessage().setBody(LlmJobResult.failed(job, "test-model", "consolidation unavailable", "", Instant.now()));
                         return;
                     }
-                    String content = llm.response.apply(request);
+                    String content = llm.response.apply(request, job);
                     exchange.getMessage().setBody(LlmJobResult.succeeded(job, "test-model", content, content, Instant.now()));
                 });
             }
@@ -334,10 +387,10 @@ class TackComponentContractTest {
 
     private static final class ScriptedLlm {
         private final List<LlmJobRequest> requests = new ArrayList<>();
-        private final Function<LlmJobRequest, String> response;
+        private final BiFunction<LlmJobRequest, LlmJobEnvelope, String> response;
         private boolean failConsolidation;
 
-        private ScriptedLlm(Function<LlmJobRequest, String> response) {
+        private ScriptedLlm(BiFunction<LlmJobRequest, LlmJobEnvelope, String> response) {
             this.response = response;
         }
     }

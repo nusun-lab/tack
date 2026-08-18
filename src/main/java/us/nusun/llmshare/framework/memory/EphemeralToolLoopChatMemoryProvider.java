@@ -4,12 +4,12 @@ import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.model.TokenCountEstimator;
 
-public final class EphemeralToolPassChatMemoryProvider implements ChatMemoryProvider {
+public final class EphemeralToolLoopChatMemoryProvider implements ChatMemoryProvider {
     private final int maxTokens;
     private final TokenCountEstimator tokenCountEstimator;
     private final boolean alwaysKeepSystemMessageFirst;
 
-    public EphemeralToolPassChatMemoryProvider(
+    public EphemeralToolLoopChatMemoryProvider(
             int maxTokens,
             TokenCountEstimator tokenCountEstimator,
             boolean alwaysKeepSystemMessageFirst) {

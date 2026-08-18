@@ -27,7 +27,6 @@ import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.LlmJobRequest;
 import us.nusun.llmshare.framework.model.LlmJobResult;
 import us.nusun.llmshare.framework.model.LlmJobStatus;
-import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.mcp.McpClientFactory;
 import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
 import us.nusun.llmshare.framework.route.LlmRoute;
@@ -48,6 +47,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -56,14 +56,16 @@ class HallucinatedToolNameRecoveryStrategyTest {
 
     @Test
     void recoversFromOneHallucinatedToolName() {
-        ScriptedChatModel model = ScriptedChatModel.hallucinateThenAnswer();
+        ScriptedChatModel model = ScriptedChatModel.hallucinateThenFinish();
         Agent agent = factory("low-pass", model).createAgent(exchange("low-pass"));
 
         Result<String> result = assertDoesNotThrow(() -> agent.chat(
                 new AiAgentBody<>("Inspect project state.", "You are a tester.", "memory-hallucination"),
                 probeToolProvider()));
 
-        assertEquals("final response", result.content());
+        assertNull(result.content());
+        assertEquals("{\"jobId\":\"unit-job\",\"summary\":\"recovered\",\"content\":\"durable after recovery\"}",
+                result.toolExecutions().getLast().result());
         assertEquals(2, model.requests.size());
         ToolExecutionResultMessage toolResult = onlyToolResult(model.requests.get(1));
         assertEquals("call-1", toolResult.id());
@@ -91,7 +93,7 @@ class HallucinatedToolNameRecoveryStrategyTest {
 
     @Test
     void camelAgentWorkerRouteDoesNotFailOrPublishDlqOnHallucinatedToolName() throws Exception {
-        ScriptedChatModel model = ScriptedChatModel.hallucinateThenAnswer();
+        ScriptedChatModel model = ScriptedChatModel.hallucinateThenFinish();
         StubKafkaComponent kafka = new StubKafkaComponent();
 
         try (DefaultCamelContext context = routeContext(model, kafka)) {
@@ -99,7 +101,6 @@ class HallucinatedToolNameRecoveryStrategyTest {
             LlmJobEnvelope job = LlmJobEnvelope.queued(new LlmJobRequest(
                     UUID.randomUUID(),
                     "low-pass",
-                    LlmPassType.TOOL,
                     "test",
                     "test",
                     0,
@@ -110,7 +111,7 @@ class HallucinatedToolNameRecoveryStrategyTest {
                             "personaId", FrameworkFixtures.PERSONA_A,
                             "toolProfile", "none",
                             "laneId", "low-pass",
-                            "passType", "TOOL"),
+                            "primitive", "act"),
                     null).normalized());
             String json = TestJson.write(job);
 
@@ -123,7 +124,10 @@ class HallucinatedToolNameRecoveryStrategyTest {
             LlmJobResult result = TestJson.read(replyExchange.getIn().getBody(String.class), LlmJobResult.class);
             assertNotNull(result);
             assertEquals(LlmJobStatus.SUCCEEDED, result.status());
-            assertEquals("final response", result.content());
+            Map<?, ?> completion = TestJson.read(result.content(), Map.class);
+            assertEquals(job.jobId().toString(), completion.get("jobId"));
+            assertEquals("recovered", completion.get("summary"));
+            assertEquals("durable after recovery", completion.get("content"));
         }
     }
 
@@ -143,14 +147,16 @@ class HallucinatedToolNameRecoveryStrategyTest {
 
     @Test
     void realToolExecutionFailuresUseExistingToolErrorBehavior() {
-        ScriptedChatModel model = ScriptedChatModel.requestFailingToolThenAnswer();
+        ScriptedChatModel model = ScriptedChatModel.requestFailingToolThenFinish();
         Agent agent = factory("low-pass", model).createAgent(exchange("low-pass"));
 
         Result<String> result = assertDoesNotThrow(() -> agent.chat(
                 new AiAgentBody<>("Run failing tool.", "You are a tester.", "memory-tool-failure"),
                 failingToolProvider()));
 
-        assertEquals("final response", result.content());
+        assertNull(result.content());
+        assertEquals("{\"jobId\":\"unit-job\",\"summary\":\"recovered\",\"content\":\"durable after recovery\"}",
+                result.toolExecutions().getLast().result());
         assertEquals(2, model.requests.size());
         ToolExecutionResultMessage toolResult = onlyToolResult(model.requests.get(1));
         assertEquals("failing_tool", toolResult.toolName());
@@ -172,7 +178,9 @@ class HallucinatedToolNameRecoveryStrategyTest {
     private static Exchange exchange(String laneId) {
         Exchange exchange = new DefaultExchange(new DefaultCamelContext());
         exchange.setProperty("laneId", laneId);
-        exchange.setProperty("passType", LlmPassType.TOOL);
+        exchange.setProperty("llmJob", LlmJobEnvelope.queued(new LlmJobRequest(
+                UUID.randomUUID(), laneId, "test", "test", 0, "prompt", "system", null,
+                Map.of("primitive", "act"), null).normalized()));
         exchange.setProperty("personaId", FrameworkFixtures.PERSONA_A);
         exchange.setProperty("toolProfile", "none");
         return exchange;
@@ -206,6 +214,7 @@ class HallucinatedToolNameRecoveryStrategyTest {
                 FrameworkFixtures.inferenceLaneRegistry(),
                 replies,
                 deadLetters));
+        FrameworkFixtures.set(route, "primitiveExecutor", FrameworkFixtures.primitiveExecutor());
         context.addRoutes(route);
         return context;
     }
@@ -228,6 +237,7 @@ class HallucinatedToolNameRecoveryStrategyTest {
                 .build();
         return request -> ToolProviderResult.builder()
                 .add(tool, (toolRequest, memoryId) -> "tool result")
+                .add(finishTool(), (toolRequest, memoryId) -> terminalResult())
                 .build();
     }
 
@@ -240,7 +250,19 @@ class HallucinatedToolNameRecoveryStrategyTest {
                 .add(tool, (toolRequest, memoryId) -> {
                     throw new IllegalStateException("tool transport failed");
                 })
+                .add(finishTool(), (toolRequest, memoryId) -> terminalResult())
                 .build();
+    }
+
+    private static ToolSpecification finishTool() {
+        return ToolSpecification.builder()
+                .name("finish_act")
+                .description("Finish the act")
+                .build();
+    }
+
+    private static String terminalResult() {
+        return "{\"jobId\":\"unit-job\",\"summary\":\"recovered\",\"content\":\"durable after recovery\"}";
     }
 
     private static ToolExecutionResultMessage onlyToolResult(ChatRequest request) {
@@ -252,7 +274,7 @@ class HallucinatedToolNameRecoveryStrategyTest {
     }
 
     private static final class ScriptedChatModel implements ChatModel {
-        private enum Mode { HALLUCINATE_THEN_ANSWER, ALWAYS_HALLUCINATES, FAILING_TOOL_THEN_ANSWER }
+        private enum Mode { HALLUCINATE_THEN_FINISH, ALWAYS_HALLUCINATES, FAILING_TOOL_THEN_FINISH }
 
         private final Mode mode;
         private final List<ChatRequest> requests = new ArrayList<>();
@@ -261,29 +283,29 @@ class HallucinatedToolNameRecoveryStrategyTest {
             this.mode = mode;
         }
 
-        static ScriptedChatModel hallucinateThenAnswer() {
-            return new ScriptedChatModel(Mode.HALLUCINATE_THEN_ANSWER);
+        static ScriptedChatModel hallucinateThenFinish() {
+            return new ScriptedChatModel(Mode.HALLUCINATE_THEN_FINISH);
         }
 
         static ScriptedChatModel alwaysHallucinates() {
             return new ScriptedChatModel(Mode.ALWAYS_HALLUCINATES);
         }
 
-        static ScriptedChatModel requestFailingToolThenAnswer() {
-            return new ScriptedChatModel(Mode.FAILING_TOOL_THEN_ANSWER);
+        static ScriptedChatModel requestFailingToolThenFinish() {
+            return new ScriptedChatModel(Mode.FAILING_TOOL_THEN_FINISH);
         }
 
         @Override
         public ChatResponse doChat(ChatRequest chatRequest) {
             requests.add(chatRequest);
             return switch (mode) {
-                case HALLUCINATE_THEN_ANSWER -> requests.size() == 1
+                case HALLUCINATE_THEN_FINISH -> requests.size() == 1
                         ? toolRequest("call-1", HALLUCINATED_TOOL)
-                        : finalAnswer();
+                        : finishRequest();
                 case ALWAYS_HALLUCINATES -> toolRequest("call-" + requests.size(), HALLUCINATED_TOOL);
-                case FAILING_TOOL_THEN_ANSWER -> requests.size() == 1
+                case FAILING_TOOL_THEN_FINISH -> requests.size() == 1
                         ? toolRequest("call-failing", "failing_tool")
-                        : finalAnswer();
+                        : finishRequest();
             };
         }
 
@@ -297,9 +319,13 @@ class HallucinatedToolNameRecoveryStrategyTest {
                     .build();
         }
 
-        private static ChatResponse finalAnswer() {
+        private static ChatResponse finishRequest() {
             return ChatResponse.builder()
-                    .aiMessage(new AiMessage("final response"))
+                    .aiMessage(new AiMessage(List.of(ToolExecutionRequest.builder()
+                            .id("call-finish")
+                            .name("finish_act")
+                            .arguments("{\"summary\":\"recovered\",\"content\":\"durable after recovery\"}")
+                            .build())))
                     .build();
         }
     }

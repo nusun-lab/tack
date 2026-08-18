@@ -16,6 +16,7 @@ import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
 import us.nusun.llmshare.framework.model.LlmJobDeadLetter;
 import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.LlmJobResult;
+import us.nusun.llmshare.framework.tack.PrimitiveExecutor;
 
 @ApplicationScoped
 public class LlmRoute extends RouteBuilder {
@@ -23,6 +24,7 @@ public class LlmRoute extends RouteBuilder {
     @Inject LlmJobFactory jobFactory;
     @Inject LlmDeadLetterFactory deadLetterFactory;
     @Inject LlmRouteSupport routeSupport;
+    @Inject PrimitiveExecutor primitiveExecutor;
 
     @Override
     public void configure() {
@@ -49,6 +51,18 @@ public class LlmRoute extends RouteBuilder {
                     .when(exchangeProperty("llmJob").isNotNull())
                         .wireTap("direct:publish-failed-llm-job-dlq")
                 .end();
+
+        from("ai-tool:finish_act"
+                + "?tags=" + LlmRouteSupport.ACT_TOOL_TAG
+                + "&description=Complete%20the%20current%20act%20with%20its%20result%20and%20durable%20thought"
+                + "&parameter.summary=string"
+                + "&parameter.summary.required=true"
+                + "&parameter.summary.description=Compact%20externally%20useful%20result%20of%20the%20act"
+                + "&parameter.content=string"
+                + "&parameter.content.required=true"
+                + "&parameter.content.description=Complete%20replacement%20content%20for%20the%20current%20durable%20thought")
+                .routeId("finish-act-tool")
+                .bean(primitiveExecutor, "finishAct");
 
         from("direct:llm")
                 .routeId("llm")
@@ -86,7 +100,7 @@ public class LlmRoute extends RouteBuilder {
         from("direct:publish-failed-llm-job-dlq")
                 .routeId("publish-failed-llm-job-dlq")
                 .setBody(method(deadLetterFactory, "failedQueuedJobDeadLetter"))
-                .log(LoggingLevel.WARN, "Publishing failed LLM job to DLQ: jobId=${body.jobId} lane=${body.laneId} passType=${body.passType} reason=${body.failureMessage}")
+                .log(LoggingLevel.WARN, "Publishing failed LLM job to DLQ: jobId=${body.jobId} lane=${body.laneId} reason=${body.failureMessage}")
                 .marshal(llmJson(LlmJobDeadLetter.class))
                 .setHeader(KafkaConstants.KEY, method(jobFactory, "jobIdKafkaKey"))
                 .toD("kafka:{{llm.topic.dead-letter:llm.dead-letter}}");
@@ -98,12 +112,13 @@ public class LlmRoute extends RouteBuilder {
                 .toD("${exchangeProperty.agentInvocationUri}")
                 .log(
                         LoggingLevel.INFO,
-                        "LLM agent pass completed: "
+                        "LLM agent invocation completed: "
                                 + "finishReason=${header.CamelLangChain4jAgentFinishReason} "
                                 + "inputTokens=${header.CamelLangChain4jAgentInputTokenCount} "
                                 + "outputTokens=${header.CamelLangChain4jAgentOutputTokenCount} "
                                 + "totalTokens=${header.CamelLangChain4jAgentTotalTokenCount}"
                 )
+                .bean(routeSupport, "extractAgentResult")
                 .validate(body().isNotNull())
                 .setBody(method(routeSupport, "succeededResult"));
 

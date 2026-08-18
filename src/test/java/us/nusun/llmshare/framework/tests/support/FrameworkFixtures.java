@@ -11,7 +11,6 @@ import us.nusun.llmshare.framework.inventory.ToolProfileRegistry;
 import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
 import us.nusun.llmshare.framework.model.LlmJobResult;
 import us.nusun.llmshare.framework.model.LlmJobStatus;
-import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.model.Mission;
 import us.nusun.llmshare.framework.model.Persona;
 import us.nusun.llmshare.framework.model.RoutineDefinition;
@@ -203,7 +202,7 @@ public final class FrameworkFixtures {
 
     public static LlmJobResult llmResult(String laneId, String content) {
         Instant now = Instant.now();
-        return new LlmJobResult(UUID.randomUUID(), LlmJobStatus.SUCCEEDED, laneId, LlmPassType.SYNTHESIS, "test", "test", "mock", content, content, now, now, now, 0, null);
+        return new LlmJobResult(UUID.randomUUID(), LlmJobStatus.SUCCEEDED, laneId, "test", "test", "mock", content, content, now, now, now, 0, null);
     }
 
     public static void set(Object target, String name, Object value) {

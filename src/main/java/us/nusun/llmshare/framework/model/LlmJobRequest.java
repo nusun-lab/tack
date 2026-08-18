@@ -9,7 +9,6 @@ import java.util.UUID;
 public record LlmJobRequest(
         UUID jobId,
         String laneId,
-        LlmPassType passType,
         String requester,
         String role,
         int priority,
@@ -20,25 +19,22 @@ public record LlmJobRequest(
         Instant requestedAt
 ) {
     public static final String DEFAULT_LANE = "low-pass";
-    public static final LlmPassType DEFAULT_PASS_TYPE = LlmPassType.SYNTHESIS;
-
-    public static LlmJobRequest fromPrompt(UUID jobId, String laneId, LlmPassType passType, String requester, String role, String prompt, String systemPrompt, String responseSchema) {
-        return new LlmJobRequest(jobId, laneId, passType, requester, role, 0, prompt, systemPrompt, responseSchema, Map.of(), null);
+    public static LlmJobRequest fromPrompt(UUID jobId, String laneId, String requester, String role, String prompt, String systemPrompt, String responseSchema) {
+        return new LlmJobRequest(jobId, laneId, requester, role, 0, prompt, systemPrompt, responseSchema, Map.of(), null);
     }
 
     public LlmJobRequest withJobId(UUID newJobId) {
-        return new LlmJobRequest(newJobId, laneId, passType, requester, role, priority, prompt, systemPrompt, responseSchema, metadata, requestedAt);
+        return new LlmJobRequest(newJobId, laneId, requester, role, priority, prompt, systemPrompt, responseSchema, metadata, requestedAt);
     }
 
-    public LlmJobRequest withLaneAndPass(String newLaneId, LlmPassType newPassType) {
-        return new LlmJobRequest(jobId, firstNonBlankStripped(newLaneId, laneId), newPassType == null ? passType : newPassType, requester, role, priority, prompt, systemPrompt, responseSchema, metadata, requestedAt);
+    public LlmJobRequest withLane(String newLaneId) {
+        return new LlmJobRequest(jobId, firstNonBlankStripped(newLaneId, laneId), requester, role, priority, prompt, systemPrompt, responseSchema, metadata, requestedAt);
     }
 
     public LlmJobRequest normalized() {
         LlmJobRequest normalized = new LlmJobRequest(
                 jobId == null ? UUID.randomUUID() : jobId,
                 blankToDefault(laneId, DEFAULT_LANE),
-                passType == null ? DEFAULT_PASS_TYPE : passType,
                 blankToDefault(requester, "framework"),
                 blankToDefault(role, "framework"),
                 priority,
@@ -61,7 +57,7 @@ public record LlmJobRequest(
         String nextSystemPrompt = systemPrompt == null || systemPrompt.isBlank()
                 ? jsonOnlySuffix
                 : systemPrompt.contains("Return valid JSON only") ? systemPrompt : systemPrompt + "\n" + jsonOnlySuffix;
-        return new LlmJobRequest(jobId, laneId, passType, requester, role, priority, prompt, nextSystemPrompt, responseSchema, metadata, requestedAt);
+        return new LlmJobRequest(jobId, laneId, requester, role, priority, prompt, nextSystemPrompt, responseSchema, metadata, requestedAt);
     }
 
     public void validate() {

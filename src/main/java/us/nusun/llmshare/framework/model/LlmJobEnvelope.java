@@ -8,7 +8,6 @@ public record LlmJobEnvelope(
         UUID jobId,
         LlmJobStatus status,
         String laneId,
-        LlmPassType passType,
         String requester,
         String role,
         int priority,
@@ -20,6 +19,6 @@ public record LlmJobEnvelope(
 ) {
     public static LlmJobEnvelope queued(LlmJobRequest request) {
         LlmJobRequest normalized = request.normalized();
-        return new LlmJobEnvelope(normalized.jobId(), LlmJobStatus.QUEUED, normalized.laneId(), normalized.passType(), normalized.requester(), normalized.role(), normalized.priority(), normalized.prompt(), normalized.systemPrompt(), normalized.responseSchema(), normalized.metadata(), normalized.requestedAt());
+        return new LlmJobEnvelope(normalized.jobId(), LlmJobStatus.QUEUED, normalized.laneId(), normalized.requester(), normalized.role(), normalized.priority(), normalized.prompt(), normalized.systemPrompt(), normalized.responseSchema(), normalized.metadata(), normalized.requestedAt());
     }
 }

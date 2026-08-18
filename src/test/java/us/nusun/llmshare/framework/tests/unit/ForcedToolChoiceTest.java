@@ -1,7 +1,5 @@
 package us.nusun.llmshare.framework.tests.unit;
 
-import us.nusun.llmshare.framework.llm.LlmAgentFactory;
-
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
@@ -11,6 +9,7 @@ import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.ResponseFormatType;
 import dev.langchain4j.model.chat.request.ToolChoice;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.service.Result;
 import dev.langchain4j.service.tool.ToolProvider;
 import dev.langchain4j.service.tool.ToolProviderResult;
 import org.apache.camel.Exchange;
@@ -19,11 +18,12 @@ import org.apache.camel.component.langchain4j.agent.api.AiAgentBody;
 import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.support.DefaultExchange;
 import org.junit.jupiter.api.Test;
-import us.nusun.llmshare.framework.model.LlmJobEnvelope;
-import us.nusun.llmshare.framework.model.LlmJobRequest;
-import us.nusun.llmshare.framework.model.LlmPassType;
+import us.nusun.llmshare.framework.llm.LlmAgentFactory;
+import us.nusun.llmshare.framework.llm.LlmRouteSupport;
 import us.nusun.llmshare.framework.mcp.McpClientFactory;
 import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
+import us.nusun.llmshare.framework.model.LlmJobEnvelope;
+import us.nusun.llmshare.framework.model.LlmJobRequest;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 
 import java.util.ArrayList;
@@ -31,62 +31,76 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ForcedToolChoiceTest {
     private static final String SCHEMA = """
             {
-              \"type\": \"object\",
-              \"properties\": {
-                \"result\": { \"type\": \"string\" }
+              "type": "object",
+              "properties": {
+                "result": { "type": "string" }
               },
-              \"required\": [\"result\"],
-              \"additionalProperties\": false
+              "required": ["result"],
+              "additionalProperties": false
             }
             """;
 
     @Test
-    void toolEnabledAgentRequiresToolChoiceUntilFirstToolResultThenReturnsAuto() {
-        RecordingChatModel model = new RecordingChatModel(true);
-        Agent agent = factory("low-pass", model).createAgent(exchange("low-pass", LlmPassType.TOOL));
+    void actAgentMakesMultipleToolCallsAndReturnsFinishActWithoutAnotherModelRound() {
+        RecordingChatModel model = new RecordingChatModel();
+        Agent agent = factory("low-pass", model).createAgent(exchange("low-pass", actJob("low-pass", null)));
+        AtomicInteger probeCalls = new AtomicInteger();
 
-        agent.chat(new AiAgentBody<>("Inspect current external state.", "You are a tester.", "memory-1"), probeToolProvider());
+        Result<String> result = agent.chat(
+                new AiAgentBody<>("Inspect current external state.", "Finish with finish_act.", "memory-1"),
+                actTools(probeCalls));
 
-        assertEquals(2, model.requests.size());
-        assertEquals(ToolChoice.REQUIRED, model.requests.get(0).toolChoice());
-        assertEquals(ToolChoice.AUTO, model.requests.get(1).toolChoice());
-        assertTrue(model.requests.get(1).messages().stream().anyMatch(ToolExecutionResultMessage.class::isInstance));
+        assertNull(result.content());
+        Exchange terminalExchange = exchange("low-pass", actJob("low-pass", null));
+        terminalExchange.getMessage().setHeader(
+                org.apache.camel.component.langchain4j.agent.api.Headers.TOOL_EXECUTIONS,
+                result.toolExecutions());
+        assertEquals(
+                "{\"jobId\":\"job-1\",\"summary\":\"done\",\"content\":\"durable\"}",
+                new LlmRouteSupport().extractAgentResult(
+                        null, terminalExchange.getProperty("llmJob", LlmJobEnvelope.class), terminalExchange));
+        assertEquals(3, model.requests.size());
+        assertEquals(2, probeCalls.get());
+        assertTrue(model.requests.stream().allMatch(request -> request.toolChoice() == ToolChoice.REQUIRED));
+        assertEquals(2, model.requests.get(2).messages().stream()
+                .filter(ToolExecutionResultMessage.class::isInstance)
+                .count());
     }
 
     @Test
-    void toolEnabledAgentPreservesProviderResponseFormat() {
-        RecordingChatModel model = new RecordingChatModel(false);
-        Exchange exchange = exchange("low-pass", LlmPassType.TOOL, context(true));
-        exchange.setProperty("llmJob", job("low-pass", LlmPassType.TOOL, SCHEMA));
+    void structuredAgentStillUsesProviderResponseFormatWithoutTools() {
+        RecordingChatModel model = new RecordingChatModel();
+        Exchange exchange = exchange("low-pass", structuredJob("low-pass", SCHEMA), context(true));
         Agent agent = factory("low-pass", model).createAgent(exchange);
 
-        agent.chat(new AiAgentBody<>("Inspect current external state.", "You are a tester.", "memory-2"), probeToolProvider());
+        agent.chat(new AiAgentBody<>("Synthesize.", "Return JSON.", null), null);
 
         assertEquals(1, model.requests.size());
-        assertEquals(ToolChoice.REQUIRED, model.requests.get(0).toolChoice());
+        assertNull(model.requests.get(0).toolChoice());
         assertNotNull(model.requests.get(0).responseFormat());
         assertEquals(ResponseFormatType.JSON, model.requests.get(0).responseFormat().type());
         assertNotNull(model.requests.get(0).responseFormat().jsonSchema());
     }
 
     @Test
-    void synthesisOnlyAgentDoesNotSetToolChoice() {
-        RecordingChatModel model = new RecordingChatModel(false);
-        Agent agent = factory("low-pass", model).createAgent(exchange("low-pass", LlmPassType.SYNTHESIS));
+    void actRejectsProviderStructuredOutput() {
+        RecordingChatModel model = new RecordingChatModel();
 
-        agent.chat(new AiAgentBody<>("Synthesize.", "Return JSON.", null), null);
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> factory("low-pass", model).createAgent(exchange("low-pass", actJob("low-pass", SCHEMA), context(true))));
 
-        assertEquals(1, model.requests.size());
-        assertNull(model.requests.get(0).toolChoice());
+        assertEquals("Tack act must not use provider structured output", failure.getMessage());
     }
 
     private static LlmAgentFactory.DynamicAgentFactory factory(String laneId, ChatModel model) {
@@ -100,16 +114,16 @@ class ForcedToolChoiceTest {
                 12000);
     }
 
-    private static Exchange exchange(String laneId, LlmPassType passType) {
-        return exchange(laneId, passType, new DefaultCamelContext());
+    private static Exchange exchange(String laneId, LlmJobEnvelope job) {
+        return exchange(laneId, job, new DefaultCamelContext());
     }
 
-    private static Exchange exchange(String laneId, LlmPassType passType, DefaultCamelContext context) {
+    private static Exchange exchange(String laneId, LlmJobEnvelope job, DefaultCamelContext context) {
         Exchange exchange = new DefaultExchange(context);
         exchange.setProperty("laneId", laneId);
-        exchange.setProperty("passType", passType);
         exchange.setProperty("personaId", FrameworkFixtures.PERSONA_A);
         exchange.setProperty("toolProfile", "none");
+        exchange.setProperty("llmJob", job);
         return exchange;
     }
 
@@ -121,53 +135,65 @@ class ForcedToolChoiceTest {
         return context;
     }
 
-    private static LlmJobEnvelope job(String laneId, LlmPassType passType, String schema) {
+    private static LlmJobEnvelope actJob(String laneId, String schema) {
+        return job(laneId, schema, Map.of("primitive", "act"));
+    }
+
+    private static LlmJobEnvelope structuredJob(String laneId, String schema) {
+        return job(laneId, schema, Map.of("primitive", "decide"));
+    }
+
+    private static LlmJobEnvelope job(String laneId, String schema, Map<String, Object> metadata) {
         return LlmJobEnvelope.queued(new LlmJobRequest(
                 UUID.randomUUID(),
                 laneId,
-                passType,
                 "test",
                 "test",
                 0,
                 "Return the result.",
                 "Return only JSON.",
                 schema,
-                Map.of(),
+                metadata,
                 null).normalized());
     }
 
-    private static ToolProvider probeToolProvider() {
-        ToolSpecification tool = ToolSpecification.builder()
+    private static ToolProvider actTools(AtomicInteger probeCalls) {
+        ToolSpecification probe = ToolSpecification.builder()
                 .name("probe_tool")
                 .description("Probe external state")
                 .build();
+        ToolSpecification finish = ToolSpecification.builder()
+                .name("finish_act")
+                .description("Finish the act")
+                .build();
         return request -> ToolProviderResult.builder()
-                .add(tool, (toolRequest, memoryId) -> "tool result")
+                .add(probe, (toolRequest, memoryId) -> {
+                    probeCalls.incrementAndGet();
+                    return "tool result";
+                })
+                .add(finish, (toolRequest, memoryId) ->
+                        "{\"jobId\":\"job-1\",\"summary\":\"done\",\"content\":\"durable\"}")
                 .build();
     }
 
     private static final class RecordingChatModel implements ChatModel {
-        private final boolean requestToolFirst;
         private final List<ChatRequest> requests = new ArrayList<>();
-
-        private RecordingChatModel(boolean requestToolFirst) {
-            this.requestToolFirst = requestToolFirst;
-        }
 
         @Override
         public ChatResponse doChat(ChatRequest chatRequest) {
             requests.add(chatRequest);
-            if (requestToolFirst && requests.size() == 1) {
-                return ChatResponse.builder()
-                        .aiMessage(new AiMessage(List.of(ToolExecutionRequest.builder()
-                                .id("call-1")
-                                .name("probe_tool")
-                                .arguments("{}")
-                                .build())))
-                        .build();
+            if (chatRequest.toolSpecifications() == null || chatRequest.toolSpecifications().isEmpty()) {
+                return ChatResponse.builder().aiMessage(AiMessage.from("{\"result\":\"ok\"}")).build();
             }
+            String tool = requests.size() < 3 ? "probe_tool" : "finish_act";
             return ChatResponse.builder()
-                    .aiMessage(new AiMessage("final response"))
+                    .aiMessage(new AiMessage(List.of(ToolExecutionRequest.builder()
+                            .id("call-" + requests.size())
+                            .name(tool)
+                            .arguments(tool.equals("finish_act")
+                                    ? "{\"summary\":\"done\",\"content\":\"durable\"}"
+                                    : "{}")
+                            .build())))
                     .build();
         }
     }

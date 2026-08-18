@@ -2,6 +2,7 @@ package us.nusun.llmshare.framework.llm;
 
 import static us.nusun.llmshare.framework.model.FrameworkText.firstNonBlank;
 
+import dev.langchain4j.service.tool.ToolExecution;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.Body;
@@ -10,6 +11,7 @@ import org.apache.camel.Exchange;
 import org.apache.camel.ExchangeProperty;
 import org.apache.camel.ServiceStatus;
 import org.apache.camel.component.langchain4j.agent.api.AiAgentBody;
+import org.apache.camel.component.langchain4j.agent.api.Headers;
 import us.nusun.llmshare.framework.inventory.InferenceLaneRegistry;
 import us.nusun.llmshare.framework.logging.LogTokens;
 import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
@@ -17,11 +19,13 @@ import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.LlmJobResult;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @ApplicationScoped
 public class LlmRouteSupport {
     private static final String DYNAMIC_AGENT_URI = "langchain4j-agent:dynamic?agentFactory=#dynamicAgentFactory";
+    public static final String ACT_TOOL_TAG = "tack-act";
 
     public static final class LlmAvailabilityException extends RuntimeException {
         public LlmAvailabilityException(String message) { super(message); }
@@ -72,9 +76,8 @@ public class LlmRouteSupport {
         InferenceLaneDefinition lane = lanes.getRequired(job.laneId());
         exchange.setProperty("inferenceLane", lane);
         exchange.setProperty("laneId", lane.id());
-        exchange.setProperty("passType", job.passType());
         exchange.setProperty("llmStartedAt", Instant.now());
-        exchange.setProperty("agentInvocationUri", DYNAMIC_AGENT_URI);
+        exchange.setProperty("agentInvocationUri", isAct(job) ? DYNAMIC_AGENT_URI + "&tags=" + ACT_TOOL_TAG : DYNAMIC_AGENT_URI);
         exchange.getIn().setBody(new AiAgentBody<>(job.prompt(), firstNonBlank(job.systemPrompt(), """
                 You are a precise worker in a shared LLM queue. Return only what the requester asked for.
                 """.strip()), job.jobId()));
@@ -90,6 +93,29 @@ public class LlmRouteSupport {
     public void logModelResponse(@Body LlmJobResult result, Exchange exchange) {
         String content = result == null ? null : result.content();
         logTokens().print(logTokens().wrap(agentLabel(exchange), agentLogColor(exchange), "RESPONSE " + content));
+    }
+
+    public String extractAgentResult(
+            @Body String rawResponse,
+            @ExchangeProperty("llmJob") LlmJobEnvelope job,
+            Exchange exchange) {
+        if (!isAct(job)) {
+            return rawResponse;
+        }
+        List<?> executions = exchange.getMessage().getHeader(Headers.TOOL_EXECUTIONS, List.class);
+        List<ToolExecution> terminals = executions == null ? List.of() : executions.stream()
+                .filter(ToolExecution.class::isInstance)
+                .map(ToolExecution.class::cast)
+                .filter(execution -> "finish_act".equals(execution.request().name()))
+                .toList();
+        if (terminals.size() != 1) {
+            throw new IllegalStateException("Act agent must call finish_act exactly once; observed " + terminals.size());
+        }
+        String terminalResult = terminals.getFirst().result();
+        if (terminalResult == null || terminalResult.isBlank()) {
+            throw new IllegalStateException("finish_act returned an empty terminal result");
+        }
+        return terminalResult;
     }
 
     public LlmJobResult succeededResult(
@@ -110,6 +136,10 @@ public class LlmRouteSupport {
             verifyRouteStarted(exchange, "llm-worker-" + routeSuffix);
         }
         verifyRouteStarted(exchange, "llm-response-consumer-" + routeSuffix);
+    }
+
+    private static boolean isAct(LlmJobEnvelope job) {
+        return job != null && job.metadata() != null && "act".equals(job.metadata().get("primitive"));
     }
 
     public static String routeSuffix(String laneId) {

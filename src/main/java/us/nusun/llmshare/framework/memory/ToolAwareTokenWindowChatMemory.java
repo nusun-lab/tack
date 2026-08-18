@@ -143,7 +143,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
             int messageToEvictIndex = findOldestToolExecutionRequestIndex(messages)
                     .orElseGet(() -> oldestEvictableNonSystemNonCurrentUserMessageIndex(messages)
                             .orElseThrow(() -> new IllegalStateException(
-                                    "Ephemeral tool-pass memory exceeded the safe token budget while only protected messages remain")));
+                                    "Ephemeral tool-loop memory exceeded the safe token budget while only protected messages remain")));
 
             ChatMessage evictedMessage = messages.remove(messageToEvictIndex);
             currentTokenCount -= estimator.estimateTokenCountInMessage(evictedMessage);

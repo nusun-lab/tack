@@ -35,8 +35,8 @@ class ProjectionSemanticsTest {
         run.apply(new StepResult("work-item-review", "Project membership is missing.", List.of()));
         exchange.setProperty("toolProfile", FrameworkFixtures.PROFILE_BETA);
         String fullPrompt = "Review one current item in the project management system. " + "Preserve this sentence. ".repeat(30);
-        exchange.setProperty("actPrompt", fullPrompt);
-        exchange.setProperty("resolvedLane", "high-pass");
+        exchange.setProperty("primitivePrompt", fullPrompt);
+        exchange.setProperty("laneId", "high-pass");
         ThoughtStack stack = new ThoughtStack();
         stack.push(new ThoughtFrame("pm", "pm-cycle", "Project Manager routine context", 900, "Current state: ".repeat(120)));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
@@ -173,7 +173,6 @@ class ProjectionSemanticsTest {
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
         exchange.setProperty("authorization", "Bearer SECRET_TOKEN");
         exchange.setProperty("mcpHeaders", Map.of("Authorization", "Bearer SECRET_TOKEN"));
-        exchange.setProperty("toolPassResult", "RAW_TOOL_PAYLOAD_" + "x".repeat(5000) + "_SECRET_TOKEN");
         run.currentPrimitive("act");
         run.currentId("inspect-delivery-state");
         run.apply(new StepResult("inspect-delivery-state", "Delivery state summarized.", List.of()));

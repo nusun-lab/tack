@@ -10,7 +10,7 @@ import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.model.TokenCountEstimator;
 import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
-import us.nusun.llmshare.framework.memory.EphemeralToolPassChatMemoryProvider;
+import us.nusun.llmshare.framework.memory.EphemeralToolLoopChatMemoryProvider;
 import us.nusun.llmshare.framework.memory.ToolAwareTokenWindowChatMemory;
 
 import java.util.List;
@@ -40,7 +40,7 @@ class ToolAwareMemoryTest {
 
     @Test
     void providerCreatesEphemeralMemoryForRequestedId() {
-        EphemeralToolPassChatMemoryProvider provider = new EphemeralToolPassChatMemoryProvider(
+        EphemeralToolLoopChatMemoryProvider provider = new EphemeralToolLoopChatMemoryProvider(
                 20,
                 new FixedTokenCountEstimator(),
                 true);
@@ -153,7 +153,7 @@ class ToolAwareMemoryTest {
                 () -> memory.add(UserMessage.from("original user")));
 
         assertEquals(
-                "Ephemeral tool-pass memory exceeded the safe token budget while only protected messages remain",
+                "Ephemeral tool-loop memory exceeded the safe token budget while only protected messages remain",
                 failure.getMessage());
     }
 

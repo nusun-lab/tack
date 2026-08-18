@@ -17,7 +17,6 @@ import us.nusun.llmshare.framework.llm.ProviderStructuredOutputSupport;
 import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
 import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.LlmJobRequest;
-import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 
 import java.lang.reflect.Method;
@@ -159,7 +158,6 @@ class ProviderStructuredOutputSupportTest {
     private static Exchange exchange(DefaultCamelContext context, LlmJobEnvelope job) {
         Exchange exchange = new DefaultExchange(context);
         exchange.setProperty("laneId", job.laneId());
-        exchange.setProperty("passType", job.passType());
         exchange.setProperty("llmJob", job);
         return exchange;
     }
@@ -172,7 +170,6 @@ class ProviderStructuredOutputSupportTest {
         return LlmJobEnvelope.queued(new LlmJobRequest(
                 UUID.randomUUID(),
                 laneId,
-                LlmPassType.SYNTHESIS,
                 "test",
                 "test",
                 0,

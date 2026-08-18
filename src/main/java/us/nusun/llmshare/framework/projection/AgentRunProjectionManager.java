@@ -59,10 +59,7 @@ public class AgentRunProjectionManager {
         RoutineDefinition routine = routines.getRequired(run.routineId());
         SubroutineDefinition subroutine = run.subroutineId() == null ? null : routine.requireSubroutine(run.subroutineId());
         ThoughtStack stack = exchange.getProperty(ThoughtStackSupport.STACK_PROPERTY, ThoughtStack.class);
-        String laneId = exchange.getProperty("resolvedLane", String.class);
-        if (laneId == null || laneId.isBlank()) {
-            laneId = exchange.getProperty("laneId", String.class);
-        }
+        String laneId = exchange.getProperty("laneId", String.class);
         return new AgentRunProjection(
                 run.id(),
                 run.missionId(),
@@ -130,10 +127,7 @@ public class AgentRunProjectionManager {
         Map<String, Object> current = new LinkedHashMap<>();
         current.put("primitive", run.currentPrimitive());
         current.put("id", run.currentId());
-        current.put("promptSummary", firstNonBlank(
-                exchange.getProperty("actPrompt", String.class),
-                exchange.getProperty("decisionPrompt", String.class),
-                exchange.getProperty("createPrompt", String.class)));
+        current.put("promptSummary", exchange.getProperty("primitivePrompt", String.class));
         return current;
     }
 

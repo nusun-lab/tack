@@ -15,7 +15,6 @@ import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
 import us.nusun.llmshare.framework.model.ToolProfile;
 import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.LlmJobRequest;
-import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.model.Persona;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 import us.nusun.llmshare.framework.tests.support.TestJson;
@@ -31,7 +30,6 @@ class LlmJobMetadataBoundaryTest {
         LlmJobRequest request = new LlmJobRequest(
                 null,
                 "low-pass",
-                LlmPassType.TOOL,
                 "act:assignment-review",
                 "Persona A",
                 0,
@@ -45,8 +43,7 @@ class LlmJobMetadataBoundaryTest {
                         "toolProfile", FrameworkFixtures.PROFILE_GAMMA,
                         "primitive", "act",
                         "primitiveId", "assignment-review",
-                        "laneId", "low-pass",
-                        "passType", "TOOL"),
+                        "laneId", "low-pass"),
                 null).normalized();
         LlmJobEnvelope envelope = LlmJobEnvelope.queued(request);
         String json = TestJson.write(envelope);
@@ -54,6 +51,7 @@ class LlmJobMetadataBoundaryTest {
         Exchange worker = new DefaultExchange(new DefaultCamelContext());
 
         new LlmJobFactory().restoreFrameworkMetadata(worker, restoredEnvelope);
+        worker.setProperty("llmJob", restoredEnvelope);
 
         assertEquals("run-1", worker.getProperty("agentRunId"));
         assertEquals("mission-1", worker.getProperty("missionId"));
@@ -62,11 +60,9 @@ class LlmJobMetadataBoundaryTest {
         assertEquals("act", worker.getProperty("primitive"));
         assertEquals("assignment-review", worker.getProperty("primitiveId"));
         assertEquals("low-pass", worker.getProperty("laneId"));
-        assertEquals(LlmPassType.TOOL, worker.getProperty("passType"));
         assertEquals("persona-a", restoredEnvelope.metadata().get("personaId"));
         assertEquals(FrameworkFixtures.PROFILE_GAMMA, restoredEnvelope.metadata().get("toolProfile"));
         assertEquals("low-pass", restoredEnvelope.laneId());
-        assertEquals(LlmPassType.TOOL, restoredEnvelope.passType());
 
         CapturingMcpClientFactory mcpFactory = new CapturingMcpClientFactory();
         new LlmAgentFactory.DynamicAgentFactory(
@@ -87,7 +83,6 @@ class LlmJobMetadataBoundaryTest {
         LlmJobRequest request = new LlmJobRequest(
                 null,
                 "low-pass",
-                LlmPassType.SYNTHESIS,
                 "framework",
                 "Persona A",
                 0,
