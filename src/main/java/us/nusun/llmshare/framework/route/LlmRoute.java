@@ -14,7 +14,7 @@ import us.nusun.llmshare.framework.llm.LlmRouteSupport;
 import us.nusun.llmshare.framework.inventory.InferenceLaneRegistry;
 import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
 import us.nusun.llmshare.framework.model.LlmJobDeadLetter;
-import us.nusun.llmshare.framework.model.LlmJobEnvelope;
+import us.nusun.llmshare.framework.model.LlmJob;
 import us.nusun.llmshare.framework.model.LlmJobResult;
 import us.nusun.llmshare.framework.tack.PrimitiveExecutor;
 
@@ -52,7 +52,7 @@ public class LlmRoute extends RouteBuilder {
                         .wireTap("direct:publish-failed-llm-job-dlq")
                 .end();
 
-        from("ai-tool:finish_act"
+        from("ai-tool:" + LlmRouteSupport.ACT_TERMINAL_TOOL
                 + "?tags=" + LlmRouteSupport.ACT_TOOL_TAG
                 + "&description=Complete%20the%20current%20act%20with%20its%20result%20and%20durable%20thought"
                 + "&parameter.summary=string"
@@ -71,7 +71,7 @@ public class LlmRoute extends RouteBuilder {
                 .bean("inFlightReplyManager", "register")
                 .bean(routeSupport, "logPrompt")
                 .bean(routeSupport, "verifySelectedRoutesAvailable")
-                .marshal(llmJson(LlmJobEnvelope.class))
+                .marshal(llmJson(LlmJob.class))
                 .setHeader(KafkaConstants.KEY, method(jobFactory, "requestKafkaKey"))
                 .recipientList(simple("kafka:${exchangeProperty.laneRequestTopic}"))
                 .bean(routeSupport, "awaitReply")
@@ -99,7 +99,7 @@ public class LlmRoute extends RouteBuilder {
 
         from("direct:publish-failed-llm-job-dlq")
                 .routeId("publish-failed-llm-job-dlq")
-                .setBody(method(deadLetterFactory, "failedQueuedJobDeadLetter"))
+                .setBody(method(deadLetterFactory, "failedJobDeadLetter"))
                 .log(LoggingLevel.WARN, "Publishing failed LLM job to DLQ: jobId=${body.jobId} lane=${body.laneId} reason=${body.failureMessage}")
                 .marshal(llmJson(LlmJobDeadLetter.class))
                 .setHeader(KafkaConstants.KEY, method(jobFactory, "jobIdKafkaKey"))
@@ -139,7 +139,7 @@ public class LlmRoute extends RouteBuilder {
                 + "&autoOffsetReset=earliest")
                 .routeId("llm-worker-" + routeSuffix)
                 .autoStartup("{{llm.worker.enabled:true}}")
-                .unmarshal(llmJson(LlmJobEnvelope.class))
+                .unmarshal(llmJson(LlmJob.class))
                 .setProperty("llmJob", body())
                 .bean(jobFactory, "restoreFrameworkMetadata")
                 .doTry()

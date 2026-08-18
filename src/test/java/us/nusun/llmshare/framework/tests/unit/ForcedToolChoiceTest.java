@@ -22,8 +22,7 @@ import us.nusun.llmshare.framework.llm.LlmAgentFactory;
 import us.nusun.llmshare.framework.llm.LlmRouteSupport;
 import us.nusun.llmshare.framework.mcp.McpClientFactory;
 import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
-import us.nusun.llmshare.framework.model.LlmJobEnvelope;
-import us.nusun.llmshare.framework.model.LlmJobRequest;
+import us.nusun.llmshare.framework.model.LlmJob;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 
 import java.util.ArrayList;
@@ -69,7 +68,7 @@ class ForcedToolChoiceTest {
         assertEquals(
                 "{\"jobId\":\"job-1\",\"summary\":\"done\",\"content\":\"durable\"}",
                 new LlmRouteSupport().extractAgentResult(
-                        null, terminalExchange.getProperty("llmJob", LlmJobEnvelope.class), terminalExchange));
+                        null, terminalExchange.getProperty("llmJob", LlmJob.class), terminalExchange));
         assertEquals(3, model.requests.size());
         assertEquals(2, probeCalls.get());
         assertTrue(model.requests.stream().allMatch(request -> request.toolChoice() == ToolChoice.REQUIRED));
@@ -114,11 +113,11 @@ class ForcedToolChoiceTest {
                 12000);
     }
 
-    private static Exchange exchange(String laneId, LlmJobEnvelope job) {
+    private static Exchange exchange(String laneId, LlmJob job) {
         return exchange(laneId, job, new DefaultCamelContext());
     }
 
-    private static Exchange exchange(String laneId, LlmJobEnvelope job, DefaultCamelContext context) {
+    private static Exchange exchange(String laneId, LlmJob job, DefaultCamelContext context) {
         Exchange exchange = new DefaultExchange(context);
         exchange.setProperty("laneId", laneId);
         exchange.setProperty("personaId", FrameworkFixtures.PERSONA_A);
@@ -135,26 +134,23 @@ class ForcedToolChoiceTest {
         return context;
     }
 
-    private static LlmJobEnvelope actJob(String laneId, String schema) {
+    private static LlmJob actJob(String laneId, String schema) {
         return job(laneId, schema, Map.of("primitive", "act"));
     }
 
-    private static LlmJobEnvelope structuredJob(String laneId, String schema) {
+    private static LlmJob structuredJob(String laneId, String schema) {
         return job(laneId, schema, Map.of("primitive", "decide"));
     }
 
-    private static LlmJobEnvelope job(String laneId, String schema, Map<String, Object> metadata) {
-        return LlmJobEnvelope.queued(new LlmJobRequest(
+    private static LlmJob job(String laneId, String schema, Map<String, Object> metadata) {
+        return new LlmJob(
                 UUID.randomUUID(),
                 laneId,
-                "test",
-                "test",
-                0,
                 "Return the result.",
                 "Return only JSON.",
                 schema,
                 metadata,
-                null).normalized());
+                java.time.Instant.now());
     }
 
     private static ToolProvider actTools(AtomicInteger probeCalls) {

@@ -5,8 +5,7 @@ import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.impl.DefaultCamelContext;
 import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.framework.model.AgentRunProjection;
-import us.nusun.llmshare.framework.model.LlmJobEnvelope;
-import us.nusun.llmshare.framework.model.LlmJobRequest;
+import us.nusun.llmshare.framework.model.LlmJob;
 import us.nusun.llmshare.framework.model.LlmJobResult;
 import us.nusun.llmshare.framework.model.LlmJobStatus;
 import us.nusun.llmshare.framework.model.Mission;
@@ -175,7 +174,7 @@ class TackComponentContractTest {
             int consolidation = 0;
 
             @Override
-            public String apply(LlmJobRequest request, LlmJobEnvelope job) {
+            public String apply(LlmJob request, LlmJob job) {
                 if ("act".equals(request.metadata().get("primitive"))) {
                     act++;
                     return terminal(job, "tool evidence turn " + act, "child memory turn " + act);
@@ -303,7 +302,7 @@ class TackComponentContractTest {
 
 
     private static void assertActFailurePreservesThought(
-            BiFunction<LlmJobRequest, LlmJobEnvelope, String> response,
+            BiFunction<LlmJob, LlmJob, String> response,
             String expectedMessage) throws Exception {
         ScriptedLlm llm = new ScriptedLlm(response);
         try (DefaultCamelContext context = context(FrameworkFixtures.projectionStore(), llm)) {
@@ -335,7 +334,7 @@ class TackComponentContractTest {
         }
     }
 
-    private static String terminal(LlmJobEnvelope job, String summary, String content) {
+    private static String terminal(LlmJob job, String summary, String content) {
         return "{\"jobId\":\"" + job.jobId()
                 + "\",\"summary\":\"" + summary
                 + "\",\"content\":\"" + content + "\"}";
@@ -366,15 +365,15 @@ class TackComponentContractTest {
             @Override
             public void configure() {
                 from("direct:llm").process(exchange -> {
-                    LlmJobRequest request = exchange.getMessage().getBody(LlmJobRequest.class);
+                    LlmJob request = exchange.getMessage().getBody(LlmJob.class);
                     llm.requests.add(request);
-                    LlmJobEnvelope job = LlmJobEnvelope.queued(request.normalized());
+                    LlmJob job = request;
                     if (llm.failConsolidation && "thought-exit".equals(request.metadata().get("primitive"))) {
-                        exchange.getMessage().setBody(LlmJobResult.failed(job, "test-model", "consolidation unavailable", "", Instant.now()));
+                        exchange.getMessage().setBody(LlmJobResult.failed(job, "test-model", "consolidation unavailable", Instant.now()));
                         return;
                     }
                     String content = llm.response.apply(request, job);
-                    exchange.getMessage().setBody(LlmJobResult.succeeded(job, "test-model", content, content, Instant.now()));
+                    exchange.getMessage().setBody(LlmJobResult.succeeded(job, "test-model", content, Instant.now()));
                 });
             }
         });
@@ -386,11 +385,11 @@ class TackComponentContractTest {
     }
 
     private static final class ScriptedLlm {
-        private final List<LlmJobRequest> requests = new ArrayList<>();
-        private final BiFunction<LlmJobRequest, LlmJobEnvelope, String> response;
+        private final List<LlmJob> requests = new ArrayList<>();
+        private final BiFunction<LlmJob, LlmJob, String> response;
         private boolean failConsolidation;
 
-        private ScriptedLlm(BiFunction<LlmJobRequest, LlmJobEnvelope, String> response) {
+        private ScriptedLlm(BiFunction<LlmJob, LlmJob, String> response) {
             this.response = response;
         }
     }

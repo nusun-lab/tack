@@ -6,7 +6,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import org.apache.camel.Exchange;
 import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
 import us.nusun.llmshare.framework.model.LlmJobDeadLetter;
-import us.nusun.llmshare.framework.model.LlmJobEnvelope;
+import us.nusun.llmshare.framework.model.LlmJob;
 import us.nusun.llmshare.framework.model.LlmJobResult;
 import us.nusun.llmshare.framework.model.Persona;
 
@@ -19,12 +19,12 @@ import java.util.Map;
 public class LlmDeadLetterFactory {
     private static final int MAX_DLQ_METADATA_STRING_LENGTH = 512;
 
-    public LlmJobDeadLetter failedQueuedJobDeadLetter(Exchange exchange) {
-        return failedQueuedJobDeadLetter(exchange, globalModelFallback(exchange));
+    public LlmJobDeadLetter failedJobDeadLetter(Exchange exchange) {
+        return failedJobDeadLetter(exchange, globalModelFallback(exchange));
     }
 
-    private LlmJobDeadLetter failedQueuedJobDeadLetter(Exchange exchange, String globalModelFallback) {
-        LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
+    private LlmJobDeadLetter failedJobDeadLetter(Exchange exchange, String globalModelFallback) {
+        LlmJob job = exchange.getProperty("llmJob", LlmJob.class);
         if (job == null) {
             throw new IllegalStateException("Cannot publish LLM DLQ entry without llmJob exchange property");
         }
@@ -32,11 +32,9 @@ public class LlmDeadLetterFactory {
         return new LlmJobDeadLetter(
                 job.jobId(),
                 laneId(exchange, job),
-                job.requester(),
-                job.role(),
                 modelId(exchange, globalModelFallback),
                 normalizeDlqMetadata(job.metadata()),
-                firstNonBlank(exchange.getProperty("llmFailureMessage", String.class), "Unknown LLM queue failure"),
+                firstNonBlank(exchange.getProperty("llmFailureMessage", String.class), "Unknown LLM job failure"),
                 job.requestedAt(),
                 Instant.now());
     }
@@ -47,9 +45,9 @@ public class LlmDeadLetterFactory {
 
     private LlmJobResult failedLlmResult(Exchange exchange, String globalModelFallback) {
         Exception failure = exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class);
-        LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
+        LlmJob job = exchange.getProperty("llmJob", LlmJob.class);
         String message = failureMessage(failure, "Unknown LLM worker failure");
-        return LlmJobResult.failed(job, modelId(exchange, globalModelFallback), message, null,
+        return LlmJobResult.failed(job, modelId(exchange, globalModelFallback), message,
                 firstInstant(exchange.getProperty("llmStartedAt", Instant.class), job == null ? null : job.requestedAt(), Instant.now()));
     }
 
@@ -58,7 +56,7 @@ public class LlmDeadLetterFactory {
     }
 
     private String contextSummary(Exchange exchange, String globalModelFallback) {
-        LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
+        LlmJob job = exchange.getProperty("llmJob", LlmJob.class);
         return "jobId=" + firstNonBlank(exchange.getProperty("llmJobId", String.class), job == null ? null : String.valueOf(job.jobId()))
                 + " laneId=" + laneId(exchange, job)
                 + " model=" + modelId(exchange, globalModelFallback);
@@ -72,12 +70,11 @@ public class LlmDeadLetterFactory {
         return firstNonBlank(
                 exchange.getProperty("model", String.class),
                 exchange.getProperty("modelId", String.class),
-                metadataValue(exchange.getProperty("llmJob", LlmJobEnvelope.class), "model"),
                 globalModelFallback,
                 "unknown");
     }
 
-    private String laneId(Exchange exchange, LlmJobEnvelope job) {
+    private String laneId(Exchange exchange, LlmJob job) {
         Object lane = exchange.getProperty("inferenceLane");
         if (lane instanceof InferenceLaneDefinition definition) {
             return definition.id();
@@ -88,8 +85,6 @@ public class LlmDeadLetterFactory {
         return firstNonBlank(
                 exchange.getProperty("laneId", String.class),
                 job == null ? null : job.laneId(),
-                metadataValue(job, "laneId"),
-                metadataValue(job, "inferenceLane"),
                 "unknown");
     }
 
@@ -179,20 +174,6 @@ public class LlmDeadLetterFactory {
             }
         }
         return Instant.now();
-    }
-
-    private static String metadataValue(LlmJobEnvelope job, String key) {
-        if (job == null || job.metadata() == null) {
-            return null;
-        }
-        Object value = job.metadata().get(key);
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof String text) {
-            return text;
-        }
-        return null;
     }
 
     private static String resolveOptionalPlaceholder(Exchange exchange, String placeholder) {

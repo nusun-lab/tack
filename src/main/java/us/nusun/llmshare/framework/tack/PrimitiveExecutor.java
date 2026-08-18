@@ -21,10 +21,9 @@ import us.nusun.llmshare.framework.inventory.ToolProfileRegistry;
 import us.nusun.llmshare.framework.llm.ProviderStructuredOutputSupport;
 import us.nusun.llmshare.framework.model.CreateResult;
 import us.nusun.llmshare.framework.model.DecisionResult;
-import us.nusun.llmshare.framework.model.LlmJobRequest;
+import us.nusun.llmshare.framework.model.LlmJob;
 import us.nusun.llmshare.framework.model.LlmJobResult;
 import us.nusun.llmshare.framework.model.LlmJobStatus;
-import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.Mission;
 import us.nusun.llmshare.framework.model.Persona;
 import us.nusun.llmshare.framework.model.RoutineDefinition;
@@ -97,14 +96,12 @@ public class PrimitiveExecutor {
         markCurrent(exchange, "act", request.id(), request.prompt());
         exchange.setProperty("toolProfile", profile.id());
         projections.record(exchange, "ACT_STARTED");
-        projections.record(exchange, "AGENT_INVOCATION_QUEUED");
 
         LlmJobResult llmResult = callLlm(
                 exchange,
                 llm,
                 llmRequest(exchange, laneId, "act", renderActPrompt(exchange, request, profile, leaf), null),
                 "act agent invocation");
-        projections.record(exchange, "AGENT_INVOCATION_COMPLETED");
 
         ActCompletion completion = parseActCompletion(llmResult);
         ThoughtFrame rewritten = stack.rewrite(leaf.id(), completion.content(), Instant.now());
@@ -120,7 +117,7 @@ public class PrimitiveExecutor {
     public String finishAct(
             @Header("summary") String summary,
             @Header("content") String content,
-            @ExchangeProperty("llmJob") LlmJobEnvelope job) {
+            @ExchangeProperty("llmJob") LlmJob job) {
         if (job == null || job.metadata() == null || !"act".equals(job.metadata().get("primitive"))) {
             throw new FrameworkPrimitiveException("finish_act is only available to a Tack act invocation");
         }
@@ -244,7 +241,7 @@ public class PrimitiveExecutor {
         exchange.getMessage().setBody(popped);
     }
 
-    private LlmJobResult callLlm(Exchange exchange, ProducerTemplate llm, LlmJobRequest request, String callDescription) {
+    private LlmJobResult callLlm(Exchange exchange, ProducerTemplate llm, LlmJob request, String callDescription) {
         try {
             clearLlmExchangeState(exchange);
             exchange.getMessage().setBody(request);
@@ -286,23 +283,16 @@ public class PrimitiveExecutor {
         return llm;
     }
 
-    private LlmJobRequest llmRequest(Exchange exchange, String laneId, String systemContract, String prompt, String schema) {
-        AgentRun run = currentRun(exchange);
-        Persona persona = personas.getRequired(run.personaId());
-        return new LlmJobRequest(
-                null,
+    private LlmJob llmRequest(Exchange exchange, String laneId, String systemContract, String prompt, String schema) {
+        return LlmJob.create(
                 laneId,
-                primitiveRequester(run),
-                persona.name(),
-                0,
                 prompt,
                 primitiveSystemPrompt(exchange, systemContract),
                 schema,
-                frameworkMetadata(exchange, laneId, schema),
-                null);
+                frameworkMetadata(exchange, schema));
     }
 
-    private Map<String, Object> frameworkMetadata(Exchange exchange, String laneId, String schema) {
+    private Map<String, Object> frameworkMetadata(Exchange exchange, String schema) {
         LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
         AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
         Mission mission = exchange.getProperty("mission", Mission.class);
@@ -316,15 +306,10 @@ public class PrimitiveExecutor {
             putIfNonBlank(metadata, "missionId", mission.id());
         }
         putIfNonBlank(metadata, "toolProfile", exchange.getProperty("toolProfile", String.class));
-        putIfNonBlank(metadata, "laneId", laneId);
         if (schema != null && !schema.isBlank()) {
             metadata.put(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY, true);
         }
         return Map.copyOf(metadata);
-    }
-
-    private static String primitiveRequester(AgentRun run) {
-        return firstNonBlank(run.currentPrimitive() + ":" + run.currentId(), "framework");
     }
 
     private String resolveLane(Exchange exchange, String requestedLane) {

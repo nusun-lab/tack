@@ -8,8 +8,7 @@ import us.nusun.llmshare.framework.llm.InFlightReplyManager;
 import us.nusun.llmshare.framework.llm.LlmDeadLetterFactory;
 import us.nusun.llmshare.framework.llm.LlmRouteSupport;
 import us.nusun.llmshare.framework.logging.LogTokens;
-import us.nusun.llmshare.framework.model.LlmJobEnvelope;
-import us.nusun.llmshare.framework.model.LlmJobRequest;
+import us.nusun.llmshare.framework.model.LlmJob;
 import us.nusun.llmshare.framework.model.LlmJobResult;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 
@@ -34,11 +33,11 @@ class LoggingSemanticsTest {
         Exchange exchange = new DefaultExchange(new DefaultCamelContext());
         exchange.setProperty("agentLabel", "DEV");
         exchange.setProperty("agentLogColor", "38;2;100;50;10");
-        LlmJobEnvelope job = job();
+        LlmJob job = job();
         exchange.setProperty("llmJob", job);
 
         support.logPrompt(job, exchange);
-        support.logModelResponse(LlmJobResult.succeeded(job, "model", "{\"ok\":true}", "{\"ok\":true}", Instant.now()), exchange);
+        support.logModelResponse(LlmJobResult.succeeded(job, "model", "{\"ok\":true}", Instant.now()), exchange);
 
         assertEquals(2, logs.messages.size());
         assertTrue(logs.messages.get(0).startsWith("\u001B[38;2;55;28;6m[DEV] SYSTEM system\nPROMPT prompt"));
@@ -53,18 +52,15 @@ class LoggingSemanticsTest {
         assertEquals("[DEV] RESPONSE text", logs.wrap("DEV", "38;2;100;50;10", "RESPONSE text"));
     }
 
-    private static LlmJobEnvelope job() {
-        return LlmJobEnvelope.queued(new LlmJobRequest(
-                null,
+    private static LlmJob job() {
+        return new LlmJob(
+                java.util.UUID.randomUUID(),
                 "low-pass",
-                "test",
-                "test",
-                0,
                 "prompt",
                 "system",
                 null,
                 Map.of(),
-                null).normalized());
+                java.time.Instant.now());
     }
 
     private static final class CapturingLogTokens extends LogTokens {

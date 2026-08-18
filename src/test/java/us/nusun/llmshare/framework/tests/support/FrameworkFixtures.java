@@ -202,7 +202,7 @@ public final class FrameworkFixtures {
 
     public static LlmJobResult llmResult(String laneId, String content) {
         Instant now = Instant.now();
-        return new LlmJobResult(UUID.randomUUID(), LlmJobStatus.SUCCEEDED, laneId, "test", "test", "mock", content, content, now, now, now, 0, null);
+        return new LlmJobResult(UUID.randomUUID(), LlmJobStatus.SUCCEEDED, laneId, "mock", content, now, now, now, 0, null);
     }
 
     public static void set(Object target, String name, Object value) {

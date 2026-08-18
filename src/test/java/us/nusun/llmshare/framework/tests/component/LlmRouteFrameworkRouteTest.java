@@ -13,8 +13,7 @@ import us.nusun.llmshare.framework.llm.InFlightReplyManager;
 import us.nusun.llmshare.framework.llm.LlmDeadLetterFactory;
 import us.nusun.llmshare.framework.llm.LlmJobFactory;
 import us.nusun.llmshare.framework.llm.LlmRouteSupport;
-import us.nusun.llmshare.framework.model.LlmJobEnvelope;
-import us.nusun.llmshare.framework.model.LlmJobRequest;
+import us.nusun.llmshare.framework.model.LlmJob;
 import us.nusun.llmshare.framework.model.LlmJobResult;
 import us.nusun.llmshare.framework.model.LlmJobStatus;
 import us.nusun.llmshare.framework.route.LlmRoute;
@@ -39,9 +38,9 @@ class LlmRouteFrameworkRouteTest {
     void directLlmRouteQueuesKafkaRequestAwaitsReplyAndReturnsSuccessfulResult() throws Exception {
         InFlightReplyManager replies = new InFlightReplyManager();
         StubKafkaComponent kafka = new StubKafkaComponent((topic, exchange) -> {
-            LlmJobEnvelope queued = exchange.getProperty("llmJob", LlmJobEnvelope.class);
-            if (queued != null && "high-pass".equals(queued.laneId())) {
-                replies.complete(LlmJobResult.succeeded(queued, "test-model", "{\"result\":\"ok\"}", "{\"result\":\"ok\"}", Instant.now()));
+            LlmJob job = exchange.getProperty("llmJob", LlmJob.class);
+            if (job != null && "high-pass".equals(job.laneId())) {
+                replies.complete(LlmJobResult.succeeded(job, "test-model", "{\"result\":\"ok\"}", Instant.now()));
             }
         });
 
@@ -52,9 +51,16 @@ class LlmRouteFrameworkRouteTest {
                 exchange.setProperty("personaId", FrameworkFixtures.PERSONA_A);
                 exchange.setProperty("agentRunId", "run:/high?partition=stable");
                 exchange.setProperty("toolProfile", FrameworkFixtures.PROFILE_GAMMA);
-                exchange.getIn().setHeader("lane", "high-pass");
-                exchange.getIn().setHeader("responseSchema", "classpath:schemas/framework/text-result-schema.json");
-                exchange.getIn().setBody("Return a JSON result.");
+                exchange.getIn().setBody(LlmJob.create(
+                        "high-pass",
+                        "Return a JSON result.",
+                        "Return only JSON.",
+                        "classpath:schemas/framework/text-result-schema.json",
+                        Map.of(
+                                "personaId", FrameworkFixtures.PERSONA_A,
+                                "agentRunId", "run:/high?partition=stable",
+                                "toolProfile", FrameworkFixtures.PROFILE_GAMMA,
+                                "primitive", "create")));
             });
 
             LlmJobResult body = result.getMessage().getBody(LlmJobResult.class);
@@ -93,9 +99,9 @@ class LlmRouteFrameworkRouteTest {
     void directLlmRoutePublishesDeadLetterAndClearsInFlightReplyWhenSchemaValidationFails() throws Exception {
         InFlightReplyManager replies = new InFlightReplyManager();
         StubKafkaComponent kafka = new StubKafkaComponent((topic, exchange) -> {
-            LlmJobEnvelope queued = exchange.getProperty("llmJob", LlmJobEnvelope.class);
-            if (queued != null && "low-pass".equals(queued.laneId())) {
-                replies.complete(LlmJobResult.succeeded(queued, "test-model", "{\"wrong\":true}", "{\"wrong\":true}", Instant.now()));
+            LlmJob job = exchange.getProperty("llmJob", LlmJob.class);
+            if (job != null && "low-pass".equals(job.laneId())) {
+                replies.complete(LlmJobResult.succeeded(job, "test-model", "{\"wrong\":true}", Instant.now()));
             }
         });
 
@@ -104,12 +110,14 @@ class LlmRouteFrameworkRouteTest {
 
             CamelExecutionException failure = assertThrows(
                     CamelExecutionException.class,
-                    () -> context.createProducerTemplate().requestBodyAndHeaders(
+                    () -> context.createProducerTemplate().requestBody(
                             "direct:llm",
-                            "Return invalid JSON for the schema.",
-                            Map.of(
-                                    "lane", "low-pass",
-                                    "responseSchema", "classpath:schemas/framework/text-result-schema.json")));
+                            LlmJob.create(
+                                    "low-pass",
+                                    "Return invalid JSON for the schema.",
+                                    "Return only JSON.",
+                                    "classpath:schemas/framework/text-result-schema.json",
+                                    Map.of("primitive", "create"))));
 
             assertTrue(failure.getMessage().contains("Exception occurred during execution"));
             assertEquals(0, replies.inFlightCount());
@@ -117,7 +125,6 @@ class LlmRouteFrameworkRouteTest {
             Exchange deadLetterExchange = kafka.sentTo("llm.dead-letter").getFirst();
             String deadLetterJson = deadLetterExchange.getIn().getBody(String.class);
             assertTrue(deadLetterJson.contains("\"laneId\":\"low-pass\""));
-            assertTrue(!deadLetterJson.contains("\"passType\""));
             assertTrue(!deadLetterJson.contains("runtime" + "Id"));
             assertTrue(deadLetterJson.contains("\"failureMessage\""));
             assertTrue(deadLetterExchange.getIn().getHeader(KafkaConstants.KEY) instanceof UUID);
@@ -131,14 +138,13 @@ class LlmRouteFrameworkRouteTest {
 
         try (DefaultCamelContext context = context(replies, kafka)) {
             context.start();
-            LlmJobEnvelope queued = LlmJobEnvelope.queued(new us.nusun.llmshare.framework.model.LlmJobRequest(
-                    null, "low-pass", "test", "Persona A", 0, "prompt", "system", null, Map.of(), null).normalized());
-            replies.register(queued);
-            LlmJobResult result = LlmJobResult.succeeded(queued, "test-model", "ok", "ok", Instant.now());
+            LlmJob job = LlmJob.create("low-pass", "prompt", "system", null, Map.of());
+            replies.register(job);
+            LlmJobResult result = LlmJobResult.succeeded(job, "test-model", "ok", Instant.now());
 
             context.createProducerTemplate().sendBody("direct:handle-llm-response", result);
 
-            LlmJobResult completed = replies.await(queued.jobId(), 10);
+            LlmJobResult completed = replies.await(job.jobId(), 10);
             assertEquals(result.jobId(), completed.jobId());
             assertEquals("ok", completed.content());
         }
@@ -151,24 +157,21 @@ class LlmRouteFrameworkRouteTest {
 
         try (DefaultCamelContext context = context(replies, kafka)) {
             context.start();
-            LlmJobEnvelope queued = LlmJobEnvelope.queued(new LlmJobRequest(
+            LlmJob job = new LlmJob(
                     UUID.randomUUID(),
                     "low-pass",
-                    "test",
-                    "test",
-                    0,
                     "Return JSON.",
                     "Return only JSON.",
                     null,
                     Map.of(),
-                    null).normalized());
-            String json = TestJson.write(queued);
+                    Instant.now());
+            String json = TestJson.write(job);
 
             kafka.emit("llm.requests.low", json);
 
             await(() -> kafka.sentTopics().contains("llm.replies.low"));
             String replyJson = kafka.sentTo("llm.replies.low").getFirst().getIn().getBody(String.class);
-            assertTrue(replyJson.contains("\"jobId\":\"" + queued.jobId() + "\""));
+            assertTrue(replyJson.contains("\"jobId\":\"" + job.jobId() + "\""));
             assertTrue(replyJson.contains("\"status\":\"SUCCEEDED\""));
             assertTrue(replyJson.contains("\"content\":\"{\\\"result\\\":\\\"worker-ok\\\"}\""));
         }
@@ -181,31 +184,27 @@ class LlmRouteFrameworkRouteTest {
 
         try (DefaultCamelContext context = context(replies, kafka, nullBodyAgentFactory())) {
             context.start();
-            LlmJobEnvelope queued = LlmJobEnvelope.queued(new LlmJobRequest(
+            LlmJob job = new LlmJob(
                     UUID.randomUUID(),
                     "low-pass",
-                    "test",
-                    "test",
-                    0,
                     "Return JSON.",
                     "Return only JSON.",
                     null,
-                    Map.of("primitive", "test-synthesis"),
-                    null).normalized());
+                    Map.of("primitive", "create"),
+                    Instant.now());
 
-            kafka.emit("llm.requests.low", TestJson.write(queued));
+            kafka.emit("llm.requests.low", TestJson.write(job));
 
             await(() -> kafka.sentTopics().contains("llm.replies.low") && kafka.sentTopics().contains("llm.dead-letter"));
             String replyJson = kafka.sentTo("llm.replies.low").getFirst().getIn().getBody(String.class);
-            assertTrue(replyJson.contains("\"jobId\":\"" + queued.jobId() + "\""));
+            assertTrue(replyJson.contains("\"jobId\":\"" + job.jobId() + "\""));
             assertTrue(replyJson.contains("\"status\":\"FAILED\""));
             assertTrue(replyJson.contains("Validation failed for Predicate[body is not null]"));
 
             Exchange deadLetterExchange = kafka.sentTo("llm.dead-letter").getFirst();
             String deadLetterJson = deadLetterExchange.getIn().getBody(String.class);
-            assertTrue(deadLetterJson.contains("\"jobId\":\"" + queued.jobId() + "\""));
+            assertTrue(deadLetterJson.contains("\"jobId\":\"" + job.jobId() + "\""));
             assertTrue(deadLetterJson.contains("\"laneId\":\"low-pass\""));
-            assertTrue(!deadLetterJson.contains("\"passType\""));
             assertTrue(deadLetterJson.contains("Validation failed for Predicate[body is not null]"));
             assertTrue(deadLetterExchange.getIn().getHeader(KafkaConstants.KEY) instanceof UUID);
         }

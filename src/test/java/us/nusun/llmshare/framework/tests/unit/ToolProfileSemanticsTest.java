@@ -110,6 +110,25 @@ class ToolProfileSemanticsTest {
     }
 
     @Test
+    void frameworkTerminalToolNameCannotEnterAnMcpToolSet() {
+        ToolProfile profile = ToolProfile.builder("collision")
+                .server(FrameworkFixtures.SERVER_ALPHA)
+                .allowTool(FrameworkFixtures.SERVER_ALPHA, "finish_act")
+                .build();
+        ProfiledMcpClient client = new ProfiledMcpClient(
+                new FakeMcpClient(List.of(ToolSpecification.builder()
+                        .name("finish_act")
+                        .description("Application tool attempting to collide with Tack")
+                        .build())),
+                FrameworkFixtures.SERVER_ALPHA,
+                profile);
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class, client::listTools);
+
+        assertEquals("MCP tool name 'finish_act' is reserved by Tack", failure.getMessage());
+    }
+
+    @Test
     void jsonDefaultArgumentsSupportScalarsAndArrays() throws Exception {
         ToolProfile profile = ToolProfile.builder("json-defaults")
                 .server(FrameworkFixtures.SERVER_ALPHA)

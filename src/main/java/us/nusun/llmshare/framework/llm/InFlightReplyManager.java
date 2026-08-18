@@ -2,7 +2,7 @@ package us.nusun.llmshare.framework.llm;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Named;
-import us.nusun.llmshare.framework.model.LlmJobEnvelope;
+import us.nusun.llmshare.framework.model.LlmJob;
 import us.nusun.llmshare.framework.model.LlmJobResult;
 
 import java.util.UUID;
@@ -17,7 +17,7 @@ import java.util.concurrent.TimeoutException;
 public class InFlightReplyManager {
     private final ConcurrentMap<UUID, CompletableFuture<LlmJobResult>> replies = new ConcurrentHashMap<>();
 
-    public LlmJobEnvelope register(LlmJobEnvelope job) {
+    public LlmJob register(LlmJob job) {
         CompletableFuture<LlmJobResult> previous = replies.putIfAbsent(job.jobId(), new CompletableFuture<>());
         if (previous != null) {
             throw new IllegalStateException("Duplicate in-flight jobId " + job.jobId());

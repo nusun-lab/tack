@@ -2,7 +2,7 @@
 
 ## Problem
 
-A local LLM is a scarce resource. Agent teams create bursty demand: planners, builders, reviewers, fixers, and summarizers all want the model at once. If every agent calls vLLM directly, the system loses control over concurrency, priority, observability, and failure handling.
+A local LLM is a scarce resource. Agent teams create bursty demand: planners, builders, reviewers, fixers, and summarizers all want the model at once. If every agent calls vLLM directly, the system loses control over concurrency, observability, and failure handling.
 
 ## Hypothesis
 
@@ -76,7 +76,11 @@ Gitea issues, labels, milestones, and time tracking are excluded because Plane i
 
 The example declares Plane, Gitea, and Mattermost connection definitions as separate `McpServer` classes. Each `ToolProfile` class injects the server declarations it needs, composes those immutable definitions directly, and owns its capability policy; there is no inheritance between profiles.
 
-Routine authors should choose the narrowest profile that supports the act. Composite profiles should reduce redundant model passes when one coherent act needs multiple systems, not become universal all-tools profiles.
+Routine authors should choose the narrowest profile that supports the act. Composite profiles should avoid splitting one coherent act merely to access multiple systems, not become universal all-tools profiles.
+
+## Tack act completion
+
+Each `tack:act` submits one normalized `LlmJob` and performs one LangChain4j agent invocation. Camel adds the selected persona/profile MCP clients and the tagged, framework-owned `finish_act` AI tool to that invocation. The agent may complete zero or more ordinary tool round trips before calling `finish_act(summary, content)`. The terminal tool is immediate-return, so its result completes the same invocation without another model call. Tack uses `summary` for the step result and replaces the active durable thought with `content`; tool-loop messages remain ephemeral.
 
 ## Why not just use a Java BlockingQueue?
 
@@ -92,16 +96,6 @@ A local queue is fine for a toy. Kafka gives you the properties you will need on
 
 ## Near-term decisions
 
-### Priority
-
-Kafka does not natively reorder records inside a partition by priority. Options:
-
-1. Use separate topics: `llm.requests.high`, `llm.requests.normal`, `llm.requests.low`.
-2. Use a scheduler service that reads submitted jobs from a DB and publishes to Kafka in priority order.
-3. Use Kafka only for accepted execution jobs and keep priority in Postgres.
-
-For the first proof, keep priority as metadata only.
-
 ### Persistence
 
 The in-memory agent-run state and LLM reply waiters are intentionally disposable in this proof. Replace them with durable storage when you care about restarts. A future startup reconciler can use durable run state to republish `AgentRunScheduled` for stale accepted or running runs.
@@ -115,6 +109,5 @@ Eventually each request should specify a response contract:
 - retry policy
 - timeout
 - cacheability
-- requester/role
 
 The worker should reject invalid outputs instead of letting bad artifacts flow downstream.

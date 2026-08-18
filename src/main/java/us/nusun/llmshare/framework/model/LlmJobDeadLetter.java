@@ -7,8 +7,6 @@ import java.util.UUID;
 public record LlmJobDeadLetter(
         UUID jobId,
         String laneId,
-        String requester,
-        String role,
         String model,
         Map<String, Object> metadata,
         String failureMessage,

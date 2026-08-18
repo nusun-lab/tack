@@ -431,12 +431,9 @@ Parameters:
 | `toolProfile` | no | MCP tool profile; defaults to no tools |
 | `lane` | no | Per-call inference-lane override |
 
-`act` performs two model passes:
+`act` performs one agent invocation. The agent receives the dynamically selected `ToolProfile`, including persona-specific MCP clients and credentials, and may make zero or more normal tool calls. It must finish by calling Tack's framework-owned `finish_act(summary, content)` AI tool. That terminal call returns immediately: `summary` becomes `StepResult.summary`, `content` replaces the active durable thought, and the raw tool-loop conversation remains ephemeral.
 
-1. a tool/action pass with the selected profile;
-2. a schema-shaped synthesis pass that replaces the active leaf thought.
-
-It records projection events for the act, tool pass, synthesis pass, and thought rewrite. The message body and `latestStepResult` exchange property contain the resulting `StepResult`.
+The semantic projection lifecycle is `ACT_STARTED`, `THOUGHT_REWRITTEN`, and `ACT_COMPLETED`. The message body and `latestStepResult` exchange property contain the resulting `StepResult`.
 
 An active thought is required. Tack rewrites the known leaf by identity rather than assuming that whichever frame is current later is the same frame that began the act.
 
@@ -679,7 +676,7 @@ This disables only local worker-route verification. The orchestrator still needs
 | `AGENT_RUN_SCHEDULED_TOPIC` | `agent-runs.scheduled` | Durable AgentRun start-signal topic |
 | `AGENT_RUN_SCHEDULED_CONSUMER_GROUP` | `agent-run-scheduler` | Scheduler consumer group |
 | `AGENT_RUN_SCHEDULED_CONSUMER_ENABLED` | `true` | Enables the scheduler consumer route |
-| `LLM_TOPIC_DEAD_LETTER` | `llm.dead-letter` | Failed queued-job topic |
+| `LLM_TOPIC_DEAD_LETTER` | `llm.dead-letter` | Failed LLM-job topic |
 | `LLM_CONSUMER_GROUP` | `llm-share-workers` | Base worker consumer group |
 | `LLM_RESPONSE_CONSUMER_GROUP` | generated per Quarkus process | Base reply-consumer group |
 | `LLM_KAFKA_PROVISION_TOPICS` | `true` | Provision and validate configured topics |

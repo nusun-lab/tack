@@ -2,8 +2,7 @@ package us.nusun.llmshare.framework.tests.boundary;
 
 import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.framework.llm.InFlightReplyManager;
-import us.nusun.llmshare.framework.model.LlmJobEnvelope;
-import us.nusun.llmshare.framework.model.LlmJobRequest;
+import us.nusun.llmshare.framework.model.LlmJob;
 import us.nusun.llmshare.framework.model.LlmJobResult;
 import us.nusun.llmshare.framework.model.LlmJobStatus;
 
@@ -21,8 +20,8 @@ class InFlightReplyManagerBoundaryTest {
     @Test
     void successfulReplyCompletesAwaitAndCleansUpRegistration() throws Exception {
         InFlightReplyManager manager = new InFlightReplyManager();
-        LlmJobEnvelope job = queuedJob(UUID.randomUUID());
-        LlmJobResult result = LlmJobResult.succeeded(job, "mock-model", "ok", "ok", Instant.now());
+        LlmJob job = queuedJob(UUID.randomUUID());
+        LlmJobResult result = LlmJobResult.succeeded(job, "mock-model", "ok", Instant.now());
 
         assertSame(job, manager.register(job));
         assertEquals(1, manager.inFlightCount());
@@ -49,8 +48,8 @@ class InFlightReplyManagerBoundaryTest {
     @Test
     void completedReplyForUnknownJobIsIgnored() {
         InFlightReplyManager manager = new InFlightReplyManager();
-        LlmJobEnvelope job = queuedJob(UUID.randomUUID());
-        LlmJobResult result = LlmJobResult.failed(job, "mock-model", "late reply", null, Instant.now());
+        LlmJob job = queuedJob(UUID.randomUUID());
+        LlmJobResult result = LlmJobResult.failed(job, "mock-model", "late reply", Instant.now());
 
         assertSame(result, manager.complete(result));
         assertEquals(0, manager.inFlightCount());
@@ -60,14 +59,14 @@ class InFlightReplyManagerBoundaryTest {
     void jobIdCanBeReusedAfterCleanup() throws Exception {
         InFlightReplyManager manager = new InFlightReplyManager();
         UUID jobId = UUID.randomUUID();
-        LlmJobEnvelope first = queuedJob(jobId);
+        LlmJob first = queuedJob(jobId);
         manager.register(first);
-        manager.complete(LlmJobResult.succeeded(first, "mock-model", "first", "first", Instant.now()));
+        manager.complete(LlmJobResult.succeeded(first, "mock-model", "first", Instant.now()));
         assertEquals("first", manager.await(jobId, 100).content());
 
-        LlmJobEnvelope second = queuedJob(jobId);
+        LlmJob second = queuedJob(jobId);
         manager.register(second);
-        manager.complete(LlmJobResult.succeeded(second, "mock-model", "second", "second", Instant.now()));
+        manager.complete(LlmJobResult.succeeded(second, "mock-model", "second", Instant.now()));
 
         assertEquals("second", manager.await(jobId, 100).content());
         assertEquals(0, manager.inFlightCount());
@@ -76,28 +75,26 @@ class InFlightReplyManagerBoundaryTest {
     @Test
     void timeoutRemovesRegistrationAndLateReplyDoesNotRecreateIt() {
         InFlightReplyManager manager = new InFlightReplyManager();
-        LlmJobEnvelope job = queuedJob(UUID.randomUUID());
+        LlmJob job = queuedJob(UUID.randomUUID());
         manager.register(job);
 
         IllegalStateException failure = assertThrows(IllegalStateException.class, () -> manager.await(job.jobId(), 1));
-        manager.complete(new LlmJobResult(job.jobId(), LlmJobStatus.SUCCEEDED, job.laneId(), job.requester(), job.role(), "mock", "late", "late", job.requestedAt(), Instant.now(), Instant.now(), 0, null));
+        manager.complete(new LlmJobResult(job.jobId(), LlmJobStatus.SUCCEEDED, job.laneId(), "mock", "late",
+                job.requestedAt(), Instant.now(), Instant.now(), 0, null));
 
         assertTrue(failure.getMessage().contains("Timed out waiting for LLM reply"));
         assertFalse(manager.contains(job.jobId()));
         assertEquals(0, manager.inFlightCount());
     }
 
-    private static LlmJobEnvelope queuedJob(UUID jobId) {
-        return LlmJobEnvelope.queued(new LlmJobRequest(
+    private static LlmJob queuedJob(UUID jobId) {
+        return new LlmJob(
                 jobId,
                 "low-pass",
-                "developer",
-                "developer",
-                0,
                 "prompt",
                 "system",
                 null,
                 Map.of("laneId", "low-pass", "primitive", "act"),
-                Instant.now()));
+                Instant.now());
     }
 }

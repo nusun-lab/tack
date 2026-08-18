@@ -15,8 +15,7 @@ import us.nusun.llmshare.framework.llm.LlmDeadLetterFactory;
 import us.nusun.llmshare.framework.llm.LlmRouteSupport;
 import us.nusun.llmshare.framework.llm.ProviderStructuredOutputSupport;
 import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
-import us.nusun.llmshare.framework.model.LlmJobEnvelope;
-import us.nusun.llmshare.framework.model.LlmJobRequest;
+import us.nusun.llmshare.framework.model.LlmJob;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 
 import java.lang.reflect.Method;
@@ -46,7 +45,7 @@ class ProviderStructuredOutputSupportTest {
     void dynamicAgentUriDoesNotAppendJsonSchemaWhenProviderSchemaIsEnabled() throws Exception {
         try (DefaultCamelContext context = context(true)) {
             Exchange exchange = new DefaultExchange(context);
-            LlmJobEnvelope job = job("low-pass", SCHEMA);
+            LlmJob job = job("low-pass", SCHEMA);
             LlmRouteSupport support = new LlmRouteSupport(
                     context,
                     FrameworkFixtures.inferenceLaneRegistry(),
@@ -155,29 +154,26 @@ class ProviderStructuredOutputSupportTest {
         return context;
     }
 
-    private static Exchange exchange(DefaultCamelContext context, LlmJobEnvelope job) {
+    private static Exchange exchange(DefaultCamelContext context, LlmJob job) {
         Exchange exchange = new DefaultExchange(context);
         exchange.setProperty("laneId", job.laneId());
         exchange.setProperty("llmJob", job);
         return exchange;
     }
 
-    private static LlmJobEnvelope job(String laneId, String schema) {
+    private static LlmJob job(String laneId, String schema) {
         return job(laneId, schema, Map.of());
     }
 
-    private static LlmJobEnvelope job(String laneId, String schema, Map<String, Object> metadata) {
-        return LlmJobEnvelope.queued(new LlmJobRequest(
+    private static LlmJob job(String laneId, String schema, Map<String, Object> metadata) {
+        return new LlmJob(
                 UUID.randomUUID(),
                 laneId,
-                "test",
-                "test",
-                0,
                 "Return the result.",
                 "Return only JSON.",
                 schema,
                 metadata,
-                null).normalized());
+                java.time.Instant.now());
     }
 
     private static LlmAgentFactory.DynamicAgentFactory factory(DefaultCamelContext context) {

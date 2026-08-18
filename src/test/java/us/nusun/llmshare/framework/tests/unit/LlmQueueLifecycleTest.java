@@ -13,8 +13,7 @@ import us.nusun.llmshare.framework.llm.LlmJobFactory;
 import us.nusun.llmshare.framework.llm.LlmRouteSupport;
 import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
 import us.nusun.llmshare.framework.model.LlmJobDeadLetter;
-import us.nusun.llmshare.framework.model.LlmJobEnvelope;
-import us.nusun.llmshare.framework.model.LlmJobRequest;
+import us.nusun.llmshare.framework.model.LlmJob;
 import us.nusun.llmshare.framework.model.LlmJobResult;
 import us.nusun.llmshare.framework.model.LlmJobStatus;
 import us.nusun.llmshare.framework.model.Mission;
@@ -112,12 +111,12 @@ class LlmQueueLifecycleTest {
         DefaultCamelContext context = TestCamelContexts.quiet();
         LlmRouteSupport support = routeSupport(context);
 
-        LlmJobEnvelope actJob = queuedJob(UUID.randomUUID(), Map.of("primitive", "act"));
+        LlmJob actJob = job(UUID.randomUUID(), Map.of("primitive", "act"));
         Exchange actExchange = new DefaultExchange(context);
         actExchange.setProperty("llmJob", actJob);
         support.prepareAgentCall(actJob, actExchange);
 
-        LlmJobEnvelope decideJob = queuedJob(UUID.randomUUID(), Map.of("primitive", "decide"));
+        LlmJob decideJob = job(UUID.randomUUID(), Map.of("primitive", "decide"));
         Exchange decideExchange = new DefaultExchange(context);
         decideExchange.setProperty("llmJob", decideJob);
         support.prepareAgentCall(decideJob, decideExchange);
@@ -142,7 +141,7 @@ class LlmQueueLifecycleTest {
     void inFlightRegistrationIsDiscardedWhenRouteFailsBeforeAwait() throws Exception {
         InFlightReplyManager manager = new InFlightReplyManager();
         UUID jobId = UUID.randomUUID();
-        LlmJobEnvelope job = queuedJob(jobId);
+        LlmJob job = job(jobId);
         DefaultCamelContext context = TestCamelContexts.quiet();
         context.getRegistry().bind("inFlightReplyManager", manager);
         context.addRoutes(new RouteBuilder() {
@@ -172,68 +171,52 @@ class LlmQueueLifecycleTest {
     }
 
     @Test
-    void prepareLlmJobSelectsRequestedLaneAndPreservesEnvelopeMetadata() {
+    void prepareLlmJobSelectsItsLaneAndTransportMetadata() {
         DefaultCamelContext context = TestCamelContexts.quiet();
         UUID jobId = UUID.randomUUID();
         Exchange exchange = new DefaultExchange(context);
-        exchange.setProperty("llmJobId", jobId);
-        exchange.setProperty("personaId", "persona-a");
-        exchange.setProperty("toolProfile", FrameworkFixtures.PROFILE_GAMMA);
-        exchange.getIn().setHeader("lane", "high-pass");
-        exchange.getIn().setBody("inspect high lane");
+        LlmJob job = job(jobId, "high-pass", Map.of(
+                "personaId", "persona-a",
+                "toolProfile", FrameworkFixtures.PROFILE_GAMMA));
+        exchange.getIn().setBody(job);
 
         jobFactory().prepare(exchange);
 
-        LlmJobEnvelope envelope = exchange.getIn().getBody(LlmJobEnvelope.class);
-        assertEquals(jobId, envelope.jobId());
-        assertEquals(LlmJobStatus.QUEUED, envelope.status());
-        assertEquals("high-pass", envelope.laneId());
-        assertEquals("framework", envelope.requester());
+        assertEquals(job, exchange.getIn().getBody(LlmJob.class));
         assertEquals("high-pass", exchange.getProperty("inferenceLane", InferenceLaneDefinition.class).id());
         assertEquals("llm.requests.high", exchange.getProperty("laneRequestTopic"));
         assertEquals("llm.replies.high", exchange.getProperty("laneReplyTopic"));
         assertEquals(jobId.toString(), exchange.getProperty("llmPartitionKey"));
-        assertEquals("high-pass", envelope.metadata().get("laneId"));
-        assertEquals("AGENT_RUN", envelope.metadata().get("partitionKeyStrategy"));
-        assertEquals("persona-a", envelope.metadata().get("personaId"));
-        assertEquals(FrameworkFixtures.PROFILE_GAMMA, envelope.metadata().get("toolProfile"));
+        assertEquals("persona-a", job.metadata().get("personaId"));
+        assertEquals(FrameworkFixtures.PROFILE_GAMMA, job.metadata().get("toolProfile"));
     }
 
     @Test
-    void directLlmDefaultsToLowLaneWhenLaneIsUnset() {
+    void directLlmRejectsRawPromptBodies() {
         Exchange exchange = new DefaultExchange(TestCamelContexts.quiet());
         exchange.getIn().setBody("synthesize this");
 
-        jobFactory().prepare(exchange);
-
-        LlmJobEnvelope envelope = exchange.getIn().getBody(LlmJobEnvelope.class);
-        assertEquals("low-pass", envelope.laneId());
-        assertEquals("low-pass", envelope.metadata().get("laneId"));
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class, () -> jobFactory().prepare(exchange));
+        assertEquals("direct:llm requires an LlmJob body", failure.getMessage());
     }
 
     @Test
-    void prepareExistingLlmJobRequestPreservesRequestLaneAndToolProfile() {
+    void prepareLlmJobPreservesLaneAndToolProfile() {
         Exchange exchange = new DefaultExchange(TestCamelContexts.quiet());
-        exchange.setProperty("personaId", FrameworkFixtures.PERSONA_A);
-        exchange.setProperty("toolProfile", FrameworkFixtures.PROFILE_GAMMA);
-        exchange.getIn().setBody(new LlmJobRequest(
-                null,
+        exchange.getIn().setBody(new LlmJob(
+                UUID.randomUUID(),
                 "high-pass",
-                "act:assignment-review",
-                "Persona A",
-                0,
                 "inspect assigned work",
                 "system",
                 null,
                 Map.of("personaId", FrameworkFixtures.PERSONA_A, "toolProfile", FrameworkFixtures.PROFILE_GAMMA),
-                null));
+                Instant.now()));
 
         jobFactory().prepare(exchange);
 
-        LlmJobEnvelope envelope = exchange.getIn().getBody(LlmJobEnvelope.class);
-        assertEquals("high-pass", envelope.laneId());
-        assertEquals("high-pass", envelope.metadata().get("laneId"));
-        assertEquals(FrameworkFixtures.PROFILE_GAMMA, envelope.metadata().get("toolProfile"));
+        LlmJob job = exchange.getIn().getBody(LlmJob.class);
+        assertEquals("high-pass", job.laneId());
+        assertEquals(FrameworkFixtures.PROFILE_GAMMA, job.metadata().get("toolProfile"));
     }
 
     @Test
@@ -243,25 +226,19 @@ class LlmQueueLifecycleTest {
         Exchange exchange = new DefaultExchange(context);
         exchange.setProperty("agentRun", new AgentRun("run-1", "mission-1", "persona-a", "routine-a", Map.of()));
         exchange.setProperty("mission", new Mission("mission-1", "goal", List.of(), "active", Map.of(), Instant.now()));
-        exchange.setProperty("llmJobId", jobId);
-        exchange.getIn().setHeader("lane", "low-pass");
-        exchange.getIn().setBody("work");
+        exchange.getIn().setBody(job(jobId));
 
         jobFactory().prepare(exchange);
         assertEquals("run-1", exchange.getProperty("llmPartitionKey"));
 
         Exchange missionFallback = new DefaultExchange(context);
         missionFallback.setProperty("mission", new Mission("mission-2", "goal", List.of(), "active", Map.of(), Instant.now()));
-        missionFallback.setProperty("llmJobId", jobId);
-        missionFallback.getIn().setHeader("lane", "low-pass");
-        missionFallback.getIn().setBody("work");
+        missionFallback.getIn().setBody(job(jobId));
         jobFactory().prepare(missionFallback);
         assertEquals("mission-2", missionFallback.getProperty("llmPartitionKey"));
 
         Exchange jobFallback = new DefaultExchange(context);
-        jobFallback.setProperty("llmJobId", jobId);
-        jobFallback.getIn().setHeader("lane", "low-pass");
-        jobFallback.getIn().setBody("work");
+        jobFallback.getIn().setBody(job(jobId));
         jobFactory().prepare(jobFallback);
         assertEquals(jobId.toString(), jobFallback.getProperty("llmPartitionKey"));
     }
@@ -274,25 +251,19 @@ class LlmQueueLifecycleTest {
         Exchange exchange = new DefaultExchange(context);
         exchange.setProperty("agentRun", new AgentRun("run-1", "mission-1", "persona-a", "routine-a", Map.of()));
         exchange.setProperty("mission", new Mission("mission-1", "goal", List.of(), "active", Map.of(), Instant.now()));
-        exchange.setProperty("llmJobId", jobId);
-        exchange.getIn().setHeader("lane", "low-pass");
-        exchange.getIn().setBody("work");
+        exchange.getIn().setBody(job(jobId));
 
         jobs.prepare(exchange);
         assertEquals("mission-1", exchange.getProperty("llmPartitionKey"));
 
         Exchange runFallback = new DefaultExchange(context);
         runFallback.setProperty("agentRun", new AgentRun("run-2", "mission-2", "persona-a", "routine-a", Map.of()));
-        runFallback.setProperty("llmJobId", jobId);
-        runFallback.getIn().setHeader("lane", "low-pass");
-        runFallback.getIn().setBody("work");
+        runFallback.getIn().setBody(job(jobId));
         jobs.prepare(runFallback);
         assertEquals("run-2", runFallback.getProperty("llmPartitionKey"));
 
         Exchange jobFallback = new DefaultExchange(context);
-        jobFallback.setProperty("llmJobId", jobId);
-        jobFallback.getIn().setHeader("lane", "low-pass");
-        jobFallback.getIn().setBody("work");
+        jobFallback.getIn().setBody(job(jobId));
         jobs.prepare(jobFallback);
         assertEquals(jobId.toString(), jobFallback.getProperty("llmPartitionKey"));
     }
@@ -305,9 +276,7 @@ class LlmQueueLifecycleTest {
         Exchange exchange = new DefaultExchange(context);
         exchange.setProperty("agentRun", new AgentRun("run-1", "mission-1", "persona-a", "routine-a", Map.of()));
         exchange.setProperty("mission", new Mission("mission-1", "goal", List.of(), "active", Map.of(), Instant.now()));
-        exchange.setProperty("llmJobId", jobId);
-        exchange.getIn().setHeader("lane", "low-pass");
-        exchange.getIn().setBody("work");
+        exchange.getIn().setBody(job(jobId));
 
         jobs.prepare(exchange);
 
@@ -319,7 +288,7 @@ class LlmQueueLifecycleTest {
         DefaultCamelContext context = TestCamelContexts.quiet();
         UUID jobId = UUID.randomUUID();
         Exchange exchange = new DefaultExchange(context);
-        LlmJobEnvelope job = queuedJob(jobId);
+        LlmJob job = job(jobId);
         exchange.setProperty("llmPartitionKey", "agent/run:1?stable=true");
         exchange.setProperty("llmJob", job);
 
@@ -336,19 +305,15 @@ class LlmQueueLifecycleTest {
         DefaultCamelContext context = TestCamelContexts.quiet();
         LlmJobFactory jobs = jobFactory(registryWithModels("low-lane-model", "high-lane-model"));
         Exchange low = new DefaultExchange(context);
-        low.getIn().setHeader("lane", "low-pass");
-        low.getIn().setBody("low work");
+        low.getIn().setBody(job(UUID.randomUUID(), "low-pass", Map.of()));
         Exchange high = new DefaultExchange(context);
-        high.getIn().setHeader("lane", "high-pass");
-        high.getIn().setBody("high work");
+        high.getIn().setBody(job(UUID.randomUUID(), "high-pass", Map.of()));
 
         jobs.prepare(low);
         jobs.prepare(high);
 
         assertEquals("low-lane-model", low.getProperty("modelId"));
         assertEquals("high-lane-model", high.getProperty("modelId"));
-        assertEquals("low-lane-model", low.getIn().getBody(LlmJobEnvelope.class).metadata().get("model"));
-        assertEquals("high-lane-model", high.getIn().getBody(LlmJobEnvelope.class).metadata().get("model"));
     }
 
     @Test
@@ -359,13 +324,11 @@ class LlmQueueLifecycleTest {
         context.getPropertiesComponent().setOverrideProperties(properties);
         LlmJobFactory jobs = jobFactory(registryWithModels("", ""));
         Exchange exchange = new DefaultExchange(context);
-        exchange.getIn().setHeader("lane", "low-pass");
-        exchange.getIn().setBody("fallback work");
+        exchange.getIn().setBody(job(UUID.randomUUID()));
 
         jobs.prepare(exchange);
 
         assertEquals("global-model", exchange.getProperty("modelId"));
-        assertEquals("global-model", exchange.getIn().getBody(LlmJobEnvelope.class).metadata().get("model"));
     }
 
     @Test
@@ -377,7 +340,7 @@ class LlmQueueLifecycleTest {
         InFlightReplyManager manager = new InFlightReplyManager();
         LlmRouteSupport support = routeSupport(context, manager);
         UUID jobId = UUID.randomUUID();
-        LlmJobEnvelope job = queuedJob(jobId);
+        LlmJob job = job(jobId);
         manager.register(job);
         Exchange exchange = exchangeForLane(context, "low-pass");
         exchange.setProperty("llmJobId", jobId);
@@ -398,7 +361,7 @@ class LlmQueueLifecycleTest {
     void timeoutDoesNotLeaveStaleInFlightEntry() {
         InFlightReplyManager manager = new InFlightReplyManager();
         UUID jobId = UUID.randomUUID();
-        manager.register(queuedJob(jobId));
+        manager.register(job(jobId));
 
         IllegalStateException failure = assertThrows(IllegalStateException.class, () -> manager.await(jobId, 1));
 
@@ -410,7 +373,7 @@ class LlmQueueLifecycleTest {
 
     @Test
     void deadLetterFactoryCamelFacingMethodsAreNotOverloaded() {
-        for (String name : List.of("failedQueuedJobDeadLetter", "failedLlmResult", "contextSummary", "modelId")) {
+        for (String name : List.of("failedJobDeadLetter", "failedLlmResult", "contextSummary", "modelId")) {
             long count = java.util.Arrays.stream(LlmDeadLetterFactory.class.getMethods())
                     .filter(method -> method.getDeclaringClass().equals(LlmDeadLetterFactory.class))
                     .filter(method -> method.getName().equals(name))
@@ -420,21 +383,20 @@ class LlmQueueLifecycleTest {
     }
 
     @Test
-    void deadLetterPayloadPreservesQueuedJobDebugContext() throws Exception {
+    void deadLetterPayloadPreservesJobDebugContext() throws Exception {
         DefaultCamelContext context = TestCamelContexts.quiet();
         UUID jobId = UUID.randomUUID();
-        LlmJobEnvelope job = queuedJob(jobId);
+        LlmJob job = job(jobId);
         Exchange exchange = new DefaultExchange(context);
         exchange.setProperty("llmJob", job);
         exchange.setProperty("llmJobId", jobId);
         exchange.setProperty("modelId", "selected-low-model");
         exchange.setProperty("llmFailureMessage", "schema validation failed");
 
-        LlmJobDeadLetter deadLetter = deadLetters().failedQueuedJobDeadLetter(exchange);
+        LlmJobDeadLetter deadLetter = deadLetters().failedJobDeadLetter(exchange);
 
         assertEquals(jobId, deadLetter.jobId());
         assertEquals("low-pass", deadLetter.laneId());
-        assertEquals("developer", deadLetter.requester());
         assertEquals("selected-low-model", deadLetter.model());
         assertEquals("act", deadLetter.metadata().get("primitive"));
         assertEquals("schema validation failed", deadLetter.failureMessage());
@@ -452,12 +414,12 @@ class LlmQueueLifecycleTest {
     @Test
     void deadLetterPrefersTypedLaneDefinitionOverJobLane() {
         DefaultCamelContext context = TestCamelContexts.quiet();
-        LlmJobEnvelope job = queuedJob(UUID.randomUUID(), "low-pass", Map.of());
+        LlmJob job = job(UUID.randomUUID(), "low-pass", Map.of());
         Exchange exchange = new DefaultExchange(context);
         exchange.setProperty("llmJob", job);
         exchange.setProperty("inferenceLane", FrameworkFixtures.inferenceLaneRegistry().getRequired("high-pass"));
 
-        LlmJobDeadLetter deadLetter = deadLetters().failedQueuedJobDeadLetter(exchange);
+        LlmJobDeadLetter deadLetter = deadLetters().failedJobDeadLetter(exchange);
 
         assertEquals("high-pass", deadLetter.laneId());
     }
@@ -465,12 +427,12 @@ class LlmQueueLifecycleTest {
     @Test
     void deadLetterAcceptsStringLaneProperty() {
         DefaultCamelContext context = TestCamelContexts.quiet();
-        LlmJobEnvelope job = queuedJob(UUID.randomUUID(), "low-pass", Map.of());
+        LlmJob job = job(UUID.randomUUID(), "low-pass", Map.of());
         Exchange exchange = new DefaultExchange(context);
         exchange.setProperty("llmJob", job);
         exchange.setProperty("inferenceLane", "string-lane");
 
-        LlmJobDeadLetter deadLetter = deadLetters().failedQueuedJobDeadLetter(exchange);
+        LlmJobDeadLetter deadLetter = deadLetters().failedJobDeadLetter(exchange);
 
         assertEquals("string-lane", deadLetter.laneId());
     }
@@ -478,60 +440,28 @@ class LlmQueueLifecycleTest {
     @Test
     void deadLetterFallsBackToJobLaneWhenLanePropertyIsMissing() {
         DefaultCamelContext context = TestCamelContexts.quiet();
-        LlmJobEnvelope job = queuedJob(UUID.randomUUID(), "high-pass", Map.of("model", "metadata-model"));
+        LlmJob job = job(UUID.randomUUID(), "high-pass", Map.of());
         Exchange exchange = new DefaultExchange(context);
         exchange.setProperty("llmJob", job);
         exchange.setProperty("llmFailureMessage", "failed");
 
-        LlmJobDeadLetter deadLetter = deadLetters().failedQueuedJobDeadLetter(exchange);
+        LlmJobDeadLetter deadLetter = deadLetters().failedJobDeadLetter(exchange);
 
         assertEquals("high-pass", deadLetter.laneId());
-        assertEquals("metadata-model", deadLetter.model());
         assertEquals("failed", deadLetter.failureMessage());
     }
 
     @Test
-    void deadLetterUsesUnknownFallbacksWithoutObjectToStringLaneIds() {
-        DefaultCamelContext context = TestCamelContexts.quiet();
-        UUID jobId = UUID.randomUUID();
-        LlmJobEnvelope job = new LlmJobEnvelope(
-                jobId,
-                LlmJobStatus.QUEUED,
-                null,
-                "developer",
-                "developer",
-                0,
-                "inspect the code",
-                "be concise",
-                null,
-                Map.of("laneId", FrameworkFixtures.inferenceLaneRegistry().getRequired("low-pass")),
-                Instant.now());
-        Exchange exchange = new DefaultExchange(context);
-        exchange.setProperty("llmJob", job);
-
-        LlmJobDeadLetter deadLetter = deadLetters().failedQueuedJobDeadLetter(exchange);
-
-        assertEquals("unknown", deadLetter.laneId());
-        assertEquals("Unknown LLM queue failure", deadLetter.failureMessage());
-        assertFalse(deadLetter.laneId().contains("InferenceLaneDefinition"));
-    }
-
-    @Test
-    void deadLetterMetadataPreservesJsonSafeScalarsAndNulls() throws Exception {
+    void deadLetterMetadataPreservesJsonSafeScalars() throws Exception {
         DefaultCamelContext context = TestCamelContexts.quiet();
         LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("string", "value");
         metadata.put("integer", 7);
         metadata.put("decimal", 2.5);
         metadata.put("boolean", true);
-        metadata.put("nullValue", null);
-        LlmJobEnvelope job = new LlmJobEnvelope(
+        LlmJob job = new LlmJob(
                 UUID.randomUUID(),
-                LlmJobStatus.QUEUED,
                 "low-pass",
-                "developer",
-                "developer",
-                0,
                 "inspect the code",
                 "be concise",
                 null,
@@ -540,16 +470,14 @@ class LlmQueueLifecycleTest {
         Exchange exchange = new DefaultExchange(context);
         exchange.setProperty("llmJob", job);
 
-        LlmJobDeadLetter deadLetter = deadLetters().failedQueuedJobDeadLetter(exchange);
+        LlmJobDeadLetter deadLetter = deadLetters().failedJobDeadLetter(exchange);
 
         assertEquals("value", deadLetter.metadata().get("string"));
         assertEquals(7, deadLetter.metadata().get("integer"));
         assertEquals(2.5, deadLetter.metadata().get("decimal"));
         assertEquals(true, deadLetter.metadata().get("boolean"));
-        assertTrue(deadLetter.metadata().containsKey("nullValue"));
-        assertEquals(null, deadLetter.metadata().get("nullValue"));
         String json = TestJson.write(deadLetter);
-        assertTrue(json.contains("\"nullValue\":null"));
+        assertTrue(json.contains("\"boolean\":true"));
     }
 
     @Test
@@ -559,11 +487,11 @@ class LlmQueueLifecycleTest {
         LinkedHashMap<String, Object> nested = new LinkedHashMap<>();
         nested.put("lane", lane);
         nested.put("items", List.of("ok", lane, Map.of("laneAgain", lane)));
-        LlmJobEnvelope job = queuedJob(UUID.randomUUID(), Map.of("nested", nested));
+        LlmJob job = job(UUID.randomUUID(), Map.of("nested", nested));
         Exchange exchange = new DefaultExchange(context);
         exchange.setProperty("llmJob", job);
 
-        LlmJobDeadLetter deadLetter = deadLetters().failedQueuedJobDeadLetter(exchange);
+        LlmJobDeadLetter deadLetter = deadLetters().failedJobDeadLetter(exchange);
 
         Map<?, ?> normalizedNested = (Map<?, ?>) deadLetter.metadata().get("nested");
         assertEquals("low-pass", normalizedNested.get("lane"));
@@ -577,11 +505,11 @@ class LlmQueueLifecycleTest {
     void deadLetterMetadataConvertsInferenceLaneDefinitionToLaneId() throws Exception {
         DefaultCamelContext context = TestCamelContexts.quiet();
         InferenceLaneDefinition lane = FrameworkFixtures.inferenceLaneRegistry().getRequired("high-pass");
-        LlmJobEnvelope job = queuedJob(UUID.randomUUID(), Map.of("laneObject", lane));
+        LlmJob job = job(UUID.randomUUID(), Map.of("laneObject", lane));
         Exchange exchange = new DefaultExchange(context);
         exchange.setProperty("llmJob", job);
 
-        LlmJobDeadLetter deadLetter = deadLetters().failedQueuedJobDeadLetter(exchange);
+        LlmJobDeadLetter deadLetter = deadLetters().failedJobDeadLetter(exchange);
 
         assertEquals("high-pass", deadLetter.metadata().get("laneObject"));
         String json = TestJson.write(deadLetter);
@@ -592,13 +520,13 @@ class LlmQueueLifecycleTest {
     @Test
     void deadLetterMetadataConvertsKnownFrameworkObjectsToIds() {
         DefaultCamelContext context = TestCamelContexts.quiet();
-        LlmJobEnvelope job = queuedJob(UUID.randomUUID(), Map.of(
+        LlmJob job = job(UUID.randomUUID(), Map.of(
                 "laneObject", FrameworkFixtures.inferenceLaneRegistry().getRequired("high-pass"),
                 "personaObject", FrameworkFixtures.personaCatalog().getRequired(FrameworkFixtures.PERSONA_A)));
         Exchange exchange = new DefaultExchange(context);
         exchange.setProperty("llmJob", job);
 
-        LlmJobDeadLetter deadLetter = deadLetters().failedQueuedJobDeadLetter(exchange);
+        LlmJobDeadLetter deadLetter = deadLetters().failedJobDeadLetter(exchange);
 
         assertEquals("high-pass", deadLetter.metadata().get("laneObject"));
         assertEquals(FrameworkFixtures.PERSONA_A, deadLetter.metadata().get("personaObject"));
@@ -608,11 +536,11 @@ class LlmQueueLifecycleTest {
     void deadLetterMetadataUnknownObjectsUseBoundedClassQualifiedString() throws Exception {
         DefaultCamelContext context = TestCamelContexts.quiet();
         UnknownMetadataValue value = new UnknownMetadataValue("secret-ish-object-graph");
-        LlmJobEnvelope job = queuedJob(UUID.randomUUID(), Map.of("unknown", value));
+        LlmJob job = job(UUID.randomUUID(), Map.of("unknown", value));
         Exchange exchange = new DefaultExchange(context);
         exchange.setProperty("llmJob", job);
 
-        LlmJobDeadLetter deadLetter = deadLetters().failedQueuedJobDeadLetter(exchange);
+        LlmJobDeadLetter deadLetter = deadLetters().failedJobDeadLetter(exchange);
 
         String normalized = (String) deadLetter.metadata().get("unknown");
         assertTrue(normalized.contains(UnknownMetadataValue.class.getName()));
@@ -625,13 +553,13 @@ class LlmQueueLifecycleTest {
     void deadLetterMetadataBoundsVeryLongStringsAndFallbackObjects() {
         DefaultCamelContext context = TestCamelContexts.quiet();
         String longString = "p".repeat(2000);
-        LlmJobEnvelope job = queuedJob(UUID.randomUUID(), Map.of(
+        LlmJob job = job(UUID.randomUUID(), Map.of(
                 "longString", longString,
                 "longObject", new UnknownMetadataValue("x".repeat(2000))));
         Exchange exchange = new DefaultExchange(context);
         exchange.setProperty("llmJob", job);
 
-        LlmJobDeadLetter deadLetter = deadLetters().failedQueuedJobDeadLetter(exchange);
+        LlmJobDeadLetter deadLetter = deadLetters().failedJobDeadLetter(exchange);
 
         String normalizedString = (String) deadLetter.metadata().get("longString");
         String normalizedObject = (String) deadLetter.metadata().get("longObject");
@@ -650,12 +578,9 @@ class LlmQueueLifecycleTest {
         Instant requestedAt = Instant.parse("2026-01-01T00:00:00Z");
         Instant startedAt = Instant.parse("2026-01-01T00:00:05Z");
         UUID jobId = UUID.randomUUID();
-        LlmJobEnvelope job = LlmJobEnvelope.queued(new LlmJobRequest(
+        LlmJob job = new LlmJob(
                 jobId,
                 "high-pass",
-                "developer",
-                "developer",
-                0,
                 "inspect the code",
                 "be concise",
                 null,
@@ -663,9 +588,10 @@ class LlmQueueLifecycleTest {
                         "laneId", "high-pass",
                         "model", "selected-high-model",
                         "toolProfile", FrameworkFixtures.PROFILE_GAMMA),
-                requestedAt));
+                requestedAt);
         Exchange exchange = new DefaultExchange(context);
         exchange.setProperty("llmJob", job);
+        exchange.setProperty("modelId", "selected-high-model");
         exchange.setProperty("llmStartedAt", startedAt);
         exchange.setProperty(Exchange.EXCEPTION_CAUGHT, new IllegalStateException("agent failed", new RuntimeException("socket closed")));
 
@@ -674,7 +600,6 @@ class LlmQueueLifecycleTest {
         assertEquals(jobId, result.jobId());
         assertEquals(LlmJobStatus.FAILED, result.status());
         assertEquals("high-pass", result.laneId());
-        assertEquals("developer", result.requester());
         assertEquals("selected-high-model", result.model());
         assertEquals(requestedAt, result.requestedAt());
         assertEquals(startedAt, result.startedAt());
@@ -775,23 +700,23 @@ class LlmQueueLifecycleTest {
         exchange.setProperty("llmJobId", jobId);
         exchange.setProperty("laneId", laneId);
         exchange.setProperty("inferenceLane", lane);
-        exchange.setProperty("llmJob", queuedJob(jobId, laneId, Map.of()));
+        exchange.setProperty("llmJob", job(jobId, laneId, Map.of()));
         return exchange;
     }
 
-    private static LlmJobEnvelope queuedJob(UUID jobId) {
-        return queuedJob(jobId, Map.of());
+    private static LlmJob job(UUID jobId) {
+        return job(jobId, Map.of());
     }
 
-    private static LlmJobEnvelope queuedJob(UUID jobId, Map<String, Object> metadata) {
-        return queuedJob(jobId, "low-pass", metadata);
+    private static LlmJob job(UUID jobId, Map<String, Object> metadata) {
+        return job(jobId, "low-pass", metadata);
     }
 
-    private static LlmJobEnvelope queuedJob(UUID jobId, String laneId, Map<String, Object> metadata) {
-        return queuedJob(jobId, laneId, metadata, Instant.now());
+    private static LlmJob job(UUID jobId, String laneId, Map<String, Object> metadata) {
+        return job(jobId, laneId, metadata, Instant.now());
     }
 
-    private static LlmJobEnvelope queuedJob(UUID jobId, String laneId, Map<String, Object> metadata, Instant requestedAt) {
+    private static LlmJob job(UUID jobId, String laneId, Map<String, Object> metadata, Instant requestedAt) {
         LinkedHashMap<String, Object> merged = new LinkedHashMap<>();
         if (metadata != null) {
             merged.putAll(metadata);
@@ -800,17 +725,14 @@ class LlmQueueLifecycleTest {
             merged.putIfAbsent("laneId", laneId);
         }
         merged.putIfAbsent("primitive", "act");
-        return LlmJobEnvelope.queued(new LlmJobRequest(
+        return new LlmJob(
                 jobId,
                 laneId,
-                "developer",
-                "developer",
-                0,
                 "inspect the code",
                 "be concise",
                 null,
                 Map.copyOf(merged),
-                requestedAt));
+                requestedAt);
     }
 
     private record UnknownMetadataValue(String value) {

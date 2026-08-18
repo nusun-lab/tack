@@ -12,27 +12,26 @@ import us.nusun.llmshare.framework.llm.LlmAgentFactory;
 import us.nusun.llmshare.framework.llm.LlmJobFactory;
 import us.nusun.llmshare.framework.mcp.McpClientFactory;
 import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
-import us.nusun.llmshare.framework.model.ToolProfile;
-import us.nusun.llmshare.framework.model.LlmJobEnvelope;
-import us.nusun.llmshare.framework.model.LlmJobRequest;
+import us.nusun.llmshare.framework.model.LlmJob;
 import us.nusun.llmshare.framework.model.Persona;
+import us.nusun.llmshare.framework.model.ToolProfile;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 import us.nusun.llmshare.framework.tests.support.TestJson;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class LlmJobMetadataBoundaryTest {
     @Test
-    void workerExchangeRestoresFrameworkMetadataFromSerializedEnvelope() throws Exception {
-        LlmJobRequest request = new LlmJobRequest(
-                null,
+    void workerExchangeRestoresFrameworkMetadataFromSerializedJob() throws Exception {
+        LlmJob job = new LlmJob(
+                UUID.randomUUID(),
                 "low-pass",
-                "act:assignment-review",
-                "Persona A",
-                0,
                 "prompt",
                 "system",
                 null,
@@ -42,27 +41,26 @@ class LlmJobMetadataBoundaryTest {
                         "personaId", "persona-a",
                         "toolProfile", FrameworkFixtures.PROFILE_GAMMA,
                         "primitive", "act",
-                        "primitiveId", "assignment-review",
-                        "laneId", "low-pass"),
-                null).normalized();
-        LlmJobEnvelope envelope = LlmJobEnvelope.queued(request);
-        String json = TestJson.write(envelope);
-        LlmJobEnvelope restoredEnvelope = TestJson.read(json, LlmJobEnvelope.class);
+                        "primitiveId", "assignment-review"),
+                Instant.now());
+        String json = TestJson.write(job);
+        LlmJob restoredJob = TestJson.read(json, LlmJob.class);
         Exchange worker = new DefaultExchange(new DefaultCamelContext());
 
-        new LlmJobFactory().restoreFrameworkMetadata(worker, restoredEnvelope);
-        worker.setProperty("llmJob", restoredEnvelope);
+        new LlmJobFactory(FrameworkFixtures.inferenceLaneRegistry(), FrameworkFixtures.personaCatalog())
+                .restoreFrameworkMetadata(worker, restoredJob);
+        worker.setProperty("llmJob", restoredJob);
 
-        assertEquals("run-1", worker.getProperty("agentRunId"));
-        assertEquals("mission-1", worker.getProperty("missionId"));
-        assertEquals("persona-a", worker.getProperty("personaId"));
-        assertEquals(FrameworkFixtures.PROFILE_GAMMA, worker.getProperty("toolProfile"));
-        assertEquals("act", worker.getProperty("primitive"));
-        assertEquals("assignment-review", worker.getProperty("primitiveId"));
+        assertNull(worker.getProperty("agentRunId"));
+        assertNull(worker.getProperty("missionId"));
+        assertNull(worker.getProperty("personaId"));
+        assertNull(worker.getProperty("toolProfile"));
+        assertNull(worker.getProperty("primitive"));
+        assertNull(worker.getProperty("primitiveId"));
         assertEquals("low-pass", worker.getProperty("laneId"));
-        assertEquals("persona-a", restoredEnvelope.metadata().get("personaId"));
-        assertEquals(FrameworkFixtures.PROFILE_GAMMA, restoredEnvelope.metadata().get("toolProfile"));
-        assertEquals("low-pass", restoredEnvelope.laneId());
+        assertEquals("persona-a", restoredJob.metadata().get("personaId"));
+        assertEquals(FrameworkFixtures.PROFILE_GAMMA, restoredJob.metadata().get("toolProfile"));
+        assertEquals("low-pass", restoredJob.laneId());
 
         CapturingMcpClientFactory mcpFactory = new CapturingMcpClientFactory();
         new LlmAgentFactory.DynamicAgentFactory(
@@ -80,22 +78,18 @@ class LlmJobMetadataBoundaryTest {
 
     @Test
     void workerExchangeRestoresPersonaLogLabelAndColorFromSerializedEnvelope() throws Exception {
-        LlmJobRequest request = new LlmJobRequest(
-                null,
+        LlmJob job = new LlmJob(
+                UUID.randomUUID(),
                 "low-pass",
-                "framework",
-                "Persona A",
-                0,
                 "prompt",
                 "system",
                 null,
                 Map.of("personaId", "persona-a"),
-                null).normalized();
-        LlmJobEnvelope envelope = LlmJobEnvelope.queued(request);
+                Instant.now());
         Exchange worker = new DefaultExchange(new DefaultCamelContext());
 
         new LlmJobFactory(FrameworkFixtures.inferenceLaneRegistry(), FrameworkFixtures.personaCatalog())
-                .restoreFrameworkMetadata(worker, envelope);
+                .restoreFrameworkMetadata(worker, job);
 
         assertEquals("PA", worker.getProperty("agentLabel"));
         assertEquals("38;2;106;169;255", worker.getProperty("agentLogColor"));

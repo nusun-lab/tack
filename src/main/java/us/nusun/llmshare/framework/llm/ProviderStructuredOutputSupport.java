@@ -8,7 +8,7 @@ import dev.langchain4j.model.chat.request.json.JsonSchema;
 import org.apache.camel.CamelContext;
 import org.apache.camel.Exchange;
 import org.apache.camel.support.ResourceHelper;
-import us.nusun.llmshare.framework.model.LlmJobEnvelope;
+import us.nusun.llmshare.framework.model.LlmJob;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -23,15 +23,15 @@ public final class ProviderStructuredOutputSupport {
     private ProviderStructuredOutputSupport() {
     }
 
-    public static boolean shouldApplyProviderSchema(Exchange exchange, LlmJobEnvelope job) {
+    public static boolean shouldApplyProviderSchema(Exchange exchange, LlmJob job) {
         return hasResponseSchema(job) && providerSchemaEnabled(exchange, job);
     }
 
-    public static boolean hasResponseSchema(LlmJobEnvelope job) {
+    public static boolean hasResponseSchema(LlmJob job) {
         return job != null && job.responseSchema() != null && !job.responseSchema().isBlank();
     }
 
-    public static boolean providerSchemaEnabled(Exchange exchange, LlmJobEnvelope job) {
+    public static boolean providerSchemaEnabled(Exchange exchange, LlmJob job) {
         if (forceProviderSchema(exchange) || forceProviderSchema(job)) {
             return true;
         }
@@ -98,7 +98,7 @@ public final class ProviderStructuredOutputSupport {
         return booleanValue(value);
     }
 
-    private static boolean forceProviderSchema(LlmJobEnvelope job) {
+    private static boolean forceProviderSchema(LlmJob job) {
         if (job == null || job.metadata() == null) {
             return false;
         }

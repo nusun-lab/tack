@@ -23,8 +23,7 @@ import org.apache.camel.component.langchain4j.agent.api.AiAgentBody;
 import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.support.DefaultExchange;
 import org.junit.jupiter.api.Test;
-import us.nusun.llmshare.framework.model.LlmJobEnvelope;
-import us.nusun.llmshare.framework.model.LlmJobRequest;
+import us.nusun.llmshare.framework.model.LlmJob;
 import us.nusun.llmshare.framework.model.LlmJobResult;
 import us.nusun.llmshare.framework.model.LlmJobStatus;
 import us.nusun.llmshare.framework.mcp.McpClientFactory;
@@ -98,12 +97,9 @@ class HallucinatedToolNameRecoveryStrategyTest {
 
         try (DefaultCamelContext context = routeContext(model, kafka)) {
             context.start();
-            LlmJobEnvelope job = LlmJobEnvelope.queued(new LlmJobRequest(
+            LlmJob job = new LlmJob(
                     UUID.randomUUID(),
                     "low-pass",
-                    "test",
-                    "test",
-                    0,
                     "Inspect current state.",
                     "You are a tester.",
                     null,
@@ -112,7 +108,7 @@ class HallucinatedToolNameRecoveryStrategyTest {
                             "toolProfile", "none",
                             "laneId", "low-pass",
                             "primitive", "act"),
-                    null).normalized());
+                    java.time.Instant.now());
             String json = TestJson.write(job);
 
             assertDoesNotThrow(() -> kafka.emit("llm.requests.low", json));
@@ -178,9 +174,9 @@ class HallucinatedToolNameRecoveryStrategyTest {
     private static Exchange exchange(String laneId) {
         Exchange exchange = new DefaultExchange(new DefaultCamelContext());
         exchange.setProperty("laneId", laneId);
-        exchange.setProperty("llmJob", LlmJobEnvelope.queued(new LlmJobRequest(
-                UUID.randomUUID(), laneId, "test", "test", 0, "prompt", "system", null,
-                Map.of("primitive", "act"), null).normalized()));
+        exchange.setProperty("llmJob", new LlmJob(
+                UUID.randomUUID(), laneId, "prompt", "system", null,
+                Map.of("primitive", "act"), java.time.Instant.now()));
         exchange.setProperty("personaId", FrameworkFixtures.PERSONA_A);
         exchange.setProperty("toolProfile", "none");
         return exchange;

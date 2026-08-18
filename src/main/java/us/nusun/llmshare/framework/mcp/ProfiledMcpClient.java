@@ -23,6 +23,7 @@ public class ProfiledMcpClient implements McpClient {
     private static final Logger LOG = LoggerFactory.getLogger(ProfiledMcpClient.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final int MAX_LOG_VALUE_LENGTH = 4000;
+    private static final String RESERVED_TERMINAL_TOOL = "finish_act";
 
     private final McpClient delegate;
     private final String server;
@@ -91,6 +92,9 @@ public class ProfiledMcpClient implements McpClient {
     }
 
     private ToolSpecification exposeTool(ToolSpecification tool) {
+        if (RESERVED_TERMINAL_TOOL.equals(tool.name())) {
+            throw new IllegalStateException("MCP tool name 'finish_act' is reserved by Tack");
+        }
         if (!qualifiesToolNames()) {
             return tool;
         }

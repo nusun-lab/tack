@@ -15,7 +15,7 @@ import org.apache.camel.component.langchain4j.agent.api.Headers;
 import us.nusun.llmshare.framework.inventory.InferenceLaneRegistry;
 import us.nusun.llmshare.framework.logging.LogTokens;
 import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
-import us.nusun.llmshare.framework.model.LlmJobEnvelope;
+import us.nusun.llmshare.framework.model.LlmJob;
 import us.nusun.llmshare.framework.model.LlmJobResult;
 
 import java.time.Instant;
@@ -26,6 +26,7 @@ import java.util.UUID;
 public class LlmRouteSupport {
     private static final String DYNAMIC_AGENT_URI = "langchain4j-agent:dynamic?agentFactory=#dynamicAgentFactory";
     public static final String ACT_TOOL_TAG = "tack-act";
+    public static final String ACT_TERMINAL_TOOL = "finish_act";
 
     public static final class LlmAvailabilityException extends RuntimeException {
         public LlmAvailabilityException(String message) { super(message); }
@@ -72,18 +73,18 @@ public class LlmRouteSupport {
         }
     }
 
-    public void prepareAgentCall(@ExchangeProperty("llmJob") LlmJobEnvelope job, Exchange exchange) {
+    public void prepareAgentCall(@ExchangeProperty("llmJob") LlmJob job, Exchange exchange) {
         InferenceLaneDefinition lane = lanes.getRequired(job.laneId());
         exchange.setProperty("inferenceLane", lane);
         exchange.setProperty("laneId", lane.id());
         exchange.setProperty("llmStartedAt", Instant.now());
         exchange.setProperty("agentInvocationUri", isAct(job) ? DYNAMIC_AGENT_URI + "&tags=" + ACT_TOOL_TAG : DYNAMIC_AGENT_URI);
         exchange.getIn().setBody(new AiAgentBody<>(job.prompt(), firstNonBlank(job.systemPrompt(), """
-                You are a precise worker in a shared LLM queue. Return only what the requester asked for.
+                You are a precise worker in a shared LLM queue. Return only what the job asks for.
                 """.strip()), job.jobId()));
     }
 
-    public void logPrompt(@ExchangeProperty("llmJob") LlmJobEnvelope job, Exchange exchange) {
+    public void logPrompt(@ExchangeProperty("llmJob") LlmJob job, Exchange exchange) {
         String systemPrompt = job == null ? null : job.systemPrompt();
         String prompt = job == null ? null : job.prompt();
         logTokens().print(logTokens().wrapDim(agentLabel(exchange), agentLogColor(exchange),
@@ -96,17 +97,17 @@ public class LlmRouteSupport {
     }
 
     public String extractAgentResult(
-            @Body String rawResponse,
-            @ExchangeProperty("llmJob") LlmJobEnvelope job,
+            @Body String agentResult,
+            @ExchangeProperty("llmJob") LlmJob job,
             Exchange exchange) {
         if (!isAct(job)) {
-            return rawResponse;
+            return agentResult;
         }
         List<?> executions = exchange.getMessage().getHeader(Headers.TOOL_EXECUTIONS, List.class);
         List<ToolExecution> terminals = executions == null ? List.of() : executions.stream()
                 .filter(ToolExecution.class::isInstance)
                 .map(ToolExecution.class::cast)
-                .filter(execution -> "finish_act".equals(execution.request().name()))
+                .filter(execution -> ACT_TERMINAL_TOOL.equals(execution.request().name()))
                 .toList();
         if (terminals.size() != 1) {
             throw new IllegalStateException("Act agent must call finish_act exactly once; observed " + terminals.size());
@@ -119,11 +120,11 @@ public class LlmRouteSupport {
     }
 
     public LlmJobResult succeededResult(
-            @Body String rawResponse,
-            @ExchangeProperty("llmJob") LlmJobEnvelope job,
+            @Body String content,
+            @ExchangeProperty("llmJob") LlmJob job,
             @ExchangeProperty("llmStartedAt") Instant startedAt,
             Exchange exchange) {
-        return LlmJobResult.succeeded(job, deadLetterFactory.modelId(exchange), rawResponse, rawResponse, startedAt);
+        return LlmJobResult.succeeded(job, deadLetterFactory.modelId(exchange), content, startedAt);
     }
 
     public void verifySelectedRoutesAvailable(@ExchangeProperty("inferenceLane") InferenceLaneDefinition lane, Exchange exchange) {
@@ -138,7 +139,7 @@ public class LlmRouteSupport {
         verifyRouteStarted(exchange, "llm-response-consumer-" + routeSuffix);
     }
 
-    private static boolean isAct(LlmJobEnvelope job) {
+    private static boolean isAct(LlmJob job) {
         return job != null && job.metadata() != null && "act".equals(job.metadata().get("primitive"));
     }
 
@@ -170,8 +171,7 @@ public class LlmRouteSupport {
         if (label != null && !label.isBlank()) {
             return label;
         }
-        LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
-        return job == null || job.requester() == null || job.requester().isBlank() ? "LLM" : job.requester();
+        return "LLM";
     }
 
     private static String agentLogColor(Exchange exchange) {

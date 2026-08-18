@@ -36,7 +36,7 @@ import us.nusun.llmshare.framework.mcp.McpClientFactory;
 import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
 import us.nusun.llmshare.framework.memory.EphemeralToolLoopChatMemoryProvider;
 import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
-import us.nusun.llmshare.framework.model.LlmJobEnvelope;
+import us.nusun.llmshare.framework.model.LlmJob;
 import us.nusun.llmshare.framework.model.Persona;
 import us.nusun.llmshare.framework.model.RoutineDefinition;
 import us.nusun.llmshare.framework.model.ToolProfile;
@@ -315,7 +315,7 @@ public class LlmAgentFactory {
             protected void configureBuilder(AiServices<AiAgentWithMemoryService> builder, ToolProvider toolProvider) {
                 ToolProvider terminal = toolProvider == null ? null : request -> toolProvider.provideTools(request)
                         .toBuilder()
-                        .immediateReturnToolNames(Set.of("finish_act"))
+                        .immediateReturnToolNames(Set.of(LlmRouteSupport.ACT_TERMINAL_TOOL))
                         .build();
                 super.configureBuilder(builder, terminal);
                 builder.hallucinatedToolNameStrategy(HALLUCINATED_TOOL_NAME_RECOVERY_STRATEGY);
@@ -329,18 +329,24 @@ public class LlmAgentFactory {
         }
 
         private List<McpClient> mcpClients(Exchange exchange) {
-            String personaId = exchange.getProperty("personaId", String.class);
+            LlmJob job = job(exchange);
+            String personaId = firstNonBlank(
+                    exchange.getProperty("personaId", String.class),
+                    metadataValue(job, "personaId"));
             if (blank(personaId)) {
                 throw new IllegalStateException("No personaId on exchange for tool-capable act");
             }
-            String profileId = exchange.getProperty("toolProfile", "none", String.class);
+            String profileId = firstNonBlank(
+                    exchange.getProperty("toolProfile", String.class),
+                    metadataValue(job, "toolProfile"),
+                    ToolProfileRegistry.NONE_ID);
             Persona persona = personas.getRequired(personaId);
             ToolProfile profile = toolProfiles.getRequired(profileId);
             return mcpClientFactory.clientsFor(persona, profile);
         }
 
         private void applyProviderSchemaIfRequired(Exchange exchange, String laneId, boolean act, Agent agent) {
-            LlmJobEnvelope job = job(exchange);
+            LlmJob job = job(exchange);
             boolean schemaPresent = ProviderStructuredOutputSupport.hasResponseSchema(job);
             if (act) {
                 if (schemaPresent) {
@@ -378,17 +384,22 @@ public class LlmAgentFactory {
             return camelContext == null ? exchange.getContext() : camelContext;
         }
 
-        private static LlmJobEnvelope job(Exchange exchange) {
-            return exchange.getProperty("llmJob", LlmJobEnvelope.class);
+        private static LlmJob job(Exchange exchange) {
+            return exchange.getProperty("llmJob", LlmJob.class);
         }
 
         private static boolean isAct(Exchange exchange) {
-            LlmJobEnvelope job = job(exchange);
+            LlmJob job = job(exchange);
             return job != null && job.metadata() != null && "act".equals(job.metadata().get("primitive"));
         }
 
-        private static Object jobId(LlmJobEnvelope job) {
+        private static Object jobId(LlmJob job) {
             return job == null ? null : job.jobId();
+        }
+
+        private static String metadataValue(LlmJob job, String key) {
+            Object value = job == null ? null : job.metadata().get(key);
+            return value == null ? null : String.valueOf(value);
         }
 
         @Override public CamelContext getCamelContext() { return camelContext; }
