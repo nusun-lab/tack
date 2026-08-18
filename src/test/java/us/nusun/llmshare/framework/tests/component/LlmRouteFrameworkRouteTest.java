@@ -256,7 +256,9 @@ class LlmRouteFrameworkRouteTest {
 
             @Override
             public Agent createAgent(Exchange exchange) {
-                return (aiAgentBody, toolProvider) -> "{\"result\":\"worker-ok\"}";
+                return (aiAgentBody, toolProvider) -> Result.<String>builder()
+                        .content("{\"result\":\"worker-ok\"}")
+                        .build();
             }
 
             @Override
