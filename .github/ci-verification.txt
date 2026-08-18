@@ -1,0 +1,1 @@
+verify current main tree with the unchanged main Maven workflow
