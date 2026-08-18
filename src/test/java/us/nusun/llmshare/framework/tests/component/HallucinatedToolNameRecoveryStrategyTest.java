@@ -59,11 +59,11 @@ class HallucinatedToolNameRecoveryStrategyTest {
         ScriptedChatModel model = ScriptedChatModel.hallucinateThenAnswer();
         Agent agent = factory("low-pass", model).createAgent(exchange("low-pass"));
 
-        String result = assertDoesNotThrow(() -> agent.chat(
+        Result<String> result = assertDoesNotThrow(() -> agent.chat(
                 new AiAgentBody<>("Inspect project state.", "You are a tester.", "memory-hallucination"),
                 probeToolProvider()));
 
-        assertEquals("final response", result);
+        assertEquals("final response", result.content());
         assertEquals(2, model.requests.size());
         ToolExecutionResultMessage toolResult = onlyToolResult(model.requests.get(1));
         assertEquals("call-1", toolResult.id());
@@ -146,11 +146,11 @@ class HallucinatedToolNameRecoveryStrategyTest {
         ScriptedChatModel model = ScriptedChatModel.requestFailingToolThenAnswer();
         Agent agent = factory("low-pass", model).createAgent(exchange("low-pass"));
 
-        String result = assertDoesNotThrow(() -> agent.chat(
+        Result<String> result = assertDoesNotThrow(() -> agent.chat(
                 new AiAgentBody<>("Run failing tool.", "You are a tester.", "memory-tool-failure"),
                 failingToolProvider()));
 
-        assertEquals("final response", result);
+        assertEquals("final response", result.content());
         assertEquals(2, model.requests.size());
         ToolExecutionResultMessage toolResult = onlyToolResult(model.requests.get(1));
         assertEquals("failing_tool", toolResult.toolName());
