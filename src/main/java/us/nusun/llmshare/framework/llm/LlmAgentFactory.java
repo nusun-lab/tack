@@ -2,6 +2,7 @@ package us.nusun.llmshare.framework.llm;
 
 import static us.nusun.llmshare.framework.model.FrameworkText.firstNonBlank;
 
+import dev.langchain4j.agent.tool.ReturnBehavior;
 import dev.langchain4j.http.client.jdk.JdkHttpClient;
 import dev.langchain4j.http.client.jdk.JdkHttpClientBuilder;
 import dev.langchain4j.mcp.client.McpClient;
@@ -13,6 +14,7 @@ import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiTokenCountEstimator;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.tool.ToolProvider;
+import dev.langchain4j.service.tool.ToolProviderResult;
 import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Named;
 import jakarta.inject.Singleton;
@@ -47,7 +49,6 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 @Singleton
 public class LlmAgentFactory {
@@ -310,13 +311,20 @@ public class LlmAgentFactory {
                 super(configuration);
                 this.maxToolCallingRoundTrips = maxToolCallingRoundTrips;
             }
+
             @Override
-            @SuppressWarnings("deprecation")
             protected void configureBuilder(AiServices<AiAgentWithMemoryService> builder, ToolProvider toolProvider) {
-                ToolProvider terminal = toolProvider == null ? null : request -> toolProvider.provideTools(request)
-                        .toBuilder()
-                        .immediateReturnToolNames(Set.of(LlmRouteSupport.ACT_TERMINAL_TOOL))
-                        .build();
+                ToolProvider terminal = toolProvider == null ? null : request -> {
+                    ToolProviderResult provided = toolProvider.provideTools(request);
+                    if (provided == null) {
+                        return null;
+                    }
+                    return new ToolProviderResult(provided.aiServiceTools().stream()
+                            .map(tool -> LlmRouteSupport.ACT_TERMINAL_TOOL.equals(tool.name())
+                                    ? tool.toBuilder().returnBehavior(ReturnBehavior.IMMEDIATE_IF_LAST).build()
+                                    : tool)
+                            .toList());
+                };
                 super.configureBuilder(builder, terminal);
                 builder.hallucinatedToolNameStrategy(HALLUCINATED_TOOL_NAME_RECOVERY_STRATEGY);
                 builder.toolArgumentsErrorHandler(ToolErrorFeedback::arguments);
