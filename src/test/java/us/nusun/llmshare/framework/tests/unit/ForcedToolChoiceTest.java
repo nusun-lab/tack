@@ -78,7 +78,7 @@ class ForcedToolChoiceTest {
     }
 
     @Test
-    void coEmittedFinishActWithNormalToolProducesDuplicateTerminalExecution() {
+    void coEmittedFinishActWithNormalToolTerminatesActOnce() {
         CoEmittedFinishChatModel model = new CoEmittedFinishChatModel();
         Agent agent = factory("low-pass", model).createAgent(exchange("low-pass", actJob("low-pass", null)));
         AtomicInteger probeCalls = new AtomicInteger();
@@ -88,22 +88,20 @@ class ForcedToolChoiceTest {
                 actTools(probeCalls));
 
         assertNull(result.content());
-        assertEquals(2, model.requests.size());
+        assertEquals(1, model.requests.size(), "finish_act should terminate the ACT after its model turn");
         assertEquals(1, probeCalls.get());
-        assertEquals(2, result.toolExecutions().stream()
+        assertEquals(1, result.toolExecutions().stream()
                 .filter(execution -> "finish_act".equals(execution.request().name()))
-                .count());
+                .count(), "the ACT should expose exactly one terminal execution");
 
         Exchange terminalExchange = exchange("low-pass", actJob("low-pass", null));
         terminalExchange.getMessage().setHeader(
                 org.apache.camel.component.langchain4j.agent.api.Headers.TOOL_EXECUTIONS,
                 result.toolExecutions());
-
-        IllegalStateException failure = assertThrows(
-                IllegalStateException.class,
-                () -> new LlmRouteSupport().extractAgentResult(
+        assertEquals(
+                "{\"jobId\":\"job-1\",\"summary\":\"done\",\"content\":\"durable\"}",
+                new LlmRouteSupport().extractAgentResult(
                         null, terminalExchange.getProperty("llmJob", LlmJob.class), terminalExchange));
-        assertEquals("Act agent must call finish_act exactly once; observed 2", failure.getMessage());
     }
 
     @Test
