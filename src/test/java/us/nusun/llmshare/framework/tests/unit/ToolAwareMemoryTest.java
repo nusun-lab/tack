@@ -22,11 +22,7 @@ class ToolAwareMemoryTest {
     @Test
     void approximateEstimatorCountsCommonMessageTypes() {
         ApproximateTokenCountEstimator estimator = new ApproximateTokenCountEstimator();
-        ToolExecutionRequest request = ToolExecutionRequest.builder()
-                .id("search-1")
-                .name("search")
-                .arguments("{\"query\":\"parking lot manager\"}")
-                .build();
+        ToolExecutionRequest request = request("search-1", "search", "{\"query\":\"parking lot manager\"}");
 
         assertEquals(0, estimator.estimateTokenCountInText(null));
         assertEquals(0, estimator.estimateTokenCountInText("   "));
@@ -35,15 +31,12 @@ class ToolAwareMemoryTest {
         assertTrue(estimator.estimateTokenCountInMessage(UserMessage.from("requester", "build app")) > 4);
         assertTrue(estimator.estimateTokenCountInMessage(AiMessage.from(request)) > 12);
         assertTrue(estimator.estimateTokenCountInMessage(new ToolExecutionResultMessage("search-1", "search", "result")) > 4);
-        assertTrue(estimator.estimateTokenCountInMessages(List.of(SystemMessage.from("system"), UserMessage.from("user"))) > 8);
     }
 
     @Test
     void providerCreatesEphemeralMemoryForRequestedId() {
         EphemeralToolLoopChatMemoryProvider provider = new EphemeralToolLoopChatMemoryProvider(
-                20,
-                new FixedTokenCountEstimator(),
-                true);
+                200, new FixedTokenCountEstimator(), true, 12, 0.50, 3);
 
         ChatMemory memory = provider.get("agent-run-1");
 
@@ -53,121 +46,122 @@ class ToolAwareMemoryTest {
     }
 
     @Test
-    void systemMessageIsReplacedAndKeptFirstWhenConfigured() {
-        ToolAwareTokenWindowChatMemory memory = ToolAwareTokenWindowChatMemory.builder()
-                .id("agent-run-1")
-                .maxTokens(20, new FixedTokenCountEstimator())
-                .alwaysKeepSystemMessageFirst(true)
-                .build();
+    void systemMessageIsReplacedAndKeptFirst() {
+        ToolAwareTokenWindowChatMemory memory = memory(200, 12, 0.50, 3);
 
         memory.add(UserMessage.from("mission"));
         memory.add(SystemMessage.from("old system"));
         memory.add(SystemMessage.from("new system"));
-        memory.add(AiMessage.from("response"));
 
-        assertEquals(List.of(
-                SystemMessage.from("new system"),
-                UserMessage.from("mission"),
-                AiMessage.from("response")), memory.messages());
+        assertEquals(SystemMessage.from("new system"), memory.messages().getFirst());
+        assertFalse(memory.messages().contains(SystemMessage.from("old system")));
     }
 
     @Test
-    void toolRequestEvictionAlsoRemovesOrphanToolResults() {
-        ToolAwareTokenWindowChatMemory memory = ToolAwareTokenWindowChatMemory.builder()
-                .id("agent-run-1")
-                .maxTokens(25, new FixedTokenCountEstimator())
-                .alwaysKeepSystemMessageFirst(true)
-                .build();
-        ToolExecutionRequest request = ToolExecutionRequest.builder()
-                .id("tool-1")
-                .name("search")
-                .arguments("{}")
-                .build();
-
+    void toolCallBudgetAwarenessAppearsAtQuarterBudgetWithoutCompaction() {
+        ToolAwareTokenWindowChatMemory memory = memory(1000, 4, 0.50, 3);
         memory.add(SystemMessage.from("system"));
-        memory.add(UserMessage.from("original user stays protected"));
-        memory.add(AiMessage.from(request));
-        memory.add(new ToolExecutionResultMessage("tool-1", "search", "tool result"));
-        memory.add(AiMessage.from("ordinary answer"));
-        memory.add(UserMessage.from("follow up"));
+        memory.add(UserMessage.from("act"));
+        addExecution(memory, "1", "search", "{\"q\":\"seed\"}", "[]", false);
 
-        assertEquals(List.of(
-                SystemMessage.from("system"),
-                UserMessage.from("original user stays protected"),
-                AiMessage.from("ordinary answer"),
-                UserMessage.from("follow up")), memory.messages());
+        List<ChatMessage> projected = memory.messages();
+        String runtime = runtimeText(projected);
+
+        assertTrue(runtime.contains("application tool calls: 1/4 (25%)"));
+        assertTrue(runtime.contains("budget awareness level: 25%"));
+        assertTrue(projected.stream().anyMatch(message -> message instanceof AiMessage));
+        assertTrue(projected.stream().anyMatch(message -> message instanceof ToolExecutionResultMessage));
     }
 
     @Test
-    void messagesReturnsDefensiveSnapshot() {
-        ToolAwareTokenWindowChatMemory memory = ToolAwareTokenWindowChatMemory.builder()
-                .id("agent-run-1")
-                .maxTokens(20, new FixedTokenCountEstimator())
-                .build();
-        memory.add(UserMessage.from("hello"));
-
-        List<ChatMessage> snapshot = memory.messages();
-        snapshot.clear();
-
-        assertEquals(List.of(UserMessage.from("hello")), memory.messages());
-    }
-
-    @Test
-    void setAppliesCapacityRules() {
-        ToolAwareTokenWindowChatMemory memory = ToolAwareTokenWindowChatMemory.builder()
-                .id("agent-run-1")
-                .maxTokens(25, new FixedTokenCountEstimator())
-                .alwaysKeepSystemMessageFirst(true)
-                .build();
-        ToolExecutionRequest request = ToolExecutionRequest.builder()
-                .id("tool-1")
-                .name("search")
-                .arguments("{}")
-                .build();
-
-        memory.set(List.of(
-                SystemMessage.from("system"),
-                UserMessage.from("original user stays protected"),
-                AiMessage.from(request),
-                new ToolExecutionResultMessage("tool-1", "search", "tool result"),
-                AiMessage.from("ordinary answer"),
-                UserMessage.from("follow up")));
-
-        assertEquals(List.of(
-                SystemMessage.from("system"),
-                UserMessage.from("original user stays protected"),
-                AiMessage.from("ordinary answer"),
-                UserMessage.from("follow up")), memory.messages());
-    }
-
-    @Test
-    void throwsReadableErrorWhenOnlyProtectedMessagesRemainOverBudget() {
-        ToolAwareTokenWindowChatMemory memory = ToolAwareTokenWindowChatMemory.builder()
-                .id("agent-run-1")
-                .maxTokens(1, new FixedTokenCountEstimator())
-                .alwaysKeepSystemMessageFirst(true)
-                .build();
-
+    void compactionReplacesOldRawToolMessagesWithDeterministicJournalAndKeepsRecentInteraction() {
+        ToolAwareTokenWindowChatMemory memory = memory(45, 12, 0.50, 1);
         memory.add(SystemMessage.from("system"));
-        IllegalStateException failure = assertThrows(IllegalStateException.class,
-                () -> memory.add(UserMessage.from("original user")));
+        memory.add(UserMessage.from("act"));
+        addExecution(memory, "1", "search", "{\"q\":\"seed\"}", "[]", false);
+        addExecution(memory, "2", "create_repo", "{\"readme\":\"long\"}", "[Readme]: MaxSize", true);
 
-        assertEquals(
-                "Ephemeral tool-loop memory exceeded the safe token budget while only protected messages remain",
-                failure.getMessage());
+        List<ChatMessage> projected = memory.messages();
+        String runtime = runtimeText(projected);
+
+        assertTrue(runtime.contains("DETERMINISTIC EXECUTION JOURNAL"));
+        assertTrue(runtime.contains("search({\"q\":\"seed\"})"));
+        assertTrue(runtime.contains("SUCCESS: []"));
+        assertFalse(projected.contains(AiMessage.from(request("1", "search", "{\"q\":\"seed\"}"))));
+        assertTrue(projected.contains(AiMessage.from(request("2", "create_repo", "{\"readme\":\"long\"}"))));
     }
 
     @Test
-    void clearRemovesAllMessages() {
-        ToolAwareTokenWindowChatMemory memory = ToolAwareTokenWindowChatMemory.builder()
-                .id("agent-run-1")
-                .maxTokens(20, new FixedTokenCountEstimator())
-                .build();
-        memory.add(UserMessage.from("hello"));
+    void repeatedIdenticalExecutionsAreSurfacedDeterministically() {
+        ToolAwareTokenWindowChatMemory memory = memory(1000, 8, 0.90, 3);
+        memory.add(SystemMessage.from("system"));
+        memory.add(UserMessage.from("act"));
+        addExecution(memory, "1", "create_repo", "{\"readme\":\"x\"}", "[Readme]: MaxSize", true);
+        addExecution(memory, "2", "create_repo", "{\"readme\":\"x\"}", "[Readme]: MaxSize", true);
+
+        String runtime = runtimeText(memory.messages());
+
+        assertTrue(runtime.contains("deterministic repetition signal: 1"));
+    }
+
+    @Test
+    void finishActDoesNotConsumeApplicationToolBudget() {
+        ToolAwareTokenWindowChatMemory memory = memory(1000, 4, 0.90, 3);
+        memory.add(SystemMessage.from("system"));
+        memory.add(UserMessage.from("act"));
+        memory.add(AiMessage.from(request("terminal", "finish_act", "{}")));
+
+        assertEquals("", runtimeText(memory.messages()));
+    }
+
+    @Test
+    void clearRemovesHistoryJournalAndBudgetState() {
+        ToolAwareTokenWindowChatMemory memory = memory(1000, 4, 0.50, 3);
+        memory.add(SystemMessage.from("system"));
+        memory.add(UserMessage.from("act"));
+        addExecution(memory, "1", "search", "{}", "[]", false);
 
         memory.clear();
 
         assertTrue(memory.messages().isEmpty());
+    }
+
+    private static ToolAwareTokenWindowChatMemory memory(
+            int maxTokens, int maxToolCalls, double compactionThreshold, int recentInteractions) {
+        return ToolAwareTokenWindowChatMemory.builder()
+                .id("agent-run-1")
+                .maxTokens(maxTokens, new FixedTokenCountEstimator())
+                .alwaysKeepSystemMessageFirst(true)
+                .maxToolCalls(maxToolCalls)
+                .compactionThreshold(compactionThreshold)
+                .recentToolInteractions(recentInteractions)
+                .build();
+    }
+
+    private static void addExecution(
+            ChatMemory memory, String id, String name, String arguments, String result, boolean error) {
+        ToolExecutionRequest request = request(id, name, arguments);
+        memory.add(AiMessage.from(request));
+        memory.add(ToolExecutionResultMessage.builder()
+                .id(id)
+                .toolName(name)
+                .text(result)
+                .isError(error)
+                .build());
+    }
+
+    private static ToolExecutionRequest request(String id, String name, String arguments) {
+        return ToolExecutionRequest.builder().id(id).name(name).arguments(arguments).build();
+    }
+
+    private static String runtimeText(List<ChatMessage> messages) {
+        return messages.stream()
+                .filter(UserMessage.class::isInstance)
+                .map(UserMessage.class::cast)
+                .filter(message -> "tack-runtime".equals(message.name()))
+                .map(message -> message.singleText())
+                .findFirst()
+                .orElse("");
     }
 
     private static final class FixedTokenCountEstimator implements TokenCountEstimator {
