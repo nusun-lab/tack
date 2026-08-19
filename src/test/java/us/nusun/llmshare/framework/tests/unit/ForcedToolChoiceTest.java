@@ -78,6 +78,35 @@ class ForcedToolChoiceTest {
     }
 
     @Test
+    void coEmittedFinishActWithNormalToolProducesDuplicateTerminalExecution() {
+        CoEmittedFinishChatModel model = new CoEmittedFinishChatModel();
+        Agent agent = factory("low-pass", model).createAgent(exchange("low-pass", actJob("low-pass", null)));
+        AtomicInteger probeCalls = new AtomicInteger();
+
+        Result<String> result = agent.chat(
+                new AiAgentBody<>("Inspect current external state.", "Finish with finish_act.", "memory-2"),
+                actTools(probeCalls));
+
+        assertNull(result.content());
+        assertEquals(2, model.requests.size());
+        assertEquals(1, probeCalls.get());
+        assertEquals(2, result.toolExecutions().stream()
+                .filter(execution -> "finish_act".equals(execution.request().name()))
+                .count());
+
+        Exchange terminalExchange = exchange("low-pass", actJob("low-pass", null));
+        terminalExchange.getMessage().setHeader(
+                org.apache.camel.component.langchain4j.agent.api.Headers.TOOL_EXECUTIONS,
+                result.toolExecutions());
+
+        IllegalStateException failure = assertThrows(
+                IllegalStateException.class,
+                () -> new LlmRouteSupport().extractAgentResult(
+                        null, terminalExchange.getProperty("llmJob", LlmJob.class), terminalExchange));
+        assertEquals("Act agent must call finish_act exactly once; observed 2", failure.getMessage());
+    }
+
+    @Test
     void structuredAgentStillUsesProviderResponseFormatWithoutTools() {
         RecordingChatModel model = new RecordingChatModel();
         Exchange exchange = exchange("low-pass", structuredJob("low-pass", SCHEMA), context(true));
@@ -191,6 +220,38 @@ class ForcedToolChoiceTest {
                                     : "{}")
                             .build())))
                     .build();
+        }
+    }
+
+    private static final class CoEmittedFinishChatModel implements ChatModel {
+        private final List<ChatRequest> requests = new ArrayList<>();
+
+        @Override
+        public ChatResponse doChat(ChatRequest chatRequest) {
+            requests.add(chatRequest);
+            if (requests.size() == 1) {
+                return ChatResponse.builder()
+                        .aiMessage(new AiMessage(List.of(
+                                toolCall("call-probe-1", "probe_tool", "{}"),
+                                toolCall("call-finish-1", "finish_act", finishArguments()))))
+                        .build();
+            }
+            return ChatResponse.builder()
+                    .aiMessage(new AiMessage(List.of(
+                            toolCall("call-finish-2", "finish_act", finishArguments()))))
+                    .build();
+        }
+
+        private static ToolExecutionRequest toolCall(String id, String name, String arguments) {
+            return ToolExecutionRequest.builder()
+                    .id(id)
+                    .name(name)
+                    .arguments(arguments)
+                    .build();
+        }
+
+        private static String finishArguments() {
+            return "{\"summary\":\"done\",\"content\":\"durable\"}";
         }
     }
 }
