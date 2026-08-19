@@ -109,10 +109,10 @@ public class LlmRouteSupport {
                 .map(ToolExecution.class::cast)
                 .filter(execution -> ACT_TERMINAL_TOOL.equals(execution.request().name()))
                 .toList();
-        if (terminals.size() != 1) {
-            throw new IllegalStateException("Act agent must call finish_act exactly once; observed " + terminals.size());
+        if (terminals.isEmpty()) {
+            throw new IllegalStateException("Act agent must call finish_act");
         }
-        String terminalResult = terminals.getFirst().result();
+        String terminalResult = terminals.getLast().result();
         if (terminalResult == null || terminalResult.isBlank()) {
             throw new IllegalStateException("finish_act returned an empty terminal result");
         }
