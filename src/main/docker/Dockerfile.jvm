@@ -5,18 +5,25 @@ ARG OPENSHELL_VERSION=v0.0.109
 
 USER root
 
-# Tack is an OpenShell client only. Install the pinned CLI RPM, not the gateway package.
+# Tack is an OpenShell client only. Install the pinned static CLI binary; the gateway runs separately in OpenShift.
 RUN set -eux; \
-    arch="$(uname -m)"; \
+    case "$(uname -m)" in \
+      x86_64) asset="openshell-x86_64-unknown-linux-musl.tar.gz" ;; \
+      aarch64|arm64) asset="openshell-aarch64-unknown-linux-musl.tar.gz" ;; \
+      *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;; \
+    esac; \
     checksums=/tmp/openshell-checksums-sha256.txt; \
+    archive="/tmp/${asset}"; \
     curl -fsSL "https://github.com/NVIDIA/OpenShell/releases/download/${OPENSHELL_VERSION}/openshell-checksums-sha256.txt" -o "${checksums}"; \
-    rpm_name="$(awk -v arch="${arch}" '$2 ~ ("^\\*?openshell-[0-9].*\\." arch "\\.rpm$") { sub(/^\\*/, "", $2); print $2; exit }' "${checksums}")"; \
-    test -n "${rpm_name}"; \
-    curl -fsSL "https://github.com/NVIDIA/OpenShell/releases/download/${OPENSHELL_VERSION}/${rpm_name}" -o "/tmp/${rpm_name}"; \
-    expected="$(awk -v name="${rpm_name}" '$2 == name || $2 == "*" name { print $1; exit }' "${checksums}")"; \
-    echo "${expected}  /tmp/${rpm_name}" | sha256sum -c -; \
-    rpm -Uvh "/tmp/${rpm_name}"; \
-    rm -f "${checksums}" "/tmp/${rpm_name}"
+    curl -fsSL "https://github.com/NVIDIA/OpenShell/releases/download/${OPENSHELL_VERSION}/${asset}" -o "${archive}"; \
+    expected="$(awk -v name="${asset}" '$2 == name || $2 == "*" name { print $1; exit }' "${checksums}")"; \
+    test -n "${expected}"; \
+    echo "${expected}  ${archive}" | sha256sum -c -; \
+    test "$(tar -tzf "${archive}")" = "openshell"; \
+    tar -xzf "${archive}" -C /usr/local/bin; \
+    chmod 0755 /usr/local/bin/openshell; \
+    /usr/local/bin/openshell --version; \
+    rm -f "${checksums}" "${archive}"
 
 # We make four distinct layers so if there are application changes the library layers can be re-used.
 COPY --chown=185 target/quarkus-app/lib/ /deployments/lib/
@@ -29,7 +36,7 @@ ADD https://repo1.maven.org/maven2/org/jolokia/jolokia-agent-jvm/2.1.1/jolokia-a
 RUN chown 185:185 -R /opt/jolokia \
     && chmod -R go+r /opt/jolokia/jolokia-javaagent.jar
 
-ENV JAVA_OPTS_APPEND="-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager -javaagent:/opt/jolokia/jolokia-javaagent.jar=host=0.0.0.0,port=8778,protocol=https,useSslClientAuthentication=true,caCert=/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
+ENV JAVA_OPTS_APPEND="-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jbosslogmanager.LogManager -javaagent:/opt/jolokia/jolokia-javaagent.jar=host=0.0.0.0,port=8778,protocol=https,useSslClientAuthentication=true,caCert=/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
 
 EXPOSE 8080 8778 9000
 USER 185
