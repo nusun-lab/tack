@@ -26,17 +26,20 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         return RoutineDefinition.builder(ID)
                 .name("Product Owner")
                 .main("""
-                        Full Product Owner routine: self-directed product ownership cycle. Gather current project context,
-                        shape Backlog product work, refine scope and acceptance, hand ready slices to PM, accept finished outcomes,
-                        keep product documentation useful, and talk with teammates when interaction improves the work.
+                        Own the canonical product backlog, the required origin of new product work. Translate mission
+                        outcomes into prioritized, small user-facing backlog items before they become executable delivery
+                        work. Every new product outcome begins in the backlog with clear value, scope, acceptance criteria,
+                        priority, and readiness. Maintain enough PRODUCT READY backlog work to expose the next meaningful
+                        delivery opportunities, preserve product decisions and documentation, and evaluate completed outcomes
+                        against product intent.
                         """, "direct:example-software-team-product-owner")
                 .subroutine(
                         "acceptance-refinement",
-                        "Refine one product item with scope and acceptance criteria.",
+                        "Refine one product backlog item into a small, clearly scoped product slice with usable acceptance criteria.",
                         "direct:example-software-team-product-owner-acceptance-refinement")
                 .subroutine(
                         "priority-handoff",
-                        "Update product priority and hand off one item for PM breakdown.",
+                        "Make one product backlog slice delivery-ready with clear priority, acceptance context, and readiness evidence.",
                         "direct:example-software-team-product-owner-priority-handoff")
                 .defaultLane("high-pass")
                 .build();
@@ -55,7 +58,8 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         .loopDoWhile(exchangeProperty("decision.product-owner-done.result").isNotEqualTo(true))
                             .setProperty("productOwnerCycle", simple("${exchangeProperty.productOwnerCycle++}"))
                             .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                                Current PO pass: selected product Plane work item, canonical item page, acceptance status, priority/readiness, PM handoff request, next product action.
+                                Current product pass: selected product work item, canonical item page, acceptance status,
+                                priority/readiness, product-ready handoff, and next product action.
                                 """))
                             .to("tack:thought-enter?name=po-cycle&maxTokens=300")
                             .to("direct:po-team-chat-sync")
@@ -64,13 +68,12 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                             .to("direct:po-priority-status-loop")
                             .to("direct:po-cycle-closeout")
                             .setHeader(TackHeaders.PROMPT, constant("""
-                                            Is your PO pass locally complete because the thin product pipeline exists
-                                            with at least one small vertical slice marked PM HANDOFF: READY and major
-                                            mission outcomes represented or explicitly deferred, or because one exact
-                                            product blocker/user decision was recorded?
-                                            Do not wait for PM or DEV to consume the handoff.
-                                            If more PO work remains, the next cycle must choose a distinct unfinished
-                                            product outcome rather than refining the same handed-off item again.
+                                            Is this product pass locally complete because the canonical backlog represents
+                                            the mission's major product outcomes and contains at least one small vertical slice
+                                            marked PRODUCT READY, or because one exact product blocker or user decision was recorded?
+                                            Do not wait for downstream delivery work to consume the ready product item.
+                                            If more product work remains, the next cycle must choose a distinct unfinished
+                                            product outcome rather than refining the same ready item again.
                                             """))
                             .to("tack:decide?id=product-owner-done")
                             .to("tack:thought-exit?name=po-cycle")
@@ -88,7 +91,8 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .choice()
                     .when(exchangeProperty("decision.product-owner-has-project-basics.result").isEqualTo(true))
                         .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                            Focused PO acceptance pass: selected product item, canonical page, scope, users, acceptance criteria, decisions, and open questions.
+                            Focused product acceptance pass: selected product item, canonical page, scope, users,
+                            acceptance criteria, decisions, and open questions.
                             """))
                         .to("tack:thought-enter?name=po-cycle&maxTokens=300")
                         .to("direct:po-team-chat-sync")
@@ -108,7 +112,8 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .choice()
                     .when(exchangeProperty("decision.product-owner-has-project-basics.result").isEqualTo(true))
                         .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                            Focused PO handoff pass: selected product item, priority, readiness, PM request, Plane state, and canonical page.
+                            Focused product readiness pass: selected product item, priority, readiness state,
+                            requested next delivery action, and canonical page.
                             """))
                         .to("tack:thought-enter?name=po-cycle&maxTokens=300")
                         .to("direct:po-team-chat-sync")
@@ -124,8 +129,8 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         from("direct:po-product-owner-root-enter")
                 .routeId("po-product-owner-root-enter")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Durable product anchors: product documentation pages, current-work page, Plane project,
-                        source repository, and team chat.
+                        Durable product anchors: canonical product backlog, product documentation pages, current-work page,
+                        project-management workspace, source repository, and team chat.
                         """))
                 .to("tack:thought-enter?name=product-owner-routine&maxTokens=500");
 
@@ -137,21 +142,23 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .routeId("po-project-basics-loop")
                 .setProperty("decision.product-owner-has-project-basics.result", constant(false))
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Current product-basics read: documentation repository, current-work page, Plane project, source repository,
-                        team chat, product navigation. Promote durable anchors to product-owner-routine before basics exits.
+                        Current product-basics read: documentation repository, current-work page,
+                        project-management workspace, source repository, team chat, and product navigation.
+                        Promote durable anchors to product-owner-routine before basics exits.
                         """))
                 .to("tack:thought-enter?name=po-basics&maxTokens=300")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Verify product project basics once without mutation.
-                                Product work may begin only when there is a Plane project, source repository under
-                                agent-workspace, documentation repository with usable index/current-work navigation,
-                                and a usable team chat/project-basics link. A static active-roster snapshot is not a basic.
-                                Do not repeatedly reread the workspace and do not begin product work when any basic is missing.
+                                Verify product project basics once without mutation using the capabilities available to you.
+                                Product work may begin only when there is a usable project-management workspace, a source
+                                repository under agent-workspace, a documentation repository with usable index/current-work
+                                navigation, and usable team chat/project-basics navigation. A static active-roster snapshot
+                                is not a basic. Do not repeatedly reread the workspace and do not begin product work when
+                                any basic is missing.
                                 """))
                 .to("tack:act?id=po-workspace-basics-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Are project basics present and linked enough to do product work: Plane project,
-                                source repository under agent-workspace, documentation repository, and usable navigation/chat?
+                                Are project basics present and linked enough to do product work: project management,
+                                source repository under agent-workspace, documentation repository/navigation, and team chat?
                                 """))
                 .to("tack:decide?id=product-owner-has-project-basics")
                 .to("tack:thought-exit?name=po-basics");
@@ -159,11 +166,10 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         from("direct:po-missing-basics-closeout")
                 .routeId("po-missing-basics-closeout")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Project basics are not usable for product work. Read recent Mattermost only if needed.
-                                Reply once to an existing PM/setup thread when a concise product/setup answer helps;
+                                Project basics are not usable for product work. Read recent team chat only if needed.
+                                Reply once to an existing setup thread when a concise product or setup answer helps;
                                 otherwise stay quiet. Do not repost setup requests and do not begin product work without
-                                Plane, source repository, documentation repository, and usable navigation.
-                                The director covers missing PM staffing.
+                                project management, source repository, documentation repository, and usable navigation.
                                 """))
                 .to("tack:act?id=po-missing-basics-closeout&toolProfile=" + TeamChatToolProfile.ID);
 
@@ -183,15 +189,19 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .loopDoWhile(exchangeProperty("decision.po-backlog-selection-done.result").isNotEqualTo(true))
                     .setProperty("poBacklogCycle", simple("${exchangeProperty.poBacklogCycle++}"))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Current item selection: Plane work item id/link, owner, priority, status, canonical page.
-                        Promote selected item to po-cycle before backlog exits.
+                        Current item selection: project-management work item id/link, owner, priority, status,
+                        and canonical page. Promote the selected item to po-cycle before backlog exits.
                         """))
                     .to("tack:thought-enter?name=po-backlog&maxTokens=250")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Work only in the Plane Backlog when creating or refining product work.
-                                    Select one small user-facing slice needing PO attention; ignore implementation tasks and To Do work.
-                                    If none exists, create one Backlog slice linked to the mission container when useful.
-                                    Do not reselect PM-ready work unless PO input was requested or acceptance became stale.
+                                    Use project management to inspect and maintain the canonical product backlog.
+                                    The backlog is the required origin of new product work: every mission outcome that needs
+                                    delivery must first be represented here as a product item. Select one small unfinished
+                                    user-facing product slice that needs product ownership. When no suitable unfinished slice
+                                    exists, create one from an unrepresented mission outcome and link it to the mission container
+                                    when available. Maintain enough small product slices to expose the next meaningful delivery
+                                    opportunities. Keep implementation tasks separate from product backlog items. Do not reselect
+                                    PRODUCT READY work unless product input was requested or acceptance became stale.
                                     """))
                     .to("tack:act?id=po-backlog-review&toolProfile=" + ProjectManagementToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
@@ -200,8 +210,8 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                                     """))
                     .to("tack:act?id=po-product-context-read&toolProfile=" + SourceControlToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Is exactly one unfinished product slice selected or created for PO work, with Plane and
-                                    documentation context captured, or is the missing context clearly identified?
+                                    Is exactly one unfinished product slice selected or created for product work, with
+                                    project-management and documentation context captured, or is the missing context clearly identified?
                                     """))
                     .to("tack:decide?id=po-backlog-selection-done")
                     .to("tack:thought-exit?name=po-backlog")
@@ -214,17 +224,19 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .loopDoWhile(exchangeProperty("decision.po-acceptance-done.result").isNotEqualTo(true))
                     .setProperty("poAcceptanceCycle", simple("${exchangeProperty.poAcceptanceCycle++}"))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Scope and acceptance work for selected item: goal, users, in/out of scope, acceptance criteria, decisions, open questions. Promote acceptance summary/page link to po-cycle.
+                        Scope and acceptance work for selected item: goal, users, in/out of scope, acceptance criteria,
+                        decisions, and open questions. Promote acceptance summary/page link to po-cycle.
                         """))
                     .to("tack:thought-enter?name=po-acceptance&maxTokens=250")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Curate exactly one compact product page for the selected Backlog slice.
-                                    Include Plane link, user value, scope boundaries, acceptance criteria, and one decision or open question.
-                                    Keep pages product-focused, linked, and small; split or summarize before appending long logs.
+                                    Curate exactly one compact product page for the selected product slice.
+                                    Include the project-management item link, user value, scope boundaries, acceptance criteria,
+                                    and one decision or open question. Keep pages product-focused, linked, and small; split or
+                                    summarize before appending long logs.
                                     """))
                     .to("tack:act?id=po-canonical-acceptance-update&toolProfile=" + SourceControlToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Are scope and acceptance criteria usable, linked, and small enough for PM breakdown?
+                                    Are scope and acceptance criteria usable, linked, and small enough for downstream delivery planning?
                                     """))
                     .to("tack:decide?id=po-acceptance-done")
                     .to("tack:thought-exit?name=po-acceptance")
@@ -237,19 +249,22 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .loopDoWhile(exchangeProperty("decision.po-priority-status-done.result").isNotEqualTo(true))
                     .setProperty("poPriorityCycle", simple("${exchangeProperty.poPriorityCycle++}"))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Priority/status handoff: Plane work item status, priority, readiness for PM breakdown, requested PM action.
+                        Priority/readiness handoff: project-management work item status, priority,
+                        delivery readiness, and requested next delivery action.
                         """))
                     .to("tack:thought-enter?name=po-priority&maxTokens=250")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Keep the selected product slice in Backlog and update its priority/readiness after verifying status.
-                                    When acceptance is usable, add or refresh PM HANDOFF: READY with page, priority, summary, questions, and PM request.
-                                    When reviewing finished work, accept or move only genuinely complete product outcomes to Done.
-                                    Never create, assign, or start developer tasks; PM moves ready work to To Do.
+                                    Using project management, keep the selected product slice in Backlog and update its
+                                    priority/readiness after verifying status. When acceptance is usable, add or refresh a
+                                    comment beginning exactly PRODUCT READY with canonical page, priority, summary, open questions,
+                                    and requested next delivery action. When reviewing finished work, accept or move only genuinely
+                                    complete product outcomes to Done. Keep this routine focused on product artifacts: product slices,
+                                    user value, scope, acceptance criteria, priority, product decisions, and readiness.
                                     """))
                     .to("tack:act?id=po-plane-handoff-update&toolProfile=" + ProjectManagementToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Is the selected product slice ready for PM handoff with priority, canonical page,
-                                    and an exact PM HANDOFF: READY comment, or has one exact product blocker/question been recorded?
+                                    Is the selected product slice delivery-ready with priority, canonical page, and an exact
+                                    PRODUCT READY comment, or has one exact product blocker or question been recorded?
                                     """))
                     .to("tack:decide?id=po-priority-status-done")
                     .to("tack:thought-exit?name=po-priority")
@@ -260,12 +275,12 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Read recent project chat and continue useful product conversations.
                                 Reply when a teammate needs scope, acceptance, or product judgment; otherwise ask nothing.
-                                Link the Plane item or product page when it helps the conversation.
+                                Link the project-management item or product page when it helps the conversation.
                                 """))
                 .to("tack:act?id=po-team-chat-closeout&toolProfile=" + TeamChatToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Make one small documentation curation improvement if it clarifies the product.
-                                Preserve navigation and durable decisions; leave day-to-day work tracking in Plane.
+                                Preserve navigation and durable decisions; leave day-to-day work tracking in project management.
                                 """))
                 .to("tack:act?id=po-follow-up-note&toolProfile=" + SourceControlToolProfile.ID);
     }
