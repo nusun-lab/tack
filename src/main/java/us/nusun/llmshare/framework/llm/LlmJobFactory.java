@@ -18,6 +18,7 @@ import us.nusun.llmshare.framework.model.Mission;
 import us.nusun.llmshare.framework.model.PartitionKeyStrategy;
 import us.nusun.llmshare.framework.model.Persona;
 import us.nusun.llmshare.framework.model.RoutineDefinition;
+import us.nusun.llmshare.framework.sandbox.PersonaSandboxManager;
 import us.nusun.llmshare.framework.state.AgentRun;
 
 import java.util.LinkedHashMap;
@@ -156,6 +157,8 @@ public class LlmJobFactory {
         putIfNonBlank(metadata, "partitionKeyStrategy", lane.partitionKeyStrategy().name());
         putIfNonBlank(metadata, "personaId", exchange.getProperty("personaId", String.class));
         putIfNonBlank(metadata, "toolProfile", exchange.getProperty("toolProfile", String.class));
+        putIfNonBlank(metadata, PersonaSandboxManager.WORKING_STATE_SANDBOX_NAME,
+                exchange.getProperty(PersonaSandboxManager.WORKING_STATE_SANDBOX_NAME, String.class));
         putIfPresent(metadata, ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY,
                 firstPresent(exchange.getProperty(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY),
                         exchange.getIn().getHeader(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY)));
@@ -265,7 +268,6 @@ public class LlmJobFactory {
         return mission == null ? null : mission.id();
     }
 
-
     private static boolean blank(String value) {
         return value == null || value.isBlank();
     }
@@ -278,6 +280,7 @@ public class LlmJobFactory {
         }
         return null;
     }
+
     private static String resolveOptionalPlaceholder(Exchange exchange, String placeholder) {
         try {
             return exchange.getContext().resolvePropertyPlaceholders(placeholder);
