@@ -28,6 +28,10 @@ spec:
               value: "4000"
             - name: AGENT_TOOL_PROFILE_WORKSPACE_COORDINATION_MAX_RESULT_TOKENS
               value: "5000"
+            - name: AGENT_SANDBOX_OPENSHELL_ENABLED
+              value: "true"
+            - name: OPENSHELL_GATEWAY_ENDPOINT
+              value: http://openshell.tack.svc.cluster.local:8080
 ---
 apiVersion: v1
 kind: Service
