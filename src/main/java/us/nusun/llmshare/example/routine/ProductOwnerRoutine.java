@@ -26,10 +26,12 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         return RoutineDefinition.builder(ID)
                 .name("Product Owner")
                 .main("""
-                        Own and maintain the product backlog. Translate the mission into prioritized, small user-facing
-                        product slices with clear value, scope, acceptance criteria, and readiness. Ensure enough
-                        delivery-ready product work exists to keep implementation moving, maintain product decisions and
-                        documentation, and evaluate completed outcomes against product intent.
+                        Own the canonical product backlog, the required origin of new product work. Translate mission
+                        outcomes into prioritized, small user-facing backlog items before they become executable delivery
+                        work. Every new product outcome begins in the backlog with clear value, scope, acceptance criteria,
+                        priority, and readiness. Maintain enough PRODUCT READY backlog work to expose the next meaningful
+                        delivery opportunities, preserve product decisions and documentation, and evaluate completed outcomes
+                        against product intent.
                         """, "direct:example-software-team-product-owner")
                 .subroutine(
                         "acceptance-refinement",
@@ -66,10 +68,9 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                             .to("direct:po-priority-status-loop")
                             .to("direct:po-cycle-closeout")
                             .setHeader(TackHeaders.PROMPT, constant("""
-                                            Is this product pass locally complete because the thin product pipeline exists
-                                            with at least one small vertical slice marked PRODUCT READY and major mission
-                                            outcomes represented or explicitly deferred, or because one exact product
-                                            blocker or user decision was recorded?
+                                            Is this product pass locally complete because the canonical backlog represents
+                                            the mission's major product outcomes and contains at least one small vertical slice
+                                            marked PRODUCT READY, or because one exact product blocker or user decision was recorded?
                                             Do not wait for downstream delivery work to consume the ready product item.
                                             If more product work remains, the next cycle must choose a distinct unfinished
                                             product outcome rather than refining the same ready item again.
@@ -128,7 +129,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         from("direct:po-product-owner-root-enter")
                 .routeId("po-product-owner-root-enter")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Durable product anchors: product documentation pages, current-work page,
+                        Durable product anchors: canonical product backlog, product documentation pages, current-work page,
                         project-management workspace, source repository, and team chat.
                         """))
                 .to("tack:thought-enter?name=product-owner-routine&maxTokens=500");
@@ -193,13 +194,14 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         """))
                     .to("tack:thought-enter?name=po-backlog&maxTokens=250")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Use project management to inspect the current product backlog.
-                                    Select one small unfinished user-facing product slice that needs product ownership.
-                                    When no suitable unfinished product slice exists, create one from the mission and link it
-                                    to the mission container when available. Maintain enough small product slices to expose
-                                    the next meaningful delivery opportunities. Keep implementation tasks separate from product
-                                    backlog items. Do not reselect PRODUCT READY work unless product input was requested or
-                                    acceptance became stale.
+                                    Use project management to inspect and maintain the canonical product backlog.
+                                    The backlog is the required origin of new product work: every mission outcome that needs
+                                    delivery must first be represented here as a product item. Select one small unfinished
+                                    user-facing product slice that needs product ownership. When no suitable unfinished slice
+                                    exists, create one from an unrepresented mission outcome and link it to the mission container
+                                    when available. Maintain enough small product slices to expose the next meaningful delivery
+                                    opportunities. Keep implementation tasks separate from product backlog items. Do not reselect
+                                    PRODUCT READY work unless product input was requested or acceptance became stale.
                                     """))
                     .to("tack:act?id=po-backlog-review&toolProfile=" + ProjectManagementToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
