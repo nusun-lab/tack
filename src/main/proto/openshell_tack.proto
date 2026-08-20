@@ -1,0 +1,310 @@
+// Minimal wire-compatible OpenShell API surface used by Tack.
+// Field numbers and service/method names are pinned to NVIDIA OpenShell v0.0.109.
+syntax = "proto3";
+
+package openshell.v1;
+
+option java_package = "us.nusun.llmshare.framework.sandbox.grpc";
+option java_multiple_files = true;
+option java_outer_classname = "OpenShellTackProto";
+
+service OpenShell {
+  rpc CreateSandbox(CreateSandboxRequest) returns (SandboxResponse);
+  rpc GetSandbox(GetSandboxRequest) returns (SandboxResponse);
+  rpc WatchSandbox(WatchSandboxRequest) returns (stream SandboxStreamEvent);
+  rpc ExecSandbox(ExecSandboxRequest) returns (stream ExecSandboxEvent);
+  rpc CreateProvider(CreateProviderRequest) returns (ProviderResponse);
+  rpc GetProvider(GetProviderRequest) returns (ProviderResponse);
+  rpc UpdateProvider(UpdateProviderRequest) returns (ProviderResponse);
+  rpc GetProviderProfile(GetProviderProfileRequest) returns (ProviderProfileResponse);
+  rpc ImportProviderProfiles(ImportProviderProfilesRequest) returns (ImportProviderProfilesResponse);
+  rpc AttachSandboxProvider(AttachSandboxProviderRequest) returns (AttachSandboxProviderResponse);
+  rpc UpdateConfig(UpdateConfigRequest) returns (UpdateConfigResponse);
+  rpc GetSandboxPolicyStatus(GetSandboxPolicyStatusRequest) returns (GetSandboxPolicyStatusResponse);
+}
+
+message SandboxSpec {
+  map<string, string> environment = 5;
+  repeated string providers = 8;
+}
+
+message ObjectMeta {
+  string id = 1;
+  string name = 2;
+  int64 created_at_ms = 3;
+  map<string, string> labels = 4;
+  uint64 resource_version = 5;
+  map<string, string> annotations = 6;
+  string workspace = 7;
+}
+
+message SandboxStatus {
+  string sandbox_name = 1;
+  string agent_pod = 2;
+  string agent_fd = 3;
+  string sandbox_fd = 4;
+  repeated SandboxCondition conditions = 5;
+  SandboxPhase phase = 6;
+  uint32 current_policy_version = 7;
+}
+
+message SandboxCondition {
+  string type = 1;
+  string status = 2;
+  string reason = 3;
+  string message = 4;
+  string last_transition_time = 5;
+}
+
+enum SandboxPhase {
+  SANDBOX_PHASE_UNSPECIFIED = 0;
+  SANDBOX_PHASE_PROVISIONING = 1;
+  SANDBOX_PHASE_READY = 2;
+  SANDBOX_PHASE_ERROR = 3;
+  SANDBOX_PHASE_DELETING = 4;
+  SANDBOX_PHASE_UNKNOWN = 5;
+  SANDBOX_PHASE_STOPPING = 6;
+  SANDBOX_PHASE_STOPPED = 7;
+  SANDBOX_PHASE_STARTING = 8;
+}
+
+message Sandbox {
+  ObjectMeta metadata = 1;
+  SandboxSpec spec = 2;
+  SandboxStatus status = 3;
+}
+
+message CreateSandboxRequest {
+  SandboxSpec spec = 1;
+  string name = 2;
+  map<string, string> labels = 3;
+  map<string, string> annotations = 4;
+  string workspace = 5;
+}
+
+message GetSandboxRequest {
+  string name = 1;
+  string workspace = 2;
+}
+
+message SandboxResponse { Sandbox sandbox = 1; }
+
+message WatchSandboxRequest {
+  string id = 1;
+  bool follow_status = 2;
+  bool follow_logs = 3;
+  bool follow_events = 4;
+  uint32 log_tail_lines = 5;
+  uint32 event_tail = 6;
+  bool stop_on_terminal = 7;
+  int64 log_since_ms = 8;
+  repeated string log_sources = 9;
+  string log_min_level = 10;
+}
+
+message SandboxLogLine {
+  string sandbox_id = 1;
+  int64 timestamp_ms = 2;
+  string level = 3;
+  string target = 4;
+  string message = 5;
+  string source = 6;
+  map<string, string> fields = 7;
+}
+
+message PlatformEvent {
+  int64 timestamp_ms = 1;
+  string source = 2;
+  string type = 3;
+  string reason = 4;
+  string message = 5;
+  map<string, string> metadata = 6;
+}
+
+message SandboxStreamWarning { string message = 1; }
+
+message SandboxStreamEvent {
+  oneof payload {
+    Sandbox sandbox = 1;
+    SandboxLogLine log = 2;
+    PlatformEvent event = 3;
+    SandboxStreamWarning warning = 4;
+  }
+}
+
+message ExecSandboxRequest {
+  string sandbox_id = 1;
+  repeated string command = 2;
+  string workdir = 3;
+  map<string, string> environment = 4;
+  uint32 timeout_seconds = 5;
+  bytes stdin = 6;
+  bool tty = 7;
+  uint32 cols = 8;
+  uint32 rows = 9;
+}
+
+message ExecSandboxStdout { bytes data = 1; }
+message ExecSandboxStderr { bytes data = 1; }
+message ExecSandboxExit { int32 exit_code = 1; }
+message ExecSandboxEvent {
+  oneof payload {
+    ExecSandboxStdout stdout = 1;
+    ExecSandboxStderr stderr = 2;
+    ExecSandboxExit exit = 3;
+  }
+}
+
+message Provider {
+  ObjectMeta metadata = 1;
+  string type = 2;
+  map<string, string> credentials = 3;
+  map<string, string> config = 4;
+  map<string, int64> credential_expires_at_ms = 5;
+  string profile_workspace = 6;
+}
+
+message CreateProviderRequest {
+  Provider provider = 1;
+  string workspace = 2;
+}
+message GetProviderRequest {
+  string name = 1;
+  string workspace = 2;
+}
+message UpdateProviderRequest {
+  Provider provider = 1;
+  map<string, int64> credential_expires_at_ms = 2;
+  string workspace = 3;
+}
+message ProviderResponse { Provider provider = 1; }
+
+message ProviderProfileCredential {
+  string name = 1;
+  string description = 2;
+  repeated string env_vars = 3;
+  bool required = 4;
+  string auth_style = 5;
+  string header_name = 6;
+  string query_param = 7;
+  string path_template = 9;
+}
+message NetworkEndpoint {
+  string host = 1;
+  uint32 port = 2;
+  string protocol = 3;
+  string tls = 4;
+  string enforcement = 5;
+  string access = 6;
+  repeated uint32 ports = 9;
+  string path = 15;
+}
+message NetworkBinary { string path = 1; }
+message ProviderProfileDiscovery { repeated string credentials = 1; }
+enum ProviderProfileCategory {
+  PROVIDER_PROFILE_CATEGORY_UNSPECIFIED = 0;
+  PROVIDER_PROFILE_CATEGORY_OTHER = 1;
+  PROVIDER_PROFILE_CATEGORY_INFERENCE = 2;
+  PROVIDER_PROFILE_CATEGORY_AGENT = 3;
+  PROVIDER_PROFILE_CATEGORY_SOURCE_CONTROL = 4;
+  PROVIDER_PROFILE_CATEGORY_MESSAGING = 5;
+  PROVIDER_PROFILE_CATEGORY_DATA = 6;
+  PROVIDER_PROFILE_CATEGORY_KNOWLEDGE = 7;
+}
+message ProviderProfile {
+  string id = 1;
+  string display_name = 2;
+  string description = 3;
+  ProviderProfileCategory category = 4;
+  repeated ProviderProfileCredential credentials = 5;
+  repeated NetworkEndpoint endpoints = 6;
+  repeated NetworkBinary binaries = 7;
+  bool inference_capable = 8;
+  ProviderProfileDiscovery discovery = 9;
+  uint64 resource_version = 10;
+}
+message GetProviderProfileRequest {
+  string id = 1;
+  string workspace = 2;
+}
+message ProviderProfileResponse { ProviderProfile profile = 1; }
+message ProviderProfileImportItem {
+  ProviderProfile profile = 1;
+  string source = 2;
+}
+message ImportProviderProfilesRequest {
+  repeated ProviderProfileImportItem profiles = 1;
+  string workspace = 2;
+}
+message ProviderProfileDiagnostic {
+  string source = 1;
+  string profile_id = 2;
+  string field = 3;
+  string message = 4;
+  string severity = 5;
+}
+message ImportProviderProfilesResponse {
+  repeated ProviderProfileDiagnostic diagnostics = 1;
+  repeated ProviderProfile profiles = 2;
+  bool imported = 3;
+}
+
+message AttachSandboxProviderRequest {
+  string sandbox_name = 1;
+  string provider_name = 2;
+  uint64 expected_resource_version = 3;
+  string workspace = 4;
+}
+message AttachSandboxProviderResponse {
+  Sandbox sandbox = 1;
+  bool attached = 2;
+}
+
+message NetworkPolicyRule {
+  string name = 1;
+  repeated NetworkEndpoint endpoints = 2;
+  repeated NetworkBinary binaries = 3;
+}
+message AddNetworkRule {
+  string rule_name = 1;
+  NetworkPolicyRule rule = 2;
+}
+message PolicyMergeOperation {
+  oneof operation { AddNetworkRule add_rule = 1; }
+}
+message UpdateConfigRequest {
+  string name = 1;
+  repeated PolicyMergeOperation merge_operations = 7;
+  uint64 expected_resource_version = 8;
+  map<string, string> annotations = 9;
+  string workspace = 10;
+}
+message UpdateConfigResponse {
+  uint32 version = 1;
+  string policy_hash = 2;
+  uint64 settings_revision = 3;
+}
+
+enum PolicyStatus {
+  POLICY_STATUS_UNSPECIFIED = 0;
+  POLICY_STATUS_PENDING = 1;
+  POLICY_STATUS_LOADED = 2;
+  POLICY_STATUS_FAILED = 3;
+  POLICY_STATUS_SUPERSEDED = 4;
+}
+message SandboxPolicyRevision {
+  uint32 version = 1;
+  string policy_hash = 2;
+  PolicyStatus status = 3;
+  string load_error = 4;
+}
+message GetSandboxPolicyStatusRequest {
+  string name = 1;
+  uint32 version = 2;
+  bool global = 3;
+  string workspace = 4;
+}
+message GetSandboxPolicyStatusResponse {
+  SandboxPolicyRevision revision = 1;
+  uint32 active_version = 2;
+}
