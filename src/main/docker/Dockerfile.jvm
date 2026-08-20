@@ -36,7 +36,7 @@ ADD https://repo1.maven.org/maven2/org/jolokia/jolokia-agent-jvm/2.1.1/jolokia-a
 RUN chown 185:185 -R /opt/jolokia \
     && chmod -R go+r /opt/jolokia/jolokia-javaagent.jar
 
-ENV JAVA_OPTS_APPEND="-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jbosslogmanager.LogManager -javaagent:/opt/jolokia/jolokia-javaagent.jar=host=0.0.0.0,port=8778,protocol=https,useSslClientAuthentication=true,caCert=/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
+ENV JAVA_OPTS_APPEND="-Dquarkus.http.host=0.0.0.0 -Djava.util.logging.manager=org.jboss.logmanager.LogManager -javaagent:/opt/jolokia/jolokia-javaagent.jar=host=0.0.0.0,port=8778,protocol=https,useSslClientAuthentication=true,caCert=/var/run/secrets/kubernetes.io/serviceaccount/service-ca.crt"
 
 EXPOSE 8080 8778 9000
 USER 185
