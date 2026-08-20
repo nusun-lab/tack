@@ -107,5 +107,7 @@ class RoutineDefinitionTest {
         assertTrue(json.contains("phase-a"));
         assertTrue(json.contains("Perform only phase A."));
         assertTrue(json.contains("direct:test-routine-phase-a"));
+        assertTrue(json.contains("main routine composes the listed subroutines"));
+        assertTrue(json.contains("preferred entry point"));
     }
 }
