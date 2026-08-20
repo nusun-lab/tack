@@ -306,9 +306,19 @@ public class LlmAgentFactory {
                     configuration.withMcpClients(clients);
                 }
                 if (sandboxes != null) {
-                    var sandboxTool = sandboxes.tool(exchange.getProperty(PersonaSandboxManager.WORKING_STATE_SANDBOX_NAME, String.class));
+                    LlmJobEnvelope job = job(exchange);
+                    String sandboxName = exchange.getProperty(PersonaSandboxManager.WORKING_STATE_SANDBOX_NAME, String.class);
+                    if (blank(sandboxName)) {
+                        String missionId = metadata(job, "missionId");
+                        String personaId = firstNonBlank(exchange.getProperty("personaId", String.class), metadata(job, "personaId"));
+                        sandboxName = sandboxes.sandboxNameFor(missionId, personaId);
+                    }
+                    var sandboxTool = sandboxes.tool(sandboxName);
                     if (sandboxTool != null) {
                         configuration.withCustomTools(List.of(sandboxTool));
+                        LOG.info("Registered sandbox_exec for sandbox={} persona={} mission={}", sandboxName,
+                                firstNonBlank(exchange.getProperty("personaId", String.class), metadata(job, "personaId")),
+                                metadata(job, "missionId"));
                     }
                 }
             }
@@ -411,6 +421,14 @@ public class LlmAgentFactory {
             }
             LlmJobEnvelope job = job(exchange);
             return job == null || job.passType() == null ? LlmPassType.SYNTHESIS : job.passType();
+        }
+
+        private static String metadata(LlmJobEnvelope job, String key) {
+            if (job == null || job.metadata() == null) {
+                return null;
+            }
+            Object value = job.metadata().get(key);
+            return value == null ? null : String.valueOf(value);
         }
 
         private static Object jobId(LlmJobEnvelope job) {
