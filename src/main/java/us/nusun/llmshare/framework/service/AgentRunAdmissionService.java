@@ -131,8 +131,10 @@ public class AgentRunAdmissionService {
         List<AgentRunAdmission> admissions = new ArrayList<>();
         synchronized (agentRuns) {
             validateCapacity(mission, preparedRuns, capacityMaximum);
-            for (PreparedAgentRun prepared : preparedRuns) {
-                sandboxes.ensureReady(mission, personas.getRequired(prepared.run().personaId()), prepared.run());
+            if (sandboxes != null) {
+                for (PreparedAgentRun prepared : preparedRuns) {
+                    sandboxes.ensureReady(mission, personas.getRequired(prepared.run().personaId()), prepared.run());
+                }
             }
             agentRuns.putMission(mission);
             for (PreparedAgentRun prepared : preparedRuns) {
