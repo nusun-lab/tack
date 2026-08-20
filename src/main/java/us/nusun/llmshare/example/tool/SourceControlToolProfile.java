@@ -46,7 +46,7 @@ public class SourceControlToolProfile implements ToolProfileProvider {
                                  - keep individual markdown files compact, usually under 200-300 lines; split or summarize before appending long logs
                                  - small navigation and organization improvements are valuable documentation work
                                  - do not read entire documentation repositories
-                                 - generally reference the url attribute of repositories, not clone or ssh
+                                 - for metadata and links, prefer repository url attributes; for actual sandbox Git work, use the canonical HTTPS clone URL with ordinary git
                                  """)
                 .denyTools(GiteaMcpServer.ID,
                         "delete_repository",
