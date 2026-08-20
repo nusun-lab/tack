@@ -30,8 +30,12 @@ spec:
               value: "5000"
             - name: AGENT_SANDBOX_OPENSHELL_ENABLED
               value: "true"
-            - name: OPENSHELL_GATEWAY_ENDPOINT
-              value: http://openshell.tack.svc.cluster.local:8080
+            - name: QUARKUS_GRPC_CLIENTS_OPENSHELL_HOST
+              value: openshell.tack.svc.cluster.local
+            - name: QUARKUS_GRPC_CLIENTS_OPENSHELL_PORT
+              value: "8080"
+            - name: QUARKUS_GRPC_CLIENTS_OPENSHELL_PLAIN_TEXT
+              value: "true"
 ---
 apiVersion: v1
 kind: Service
@@ -39,7 +43,8 @@ metadata:
   name: llm-share-camel-kafka
 spec:
   selector:
-    app: llm-share-camel-kafka
+    matchLabels:
+      app: llm-share-camel-kafka
   ports:
     - name: http
       port: 8080
