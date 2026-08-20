@@ -43,6 +43,7 @@ import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.model.Persona;
 import us.nusun.llmshare.framework.model.RoutineDefinition;
 import us.nusun.llmshare.framework.model.ToolProfile;
+import us.nusun.llmshare.framework.sandbox.PersonaSandboxManager;
 
 import java.io.IOException;
 import java.net.http.HttpClient;
@@ -76,6 +77,7 @@ public class LlmAgentFactory {
             McpClientFactory mcpClientFactory,
             ToolProfileRegistry toolProfiles,
             PersonaCatalog personas,
+            PersonaSandboxManager sandboxes,
             TokenCountEstimator tokenCountEstimator,
             @ConfigProperty(name = "llm.model-default.openai.base-url") String defaultBaseUrl,
             @ConfigProperty(name = "llm.model-default.openai.api-key") String defaultApiKey,
@@ -107,7 +109,8 @@ public class LlmAgentFactory {
                 timeoutMs,
                 thinkingOffEnabled,
                 strictJsonSchema);
-        return new DynamicAgentFactory(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator, memoryMaxTokens, maxToolCallingRoundTrips);
+        return new DynamicAgentFactory(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator,
+                memoryMaxTokens, maxToolCallingRoundTrips, sandboxes);
     }
 
     private static Map<String, ChatModel> laneModels(
@@ -251,6 +254,7 @@ public class LlmAgentFactory {
         private final McpClientFactory mcpClientFactory;
         private final ToolProfileRegistry toolProfiles;
         private final PersonaCatalog personas;
+        private final PersonaSandboxManager sandboxes;
         private static final int DEFAULT_MAX_TOOL_CALLING_ROUND_TRIPS = 4;
 
         private final TokenCountEstimator tokenCountEstimator;
@@ -259,10 +263,18 @@ public class LlmAgentFactory {
         private CamelContext camelContext;
 
         public DynamicAgentFactory(InferenceLaneRegistry lanes, Map<String, ChatModel> laneModels, McpClientFactory mcpClientFactory, ToolProfileRegistry toolProfiles, PersonaCatalog personas, TokenCountEstimator tokenCountEstimator, int memoryMaxTokens) {
-            this(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator, memoryMaxTokens, DEFAULT_MAX_TOOL_CALLING_ROUND_TRIPS);
+            this(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator, memoryMaxTokens,
+                    DEFAULT_MAX_TOOL_CALLING_ROUND_TRIPS, null);
         }
 
         public DynamicAgentFactory(InferenceLaneRegistry lanes, Map<String, ChatModel> laneModels, McpClientFactory mcpClientFactory, ToolProfileRegistry toolProfiles, PersonaCatalog personas, TokenCountEstimator tokenCountEstimator, int memoryMaxTokens, int maxToolCallingRoundTrips) {
+            this(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator, memoryMaxTokens,
+                    maxToolCallingRoundTrips, null);
+        }
+
+        public DynamicAgentFactory(InferenceLaneRegistry lanes, Map<String, ChatModel> laneModels, McpClientFactory mcpClientFactory,
+                                   ToolProfileRegistry toolProfiles, PersonaCatalog personas, TokenCountEstimator tokenCountEstimator,
+                                   int memoryMaxTokens, int maxToolCallingRoundTrips, PersonaSandboxManager sandboxes) {
             this.lanes = lanes;
             this.laneModels = laneModels;
             this.mcpClientFactory = mcpClientFactory;
@@ -271,6 +283,7 @@ public class LlmAgentFactory {
             this.tokenCountEstimator = tokenCountEstimator;
             this.memoryMaxTokens = memoryMaxTokens;
             this.maxToolCallingRoundTrips = maxToolCallingRoundTrips;
+            this.sandboxes = sandboxes;
         }
 
         @Override
@@ -291,6 +304,12 @@ public class LlmAgentFactory {
                 List<McpClient> clients = mcpClients(exchange);
                 if (!clients.isEmpty()) {
                     configuration.withMcpClients(clients);
+                }
+                if (sandboxes != null) {
+                    var sandboxTool = sandboxes.tool(exchange.getProperty(PersonaSandboxManager.WORKING_STATE_SANDBOX_NAME, String.class));
+                    if (sandboxTool != null) {
+                        configuration.withCustomTools(List.of(sandboxTool));
+                    }
                 }
             }
             Agent agent = configuration.getChatMemoryProvider() == null ? new AgentWithoutMemory(configuration) : new TackToolAgent(configuration, maxToolCallingRoundTrips);
