@@ -27,22 +27,23 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         return RoutineDefinition.builder(ID)
                 .name("Project Manager")
                 .main("""
-                        Establish and maintain the delivery workspace and turn delivery-ready product work into executable
-                        team work. Produce small, assigned implementation tasks with clear scope, dependencies, acceptance
-                        references, priority, and expected completion evidence. Coordinate active delivery, blockers, review,
-                        team access, and durable project status.
+                        Establish and maintain the delivery workspace and consume delivery-ready product work from the
+                        canonical product backlog. Turn PRODUCT READY backlog items into small assigned implementation tasks
+                        with clear scope, dependencies, acceptance references, priority, and expected completion evidence.
+                        Coordinate active delivery, blockers, review, team access, and durable project status. New product
+                        work originates in the product backlog; this routine derives executable work from it.
                         """, "direct:example-software-team-project-manager")
                 .subroutine(
                         "bootstrap",
-                        "Provision and verify the shared project-management, documentation, source-control, and team-chat foundation required for delivery.",
+                        "Establish only the shared project-management, documentation, source-control, team-chat, access, and navigation foundation required for delivery; this produces workspace infrastructure, not product backlog items or implementation tasks.",
                         "direct:example-software-team-project-manager-bootstrap")
                 .subroutine(
                         "coordination",
-                        "Maintain active delivery by consuming delivery-ready product work, coordinating executable tasks, blockers, review, and durable status.",
+                        "Operate an established delivery workspace with active work or PRODUCT READY items from the canonical product backlog; maintain assigned implementation work, blockers, review, and durable status.",
                         "direct:example-software-team-project-manager-coordination")
                 .subroutine(
                         "task-planning",
-                        "Turn one delivery-ready product item into one small assigned implementation task with explicit execution and review evidence.",
+                        "Given one PRODUCT READY item from the canonical product backlog in an established delivery workspace, produce one small assigned implementation task with explicit execution and review evidence.",
                         "direct:example-software-team-project-manager-task-planning")
                 .defaultLane("high-pass")
                 .build();
@@ -92,8 +93,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .choice()
                     .when(exchangeProperty("decision.collaboration-setup-complete.result").isEqualTo(true))
                         .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                            Focused delivery-planning pass: one delivery-ready product item, one implementation task,
-                            owner, priority, repository, canonical page, risk, and next code step.
+                            Focused delivery-planning pass: one PRODUCT READY item from the canonical product backlog,
+                            one implementation task, owner, priority, repository, canonical page, risk, and next code step.
                             """))
                         .to("tack:thought-enter?name=pm-cycle&maxTokens=300")
                         .to("direct:pm-documentation-status-sync")
@@ -146,13 +147,16 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .setProperty("collaborationSetupAttempt", simple("${exchangeProperty.collaborationSetupAttempt++}"))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
                         Current bootstrap checklist: project-management workspace, team chat, team membership,
-                        repositories, and documentation navigation. Promote final anchors before bootstrap exits.
+                        repositories, and documentation navigation. Bootstrap establishes workspace infrastructure only;
+                        product backlog creation and implementation-task creation are outside this flow.
+                        Promote final anchors before bootstrap exits.
                         """))
                     .to("tack:thought-enter?name=pm-bootstrap&maxTokens=300")
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Using the available project-management capability, search direct project names first,
                                     then create or confirm exactly one shared project workspace. Preserve an existing useful
-                                    project. Stop after the project workspace is verified.
+                                    project. Stop after the project workspace is verified. Do not create product backlog items
+                                    or implementation tasks during bootstrap.
                                     """))
                     .to("tack:act?id=plane-project-provisioning&toolProfile=" + WorkspaceCoordinationToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
@@ -214,7 +218,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .loopDoWhile(exchangeProperty("decision.project-manager-done.result").isNotEqualTo(true))
                     .setProperty("projectManagerCycle", simple("${exchangeProperty.projectManagerCycle++}"))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Current delivery pass: selected product-ready item, selected implementation task,
+                        Current delivery pass: selected PRODUCT READY backlog item, selected implementation task,
                         status movement, owners, and risks.
                         """))
                     .to("tack:thought-enter?name=pm-cycle&maxTokens=300")
@@ -230,10 +234,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .to("direct:pm-cycle-closeout")
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Is this delivery pass locally complete because collaboration basics are established and
-                                    one of these occurred: active review/blocker work was coordinated, one PRODUCT READY item
-                                    became an assigned actionable implementation task, no PRODUCT READY item exists and that
-                                    was clearly determined, or one exact product-input, assignment, or infrastructure blocker
-                                    was recorded? Do not wait for downstream work to consume this output.
+                                    one of these occurred: active review/blocker work was coordinated, one PRODUCT READY backlog
+                                    item became an assigned actionable implementation task, no PRODUCT READY backlog item exists
+                                    and that was clearly determined, or one exact product-input, assignment, or infrastructure
+                                    blocker was recorded? Do not wait for downstream work to consume this output.
                                     """))
                     .to("tack:decide?id=project-manager-done")
                     .to("tack:thought-exit?name=pm-cycle")
@@ -283,20 +287,23 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .routeId("pm-work-intake-loop")
                 .setProperty("decision.pm-has-ready-product-handoff.result", constant(false))
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        One delivery-ready product item under review: work-item id/link, priority, canonical acceptance page,
-                        PRODUCT READY content, and requested next delivery action. Promote the selected item before intake exits.
+                        One PRODUCT READY item from the canonical product backlog under review: work-item id/link, priority,
+                        canonical acceptance page, readiness content, and requested next delivery action. Promote the selected
+                        item before intake exits.
                         """))
                 .to("tack:thought-enter?name=pm-intake&maxTokens=250")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Determine whether exactly one delivery-ready product item exists now. Select one product item
-                                only when it contains a current PRODUCT READY comment. Capture work item, priority, canonical
-                                acceptance page, acceptance summary, unresolved product questions, and requested next delivery
-                                action. If no ready product item exists, do not invent acceptance criteria and do not enter task planning.
+                                Determine whether exactly one delivery-ready product item exists in the canonical product backlog.
+                                Select one product item only when it contains a current PRODUCT READY comment. New product work
+                                must originate in the product backlog; do not create product items here. Capture work item,
+                                priority, canonical acceptance page, acceptance summary, unresolved product questions, and
+                                requested next delivery action. If no ready product item exists, do not invent acceptance criteria,
+                                do not create implementation work, and do not enter task planning.
                                 """))
                 .to("tack:act?id=pm-intake-review&toolProfile=" + ProjectManagementToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Does one current product item with PRODUCT READY exist and have enough acceptance context
-                                for delivery planning? Return false when no delivery-ready product item exists.
+                                Does one current product backlog item with PRODUCT READY exist and have enough acceptance
+                                context for delivery planning? Return false when no delivery-ready backlog item exists.
                                 """))
                 .to("tack:decide?id=pm-has-ready-product-handoff")
                 .to("tack:thought-exit?name=pm-intake");
@@ -305,21 +312,24 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .routeId("pm-task-planning-loop")
                 .setProperty("decision.pm-task-planning-done.result", constant(false))
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        One implementation task being planned: work-item id/link, assignee, repository, canonical acceptance page,
-                        acceptance criteria, dependencies, next code step, and expected review evidence.
+                        One implementation task being planned from the selected PRODUCT READY backlog item: work-item id/link,
+                        assignee, repository, canonical acceptance page, acceptance criteria, dependencies, next code step,
+                        and expected review evidence.
                         """))
                 .to("tack:thought-enter?name=pm-planning&maxTokens=250")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Turn the selected PRODUCT READY slice into one small assigned To Do implementation task.
+                                Derive one small assigned To Do implementation task from the selected PRODUCT READY backlog item.
                                 Split oversized project-management content by moving details into smaller child items; keep
                                 parents as summaries. Include assignee, priority, source repository, acceptance page,
                                 dependencies, next code step, review evidence, and a comment beginning exactly DELIVERY READY.
-                                Do not create duplicates or leave ready work unassigned.
+                                Do not create implementation work without a PRODUCT READY backlog source, do not create duplicates,
+                                and do not leave ready work unassigned.
                                 """))
                 .to("tack:act?id=pm-actionable-dev-task&toolProfile=" + ProjectManagementToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Is task planning complete because one assigned actionable implementation task is ready with
-                                DELIVERY READY, or because one exact missing input or assignment blocker was durably recorded?
+                                Is task planning complete because one assigned actionable implementation task was derived from
+                                the selected PRODUCT READY backlog item and is ready with DELIVERY READY, or because one exact
+                                missing input or assignment blocker was durably recorded?
                                 """))
                 .to("tack:decide?id=pm-task-planning-done")
                 .to("tack:thought-exit?name=pm-planning");
