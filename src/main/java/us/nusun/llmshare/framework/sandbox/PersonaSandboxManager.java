@@ -181,11 +181,7 @@ public class PersonaSandboxManager {
     }
 
     private static String sandboxName(String missionId, String personaId) {
-        String persona = labelValue(personaId);
-        if (persona.length() > 30) {
-            persona = persona.substring(persona.length() - 30);
-        }
-        return "tack-" + shortHash(missionId) + "-" + persona;
+        return "tack-" + shortHash(missionId + "\n" + personaId);
     }
 
     private static String labelValue(String value) {
