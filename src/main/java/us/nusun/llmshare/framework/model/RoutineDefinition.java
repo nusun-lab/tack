@@ -14,6 +14,10 @@ public record RoutineDefinition(
         List<SubroutineDefinition> subroutines
 ) {
     public static final String FRAMEWORK_DEFAULT_LANE = "low-pass";
+    private static final String MAIN_COMPOSITION_GUIDANCE = """
+            The main routine composes the listed subroutines into the complete workflow and is the preferred entry point
+            for self-directed execution. Subroutines are focused slices for explicitly narrow work.
+            """.strip();
 
     public RoutineDefinition {
         id = requireText(id, "Routine missing id");
@@ -23,6 +27,9 @@ public record RoutineDefinition(
         defaultLane = defaultLane == null || defaultLane.isBlank() ? FRAMEWORK_DEFAULT_LANE : defaultLane.trim();
         subroutines = subroutines == null ? List.of() : List.copyOf(subroutines);
         validateUniqueSubroutineIds(subroutines);
+        if (!subroutines.isEmpty()) {
+            description = description + "\n\n" + MAIN_COMPOSITION_GUIDANCE;
+        }
     }
 
     public static Builder builder(String id) {
