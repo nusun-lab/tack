@@ -5,6 +5,7 @@ import us.nusun.llmshare.framework.llm.KafkaTopicProvisioner;
 import us.nusun.llmshare.framework.model.AgentRunProjection;
 import us.nusun.llmshare.framework.model.Mission;
 import us.nusun.llmshare.framework.projection.ProjectionStore;
+import us.nusun.llmshare.framework.sandbox.PersonaSandboxManager;
 import us.nusun.llmshare.framework.service.ResetService;
 import us.nusun.llmshare.framework.state.AgentRun;
 import us.nusun.llmshare.framework.state.AgentRunStore;
@@ -19,20 +20,23 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ResetServiceBoundaryTest {
     @Test
-    void resetPurgesKafkaTopicsAndClearsInMemoryState() throws Exception {
+    void resetPurgesKafkaTopicsDestroysSandboxesAndClearsInMemoryState() throws Exception {
         ProjectionStore projections = new ProjectionStore();
         AgentRunStore agentRuns = new AgentRunStore();
         agentRuns.putMission(new Mission("mission-1", "Build", List.of(), "active", Map.of(), Instant.now()));
         agentRuns.putRun(new AgentRun("run-1", "mission-1", FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A, Map.of()));
         projections.put(projection("run-1"));
         TestKafkaTopicProvisioner kafkaTopics = new TestKafkaTopicProvisioner(List.of("agent-runs.scheduled", "llm.requests.low"));
-        ResetService reset = resetService(projections, agentRuns, kafkaTopics);
+        TestPersonaSandboxManager sandboxes = new TestPersonaSandboxManager(List.of("tack-a", "tack-b"));
+        ResetService reset = resetService(projections, agentRuns, kafkaTopics, sandboxes);
 
         Map<String, Object> response = reset.reset();
 
         assertEquals("RESET", response.get("status"));
         assertEquals(List.of("agent-runs.scheduled", "llm.requests.low"), response.get("kafkaTopicsPurged"));
+        assertEquals(List.of("tack-a", "tack-b"), response.get("sandboxesDestroyed"));
         assertEquals(1, kafkaTopics.purgeCalls);
+        assertEquals(1, sandboxes.destroyCalls);
         assertEquals(List.of(), agentRuns.missions());
         assertEquals(List.of(), agentRuns.runs());
         assertEquals(List.of(), projections.all());
@@ -41,13 +45,16 @@ class ResetServiceBoundaryTest {
     @Test
     void resetRequestIncludesRequestIdAfterKafkaPurge() throws Exception {
         TestKafkaTopicProvisioner kafkaTopics = new TestKafkaTopicProvisioner(List.of("llm.requests.low"));
-        ResetService reset = resetService(new ProjectionStore(), new AgentRunStore(), kafkaTopics);
+        TestPersonaSandboxManager sandboxes = new TestPersonaSandboxManager(List.of());
+        ResetService reset = resetService(new ProjectionStore(), new AgentRunStore(), kafkaTopics, sandboxes);
 
         Map<String, Object> response = reset.resetRequest("request-1");
 
         assertEquals("RESET", response.get("status"));
         assertEquals("request-1", response.get("requestId"));
         assertEquals(List.of("llm.requests.low"), response.get("kafkaTopicsPurged"));
+        assertEquals(List.of(), response.get("sandboxesDestroyed"));
+        assertEquals(1, sandboxes.destroyCalls);
     }
 
     @Test
@@ -58,20 +65,27 @@ class ResetServiceBoundaryTest {
         agentRuns.putRun(new AgentRun("run-1", "mission-1", FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A, Map.of()));
         TestKafkaTopicProvisioner kafkaTopics = new TestKafkaTopicProvisioner(List.of());
         kafkaTopics.failure = new IllegalStateException("broker unavailable");
-        ResetService reset = resetService(projections, agentRuns, kafkaTopics);
+        TestPersonaSandboxManager sandboxes = new TestPersonaSandboxManager(List.of("tack-a"));
+        ResetService reset = resetService(projections, agentRuns, kafkaTopics, sandboxes);
 
         IllegalStateException failure = assertThrows(IllegalStateException.class, reset::reset);
 
         assertEquals("broker unavailable", failure.getMessage());
+        assertEquals(0, sandboxes.destroyCalls);
         assertEquals(1, projections.all().size());
         assertEquals(1, agentRuns.runs().size());
     }
 
-    private static ResetService resetService(ProjectionStore projections, AgentRunStore agentRuns, KafkaTopicProvisioner kafkaTopics) {
+    private static ResetService resetService(
+            ProjectionStore projections,
+            AgentRunStore agentRuns,
+            KafkaTopicProvisioner kafkaTopics,
+            PersonaSandboxManager sandboxes) {
         ResetService reset = new ResetService();
         FrameworkFixtures.set(reset, "projections", projections);
         FrameworkFixtures.set(reset, "agentRuns", agentRuns);
         FrameworkFixtures.set(reset, "kafkaTopics", kafkaTopics);
+        FrameworkFixtures.set(reset, "sandboxes", sandboxes);
         return reset;
     }
 
@@ -109,6 +123,22 @@ class ResetServiceBoundaryTest {
                 throw failure;
             }
             return purgedTopics;
+        }
+    }
+
+    private static final class TestPersonaSandboxManager extends PersonaSandboxManager {
+        private final List<String> destroyedSandboxes;
+        private int destroyCalls;
+
+        private TestPersonaSandboxManager(List<String> destroyedSandboxes) {
+            super(null, null, null, "");
+            this.destroyedSandboxes = destroyedSandboxes;
+        }
+
+        @Override
+        public List<String> destroyAll() {
+            destroyCalls++;
+            return destroyedSandboxes;
         }
     }
 }
