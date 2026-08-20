@@ -11,6 +11,8 @@ option java_outer_classname = "OpenShellTackProto";
 service OpenShell {
   rpc CreateSandbox(CreateSandboxRequest) returns (SandboxResponse);
   rpc GetSandbox(GetSandboxRequest) returns (SandboxResponse);
+  rpc ListSandboxes(ListSandboxesRequest) returns (ListSandboxesResponse);
+  rpc DeleteSandbox(DeleteSandboxRequest) returns (DeleteSandboxResponse);
   rpc WatchSandbox(WatchSandboxRequest) returns (stream SandboxStreamEvent);
   rpc ExecSandbox(ExecSandboxRequest) returns (stream ExecSandboxEvent);
   rpc CreateProvider(CreateProviderRequest) returns (ProviderResponse);
@@ -88,6 +90,27 @@ message GetSandboxRequest {
 }
 
 message SandboxResponse { Sandbox sandbox = 1; }
+
+message ListSandboxesRequest {
+  uint32 limit = 1;
+  uint32 offset = 2;
+  string label_selector = 3;
+  string workspace = 4;
+  bool all_workspaces = 5;
+}
+
+message ListSandboxesResponse {
+  repeated Sandbox sandboxes = 1;
+}
+
+message DeleteSandboxRequest {
+  string name = 1;
+  string workspace = 2;
+}
+
+message DeleteSandboxResponse {
+  bool deleted = 1;
+}
 
 message WatchSandboxRequest {
   string id = 1;
