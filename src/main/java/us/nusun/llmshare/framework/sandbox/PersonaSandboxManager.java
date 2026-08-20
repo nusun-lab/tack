@@ -2,6 +2,7 @@ package us.nusun.llmshare.framework.sandbox;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import us.nusun.llmshare.framework.logging.LogTokens;
 import us.nusun.llmshare.framework.model.ExternalIdentity;
 import us.nusun.llmshare.framework.model.Mission;
 import us.nusun.llmshare.framework.model.Persona;
@@ -22,15 +23,22 @@ public class PersonaSandboxManager {
     private static final String GITEA_PROFILE_ID = "tack-gitea";
 
     private final OpenShellGrpcClient openshell;
+    private final OpenShellLifecycleClient lifecycle;
+    private final LogTokens logTokens;
     private final String configuredGiteaUrl;
     private final ConcurrentHashMap<SandboxKey, CompletableFuture<SandboxRef>> sandboxes = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Persona> personasBySandbox = new ConcurrentHashMap<>();
     private final Object giteaProfileLock = new Object();
     private volatile String installedGiteaProfileEndpoint;
 
     public PersonaSandboxManager(
             OpenShellGrpcClient openshell,
+            OpenShellLifecycleClient lifecycle,
+            LogTokens logTokens,
             @ConfigProperty(name = "agent.sandbox.gitea.url", defaultValue = "") String configuredGiteaUrl) {
         this.openshell = openshell;
+        this.lifecycle = lifecycle;
+        this.logTokens = logTokens;
         this.configuredGiteaUrl = configuredGiteaUrl == null ? "" : configuredGiteaUrl.strip();
     }
 
@@ -46,12 +54,14 @@ public class PersonaSandboxManager {
         CompletableFuture<SandboxRef> existing = sandboxes.putIfAbsent(key, mine);
         if (existing != null) {
             SandboxRef ref = existing.join();
+            personasBySandbox.put(ref.name(), persona);
             run.workingState().put(WORKING_STATE_SANDBOX_NAME, ref.name());
             return ref;
         }
         try {
             SandboxRef ref = provision(mission, persona, run);
             mine.complete(ref);
+            personasBySandbox.put(ref.name(), persona);
             run.workingState().put(WORKING_STATE_SANDBOX_NAME, ref.name());
             return ref;
         } catch (RuntimeException e) {
@@ -65,7 +75,7 @@ public class PersonaSandboxManager {
         if (!openshell.enabled() || sandboxName == null || sandboxName.isBlank()) {
             return null;
         }
-        return new SandboxExecTool(openshell, sandboxName);
+        return new SandboxExecTool(openshell, sandboxName, personasBySandbox.get(sandboxName), logTokens);
     }
 
     public String sandboxNameFor(String missionId, String personaId) {
@@ -73,6 +83,15 @@ public class PersonaSandboxManager {
             return null;
         }
         return sandboxName(missionId, personaId);
+    }
+
+    public List<String> destroyAll() {
+        try {
+            return lifecycle.deleteTackSandboxes();
+        } finally {
+            sandboxes.clear();
+            personasBySandbox.clear();
+        }
     }
 
     private SandboxRef provision(Mission mission, Persona persona, AgentRun run) {
@@ -98,6 +117,7 @@ public class PersonaSandboxManager {
                     sandboxName,
                     providerName == null ? List.of() : List.of(providerName),
                     Map.of(
+                            "tack-owner", "tack",
                             "tack-mission", shortHash(mission.id()),
                             "tack-persona", labelValue(persona.id())));
         } else {
