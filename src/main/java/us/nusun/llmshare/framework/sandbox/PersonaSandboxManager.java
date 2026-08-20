@@ -68,6 +68,13 @@ public class PersonaSandboxManager {
         return new SandboxExecTool(openshell, sandboxName);
     }
 
+    public String sandboxNameFor(String missionId, String personaId) {
+        if (blank(missionId) || blank(personaId)) {
+            return null;
+        }
+        return sandboxName(missionId, personaId);
+    }
+
     private SandboxRef provision(Mission mission, Persona persona, AgentRun run) {
         String sandboxName = sandboxName(mission.id(), persona.id());
         ExternalIdentity gitea = persona.identityFor("gitea");
