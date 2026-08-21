@@ -77,18 +77,18 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                             .setHeader(TackHeaders.PROMPT, constant("""
                                             Read the smallest mission-relevant slice needed to identify the next missing capability.
                                             Prefer durable project-management and documentation evidence; use chat as context, not source of truth.
-                                            Check direct anchors and one relevant work item before deciding. Capture any reviewed implementation
-                                            work whose pull request is ready for integration. Do not mutate or sweep systems.
+                                            Check direct anchors and one relevant work item before deciding. Capture any Review item with
+                                            an exact INTEGRATION READY handoff and its pull request. Do not mutate or sweep systems.
                                             """))
                             .to("tack:act?id=director-workspace-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                             .setHeader(TackHeaders.PROMPT, constant("""
                                             Temporarily own the final merge action until a dedicated architecture role exists.
                                             Using the durable project evidence already gathered this cycle, inspect at most one pull request
-                                            associated with implementation work whose delivery review has already been accepted. Merge it only
-                                            when the pull request is still open, targets the expected repository/branch, is mergeable, and available
-                                            validation/review evidence does not contradict the accepted delivery state. Do not merge work that is
-                                            still in progress, review, blocked, unreviewed, or ambiguous. Do not substitute your own product or
-                                            implementation judgment for the completed delivery review.
+                                            associated with a Review item carrying an exact INTEGRATION READY handoff. Merge it only when the
+                                            pull request is still open, targets the expected repository and branch, is mergeable, and available
+                                            validation or review evidence does not contradict the accepted delivery state. Do not merge work
+                                            that lacks INTEGRATION READY, is blocked, is ambiguous, or has changed materially since delivery review.
+                                            Do not substitute your own product or implementation judgment for the completed delivery review.
                                             """))
                             .to("tack:act?id=director-integration-merge&toolProfile=" + SourceControlToolProfile.ID)
                             .setHeader(TackHeaders.PROMPT, constant("""
