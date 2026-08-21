@@ -26,20 +26,19 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         return RoutineDefinition.builder(ID)
                 .name("Product Owner")
                 .main("""
-                        Own the canonical product backlog, the required origin of new product work. Translate mission
-                        outcomes into prioritized, small user-facing backlog items before they become executable delivery
-                        work. Every new product outcome begins in the backlog with clear value, scope, acceptance criteria,
-                        priority, and readiness. Maintain enough PRODUCT READY backlog work to expose the next meaningful
-                        delivery opportunities, preserve product decisions and documentation, and evaluate completed outcomes
-                        against product intent.
+                        Complete Product Owner cycle, including the focused acceptance-refinement and priority-handoff
+                        behaviors when they become applicable. Own the canonical product backlog and translate mission outcomes
+                        into prioritized, small user-facing product slices with clear value, scope, testable Gherkin acceptance,
+                        product decisions, and readiness. Maintain enough PRODUCT READY work to expose meaningful delivery
+                        opportunities and evaluate PRODUCT ACCEPTANCE READY outcomes against product intent before completion.
                         """, "direct:example-software-team-product-owner")
                 .subroutine(
                         "acceptance-refinement",
-                        "Refine one product backlog item into a small, clearly scoped product slice with usable acceptance criteria.",
+                        "Refine one product backlog item into a small, clearly scoped product slice with testable Gherkin acceptance criteria.",
                         "direct:example-software-team-product-owner-acceptance-refinement")
                 .subroutine(
                         "priority-handoff",
-                        "Make one product backlog slice delivery-ready with clear priority, acceptance context, and readiness evidence.",
+                        "Make one product backlog slice delivery-ready with clear priority, Gherkin acceptance context, and readiness evidence, or accept a completed product outcome against that acceptance.",
                         "direct:example-software-team-product-owner-priority-handoff")
                 .defaultLane("high-pass")
                 .build();
@@ -58,8 +57,8 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         .loopDoWhile(exchangeProperty("decision.product-owner-done.result").isNotEqualTo(true))
                             .setProperty("productOwnerCycle", simple("${exchangeProperty.productOwnerCycle++}"))
                             .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                                Current product pass: selected product work item, canonical item page, acceptance status,
-                                priority/readiness, product-ready handoff, and next product action.
+                                Current product pass: selected product work item, canonical item page, Gherkin acceptance status,
+                                completion evidence when present, priority/readiness, product-ready handoff, and next product action.
                                 """))
                             .to("tack:thought-enter?name=po-cycle&maxTokens=300")
                             .to("direct:po-team-chat-sync")
@@ -68,12 +67,13 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                             .to("direct:po-priority-status-loop")
                             .to("direct:po-cycle-closeout")
                             .setHeader(TackHeaders.PROMPT, constant("""
-                                            Is this product pass locally complete because the canonical backlog represents
-                                            the mission's major product outcomes and contains at least one small vertical slice
-                                            marked PRODUCT READY, or because one exact product blocker or user decision was recorded?
-                                            Do not wait for downstream delivery work to consume the ready product item.
-                                            If more product work remains, the next cycle must choose a distinct unfinished
-                                            product outcome rather than refining the same ready item again.
+                                            Is this product pass locally complete because a PRODUCT ACCEPTANCE READY outcome was
+                                            accepted or returned with one exact unmet Gherkin outcome; the canonical backlog represents
+                                            the mission's major product outcomes and contains at least one small vertical slice marked
+                                            PRODUCT READY with testable Gherkin acceptance; or one exact product blocker or user decision
+                                            was recorded? Do not wait for downstream delivery work to consume product output. If more
+                                            product work remains, choose a distinct unfinished outcome rather than repeatedly refining
+                                            the same unchanged ready item.
                                             """))
                             .to("tack:decide?id=product-owner-done")
                             .to("tack:thought-exit?name=po-cycle")
@@ -92,7 +92,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                     .when(exchangeProperty("decision.product-owner-has-project-basics.result").isEqualTo(true))
                         .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
                             Focused product acceptance pass: selected product item, canonical page, scope, users,
-                            acceptance criteria, decisions, and open questions.
+                            Gherkin acceptance criteria, completion evidence when present, decisions, and open questions.
                             """))
                         .to("tack:thought-enter?name=po-cycle&maxTokens=300")
                         .to("direct:po-team-chat-sync")
@@ -113,11 +113,12 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                     .when(exchangeProperty("decision.product-owner-has-project-basics.result").isEqualTo(true))
                         .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
                             Focused product readiness pass: selected product item, priority, readiness state,
-                            requested next delivery action, and canonical page.
+                            requested next delivery action, Gherkin acceptance, completion evidence, and canonical page.
                             """))
                         .to("tack:thought-enter?name=po-cycle&maxTokens=300")
                         .to("direct:po-team-chat-sync")
                         .to("direct:po-backlog-selection-loop")
+                        .to("direct:po-acceptance-loop")
                         .to("direct:po-priority-status-loop")
                         .to("direct:po-cycle-closeout")
                         .to("tack:thought-exit?name=po-cycle")
@@ -190,28 +191,30 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                     .setProperty("poBacklogCycle", simple("${exchangeProperty.poBacklogCycle++}"))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
                         Current item selection: project-management work item id/link, owner, priority, status,
-                        and canonical page. Promote the selected item to po-cycle before backlog exits.
+                        readiness/acceptance handoff, and canonical page. Promote the selected item to po-cycle before backlog exits.
                         """))
                     .to("tack:thought-enter?name=po-backlog&maxTokens=250")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Use project management to inspect and maintain the canonical product backlog.
-                                    The backlog is the required origin of new product work: every mission outcome that needs
-                                    delivery must first be represented here as a product item. Select one small unfinished
-                                    user-facing product slice that needs product ownership. When no suitable unfinished slice
-                                    exists, create one from an unrepresented mission outcome and link it to the mission container
-                                    when available. Maintain enough small product slices to expose the next meaningful delivery
-                                    opportunities. Keep implementation tasks separate from product backlog items. Do not reselect
-                                    PRODUCT READY work unless product input was requested or acceptance became stale.
+                                    Use project management to inspect and maintain the canonical product backlog. First select one
+                                    product slice carrying PRODUCT ACCEPTANCE READY so a completed outcome does not wait behind new
+                                    shaping work. Otherwise select one small unfinished user-facing product slice needing product
+                                    ownership. When no suitable unfinished slice exists, create one from an unrepresented mission
+                                    outcome and link it to the mission container when available. Maintain enough small product slices
+                                    to expose meaningful delivery opportunities. Keep implementation tasks separate from product items.
+                                    Do not reselect unchanged PRODUCT READY work unless PRODUCT ACCEPTANCE READY, product input was
+                                    requested, or acceptance became stale.
                                     """))
                     .to("tack:act?id=po-backlog-review&toolProfile=" + ProjectManagementToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Read only the documentation index, current-work, the selected item page, and direct product links.
-                                    Report missing or stale navigation instead of reading the whole documentation repository.
+                                    Read only the documentation index, current-work, selected item page, direct product links,
+                                    and completion evidence linked by PRODUCT ACCEPTANCE READY when present. Report missing or stale
+                                    navigation instead of reading the whole documentation repository.
                                     """))
                     .to("tack:act?id=po-product-context-read&toolProfile=" + SourceControlToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Is exactly one unfinished product slice selected or created for product work, with
-                                    project-management and documentation context captured, or is the missing context clearly identified?
+                                    Is exactly one product slice selected for either acceptance of a PRODUCT ACCEPTANCE READY outcome
+                                    or unfinished product work, with project-management and documentation context captured, or is the
+                                    missing context clearly identified?
                                     """))
                     .to("tack:decide?id=po-backlog-selection-done")
                     .to("tack:thought-exit?name=po-backlog")
@@ -224,19 +227,27 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .loopDoWhile(exchangeProperty("decision.po-acceptance-done.result").isNotEqualTo(true))
                     .setProperty("poAcceptanceCycle", simple("${exchangeProperty.poAcceptanceCycle++}"))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Scope and acceptance work for selected item: goal, users, in/out of scope, acceptance criteria,
-                        decisions, and open questions. Promote acceptance summary/page link to po-cycle.
+                        Scope and acceptance work for selected item: goal, users, in/out of scope, Gherkin acceptance,
+                        PRODUCT ACCEPTANCE READY completion evidence when present, decisions, and open questions.
+                        Promote acceptance evaluation/page link to po-cycle.
                         """))
                     .to("tack:thought-enter?name=po-acceptance&maxTokens=250")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Curate exactly one compact product page for the selected product slice.
-                                    Include the project-management item link, user value, scope boundaries, acceptance criteria,
-                                    and one decision or open question. Keep pages product-focused, linked, and small; split or
-                                    summarize before appending long logs.
+                                    Curate or evaluate exactly one compact canonical product page for the selected product slice.
+                                    For unfinished product work, include the project-management item link, user value, scope boundaries,
+                                    and compact testable Gherkin scenarios using Given/When/Then for observable acceptance behavior,
+                                    plus one product decision or open question. Do not add implementation decomposition or code-level
+                                    instructions. For PRODUCT ACCEPTANCE READY work, preserve the existing scope and Gherkin criteria;
+                                    inspect only the linked completion evidence and record which existing scenarios are satisfied or
+                                    which exact scenario remains unmet. Never rewrite acceptance criteria to fit the implementation.
+                                    Keep pages linked and small.
                                     """))
                     .to("tack:act?id=po-canonical-acceptance-update&toolProfile=" + SourceControlToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Are scope and acceptance criteria usable, linked, and small enough for downstream delivery planning?
+                                    If this is PRODUCT ACCEPTANCE READY, has each existing Gherkin scenario been evaluated against
+                                    durable completion evidence with either satisfaction or one exact unmet outcome recorded?
+                                    Otherwise, are scope boundaries and testable Gherkin acceptance scenarios usable, linked, and
+                                    small enough for downstream delivery planning? Return false for ambiguous prose-only acceptance.
                                     """))
                     .to("tack:decide?id=po-acceptance-done")
                     .to("tack:thought-exit?name=po-acceptance")
@@ -249,22 +260,26 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .loopDoWhile(exchangeProperty("decision.po-priority-status-done.result").isNotEqualTo(true))
                     .setProperty("poPriorityCycle", simple("${exchangeProperty.poPriorityCycle++}"))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Priority/readiness handoff: project-management work item status, priority,
-                        delivery readiness, and requested next delivery action.
+                        Product readiness/acceptance handoff: work-item status, priority, Gherkin acceptance,
+                        PRODUCT READY or PRODUCT ACCEPTANCE READY evidence, and requested next delivery action.
                         """))
                     .to("tack:thought-enter?name=po-priority&maxTokens=250")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Using project management, keep the selected product slice in Backlog and update its
-                                    priority/readiness after verifying status. When acceptance is usable, add or refresh a
-                                    comment beginning exactly PRODUCT READY with canonical page, priority, summary, open questions,
-                                    and requested next delivery action. When reviewing finished work, accept or move only genuinely
-                                    complete product outcomes to Done. Keep this routine focused on product artifacts: product slices,
-                                    user value, scope, acceptance criteria, priority, product decisions, and readiness.
+                                    Using project management, verify the selected product slice and its canonical acceptance page.
+                                    For unfinished work, keep it in Backlog and mark it PRODUCT READY only when scope and testable
+                                    Gherkin acceptance are usable; include canonical page, priority, summary, open questions, and
+                                    requested next delivery action. For PRODUCT ACCEPTANCE READY work, move the product slice to Done
+                                    only when durable evidence satisfies the existing Gherkin scenarios. If one or more scenarios are
+                                    unmet, keep the product slice active and add or refresh PRODUCT READY with the exact unmet acceptance
+                                    outcome and requested next delivery action so delivery management can bridge the gap. Do not create,
+                                    assign, sequence, or start implementation tasks.
                                     """))
                     .to("tack:act?id=po-plane-handoff-update&toolProfile=" + ProjectManagementToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Is the selected product slice delivery-ready with priority, canonical page, and an exact
-                                    PRODUCT READY comment, or has one exact product blocker or question been recorded?
+                                    Is this product action complete because the slice was accepted Done against its existing Gherkin;
+                                    was returned PRODUCT READY with one exact unmet acceptance outcome; is delivery-ready with priority,
+                                    canonical page, testable Gherkin acceptance, and PRODUCT READY; or has one exact product blocker or
+                                    question been recorded?
                                     """))
                     .to("tack:decide?id=po-priority-status-done")
                     .to("tack:thought-exit?name=po-priority")

@@ -27,11 +27,11 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         return RoutineDefinition.builder(ID)
                 .name("Project Manager")
                 .main("""
-                        Establish and maintain the delivery workspace and consume delivery-ready product work from the
-                        canonical product backlog. Turn PRODUCT READY backlog items into small assigned implementation tasks
-                        with clear scope, dependencies, acceptance references, priority, and expected completion evidence.
-                        Coordinate active delivery, blockers, review, team access, and durable project status. New product
-                        work originates in the product backlog; this routine derives executable work from it.
+                        Complete Project Manager cycle, including the focused bootstrap, coordination, and task-planning
+                        behaviors when they become applicable. Establish and maintain the delivery workspace, consume PRODUCT READY
+                        product slices, decompose them into the small assigned implementation tasks needed to deliver the outcome,
+                        sequence dependencies, coordinate blockers and review, and bridge completed implementation back to product
+                        acceptance. New product work originates with product ownership; executable work is derived and managed here.
                         """, "direct:example-software-team-project-manager")
                 .subroutine(
                         "bootstrap",
@@ -39,11 +39,11 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         "direct:example-software-team-project-manager-bootstrap")
                 .subroutine(
                         "coordination",
-                        "Operate an established delivery workspace with active work or PRODUCT READY items from the canonical product backlog; maintain assigned implementation work, blockers, review, and durable status.",
+                        "Operate an established delivery workspace with active implementation work or PRODUCT READY product slices; maintain decomposition, assignment, blockers, review, integration readiness, and durable delivery status.",
                         "direct:example-software-team-project-manager-coordination")
                 .subroutine(
                         "task-planning",
-                        "Given one PRODUCT READY item from the canonical product backlog in an established delivery workspace, produce one small assigned implementation task with explicit execution and review evidence.",
+                        "Decompose one PRODUCT READY product slice into the small assigned implementation tasks needed to make the whole slice actionable, with explicit dependencies and review evidence.",
                         "direct:example-software-team-project-manager-task-planning")
                 .defaultLane("high-pass")
                 .build();
@@ -93,8 +93,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .choice()
                     .when(exchangeProperty("decision.collaboration-setup-complete.result").isEqualTo(true))
                         .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                            Focused delivery-planning pass: one PRODUCT READY item from the canonical product backlog,
-                            one implementation task, owner, priority, repository, canonical page, risk, and next code step.
+                            Focused delivery-planning pass: one PRODUCT READY product slice, its existing implementation
+                            children, remaining decomposition, owners, priorities, dependencies, repositories, acceptance page,
+                            risks, and next executable steps.
                             """))
                         .to("tack:thought-enter?name=pm-cycle&maxTokens=300")
                         .to("direct:pm-documentation-status-sync")
@@ -218,8 +219,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .loopDoWhile(exchangeProperty("decision.project-manager-done.result").isNotEqualTo(true))
                     .setProperty("projectManagerCycle", simple("${exchangeProperty.projectManagerCycle++}"))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Current delivery pass: selected PRODUCT READY backlog item, selected implementation task,
-                        status movement, owners, and risks.
+                        Current delivery pass: selected PRODUCT READY product slice, decomposition state, selected implementation
+                        task, review/integration state, owners, and risks.
                         """))
                     .to("tack:thought-enter?name=pm-cycle&maxTokens=300")
                     .to("direct:pm-documentation-status-sync")
@@ -234,10 +235,11 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .to("direct:pm-cycle-closeout")
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Is this delivery pass locally complete because collaboration basics are established and
-                                    one of these occurred: active review/blocker work was coordinated, one PRODUCT READY backlog
-                                    item became an assigned actionable implementation task, no PRODUCT READY backlog item exists
-                                    and that was clearly determined, or one exact product-input, assignment, or infrastructure
-                                    blocker was recorded? Do not wait for downstream work to consume this output.
+                                    one of these occurred: active review, integration, or blocker work was coordinated; one PRODUCT READY
+                                    product slice was adequately decomposed into assigned actionable implementation work; no PRODUCT READY
+                                    product slice exists and that was clearly determined; a completed slice was returned for product
+                                    acceptance; or one exact product-input, assignment, or infrastructure blocker was recorded?
+                                    Do not wait for another role to consume this output.
                                     """))
                     .to("tack:decide?id=project-manager-done")
                     .to("tack:thought-exit?name=pm-cycle")
@@ -257,20 +259,31 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .routeId("pm-active-delivery-check")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
                         Active delivery coordination: one highest-priority implementation item in Review, Blocked, or In Progress;
-                        REVIEW READY evidence, BLOCKED evidence, owner, status decision, and next coordination action.
+                        REVIEW READY, INTEGRATION READY, merged integration evidence, BLOCKED evidence, parent product slice,
+                        owner, status decision, and next coordination action.
                         """))
                 .to("tack:thought-enter?name=pm-active-delivery&maxTokens=250")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Inspect at most one highest-priority active implementation item, in this order: Review,
-                                Blocked, then In Progress. Use minimal direct project-management evidence and any linked
-                                source-control evidence. For Review, recognize REVIEW READY and verify branch, commit/pull
-                                request or diff, changed files, validation evidence, and acceptance criteria before moving Done.
-                                If evidence is insufficient, leave it in Review and record one exact missing review requirement.
-                                For Blocked, recognize BLOCKED, identify the required owner, add PRODUCT INPUT REQUIRED only
-                                for a product decision, otherwise record the exact coordination action without inventing a solution.
-                                Do not create duplicate replacement tasks for active, review, or blocked work.
+                                Read at most one highest-priority active implementation item, in this order: Review, Blocked,
+                                then In Progress. Read its direct project-management evidence and only the linked source-control
+                                branch, commit, pull request, changed files, and validation evidence needed to evaluate the handoff.
+                                For Review, capture REVIEW READY or INTEGRATION READY and whether the referenced pull request is
+                                open or merged. For Blocked, capture the required owner and evidence. Do not mutate anything.
                                 """))
-                .to("tack:act?id=pm-active-delivery-check&toolProfile=" + ProjectManagementToolProfile.ID)
+                .to("tack:act?id=pm-active-delivery-evidence-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
+                .setHeader(TackHeaders.PROMPT, constant("""
+                                Update only the active implementation item and, when appropriate, its parent product slice using
+                                the evidence already read. For Review with REVIEW READY, verify implementation against its referenced
+                                acceptance, changed files, validation, and branch/commit/pull request. When implementation review is
+                                accepted but the pull request is still open, leave the task in Review and add or refresh INTEGRATION READY
+                                with the pull request and reviewed evidence. Once the pull request is verified merged, move the task to Done.
+                                When all implementation tasks derived from the same PRODUCT READY product slice are Done, add or refresh
+                                PRODUCT ACCEPTANCE READY on that product slice with its canonical acceptance page and completed evidence.
+                                For Blocked, add PRODUCT INPUT REQUIRED only for a product decision; otherwise record the exact required
+                                coordination action. Do not create duplicate replacement tasks or claim source evidence not present in
+                                the preceding read.
+                                """))
+                .to("tack:act?id=pm-active-delivery-update&toolProfile=" + ProjectManagementToolProfile.ID)
                 .to("tack:thought-exit?name=pm-active-delivery");
 
         from("direct:pm-team-onboarding")
@@ -287,52 +300,60 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .routeId("pm-work-intake-loop")
                 .setProperty("decision.pm-has-ready-product-handoff.result", constant(false))
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        One PRODUCT READY item from the canonical product backlog under review: work-item id/link, priority,
-                        canonical acceptance page, readiness content, and requested next delivery action. Promote the selected
-                        item before intake exits.
+                        One PRODUCT READY product slice under review: work-item id/link, priority, canonical acceptance page,
+                        Gherkin acceptance, existing implementation children, readiness content, and requested next delivery action.
+                        Promote the selected item before intake exits.
                         """))
                 .to("tack:thought-enter?name=pm-intake&maxTokens=250")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Determine whether exactly one delivery-ready product item exists in the canonical product backlog.
-                                Select one product item only when it contains a current PRODUCT READY comment. New product work
-                                must originate in the product backlog; do not create product items here. Capture work item,
-                                priority, canonical acceptance page, acceptance summary, unresolved product questions, and
-                                requested next delivery action. If no ready product item exists, do not invent acceptance criteria,
-                                do not create implementation work, and do not enter task planning.
+                                Determine whether exactly one delivery-ready product slice exists in the canonical product backlog.
+                                Select one only when it contains a current PRODUCT READY comment and its canonical page contains usable
+                                scope and testable Gherkin acceptance. New product work must originate in the product backlog; do not
+                                create product items here. Capture the product item, priority, acceptance page, Gherkin scenarios,
+                                existing implementation tasks, unresolved product questions, and requested next delivery action.
+                                If no ready product slice exists, do not invent acceptance criteria or create implementation work.
                                 """))
                 .to("tack:act?id=pm-intake-review&toolProfile=" + ProjectManagementToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Does one current product backlog item with PRODUCT READY exist and have enough acceptance
-                                context for delivery planning? Return false when no delivery-ready backlog item exists.
+                                Does one current PRODUCT READY product slice exist with usable scope and testable Gherkin acceptance
+                                for delivery decomposition? Return false when no such delivery-ready product slice exists.
                                 """))
                 .to("tack:decide?id=pm-has-ready-product-handoff")
                 .to("tack:thought-exit?name=pm-intake");
 
         from("direct:pm-task-planning-loop")
                 .routeId("pm-task-planning-loop")
+                .setProperty("pmTaskPlanningCycle", constant(0))
                 .setProperty("decision.pm-task-planning-done.result", constant(false))
-                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        One implementation task being planned from the selected PRODUCT READY backlog item: work-item id/link,
-                        assignee, repository, canonical acceptance page, acceptance criteria, dependencies, next code step,
+                .loopDoWhile(exchangeProperty("decision.pm-task-planning-done.result").isNotEqualTo(true))
+                    .setProperty("pmTaskPlanningCycle", simple("${exchangeProperty.pmTaskPlanningCycle++}"))
+                    .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Decomposition of the selected PRODUCT READY product slice: existing implementation children,
+                        uncovered acceptance behavior, assignees, repositories, dependencies, next executable steps,
                         and expected review evidence.
                         """))
-                .to("tack:thought-enter?name=pm-planning&maxTokens=250")
-                .setHeader(TackHeaders.PROMPT, constant("""
-                                Derive one small assigned To Do implementation task from the selected PRODUCT READY backlog item.
-                                Split oversized project-management content by moving details into smaller child items; keep
-                                parents as summaries. Include assignee, priority, source repository, acceptance page,
-                                dependencies, next code step, review evidence, and a comment beginning exactly DELIVERY READY.
-                                Do not create implementation work without a PRODUCT READY backlog source, do not create duplicates,
-                                and do not leave ready work unassigned.
-                                """))
-                .to("tack:act?id=pm-actionable-dev-task&toolProfile=" + ProjectManagementToolProfile.ID)
-                .setHeader(TackHeaders.PROMPT, constant("""
-                                Is task planning complete because one assigned actionable implementation task was derived from
-                                the selected PRODUCT READY backlog item and is ready with DELIVERY READY, or because one exact
-                                missing input or assignment blocker was durably recorded?
-                                """))
-                .to("tack:decide?id=pm-task-planning-done")
-                .to("tack:thought-exit?name=pm-planning");
+                    .to("tack:thought-enter?name=pm-planning&maxTokens=250")
+                    .setHeader(TackHeaders.PROMPT, constant("""
+                                    Review the selected PRODUCT READY product slice and implementation tasks already derived from it.
+                                    Decompose by delivery responsibility, dependencies, and independently finishable technical outcomes.
+                                    Create or refine exactly one missing or oversized implementation leaf per pass. A trivial product slice
+                                    may need one implementation task; a larger slice may need several. Every ready leaf must remain linked
+                                    to the parent product slice and canonical Gherkin acceptance, have a named assignee, priority, source
+                                    repository, dependencies or explicit independence, one concrete next code step, expected review evidence,
+                                    and a comment beginning exactly DELIVERY READY. Do not duplicate existing coverage, invent product scope,
+                                    or stop after one task merely because one actionable leaf exists.
+                                    """))
+                    .to("tack:act?id=pm-actionable-dev-task&toolProfile=" + ProjectManagementToolProfile.ID)
+                    .setHeader(TackHeaders.PROMPT, constant("""
+                                    Is the selected PRODUCT READY product slice adequately decomposed for delivery because all required
+                                    implementation work is represented by small assigned DELIVERY READY tasks with clear dependencies and
+                                    together covers the product acceptance, or because one exact missing product input, assignment, or
+                                    infrastructure blocker was durably recorded? Return false when acceptance behavior remains uncovered
+                                    or an implementation item is still too broad to be independently actionable.
+                                    """))
+                    .to("tack:decide?id=pm-task-planning-done")
+                    .to("tack:thought-exit?name=pm-planning")
+                .end();
 
         from("direct:pm-team-sync")
                 .routeId("pm-team-sync")
@@ -353,8 +374,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .to("tack:act?id=pm-status-note&toolProfile=" + SourceControlToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Update one project-management work item only if verified status, risk, review requirement,
-                                PRODUCT INPUT REQUIRED, DELIVERY READY, REVIEW READY, or BLOCKED changed. Do not depend on
-                                custom states or labels.
+                                PRODUCT INPUT REQUIRED, DELIVERY READY, REVIEW READY, INTEGRATION READY, PRODUCT ACCEPTANCE READY,
+                                or BLOCKED changed. Do not depend on custom states or labels.
                                 """))
                 .to("tack:act?id=pm-release-risk-update&toolProfile=" + ProjectManagementToolProfile.ID);
     }

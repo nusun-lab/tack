@@ -77,7 +77,6 @@ public class WorkspaceCoordinationToolProfile implements ToolProfileProvider {
                         "list_branches",
                         "list_commits",
                         "get_commit",
-                        "actions_run_read",
                         "list_pull_requests",
                         "pull_request_read",
                         "list_releases",
@@ -110,6 +109,7 @@ public class WorkspaceCoordinationToolProfile implements ToolProfileProvider {
                         - Plane is the sole system for projects, planned work, assignments, status, and blockers
                         - never create or manage planned work through Gitea issues
                         - use Gitea only for repository discovery, repository creation, and implementation evidence; do not block on Gitea team onboarding
+                        - CI/workflow execution is not enabled in this Gitea environment; do not inspect or rely on Actions/workflows or CI checks
                         - use Mattermost for concise questions, handoffs, and notifications
                         - keep Plane project and Mattermost channel membership aligned with the current team
                         - link to durable Plane or Gitea artifacts instead of duplicating their contents

@@ -26,17 +26,18 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         return RoutineDefinition.builder(ID)
                 .name("Application Developer")
                 .main("""
-                        Full Application Developer routine: self-directed implementation cycle. Gather project context,
-                        select assigned actionable work, make incremental source changes, collect validation evidence,
-                        update task status, communicate delivery evidence, and surface the absence of ready assigned work.
+                        Complete Application Developer cycle, including the focused work-selection and implementation
+                        behaviors when they become applicable. Consume assigned DELIVERY READY implementation work, continue
+                        active assigned work, make coherent source changes, validate them, produce reviewable pull-request or
+                        equivalent change evidence, report blockers, and return REVIEW READY delivery evidence for coordination.
                         """, "direct:example-software-team-application-developer")
                 .subroutine(
                         "work-selection",
-                        "Find or start one assigned actionable implementation task without changing source files.",
+                        "Find or start one assigned DELIVERY READY implementation task without changing source files.",
                         "direct:example-software-team-application-developer-work-selection")
                 .subroutine(
                         "implementation",
-                        "Advance one assigned implementation task through code, validation, and status evidence.",
+                        "Advance one assigned implementation task through source changes, validation, reviewable change evidence, and REVIEW READY or BLOCKED status.",
                         "direct:example-software-team-application-developer-implementation")
                 .defaultLane("high-pass")
                 .build();
@@ -63,8 +64,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .choice()
                     .when(exchangeProperty("decision.developer-has-project-basics.result").isEqualTo(true))
                         .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                            Focused developer selection pass: assigned in-progress or ready to-do task, owner, status,
-                            canonical page, repository, priority, and next code step.
+                            Focused developer selection pass: assigned in-progress or DELIVERY READY to-do task, owner,
+                            status, canonical page, repository, priority, and next code step.
                             """))
                         .to("tack:thought-enter?name=dev-cycle&maxTokens=300")
                         .setProperty("decision.developer-has-work.result", constant(false))
@@ -162,11 +163,10 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             .to("direct:dev-no-work-closeout")
                     .end()
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Is this implementation pass complete because one assigned task reached Review, Done,
-                                    or a durable blocked state with evidence, or because no eligible assigned work exists?
-                                    Record the absence of eligible assigned work clearly enough for orchestration to respond.
-                                    Do not finish merely because one small code step landed while a clear next implementation
-                                    patch remains.
+                                    Is this implementation pass complete because one assigned task reached Review with REVIEW READY,
+                                    reached Done, became durably BLOCKED with evidence, or because no eligible assigned work exists?
+                                    Record the absence of eligible assigned work clearly enough for coordination or orchestration to respond.
+                                    Do not finish merely because one small code step landed while a clear next implementation patch remains.
                                     """))
                     .to("tack:decide?id=application-developer-done")
                     .to("tack:thought-exit?name=dev-cycle")
@@ -194,9 +194,11 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .to("tack:thought-enter?name=dev-selection&maxTokens=250")
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Using project management, review only implementation tasks assigned to you.
-                                    Continue assigned In Progress work before starting the highest-priority assigned To Do task.
-                                    Require source repository, acceptance page, delivery handoff details, and one concrete next
-                                    code step. Ignore Backlog, unassigned work, product items, and work assigned to others.
+                                    Continue assigned In Progress work before starting new work. Active assigned work may continue
+                                    from its established context; new To Do work must have DELIVERY READY, source repository,
+                                    canonical acceptance page, priority, dependencies or explicit independence, expected review
+                                    evidence, and one concrete next code step. Ignore Backlog, unassigned work, product items,
+                                    and work assigned to others.
                                     """))
                     .to("tack:act?id=dev-in-progress-review&toolProfile=" + ProjectManagementToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
@@ -207,8 +209,9 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                         .when(exchangeProperty("decision.developer-has-work.result").isNotEqualTo(true))
                             .setHeader(TackHeaders.PROMPT, constant("""
                                             Review one assigned To Do implementation task only. Select it only when it has
-                                            acceptance, source repository, priority, dependencies, review evidence, a next code
-                                            step, and DELIVERY READY context. If selected, move exactly that task to In Progress.
+                                            an exact DELIVERY READY handoff plus acceptance reference, source repository, priority,
+                                            dependencies or explicit independence, review evidence, and a concrete next code step.
+                                            If selected, move exactly that assigned task to In Progress.
                                             """))
                             .to("tack:act?id=dev-assigned-to-do-start&toolProfile=" + ProjectManagementToolProfile.ID)
                             .setHeader(TackHeaders.PROMPT, constant("""
@@ -218,7 +221,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .end()
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Stop selection when assigned active work is selected, or when no eligible assigned
-                                    In Progress or To Do implementation task exists. Do not browse or claim backlog/product work.
+                                    In Progress or DELIVERY READY To Do implementation task exists. Do not browse or claim backlog/product work.
                                     """))
                     .to("tack:decide?id=developer-work-selection-done")
                     .to("tack:thought-exit?name=dev-selection")
@@ -237,8 +240,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .to("tack:thought-enter?name=dev-implementation&maxTokens=250")
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Using project management, read the selected implementation task only. Verify current status,
-                                    objective, assignee is you, canonical documentation page, acceptance criteria, source repository
-                                    under agent-workspace, and expected review evidence.
+                                    objective, assignee is you, DELIVERY READY context, canonical acceptance page, source repository
+                                    under agent-workspace, dependencies, and expected review evidence.
                                     """))
                     .to("tack:act?id=dev-task-context-read&toolProfile=" + ProjectManagementToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
@@ -260,25 +263,27 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                     """))
                     .to("tack:act?id=dev-validation-step&toolProfile=" + SourceControlToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Check review readiness in source control: changed files, branch, commit, pull request
-                                    if supported, and validation status if available. No review-ready status without a code diff.
+                                    Check review readiness in source control: changed files, branch, commit, validation status,
+                                    and pull request state. When the coherent implementation is ready for review and pull requests
+                                    are supported, create or update one pull request for the task branch rather than leaving only
+                                    an unreviewable branch or commit. Avoid duplicate pull requests. No review-ready status without a real diff.
                                     """))
                     .to("tack:act?id=dev-review-readiness&toolProfile=" + SourceControlToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Using project management, update exactly one selected task after verifying current status
                                     and assignee. Move To Do -> In Progress only for your selected task. Move In Progress -> Review
-                                    only with a real diff plus branch, commit, or pull request and available validation evidence.
-                                    When review-ready, create or update a comment beginning exactly REVIEW READY with branch,
-                                    commit/pull request or diff, changed files, validation result or limitation, and canonical
-                                    acceptance page. When blocked, keep the accurate status and create or update a comment
-                                    beginning exactly BLOCKED naming the required owner with evidence. Do not add duplicate
+                                    only with a real diff plus branch/commit and, when supported, a pull request with available
+                                    validation evidence. When review-ready, create or update a comment beginning exactly REVIEW READY
+                                    with branch, commit, pull request or equivalent diff, changed files, validation result or limitation,
+                                    and canonical acceptance page. When blocked, keep the accurate status and create or update a
+                                    comment beginning exactly BLOCKED naming the required owner with evidence. Do not add duplicate
                                     equivalent closeout comments.
                                     """))
                     .to("tack:act?id=dev-plane-status-evidence-update&toolProfile=" + ProjectManagementToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Is the selected task Review/Done with a real diff, branch/commit/pull request, and validation
-                                    evidence, or durably blocked with BLOCKED naming the required owner? Return false if there
-                                    is an obvious next production-code or test patch to make.
+                                    Is the selected task in Review/Done with REVIEW READY backed by a real diff, branch/commit,
+                                    pull request when supported, and validation evidence, or durably BLOCKED naming the required owner?
+                                    Return false if there is an obvious next production-code or test patch to make.
                                     """))
                     .to("tack:decide?id=developer-implementation-complete")
                     .to("tack:thought-exit?name=dev-implementation")
@@ -302,7 +307,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         from("direct:dev-no-work-closeout")
                 .routeId("dev-no-work-closeout")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Read recent project chat. If no assigned In Progress or To Do implementation task exists,
+                                Read recent project chat. If no assigned In Progress or DELIVERY READY To Do implementation task exists,
                                 state that fact once when useful so the team can respond. Otherwise stay quiet. Do not browse,
                                 shape, or claim product backlog work and do not self-assign unassigned implementation work.
                                 """))
