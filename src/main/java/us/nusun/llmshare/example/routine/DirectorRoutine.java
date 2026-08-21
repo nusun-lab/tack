@@ -15,6 +15,7 @@ import us.nusun.llmshare.framework.tack.TackHeaders;
 import java.util.List;
 
 import static org.apache.camel.builder.Builder.simple;
+import us.nusun.llmshare.example.tool.SourceControlToolProfile;
 import us.nusun.llmshare.example.tool.TeamChatToolProfile;
 import us.nusun.llmshare.example.tool.WorkspaceReadonlyToolProfile;
 
@@ -37,7 +38,8 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                 .main("""
                         Full Director routine: self-directed mission orchestration. Watch capacity and mission evidence,
                         use the available personas and routines, start only useful runs, encourage real collaboration,
-                        and give active teammates time to move the work.
+                        give active teammates time to move the work, and temporarily merge delivery-approved pull requests
+                        until a dedicated architecture role owns integration.
                         """, "direct:example-software-team-director")
                 .defaultLane("high-pass")
                 .build();
@@ -49,7 +51,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                 .routeId("example-software-team-director")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
                         Durable orchestration anchors: mission goal, roster by status, active/completed/failed coverage,
-                        verified project state, last provisioning decision.
+                        verified project state, last provisioning decision, and last integration decision.
                         """))
                 .to("tack:thought-enter?name=orchestration-root&maxTokens=500")
                 .setProperty("directorCycle", constant(0))
@@ -67,15 +69,28 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         .otherwise()
                             .setProperty("directorActiveMissionRoster", method(missionRosterService, "activeMissionRosterPrompt"))
                             .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                                Current orchestration cycle: active run coverage, workspace signals, completed/failed run implications, staffing gap, planned AgentRunRequests or no-op decision. Promote durable staffing state to orchestration root before cycle exits.
+                                Current orchestration cycle: active run coverage, workspace signals, completed/failed run implications,
+                                integration-ready pull request evidence, staffing gap, planned AgentRunRequests or no-op decision.
+                                Promote durable staffing and integration state to orchestration root before cycle exits.
                                 """))
                             .to("tack:thought-enter?name=orchestration-cycle&maxTokens=300")
                             .setHeader(TackHeaders.PROMPT, constant("""
                                             Read the smallest mission-relevant slice needed to identify the next missing capability.
-                                            Prefer durable Plane and documentation evidence; use chat as context, not source of truth.
-                                            Check direct anchors and one relevant work item before deciding. Do not mutate or sweep systems.
+                                            Prefer durable project-management and documentation evidence; use chat as context, not source of truth.
+                                            Check direct anchors and one relevant work item before deciding. Capture any reviewed implementation
+                                            work whose pull request is ready for integration. Do not mutate or sweep systems.
                                             """))
                             .to("tack:act?id=director-workspace-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
+                            .setHeader(TackHeaders.PROMPT, constant("""
+                                            Temporarily own the final merge action until a dedicated architecture role exists.
+                                            Using the durable project evidence already gathered this cycle, inspect at most one pull request
+                                            associated with implementation work whose delivery review has already been accepted. Merge it only
+                                            when the pull request is still open, targets the expected repository/branch, is mergeable, and available
+                                            validation/review evidence does not contradict the accepted delivery state. Do not merge work that is
+                                            still in progress, review, blocked, unreviewed, or ambiguous. Do not substitute your own product or
+                                            implementation judgment for the completed delivery review.
+                                            """))
+                            .to("tack:act?id=director-integration-merge&toolProfile=" + SourceControlToolProfile.ID)
                             .setHeader(TackHeaders.PROMPT, constant("""
                                             Read recent project chat. Encourage useful teammate interaction when it helps people learn or unblock each other.
                                             Do not post generic status, duplicate durable state, or use reminders instead of staffing needed work.
