@@ -34,6 +34,7 @@ public class SourceControlToolProfile implements ToolProfileProvider {
                                  - in that sandbox, keep checkouts under /sandbox/repos and use ordinary git plus local filesystem/build/test commands for repository contents, edits, diff/status, validation, commits, and pushes
                                  - reuse an existing checkout when present; clone only when absent, and prefer the canonical repository URL already present in mission/project context over internal service URLs returned by metadata APIs
                                  - when sandbox_exec is available, do not mutate repository files through Gitea file-content APIs; Gitea remains appropriate for repository discovery/provisioning, branch/commit/PR metadata, review evidence, tags/releases, and remote verification
+                                 - CI/workflow execution is not enabled in this Gitea environment; do not create, inspect, wait for, or rely on Actions/workflows or CI checks. Validate changes directly in the sandbox and use that validation as delivery evidence
                                  - do not claim source changes, validation, commits, or pushes without direct sandbox or remote evidence
                                  - Gitea is for source-control metadata and implementation evidence
                                  - Plane owns planned work, assignments, status, blockers, dependencies, priorities, and delivery planning
