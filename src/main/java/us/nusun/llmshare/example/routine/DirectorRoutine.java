@@ -37,9 +37,9 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                 .name("Director")
                 .main("""
                         Full Director routine: self-directed mission orchestration. Watch capacity and mission evidence,
-                        use the available personas and routines, start only useful runs, encourage real collaboration,
-                        give active teammates time to move the work, and temporarily merge delivery-approved pull requests
-                        until a dedicated architecture role owns integration.
+                        use the available personas and routines, maintain useful forward capability coverage, encourage real
+                        collaboration, delegate substantial outcomes with room for role judgment, and temporarily merge
+                        delivery-approved pull requests until a dedicated architecture role owns integration.
                         """, "direct:example-software-team-director")
                 .defaultLane("high-pass")
                 .build();
@@ -50,7 +50,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:example-software-team-director")
                 .routeId("example-software-team-director")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Durable orchestration anchors: mission goal, roster by status, active/completed/failed coverage,
+                        Durable orchestration anchors: mission goal, active capability coverage, completed/failed run history,
                         verified project state, last provisioning decision, and last integration decision.
                         """))
                 .to("tack:thought-enter?name=orchestration-root&maxTokens=500")
@@ -115,9 +115,10 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                                 Capacity: ${exchangeProperty.directorActiveRunCount}/${exchangeProperty.agentRunCapacityMaximum} active, ${exchangeProperty.directorRemainingRunCapacity} remaining.
                                 Current accepted/scheduled/running runs: ${exchangeProperty.directorActiveMissionRoster}
                                 
-                                Note: Completed runs are not "idle" agents that will start again on their own. They have completed
-                                their routine with the instructions provided. If you want them to continue, you must
-                                start them with new instructions.
+                                Note: Only accepted, scheduled, or running AgentRuns provide active capability coverage.
+                                Completed and failed runs are run history only and provide zero active capability coverage.
+                                A completed run is not an idle, available, waiting, standing-by, or ready teammate. If you want
+                                that persona to continue, start a new AgentRun.
                                 
                                 Goals:
                                 Your end-goal is launch the full team running their main routine with high-level directives
@@ -125,10 +126,25 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                                 is in early stages, but you should work toward that outcome with each pass.
                                 
                                 Instructions:
-                                Use the current runtime state, mission evidence, persona catalog, and routine catalog to cover the next missing capability.
-                                Prefer full main routines, avoid duplicate active coverage, and use subroutines only for explicit narrow needs.
-                                Start no more runs than remaining capacity; return {"agentRuns":[]} when active coverage is enough for now.
-                                For each run, name the missing capability, durable evidence, and why this persona/routine is the right next consumer.
+                                Use the current runtime state, mission evidence, persona catalog, and routine catalog to maintain useful
+                                capability coverage for continued mission progress.
+
+                                Long, sustained AgentRuns on high-level responsibilities are generally more efficient than frequent short runs.
+                                They preserve useful working context, reuse established workspace knowledge, and avoid repeated startup,
+                                discovery, and orientation overhead. Prefer continuing meaningful responsibility within an AgentRun until a
+                                natural handoff, blocker, or locally complete outcome is reached.
+
+                                Prefer substantial delegation through full main routines. Use subroutines when the remaining responsibility
+                                is genuinely narrow. Avoid duplicate coverage and speculative work, but do not wait for one role to finish
+                                before starting another clearly useful current or downstream capability.
+
+                                Delegate responsibility and desired outcomes, not another role's internal decisions. Give each run enough
+                                verified context to orient itself, then let the selected persona and routine inspect durable state and decide
+                                how to perform its responsibility. Do not prescribe product decisions, delivery decomposition, assignment,
+                                or implementation choices that belong to the selected role unless they are explicit mission constraints.
+
+                                Start no more runs than remaining capacity; return {"agentRuns":[]} when useful active coverage is sufficient.
+                                Keep run objectives broad and concise.
                                 
                                 """))
                             .to("tack:create?id=planned-agent-runs&schemaId=agent-run-request-list&schema=classpath:schemas/example/software-team/agent-run-requests-schema.json")
