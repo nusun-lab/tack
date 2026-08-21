@@ -48,6 +48,12 @@ import java.util.concurrent.TimeUnit;
 @ApplicationScoped
 public class OpenShellGrpcClient {
     private static final String WORKSPACE = "default";
+    private static final List<String> DEVELOPER_PACKAGE_HOSTS = List.of(
+            "repo.maven.apache.org",
+            "maven.repository.redhat.com",
+            "registry.npmjs.org",
+            "pypi.org",
+            "files.pythonhosted.org");
 
     @GrpcClient("openshell")
     OpenShellGrpc.OpenShellBlockingStub stub;
@@ -101,7 +107,9 @@ public class OpenShellGrpcClient {
         if (created == null || created.getMetadata().getId().isBlank()) {
             throw new IllegalStateException("OpenShell returned a sandbox without an id for " + name);
         }
-        return awaitProvisionedReady(created);
+        Sandbox ready = awaitProvisionedReady(created);
+        authorizeDeveloperPackages(name);
+        return ready;
     }
 
     public Sandbox requireReady(String name) {
@@ -262,6 +270,38 @@ public class OpenShellGrpcClient {
         } catch (StatusRuntimeException e) {
             throw failure("attach provider " + providerName + " to sandbox " + sandboxName, e);
         }
+    }
+
+    private void authorizeDeveloperPackages(String sandboxName) {
+        NetworkPolicyRule.Builder rule = NetworkPolicyRule.newBuilder()
+                .setName("tack-developer-packages")
+                .addBinaries(NetworkBinary.newBuilder().setPath("/**").build());
+        for (String host : DEVELOPER_PACKAGE_HOSTS) {
+            rule.addEndpoints(NetworkEndpoint.newBuilder()
+                    .setHost(host)
+                    .setPort(443)
+                    .addPorts(443)
+                    .setProtocol("rest")
+                    .setEnforcement("enforce")
+                    .setAccess("full")
+                    .build());
+        }
+        int version;
+        try {
+            version = controlStub().updateConfig(UpdateConfigRequest.newBuilder()
+                    .setName(sandboxName)
+                    .setWorkspace(WORKSPACE)
+                    .addMergeOperations(PolicyMergeOperation.newBuilder()
+                            .setAddRule(AddNetworkRule.newBuilder()
+                                    .setRuleName("tack-developer-packages")
+                                    .setRule(rule.build())
+                                    .build())
+                            .build())
+                    .build()).getVersion();
+        } catch (StatusRuntimeException e) {
+            throw failure("authorize developer package egress for sandbox " + sandboxName, e);
+        }
+        awaitPolicyLoaded(sandboxName, version);
     }
 
     public void authorizeGit(String sandboxName, Endpoint endpoint) {
