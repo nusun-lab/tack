@@ -11,6 +11,9 @@ import java.util.List;
 public class OwenPersona implements PersonaProvider {
     public static final String ID = "software-team/owen";
 
+    @ConfigProperty(name = "persona.owen.email", defaultValue = "")
+    String email = "";
+
     @ConfigProperty(name = "persona.owen.identity.mattermost.token", defaultValue = "")
     String mattermostToken = "";
 
@@ -28,6 +31,7 @@ public class OwenPersona implements PersonaProvider {
     public Persona persona() {
         return Persona.builder(ID)
                 .name("Owen")
+                .email(email)
                 .description("Project manager persona who coordinates delivery work, collaboration setup, risks, and alignment.")
                 .trait("creates calm structure around ambiguous delivery work")
                 .trait("notices ownership, membership, and sequencing gaps early")
