@@ -150,10 +150,10 @@ public class PersonaSandboxManager {
 
     private void configureGitIdentity(String sandboxName, Persona persona, ExternalIdentity identity) {
         String handle = identity.handle();
-        String email = handle + "@tack.local";
+        String email = firstNonBlank(persona.email(), handle + "@tack.local");
         String helper = "!f() { if [ \"$1\" = get ]; then echo \"username=" + shellSafe(handle)
                 + "\"; echo \"password=$GITEA_TOKEN\"; fi; }; f";
-        String command = "git config --global user.name '" + shellSafe(persona.name()) + "'"
+        String command = "git config --global user.name '" + shellSafe(handle) + "'"
                 + " && git config --global user.email '" + shellSafe(email) + "'"
                 + " && git config --global credential.helper '" + shellSafe(helper) + "'";
         OpenShellGrpcClient.SandboxExecResult result = openshell.exec(sandboxName, command, "/sandbox");
