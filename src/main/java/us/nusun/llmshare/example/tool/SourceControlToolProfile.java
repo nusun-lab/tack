@@ -67,6 +67,7 @@ public class SourceControlToolProfile implements ToolProfileProvider {
                         "milestone_write",
                         "timetracking_read",
                         "timetracking_write",
+                        "actions_run_read",
                         "actions_config_write",
                         "actions_run_write",
                         "notification_read",
