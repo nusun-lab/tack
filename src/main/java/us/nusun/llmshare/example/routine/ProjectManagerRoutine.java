@@ -264,19 +264,26 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         """))
                 .to("tack:thought-enter?name=pm-active-delivery&maxTokens=250")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Inspect at most one highest-priority active implementation item, in this order: Review,
-                                Blocked, then In Progress. Use minimal direct project-management evidence and linked source-control evidence.
-                                For Review with REVIEW READY, verify the implementation against its referenced acceptance, changed files,
-                                validation evidence, and branch/commit/pull request. When implementation review is accepted but an open
-                                pull request still requires integration, leave the task in Review and add or refresh INTEGRATION READY
-                                with the pull request and reviewed evidence. Once integration is verified as merged, move the implementation
-                                task to Done. When all implementation tasks derived from the same PRODUCT READY product slice are Done,
-                                add or refresh PRODUCT ACCEPTANCE READY on that product slice with the canonical acceptance page and
-                                completed implementation evidence. For Blocked, identify the required owner and add PRODUCT INPUT REQUIRED
-                                only for a product decision; otherwise record the exact coordination action without inventing a solution.
-                                Do not create duplicate replacement tasks for active, review, or blocked work.
+                                Read at most one highest-priority active implementation item, in this order: Review, Blocked,
+                                then In Progress. Read its direct project-management evidence and only the linked source-control
+                                branch, commit, pull request, changed files, and validation evidence needed to evaluate the handoff.
+                                For Review, capture REVIEW READY or INTEGRATION READY and whether the referenced pull request is
+                                open or merged. For Blocked, capture the required owner and evidence. Do not mutate anything.
                                 """))
-                .to("tack:act?id=pm-active-delivery-check&toolProfile=" + ProjectManagementToolProfile.ID)
+                .to("tack:act?id=pm-active-delivery-evidence-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
+                .setHeader(TackHeaders.PROMPT, constant("""
+                                Update only the active implementation item and, when appropriate, its parent product slice using
+                                the evidence already read. For Review with REVIEW READY, verify implementation against its referenced
+                                acceptance, changed files, validation, and branch/commit/pull request. When implementation review is
+                                accepted but the pull request is still open, leave the task in Review and add or refresh INTEGRATION READY
+                                with the pull request and reviewed evidence. Once the pull request is verified merged, move the task to Done.
+                                When all implementation tasks derived from the same PRODUCT READY product slice are Done, add or refresh
+                                PRODUCT ACCEPTANCE READY on that product slice with its canonical acceptance page and completed evidence.
+                                For Blocked, add PRODUCT INPUT REQUIRED only for a product decision; otherwise record the exact required
+                                coordination action. Do not create duplicate replacement tasks or claim source evidence not present in
+                                the preceding read.
+                                """))
+                .to("tack:act?id=pm-active-delivery-update&toolProfile=" + ProjectManagementToolProfile.ID)
                 .to("tack:thought-exit?name=pm-active-delivery");
 
         from("direct:pm-team-onboarding")
