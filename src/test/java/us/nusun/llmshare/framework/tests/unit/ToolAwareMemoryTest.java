@@ -95,6 +95,8 @@ class ToolAwareMemoryTest {
         String runtime = runtimeText(projected);
 
         assertTrue(runtime.contains("DETERMINISTIC EXECUTION JOURNAL"));
+        assertTrue(runtime.contains("memory state: exhausted"));
+        assertTrue(runtime.contains("budget awareness level: 100%"));
         assertTrue(runtime.contains("search({\"q\":\"seed\"})"));
         assertTrue(runtime.contains("SUCCESS: []"));
         assertFalse(projected.contains(AiMessage.from(request("1", "search", "{\"q\":\"seed\"}"))));
@@ -103,7 +105,7 @@ class ToolAwareMemoryTest {
     }
 
     @Test
-    void compactedContextLogReportsProjectedPromptNotRawHistory() {
+    void compactedContextLogReportsExhaustedMemoryAndProjectedPromptSeparately() {
         List<String> warnings = new ArrayList<>();
         ToolAwareTokenWindowChatMemory memory = ToolAwareTokenWindowChatMemory.builder()
                 .id("agent-run-1")
@@ -123,10 +125,10 @@ class ToolAwareMemoryTest {
         int projectedTokens = new FixedTokenCountEstimator().estimateTokenCountInMessages(projected);
 
         assertEquals(1, warnings.size());
-        assertTrue(warnings.getFirst().contains("context=" + Math.round((double) projectedTokens / 45.0 * 100.0) + "%"));
-        assertTrue(warnings.getFirst().contains("tokens=" + projectedTokens + "/45"));
+        assertTrue(warnings.getFirst().contains("context=100% memory=exhausted"));
+        assertTrue(warnings.getFirst().contains("projected-context=" + Math.round((double) projectedTokens / 45.0 * 100.0) + "%"));
+        assertTrue(warnings.getFirst().contains("projected-tokens=" + projectedTokens + "/45"));
         assertTrue(warnings.getFirst().contains("compacted=true"));
-        assertFalse(warnings.getFirst().contains("history="));
     }
 
     @Test
