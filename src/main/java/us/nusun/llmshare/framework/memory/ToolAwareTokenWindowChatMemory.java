@@ -173,7 +173,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
 
         if (historyPressure < compactionThreshold) {
             if (awareness > 0) {
-                notifyRuntimeWarning(awareness, rawTokens, false);
+                notifyRuntimeWarning(rawTokens, false);
             }
             return new ArrayList<>(rawMessages);
         }
@@ -202,7 +202,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
             throw new IllegalStateException(
                     "Ephemeral tool-pass projection exceeded the safe token budget while only protected messages and deterministic journal remain");
         }
-        notifyRuntimeWarning(awareness, rawTokens, true);
+        notifyRuntimeWarning(projectedTokens, true);
         return projected;
     }
 
@@ -244,13 +244,14 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         return text.toString().strip();
     }
 
-    private void notifyRuntimeWarning(int awareness, int rawTokens, boolean compacted) {
-        StringBuilder summary = new StringBuilder("tool-pass warning sent: budget=")
-                .append(awareness).append("% tools=").append(toolCalls);
+    private void notifyRuntimeWarning(int projectedTokens, boolean compacted) {
+        StringBuilder summary = new StringBuilder("tool-pass context: context=")
+                .append(percent(ratio(projectedTokens, maxTokens()))).append("% tokens=")
+                .append(projectedTokens).append('/').append(maxTokens())
+                .append(" tools=").append(toolCalls);
         if (maxToolCalls > 0) {
             summary.append('/').append(maxToolCalls);
         }
-        summary.append(" history=").append(percent(ratio(rawTokens, maxTokens()))).append('%');
         int repeated = repeatedExecutions();
         if (repeated > 0) {
             summary.append(" repeats=").append(repeated).append(" reassessment=required");

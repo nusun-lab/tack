@@ -59,11 +59,11 @@ class ToolAwareMemoryTest {
     }
 
     @Test
-    void budgetAwarenessDoesNotCreateSyntheticUserTurnBeforeCompaction() {
+    void contextLogReportsProjectedTokensWithoutCreatingSyntheticUserTurn() {
         List<String> warnings = new ArrayList<>();
         ToolAwareTokenWindowChatMemory memory = ToolAwareTokenWindowChatMemory.builder()
                 .id("agent-run-1")
-                .maxTokens(1000, new FixedTokenCountEstimator())
+                .maxTokens(100, new FixedTokenCountEstimator())
                 .alwaysKeepSystemMessageFirst(true)
                 .maxToolCalls(4)
                 .compactionThreshold(0.50)
@@ -77,7 +77,8 @@ class ToolAwareMemoryTest {
         List<ChatMessage> projected = memory.messages();
 
         assertEquals(1, warnings.size());
-        assertTrue(warnings.getFirst().contains("budget=25%"));
+        assertTrue(warnings.getFirst().contains("tool-pass context: context=22% tokens=22/100"));
+        assertTrue(warnings.getFirst().contains("tools=1/4"));
         assertFalse(projected.stream().anyMatch(ToolAwareMemoryTest::isRuntimeUserMessage));
         assertInstanceOf(ToolExecutionResultMessage.class, projected.getLast());
     }
@@ -99,6 +100,33 @@ class ToolAwareMemoryTest {
         assertFalse(projected.contains(AiMessage.from(request("1", "search", "{\"q\":\"seed\"}"))));
         assertTrue(projected.contains(AiMessage.from(request("2", "create_repo", "{\"readme\":\"long\"}"))));
         assertInstanceOf(ToolExecutionResultMessage.class, projected.getLast());
+    }
+
+    @Test
+    void compactedContextLogReportsProjectedPromptNotRawHistory() {
+        List<String> warnings = new ArrayList<>();
+        ToolAwareTokenWindowChatMemory memory = ToolAwareTokenWindowChatMemory.builder()
+                .id("agent-run-1")
+                .maxTokens(45, new FixedTokenCountEstimator())
+                .alwaysKeepSystemMessageFirst(true)
+                .maxToolCalls(12)
+                .compactionThreshold(0.50)
+                .recentToolInteractions(1)
+                .runtimeWarningSink(warnings::add)
+                .build();
+        memory.add(SystemMessage.from("system"));
+        memory.add(UserMessage.from("tool pass"));
+        addExecution(memory, "1", "search", "{}", "[]", false);
+        addExecution(memory, "2", "lookup", "{}", "result", false);
+
+        List<ChatMessage> projected = memory.messages();
+        int projectedTokens = new FixedTokenCountEstimator().estimateTokenCountInMessages(projected);
+
+        assertEquals(1, warnings.size());
+        assertTrue(warnings.getFirst().contains("context=" + Math.round((double) projectedTokens / 45.0 * 100.0) + "%"));
+        assertTrue(warnings.getFirst().contains("tokens=" + projectedTokens + "/45"));
+        assertTrue(warnings.getFirst().contains("compacted=true"));
+        assertFalse(warnings.getFirst().contains("history="));
     }
 
     @Test
@@ -124,32 +152,6 @@ class ToolAwareMemoryTest {
         assertTrue(warnings.getFirst().contains("repeats=1 reassessment=required"));
         assertFalse(projected.stream().anyMatch(ToolAwareMemoryTest::isRuntimeUserMessage));
         assertInstanceOf(ToolExecutionResultMessage.class, projected.getLast());
-    }
-
-    @Test
-    void runtimeWarningSinkGetsBriefBudgetAndRepetitionSummary() {
-        List<String> warnings = new ArrayList<>();
-        ToolAwareTokenWindowChatMemory memory = ToolAwareTokenWindowChatMemory.builder()
-                .id("agent-run-1")
-                .maxTokens(1000, new FixedTokenCountEstimator())
-                .alwaysKeepSystemMessageFirst(true)
-                .maxToolCalls(8)
-                .compactionThreshold(0.90)
-                .recentToolInteractions(3)
-                .runtimeWarningSink(warnings::add)
-                .build();
-        memory.add(SystemMessage.from("system"));
-        memory.add(UserMessage.from("tool pass"));
-        addExecution(memory, "1", "create_repo", "{\"readme\":\"x\"}", "[Readme]: MaxSize", true);
-        addExecution(memory, "2", "create_repo", "{\"readme\":\"x\"}", "[Readme]: MaxSize", true);
-
-        memory.messages();
-
-        assertEquals(1, warnings.size());
-        assertTrue(warnings.getFirst().contains("tool-pass warning sent: budget=25%"));
-        assertTrue(warnings.getFirst().contains("tools=2/8"));
-        assertTrue(warnings.getFirst().contains("repeats=1 reassessment=required"));
-        assertFalse(warnings.getFirst().contains("[Readme]: MaxSize"));
     }
 
     @Test
