@@ -12,6 +12,7 @@ import us.nusun.llmshare.framework.llm.LlmDeadLetterFactory;
 import us.nusun.llmshare.framework.llm.LlmJobFactory;
 import us.nusun.llmshare.framework.llm.LlmRouteSupport;
 import us.nusun.llmshare.framework.inventory.InferenceLaneRegistry;
+import us.nusun.llmshare.framework.memory.ToolLoopGuardChatMemory;
 import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
 import us.nusun.llmshare.framework.model.LlmJobDeadLetter;
 import us.nusun.llmshare.framework.model.LlmJobEnvelope;
@@ -129,6 +130,11 @@ public class LlmRoute extends RouteBuilder {
                 .bean(jobFactory, "restoreFrameworkMetadata")
                 .doTry()
                     .to("direct:call-llm-agent")
+                    .to(publishReplyUri)
+                .doCatch(ToolLoopGuardChatMemory.RepeatedToolExecutionException.class)
+                    .log(LoggingLevel.WARN, "${exception.message}")
+                    .setBody(simple("${exception.message}"))
+                    .setBody(method(routeSupport, "succeededResult"))
                     .to(publishReplyUri)
                 .doCatch(Exception.class)
                     .setProperty("llmFailureMessage", simple("${exception.message}"))
