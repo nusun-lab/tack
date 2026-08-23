@@ -34,6 +34,7 @@ import org.slf4j.LoggerFactory;
 import us.nusun.llmshare.framework.inventory.InferenceLaneRegistry;
 import us.nusun.llmshare.framework.inventory.PersonaCatalog;
 import us.nusun.llmshare.framework.inventory.ToolProfileRegistry;
+import us.nusun.llmshare.framework.logging.LogTokens;
 import us.nusun.llmshare.framework.mcp.McpClientFactory;
 import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
 import us.nusun.llmshare.framework.memory.EphemeralToolPassChatMemoryProvider;
@@ -78,6 +79,7 @@ public class LlmAgentFactory {
             ToolProfileRegistry toolProfiles,
             PersonaCatalog personas,
             PersonaSandboxManager sandboxes,
+            LogTokens logTokens,
             TokenCountEstimator tokenCountEstimator,
             @ConfigProperty(name = "llm.model-default.openai.base-url") String defaultBaseUrl,
             @ConfigProperty(name = "llm.model-default.openai.api-key") String defaultApiKey,
@@ -110,7 +112,7 @@ public class LlmAgentFactory {
                 thinkingOffEnabled,
                 strictJsonSchema);
         return new DynamicAgentFactory(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator,
-                memoryMaxTokens, maxToolCallingRoundTrips, sandboxes);
+                memoryMaxTokens, maxToolCallingRoundTrips, sandboxes, logTokens);
     }
 
     private static Map<String, ChatModel> laneModels(
@@ -255,6 +257,7 @@ public class LlmAgentFactory {
         private final ToolProfileRegistry toolProfiles;
         private final PersonaCatalog personas;
         private final PersonaSandboxManager sandboxes;
+        private final LogTokens logTokens;
         private static final int DEFAULT_MAX_TOOL_CALLING_ROUND_TRIPS = 4;
 
         private final TokenCountEstimator tokenCountEstimator;
@@ -264,17 +267,24 @@ public class LlmAgentFactory {
 
         public DynamicAgentFactory(InferenceLaneRegistry lanes, Map<String, ChatModel> laneModels, McpClientFactory mcpClientFactory, ToolProfileRegistry toolProfiles, PersonaCatalog personas, TokenCountEstimator tokenCountEstimator, int memoryMaxTokens) {
             this(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator, memoryMaxTokens,
-                    DEFAULT_MAX_TOOL_CALLING_ROUND_TRIPS, null);
+                    DEFAULT_MAX_TOOL_CALLING_ROUND_TRIPS, null, null);
         }
 
         public DynamicAgentFactory(InferenceLaneRegistry lanes, Map<String, ChatModel> laneModels, McpClientFactory mcpClientFactory, ToolProfileRegistry toolProfiles, PersonaCatalog personas, TokenCountEstimator tokenCountEstimator, int memoryMaxTokens, int maxToolCallingRoundTrips) {
             this(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator, memoryMaxTokens,
-                    maxToolCallingRoundTrips, null);
+                    maxToolCallingRoundTrips, null, null);
         }
 
         public DynamicAgentFactory(InferenceLaneRegistry lanes, Map<String, ChatModel> laneModels, McpClientFactory mcpClientFactory,
                                    ToolProfileRegistry toolProfiles, PersonaCatalog personas, TokenCountEstimator tokenCountEstimator,
                                    int memoryMaxTokens, int maxToolCallingRoundTrips, PersonaSandboxManager sandboxes) {
+            this(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator, memoryMaxTokens,
+                    maxToolCallingRoundTrips, sandboxes, null);
+        }
+
+        public DynamicAgentFactory(InferenceLaneRegistry lanes, Map<String, ChatModel> laneModels, McpClientFactory mcpClientFactory,
+                                   ToolProfileRegistry toolProfiles, PersonaCatalog personas, TokenCountEstimator tokenCountEstimator,
+                                   int memoryMaxTokens, int maxToolCallingRoundTrips, PersonaSandboxManager sandboxes, LogTokens logTokens) {
             this.lanes = lanes;
             this.laneModels = laneModels;
             this.mcpClientFactory = mcpClientFactory;
@@ -284,6 +294,7 @@ public class LlmAgentFactory {
             this.memoryMaxTokens = memoryMaxTokens;
             this.maxToolCallingRoundTrips = maxToolCallingRoundTrips;
             this.sandboxes = sandboxes;
+            this.logTokens = logTokens;
         }
 
         @Override
@@ -300,7 +311,11 @@ public class LlmAgentFactory {
             LlmPassType passType = passType(exchange);
             AgentConfiguration configuration = new AgentConfiguration().withChatModel(model);
             if (passType == LlmPassType.TOOL) {
-                configuration.withChatMemoryProvider(new EphemeralToolPassChatMemoryProvider(memoryMaxTokens, tokenCountEstimator, true));
+                configuration.withChatMemoryProvider(new EphemeralToolPassChatMemoryProvider(
+                        memoryMaxTokens,
+                        tokenCountEstimator,
+                        true,
+                        warning -> logRuntimeWarning(exchange, warning)));
                 List<McpClient> clients = mcpClients(exchange);
                 if (!clients.isEmpty()) {
                     configuration.withMcpClients(clients);
@@ -361,6 +376,16 @@ public class LlmAgentFactory {
                 }
                 ResponseFormat responseFormat = getResponseFormat();
                 builder.chatRequestTransformer(request -> forceInitialToolChoice(request, responseFormat));
+            }
+        }
+
+        private void logRuntimeWarning(Exchange exchange, String warning) {
+            String label = firstNonBlank(exchange.getProperty("agentLabel", String.class), "LLM");
+            String color = exchange.getProperty("agentLogColor", String.class);
+            if (logTokens != null) {
+                logTokens.print(logTokens.wrap(label, color, "RUNTIME WARNING " + warning));
+            } else {
+                LOG.warn("[{}] RUNTIME WARNING {}", label, warning);
             }
         }
 
