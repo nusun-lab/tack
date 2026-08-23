@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 /**
@@ -35,6 +36,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
     private final int maxToolCalls;
     private final double compactionThreshold;
     private final int recentToolInteractions;
+    private final Consumer<String> runtimeWarningSink;
 
     private List<ChatMessage> messages = new ArrayList<>();
     private final List<JournalEntry> journal = new ArrayList<>();
@@ -49,6 +51,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         this.maxToolCalls = Math.max(0, builder.maxToolCalls);
         this.compactionThreshold = validThreshold(builder.compactionThreshold);
         this.recentToolInteractions = Math.max(0, builder.recentToolInteractions);
+        this.runtimeWarningSink = builder.runtimeWarningSink == null ? ignored -> { } : builder.runtimeWarningSink;
     }
 
     @Override
@@ -109,6 +112,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         private int maxToolCalls;
         private double compactionThreshold = 0.50;
         private int recentToolInteractions = 3;
+        private Consumer<String> runtimeWarningSink;
 
         public Builder id(Object id) {
             this.id = id;
@@ -147,6 +151,11 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
             return this;
         }
 
+        public Builder runtimeWarningSink(Consumer<String> runtimeWarningSink) {
+            this.runtimeWarningSink = runtimeWarningSink;
+            return this;
+        }
+
         public ToolAwareTokenWindowChatMemory build() {
             return new ToolAwareTokenWindowChatMemory(this);
         }
@@ -165,6 +174,9 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         if (historyPressure < compactionThreshold) {
             List<ChatMessage> projected = new ArrayList<>(rawMessages);
             appendRuntimeAwareness(projected, awareness, rawTokens, false, 0);
+            if (awareness > 0) {
+                notifyRuntimeWarning(awareness, rawTokens, false);
+            }
             return projected;
         }
 
@@ -183,14 +195,16 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         int projectedTokens = tokenCountEstimator.estimateTokenCountInMessages(projected);
         if (projectedTokens > maxTokens()) {
             projected = protectedPrefix(rawMessages);
+            awareness = Math.max(awareness, 90);
             projected.add(UserMessage.from(RUNTIME_MESSAGE_NAME,
-                    runtimeText(Math.max(awareness, 90), rawTokens, true, journal.size())));
+                    runtimeText(awareness, rawTokens, true, journal.size())));
             projectedTokens = tokenCountEstimator.estimateTokenCountInMessages(projected);
         }
         if (projectedTokens > maxTokens()) {
             throw new IllegalStateException(
                     "Ephemeral tool-pass projection exceeded the safe token budget while only protected messages and deterministic journal remain");
         }
+        notifyRuntimeWarning(awareness, rawTokens, true);
         return projected;
     }
 
@@ -240,6 +254,23 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         return text.toString().strip();
     }
 
+    private void notifyRuntimeWarning(int awareness, int rawTokens, boolean compacted) {
+        StringBuilder summary = new StringBuilder("tool-pass warning sent: budget=")
+                .append(awareness).append("% tools=").append(toolCalls);
+        if (maxToolCalls > 0) {
+            summary.append('/').append(maxToolCalls);
+        }
+        summary.append(" history=").append(percent(ratio(rawTokens, maxTokens()))).append('%');
+        int repeated = repeatedExecutions();
+        if (repeated > 0) {
+            summary.append(" repeats=").append(repeated).append(" reassessment=required");
+        }
+        if (compacted) {
+            summary.append(" compacted=true");
+        }
+        runtimeWarningSink.accept(summary.toString());
+    }
+
     private void appendJournal(StringBuilder text, int entries) {
         int limit = Math.min(entries, journal.size());
         int i = 0;
@@ -261,15 +292,20 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
     }
 
     private int appendRepeatedExecutions(StringBuilder text) {
+        int repeated = repeatedExecutions();
+        if (repeated > 0) {
+            text.append("- deterministic repetition signal: ").append(repeated)
+                    .append(" consecutive tool execution(s) repeated unchanged arguments and result\n");
+        }
+        return repeated;
+    }
+
+    private int repeatedExecutions() {
         int repeated = 0;
         for (int i = 1; i < journal.size(); i++) {
             if (journal.get(i - 1).sameExecution(journal.get(i))) {
                 repeated++;
             }
-        }
-        if (repeated > 0) {
-            text.append("- deterministic repetition signal: ").append(repeated)
-                    .append(" consecutive tool execution(s) repeated unchanged arguments and result\n");
         }
         return repeated;
     }
