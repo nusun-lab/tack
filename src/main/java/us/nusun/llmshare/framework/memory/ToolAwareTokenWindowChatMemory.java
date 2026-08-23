@@ -172,12 +172,10 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         int awareness = awarenessPercent(pressure);
 
         if (historyPressure < compactionThreshold) {
-            List<ChatMessage> projected = new ArrayList<>(rawMessages);
-            appendRuntimeAwareness(projected, awareness, rawTokens, false, 0);
             if (awareness > 0) {
                 notifyRuntimeWarning(awareness, rawTokens, false);
             }
-            return projected;
+            return new ArrayList<>(rawMessages);
         }
 
         int rawStart = recentToolHistoryStart(rawMessages, recentToolInteractions);
@@ -206,14 +204,6 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         }
         notifyRuntimeWarning(awareness, rawTokens, true);
         return projected;
-    }
-
-    private void appendRuntimeAwareness(List<ChatMessage> projected, int awareness, int rawTokens, boolean compacted, int journalEntries) {
-        if (awareness <= 0) {
-            return;
-        }
-        projected.add(UserMessage.from(RUNTIME_MESSAGE_NAME,
-                runtimeText(awareness, rawTokens, compacted, journalEntries)));
     }
 
     private String runtimeText(int awareness, int rawTokens, boolean compacted, int journalEntries) {

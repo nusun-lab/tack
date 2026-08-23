@@ -59,19 +59,27 @@ class ToolAwareMemoryTest {
     }
 
     @Test
-    void toolCallBudgetAwarenessAppearsAtQuarterBudgetWithoutCompaction() {
-        ToolAwareTokenWindowChatMemory memory = memory(1000, 4, 0.50, 3);
+    void budgetAwarenessDoesNotCreateSyntheticUserTurnBeforeCompaction() {
+        List<String> warnings = new ArrayList<>();
+        ToolAwareTokenWindowChatMemory memory = ToolAwareTokenWindowChatMemory.builder()
+                .id("agent-run-1")
+                .maxTokens(1000, new FixedTokenCountEstimator())
+                .alwaysKeepSystemMessageFirst(true)
+                .maxToolCalls(4)
+                .compactionThreshold(0.50)
+                .recentToolInteractions(3)
+                .runtimeWarningSink(warnings::add)
+                .build();
         memory.add(SystemMessage.from("system"));
         memory.add(UserMessage.from("tool pass"));
         addExecution(memory, "1", "search", "{\"q\":\"seed\"}", "[]", false);
 
         List<ChatMessage> projected = memory.messages();
-        String runtime = runtimeText(projected);
 
-        assertTrue(runtime.contains("tool calls: 1/4 (25%)"));
-        assertTrue(runtime.contains("budget awareness level: 25%"));
-        assertTrue(projected.stream().anyMatch(message -> message instanceof AiMessage));
-        assertTrue(projected.stream().anyMatch(message -> message instanceof ToolExecutionResultMessage));
+        assertEquals(1, warnings.size());
+        assertTrue(warnings.getFirst().contains("budget=25%"));
+        assertFalse(projected.stream().anyMatch(ToolAwareMemoryTest::isRuntimeUserMessage));
+        assertInstanceOf(ToolExecutionResultMessage.class, projected.getLast());
     }
 
     @Test
@@ -90,22 +98,32 @@ class ToolAwareMemoryTest {
         assertTrue(runtime.contains("SUCCESS: []"));
         assertFalse(projected.contains(AiMessage.from(request("1", "search", "{\"q\":\"seed\"}"))));
         assertTrue(projected.contains(AiMessage.from(request("2", "create_repo", "{\"readme\":\"long\"}"))));
+        assertInstanceOf(ToolExecutionResultMessage.class, projected.getLast());
     }
 
     @Test
-    void repeatedIdenticalExecutionsRequireReassessment() {
-        ToolAwareTokenWindowChatMemory memory = memory(1000, 8, 0.90, 3);
+    void repeatedIdenticalExecutionsAreReportedOutOfBandBeforeCompaction() {
+        List<String> warnings = new ArrayList<>();
+        ToolAwareTokenWindowChatMemory memory = ToolAwareTokenWindowChatMemory.builder()
+                .id("agent-run-1")
+                .maxTokens(1000, new FixedTokenCountEstimator())
+                .alwaysKeepSystemMessageFirst(true)
+                .maxToolCalls(8)
+                .compactionThreshold(0.90)
+                .recentToolInteractions(3)
+                .runtimeWarningSink(warnings::add)
+                .build();
         memory.add(SystemMessage.from("system"));
         memory.add(UserMessage.from("tool pass"));
         addExecution(memory, "1", "create_repo", "{\"readme\":\"x\"}", "[Readme]: MaxSize", true);
         addExecution(memory, "2", "create_repo", "{\"readme\":\"x\"}", "[Readme]: MaxSize", true);
 
-        String runtime = runtimeText(memory.messages());
+        List<ChatMessage> projected = memory.messages();
 
-        assertTrue(runtime.contains("deterministic repetition signal: 1"));
-        assertTrue(runtime.contains("REASSESSMENT REQUIRED"));
-        assertTrue(runtime.contains("choose materially different arguments"));
-        assertTrue(runtime.contains("do not repeat an unchanged tool execution"));
+        assertEquals(1, warnings.size());
+        assertTrue(warnings.getFirst().contains("repeats=1 reassessment=required"));
+        assertFalse(projected.stream().anyMatch(ToolAwareMemoryTest::isRuntimeUserMessage));
+        assertInstanceOf(ToolExecutionResultMessage.class, projected.getLast());
     }
 
     @Test
@@ -135,15 +153,29 @@ class ToolAwareMemoryTest {
     }
 
     @Test
-    void everyToolRequestConsumesToolBudget() {
-        ToolAwareTokenWindowChatMemory memory = memory(1000, 4, 0.90, 3);
+    void everyToolRequestConsumesToolBudgetWithoutChangingConversationShape() {
+        List<String> warnings = new ArrayList<>();
+        ToolAwareTokenWindowChatMemory memory = ToolAwareTokenWindowChatMemory.builder()
+                .id("agent-run-1")
+                .maxTokens(1000, new FixedTokenCountEstimator())
+                .alwaysKeepSystemMessageFirst(true)
+                .maxToolCalls(4)
+                .compactionThreshold(0.90)
+                .recentToolInteractions(3)
+                .runtimeWarningSink(warnings::add)
+                .build();
         memory.add(SystemMessage.from("system"));
         memory.add(UserMessage.from("tool pass"));
         memory.add(AiMessage.from(List.of(
                 request("1", "search", "{}"),
                 request("2", "lookup", "{}"))));
 
-        assertTrue(runtimeText(memory.messages()).contains("tool calls: 2/4 (50%)"));
+        List<ChatMessage> projected = memory.messages();
+
+        assertEquals(1, warnings.size());
+        assertTrue(warnings.getFirst().contains("tools=2/4"));
+        assertFalse(projected.stream().anyMatch(ToolAwareMemoryTest::isRuntimeUserMessage));
+        assertInstanceOf(AiMessage.class, projected.getLast());
     }
 
     @Test
@@ -184,6 +216,10 @@ class ToolAwareMemoryTest {
 
     private static ToolExecutionRequest request(String id, String name, String arguments) {
         return ToolExecutionRequest.builder().id(id).name(name).arguments(arguments).build();
+    }
+
+    private static boolean isRuntimeUserMessage(ChatMessage message) {
+        return message instanceof UserMessage userMessage && "tack-runtime".equals(userMessage.name());
     }
 
     private static String runtimeText(List<ChatMessage> messages) {
