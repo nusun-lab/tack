@@ -130,7 +130,7 @@ class ToolAwareMemoryTest {
     }
 
     @Test
-    void repeatedIdenticalExecutionsAreReportedOutOfBandBeforeCompaction() {
+    void repeatedIdenticalExecutionFeedsReassessmentBackAsToolResult() {
         List<String> warnings = new ArrayList<>();
         ToolAwareTokenWindowChatMemory memory = ToolAwareTokenWindowChatMemory.builder()
                 .id("agent-run-1")
@@ -143,15 +143,44 @@ class ToolAwareMemoryTest {
                 .build();
         memory.add(SystemMessage.from("system"));
         memory.add(UserMessage.from("tool pass"));
-        addExecution(memory, "1", "create_repo", "{\"readme\":\"x\"}", "[Readme]: MaxSize", true);
-        addExecution(memory, "2", "create_repo", "{\"readme\":\"x\"}", "[Readme]: MaxSize", true);
+        addExecution(memory, "1", "search", "{\"q\":\"butterfly-garden\"}", "[]", false);
+        addExecution(memory, "2", "search", "{\"q\":\"butterfly-garden\"}", "[]", false);
 
         List<ChatMessage> projected = memory.messages();
+        ToolExecutionResultMessage result = assertInstanceOf(ToolExecutionResultMessage.class, projected.getLast());
 
         assertEquals(1, warnings.size());
         assertTrue(warnings.getFirst().contains("repeats=1 reassessment=required"));
+        assertTrue(result.text().contains("Do not retry it unchanged"));
         assertFalse(projected.stream().anyMatch(ToolAwareMemoryTest::isRuntimeUserMessage));
-        assertInstanceOf(ToolExecutionResultMessage.class, projected.getLast());
+    }
+
+    @Test
+    void differentExecutionClearsTrailingRepetitionFeedback() {
+        List<String> warnings = new ArrayList<>();
+        ToolAwareTokenWindowChatMemory memory = ToolAwareTokenWindowChatMemory.builder()
+                .id("agent-run-1")
+                .maxTokens(1000, new FixedTokenCountEstimator())
+                .alwaysKeepSystemMessageFirst(true)
+                .maxToolCalls(8)
+                .compactionThreshold(0.90)
+                .recentToolInteractions(3)
+                .runtimeWarningSink(warnings::add)
+                .build();
+        memory.add(SystemMessage.from("system"));
+        memory.add(UserMessage.from("tool pass"));
+        addExecution(memory, "1", "search", "{\"q\":\"butterfly-garden\"}", "[]", false);
+        addExecution(memory, "2", "search", "{\"q\":\"butterfly-garden\"}", "[]", false);
+        memory.messages();
+        warnings.clear();
+        addExecution(memory, "3", "search", "{\"q\":\"butterfly\"}", "[]", false);
+
+        List<ChatMessage> projected = memory.messages();
+        ToolExecutionResultMessage result = assertInstanceOf(ToolExecutionResultMessage.class, projected.getLast());
+
+        assertEquals(1, warnings.size());
+        assertFalse(warnings.getFirst().contains("reassessment=required"));
+        assertFalse(result.text().contains("Do not retry it unchanged"));
     }
 
     @Test
