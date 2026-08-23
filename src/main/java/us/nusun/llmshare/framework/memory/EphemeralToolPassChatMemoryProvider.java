@@ -82,7 +82,7 @@ public final class EphemeralToolPassChatMemoryProvider implements ChatMemoryProv
 
     @Override
     public ChatMemory get(Object memoryId) {
-        return ToolAwareTokenWindowChatMemory.builder()
+        ChatMemory memory = ToolAwareTokenWindowChatMemory.builder()
                 .id(memoryId)
                 .maxTokens(maxTokens, tokenCountEstimator)
                 .alwaysKeepSystemMessageFirst(alwaysKeepSystemMessageFirst)
@@ -91,6 +91,7 @@ public final class EphemeralToolPassChatMemoryProvider implements ChatMemoryProv
                 .recentToolInteractions(recentToolInteractions)
                 .runtimeWarningSink(runtimeWarningSink)
                 .build();
+        return new ToolLoopGuardChatMemory(memory);
     }
 
     private static int configuredInt(String name, int fallback) {
