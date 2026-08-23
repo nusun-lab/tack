@@ -16,11 +16,6 @@ import java.util.Map;
 @ApplicationScoped
 @Named("routineCatalog")
 public class RoutineCatalog {
-    private static final String MAIN_COMPOSITION_GUIDANCE = """
-            The main routine composes the listed subroutines into the complete workflow and is the preferred entry point
-            for self-directed execution. Subroutines are focused slices for explicitly narrow work.
-            """.strip();
-
     private final Map<String, RoutineDefinition> routines;
     private final CatalogJson json;
 
@@ -46,7 +41,6 @@ public class RoutineCatalog {
         return routine;
     }
 
-
     public SubroutineDefinition requireSubroutine(String routineId, String subroutineId) {
         return getRequired(routineId).requireSubroutine(subroutineId);
     }
@@ -67,26 +61,14 @@ public class RoutineCatalog {
     }
 
     public String startableJson() {
-        List<RoutineDefinition> advertised = all().stream()
-                .map(this::advertise)
-                .toList();
-        return json(advertised);
-    }
-
-    private RoutineDefinition advertise(RoutineDefinition routine) {
-        if (routine.subroutines().isEmpty()) {
-            return routine;
-        }
-        return new RoutineDefinition(
-                routine.id(),
-                routine.name(),
-                routine.description() + "\n\n" + MAIN_COMPOSITION_GUIDANCE,
-                routine.routeUri(),
-                routine.defaultLane(),
-                routine.subroutines());
+        return json(all().stream()
+                .map(routine -> new AdvertisedRoutine(routine.id(), routine.name(), routine.description()))
+                .toList());
     }
 
     private String json(Object value) {
         return json.write(value, "routine");
     }
+
+    private record AdvertisedRoutine(String id, String name, String description) { }
 }

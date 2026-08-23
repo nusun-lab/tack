@@ -121,9 +121,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                                 that persona to continue, start a new AgentRun.
                                 
                                 Goals:
-                                Your end-goal is launch the full team running their main routine with high-level directives
-                                so that you can be as low-touch as possible. That may not be appropriate when the project
-                                is in early stages, but you should work toward that outcome with each pass.
+                                Build useful active team coverage with high-level directives so roles can operate with minimal orchestration.
                                 
                                 Instructions:
                                 Use the current runtime state, mission evidence, persona catalog, and routine catalog to maintain useful
@@ -134,9 +132,8 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                                 discovery, and orientation overhead. Prefer continuing meaningful responsibility within an AgentRun until a
                                 natural handoff, blocker, or locally complete outcome is reached.
 
-                                Prefer substantial delegation through full main routines. Use subroutines when the remaining responsibility
-                                is genuinely narrow. Avoid duplicate coverage and speculative work, but do not wait for one role to finish
-                                before starting another clearly useful current or downstream capability.
+                                Delegate substantial responsibilities using the available routines. Avoid duplicate coverage and speculative work,
+                                but do not wait for one role to finish before starting another clearly useful current or downstream capability.
 
                                 Delegate responsibility and desired outcomes, not another role's internal decisions. Give each run enough
                                 verified context to orient itself, then let the selected persona and routine inspect durable state and decide
