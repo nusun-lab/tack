@@ -13,6 +13,7 @@ import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
 import us.nusun.llmshare.framework.memory.EphemeralToolPassChatMemoryProvider;
 import us.nusun.llmshare.framework.memory.ToolAwareTokenWindowChatMemory;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -92,7 +93,7 @@ class ToolAwareMemoryTest {
     }
 
     @Test
-    void repeatedIdenticalExecutionsAreSurfacedDeterministically() {
+    void repeatedIdenticalExecutionsRequireReassessment() {
         ToolAwareTokenWindowChatMemory memory = memory(1000, 8, 0.90, 3);
         memory.add(SystemMessage.from("system"));
         memory.add(UserMessage.from("tool pass"));
@@ -102,6 +103,35 @@ class ToolAwareMemoryTest {
         String runtime = runtimeText(memory.messages());
 
         assertTrue(runtime.contains("deterministic repetition signal: 1"));
+        assertTrue(runtime.contains("REASSESSMENT REQUIRED"));
+        assertTrue(runtime.contains("choose materially different arguments"));
+        assertTrue(runtime.contains("do not repeat an unchanged tool execution"));
+    }
+
+    @Test
+    void runtimeWarningSinkGetsBriefBudgetAndRepetitionSummary() {
+        List<String> warnings = new ArrayList<>();
+        ToolAwareTokenWindowChatMemory memory = ToolAwareTokenWindowChatMemory.builder()
+                .id("agent-run-1")
+                .maxTokens(1000, new FixedTokenCountEstimator())
+                .alwaysKeepSystemMessageFirst(true)
+                .maxToolCalls(8)
+                .compactionThreshold(0.90)
+                .recentToolInteractions(3)
+                .runtimeWarningSink(warnings::add)
+                .build();
+        memory.add(SystemMessage.from("system"));
+        memory.add(UserMessage.from("tool pass"));
+        addExecution(memory, "1", "create_repo", "{\"readme\":\"x\"}", "[Readme]: MaxSize", true);
+        addExecution(memory, "2", "create_repo", "{\"readme\":\"x\"}", "[Readme]: MaxSize", true);
+
+        memory.messages();
+
+        assertEquals(1, warnings.size());
+        assertTrue(warnings.getFirst().contains("tool-pass warning sent: budget=25%"));
+        assertTrue(warnings.getFirst().contains("tools=2/8"));
+        assertTrue(warnings.getFirst().contains("repeats=1 reassessment=required"));
+        assertFalse(warnings.getFirst().contains("[Readme]: MaxSize"));
     }
 
     @Test
