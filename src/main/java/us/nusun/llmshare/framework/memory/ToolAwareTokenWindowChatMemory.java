@@ -222,7 +222,12 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
                 appendJournal(text, journalEntries);
             }
         }
-        appendRepeatedExecutions(text);
+        int repeatedExecutions = appendRepeatedExecutions(text);
+        if (repeatedExecutions > 0) {
+            text.append("- REASSESSMENT REQUIRED: the current tool approach is repeating without making progress\n");
+            text.append("- before another tool call, use the result already in history and choose materially different arguments, another tool, or conclude this path is blocked\n");
+            text.append("- do not repeat an unchanged tool execution unless new evidence makes a retry meaningful\n");
+        }
         if (awareness >= 90) {
             text.append("- runtime budget is critical; conclude the tool pass unless one essential tool call remains\n");
         } else if (awareness >= 75) {
@@ -255,7 +260,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         }
     }
 
-    private void appendRepeatedExecutions(StringBuilder text) {
+    private int appendRepeatedExecutions(StringBuilder text) {
         int repeated = 0;
         for (int i = 1; i < journal.size(); i++) {
             if (journal.get(i - 1).sameExecution(journal.get(i))) {
@@ -266,6 +271,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
             text.append("- deterministic repetition signal: ").append(repeated)
                     .append(" consecutive tool execution(s) repeated unchanged arguments and result\n");
         }
+        return repeated;
     }
 
     private void record(ChatMessage message) {
