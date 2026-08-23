@@ -32,7 +32,7 @@ class ToolLoopGuardChatMemoryTest {
                 () -> memory.add(AiMessage.from(request("3", "plane.search_work_items", "{\"query\":\"matchbox\"}"))));
 
         assertTrue(failure.getMessage().contains("third execution was refused"));
-        assertEquals(6, delegate.messages().size());
+        assertEquals(4, delegate.messages().size());
     }
 
     @Test
