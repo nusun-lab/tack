@@ -27,11 +27,12 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         return RoutineDefinition.builder(ID)
                 .name("Project Manager")
                 .main("""
-                        Complete Project Manager cycle, including the focused bootstrap, coordination, and task-planning
-                        behaviors when they become applicable. Establish and maintain the delivery workspace, consume PRODUCT READY
-                        product slices, decompose them into the small assigned implementation tasks needed to deliver the outcome,
-                        sequence dependencies, coordinate blockers and review, and bridge completed implementation back to product
-                        acceptance. New product work originates with product ownership; executable work is derived and managed here.
+                        Own delivery management for the mission from project startup through product acceptance.
+                        Establish and maintain the shared delivery workspace, then continuously turn PRODUCT READY
+                        product slices into small assigned DELIVERY READY implementation tasks, sequence dependencies,
+                        coordinate active delivery, blockers, review, and integration readiness, and return completed
+                        slices for product acceptance. This routine is appropriate from the beginning of a mission
+                        even when the delivery workspace or actionable implementation work does not yet exist.
                         """, "direct:example-software-team-project-manager")
                 .subroutine(
                         "bootstrap",
