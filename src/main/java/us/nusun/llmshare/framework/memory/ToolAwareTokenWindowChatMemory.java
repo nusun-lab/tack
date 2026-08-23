@@ -27,6 +27,7 @@ import java.util.function.Function;
  */
 public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
     private static final String RUNTIME_MESSAGE_NAME = "tack-runtime";
+    private static final String REPETITION_FEEDBACK = "[TACK RUNTIME: This unchanged tool execution returned the same result as the previous execution. Do not retry it unchanged. Use the result already in history and choose materially different arguments, another tool, or conclude this path is blocked.]";
     private static final int JOURNAL_VALUE_PREVIEW_CHARS = 320;
 
     private final Object id;
@@ -172,10 +173,12 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         int awareness = awarenessPercent(pressure);
 
         if (historyPressure < compactionThreshold) {
+            List<ChatMessage> projected = withRepetitionFeedback(rawMessages);
+            int projectedTokens = tokenCountEstimator.estimateTokenCountInMessages(projected);
             if (awareness > 0) {
-                notifyRuntimeWarning(rawTokens, false);
+                notifyRuntimeWarning(projectedTokens, false);
             }
-            return new ArrayList<>(rawMessages);
+            return projected;
         }
 
         int rawStart = recentToolHistoryStart(rawMessages, recentToolInteractions);
@@ -189,6 +192,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
                 projected.add(message);
             }
         }
+        projected = withRepetitionFeedback(projected);
 
         int projectedTokens = tokenCountEstimator.estimateTokenCountInMessages(projected);
         if (projectedTokens > maxTokens()) {
@@ -203,6 +207,30 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
                     "Ephemeral tool-pass projection exceeded the safe token budget while only protected messages and deterministic journal remain");
         }
         notifyRuntimeWarning(projectedTokens, true);
+        return projected;
+    }
+
+    private List<ChatMessage> withRepetitionFeedback(List<ChatMessage> source) {
+        int repeated = repeatedExecutions();
+        if (repeated <= 0 || journal.isEmpty()) {
+            return new ArrayList<>(source);
+        }
+        JournalEntry latest = journal.getLast();
+        List<ChatMessage> projected = new ArrayList<>(source);
+        for (int i = projected.size() - 1; i >= 0; i--) {
+            ChatMessage message = projected.get(i);
+            if (message instanceof ToolExecutionResultMessage result
+                    && same(latest.requestId, result.id())
+                    && result.hasSingleText()) {
+                projected.set(i, ToolExecutionResultMessage.builder()
+                        .id(result.id())
+                        .toolName(result.toolName())
+                        .text(result.text() + "\n\n" + REPETITION_FEEDBACK)
+                        .isError(result.isError())
+                        .build());
+                break;
+            }
+        }
         return projected;
     }
 
@@ -292,11 +320,19 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
     }
 
     private int repeatedExecutions() {
+        if (journal.size() < 2) {
+            return 0;
+        }
+        JournalEntry latest = journal.getLast();
+        if (latest.resultText == null) {
+            return 0;
+        }
         int repeated = 0;
-        for (int i = 1; i < journal.size(); i++) {
-            if (journal.get(i - 1).sameExecution(journal.get(i))) {
-                repeated++;
+        for (int i = journal.size() - 2; i >= 0; i--) {
+            if (!latest.sameExecution(journal.get(i))) {
+                break;
             }
+            repeated++;
         }
         return repeated;
     }
