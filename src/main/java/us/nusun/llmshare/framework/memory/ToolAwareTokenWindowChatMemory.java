@@ -42,6 +42,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
     private List<ChatMessage> messages = new ArrayList<>();
     private final List<JournalEntry> journal = new ArrayList<>();
     private int toolCalls;
+    private boolean compacted;
 
     private ToolAwareTokenWindowChatMemory(Builder builder) {
         this.id = ensureNotNull(builder.id, "id");
@@ -86,6 +87,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         this.messages = new ArrayList<>();
         this.journal.clear();
         this.toolCalls = 0;
+        this.compacted = false;
         iter.forEach(this::add);
     }
 
@@ -99,6 +101,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         this.messages = new ArrayList<>();
         this.journal.clear();
         this.toolCalls = 0;
+        this.compacted = false;
     }
 
     public static Builder builder() {
@@ -172,7 +175,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         double pressure = Math.max(historyPressure, toolPressure);
         int awareness = awarenessPercent(pressure);
 
-        if (historyPressure < compactionThreshold) {
+        if (!compacted && historyPressure < compactionThreshold) {
             List<ChatMessage> projected = withRepetitionFeedback(rawMessages);
             int projectedTokens = tokenCountEstimator.estimateTokenCountInMessages(projected);
             if (awareness > 0) {
@@ -181,6 +184,8 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
             return projected;
         }
 
+        compacted = true;
+        awareness = 100;
         int rawStart = recentToolHistoryStart(rawMessages, recentToolInteractions);
         int journalCutoff = Math.max(0, journal.size() - recentToolInteractions);
         List<ChatMessage> projected = protectedPrefix(rawMessages);
@@ -197,7 +202,6 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         int projectedTokens = tokenCountEstimator.estimateTokenCountInMessages(projected);
         if (projectedTokens > maxTokens()) {
             projected = protectedPrefix(rawMessages);
-            awareness = Math.max(awareness, 90);
             projected.add(UserMessage.from(RUNTIME_MESSAGE_NAME,
                     runtimeText(awareness, rawTokens, true, journal.size())));
             projectedTokens = tokenCountEstimator.estimateTokenCountInMessages(projected);
@@ -248,6 +252,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
             text.append("- budget awareness level: ").append(awareness).append("%\n");
         }
         if (compacted) {
+            text.append("- memory state: exhausted; compaction has begun and remains active for this tool pass\n");
             text.append("- older raw tool interactions below are represented by a deterministic execution journal; recent interactions remain verbatim\n");
             if (journalEntries > 0) {
                 text.append("\nDETERMINISTIC EXECUTION JOURNAL\n");
@@ -273,10 +278,16 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
     }
 
     private void notifyRuntimeWarning(int projectedTokens, boolean compacted) {
-        StringBuilder summary = new StringBuilder("tool-pass context: context=")
-                .append(percent(ratio(projectedTokens, maxTokens()))).append("% tokens=")
-                .append(projectedTokens).append('/').append(maxTokens())
-                .append(" tools=").append(toolCalls);
+        StringBuilder summary = new StringBuilder("tool-pass context: context=");
+        if (compacted) {
+            summary.append("100% memory=exhausted projected-context=")
+                    .append(percent(ratio(projectedTokens, maxTokens()))).append("% projected-tokens=")
+                    .append(projectedTokens).append('/').append(maxTokens());
+        } else {
+            summary.append(percent(ratio(projectedTokens, maxTokens()))).append("% tokens=")
+                    .append(projectedTokens).append('/').append(maxTokens());
+        }
+        summary.append(" tools=").append(toolCalls);
         if (maxToolCalls > 0) {
             summary.append('/').append(maxToolCalls);
         }
