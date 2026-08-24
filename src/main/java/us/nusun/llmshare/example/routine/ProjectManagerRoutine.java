@@ -76,6 +76,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         .delay(120000)
                     .end()
                 .end()
+                .end()
                 .to("direct:pm-project-manager-root-exit");
 
         from("direct:example-software-team-project-manager-bootstrap")
