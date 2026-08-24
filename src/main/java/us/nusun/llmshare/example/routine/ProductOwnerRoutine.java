@@ -85,6 +85,14 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                             .to("direct:po-missing-basics-closeout")
                     .end()
                     .setHeader(TackHeaders.PROMPT, constant("""
+                                    Review current mission completion status once using the smallest authoritative read available.
+                                    Check only current-mission project-management status, current-work/documentation status, and direct
+                                    completion or handoff evidence needed to determine whether any user-facing outcome, acceptance,
+                                    product decision, backlog item, or product follow-up remains. Do not mutate anything or perform new
+                                    product work. Prefer current verified external evidence over older remembered status when they conflict.
+                                    """))
+                    .to("tack:act?id=po-mission-status-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
+                    .setHeader(TackHeaders.PROMPT, constant("""
                                     Is the entire mission complete from the product-ownership perspective?
                                     Return true only when durable current-mission evidence shows every required user-facing outcome
                                     has been accepted against its intended acceptance criteria and no product decision, acceptance,

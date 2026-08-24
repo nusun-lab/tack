@@ -16,7 +16,7 @@ import java.util.Map;
  * Hard stop for pathological tool loops and tool-pass budget exhaustion.
  */
 public final class ToolLoopGuardChatMemory implements ChatMemory {
-    private static final int MAX_CYCLE_LENGTH = 3;
+    private static final int MAX_CYCLE_LENGTH = 5;
 
     private final ChatMemory delegate;
     private final int maxToolCalls;

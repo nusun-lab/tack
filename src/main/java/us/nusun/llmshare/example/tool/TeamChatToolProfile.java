@@ -54,6 +54,7 @@ public class TeamChatToolProfile implements ToolProfileProvider {
                         "list_bookmarks",
                         "update_bookmark",
                         "update_bookmark_sort_order")
+                .defaultArgument(MattermostMcpServer.ID, "get_channel_messages", "per_page", 20)
                 .maxResultTokens(maxResultTokens)
                 .build());
     }

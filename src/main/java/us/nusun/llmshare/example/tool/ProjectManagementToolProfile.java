@@ -75,9 +75,38 @@ public class ProjectManagementToolProfile implements ToolProfileProvider {
                         "retrieve_workspace_page",
                         "retrieve_project_page",
                         "create_workspace_page",
-                        "create_project_page")
+                        "create_project_page",
+                        "list_pages",
+                        "create_page",
+                        "retrieve_page",
+                        "attach_page_to_work_item",
+                        "detach_page_from_work_item",
+                        "list_work_item_pages",
+                        "get_project_estimate",
+                        "list_project_estimate_points",
+                        "create_project_estimate",
+                        "update_project_estimate",
+                        "delete_project_estimate",
+                        "link_estimate_to_project",
+                        "create_project_estimate_points",
+                        "update_project_estimate_point",
+                        "delete_project_estimate_point",
+                        "manage_work_item_type_properties",
+                        "list_work_item_property_options",
+                        "retrieve_work_item_property_option",
+                        "create_work_item_property_option",
+                        "update_work_item_property_option",
+                        "delete_work_item_property_option",
+                        "get_work_item_property_value",
+                        "set_work_item_property_value",
+                        "delete_work_item_property_value",
+                        "import_work_item_types_to_project",
+                        "resolve_work_item_type",
+                        "count_work_items",
+                        "get_features")
                 .defaultArgument(PlaneMcpServer.ID, "list_projects", "fields", "id,name,identifier")
                 .defaultArgument(PlaneMcpServer.ID, "list_work_items", "fields", "id,name,sequence_id,state,priority,assignees")
+                .defaultArgument(PlaneMcpServer.ID, "list_work_items", "per_page", 50)
                 .maxResultTokens(maxResultTokens)
                 .build());
     }

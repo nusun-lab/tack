@@ -57,6 +57,27 @@ class ToolLoopGuardChatMemoryTest {
     }
 
     @Test
+    void repeatedFiveStepCycleIsRejectedBeforeEleventhExecution() {
+        RecordingMemory delegate = new RecordingMemory();
+        ToolLoopGuardChatMemory memory = new ToolLoopGuardChatMemory(delegate);
+
+        for (int repetition = 0; repetition < 2; repetition++) {
+            for (int step = 0; step < 5; step++) {
+                String id = String.valueOf(repetition * 5 + step + 1);
+                addExecution(memory, id, "tool-" + step, "{\"step\":" + step + "}", "result-" + step);
+            }
+        }
+
+        ToolLoopGuardChatMemory.RepeatedToolExecutionException failure = assertThrows(
+                ToolLoopGuardChatMemory.RepeatedToolExecutionException.class,
+                () -> memory.add(AiMessage.from(request("11", "tool-0", "{\"step\":0}"))));
+
+        assertTrue(failure.getMessage().contains("TACK_RUNTIME_REPEATED_CYCLE"));
+        assertTrue(failure.getMessage().contains("5-step tool cycle"));
+        assertEquals(20, delegate.messages().size());
+    }
+
+    @Test
     void changedRequestBreaksTheLoopAndMayExecute() {
         ToolLoopGuardChatMemory memory = new ToolLoopGuardChatMemory(new RecordingMemory());
         addExecution(memory, "1", "search", "{\"q\":\"matchbox\"}", "[]");

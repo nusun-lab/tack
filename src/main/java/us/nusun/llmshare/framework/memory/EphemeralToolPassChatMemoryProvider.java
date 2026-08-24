@@ -9,7 +9,6 @@ import java.util.function.Consumer;
 
 public final class EphemeralToolPassChatMemoryProvider implements ChatMemoryProvider {
     private static final String MAX_TOOL_ROUND_TRIPS_PROPERTY = "llm.model-default.max-tool-calling-round-trips";
-    private static final String MAX_TOOL_CALLS_PROPERTY = "llm.model-default.tool-memory.max-tool-calls";
     private static final String COMPACTION_THRESHOLD_PROPERTY = "llm.model-default.tool-memory.compaction-threshold";
     private static final String RECENT_TOOL_INTERACTIONS_PROPERTY = "llm.model-default.tool-memory.recent-tool-interactions";
 
@@ -29,8 +28,7 @@ public final class EphemeralToolPassChatMemoryProvider implements ChatMemoryProv
                 maxTokens,
                 tokenCountEstimator,
                 alwaysKeepSystemMessageFirst,
-                configuredInt(MAX_TOOL_CALLS_PROPERTY,
-                        configuredInt(MAX_TOOL_ROUND_TRIPS_PROPERTY, 50)),
+                configuredInt(MAX_TOOL_ROUND_TRIPS_PROPERTY, 50),
                 configuredDouble(COMPACTION_THRESHOLD_PROPERTY, 0.50),
                 configuredInt(RECENT_TOOL_INTERACTIONS_PROPERTY, 3),
                 null);
@@ -45,8 +43,7 @@ public final class EphemeralToolPassChatMemoryProvider implements ChatMemoryProv
                 maxTokens,
                 tokenCountEstimator,
                 alwaysKeepSystemMessageFirst,
-                configuredInt(MAX_TOOL_CALLS_PROPERTY,
-                        configuredInt(MAX_TOOL_ROUND_TRIPS_PROPERTY, 50)),
+                configuredInt(MAX_TOOL_ROUND_TRIPS_PROPERTY, 50),
                 configuredDouble(COMPACTION_THRESHOLD_PROPERTY, 0.50),
                 configuredInt(RECENT_TOOL_INTERACTIONS_PROPERTY, 3),
                 runtimeWarningSink);

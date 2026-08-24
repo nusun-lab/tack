@@ -64,6 +64,15 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .end()
                     .to("direct:pm-coordination-loop")
                     .setHeader(TackHeaders.PROMPT, constant("""
+                                    Review current mission completion status once using the smallest authoritative read available.
+                                    Check only current-mission project-management status, current-work/documentation status, and direct
+                                    completion or handoff evidence needed to determine whether any PRODUCT READY work, implementation
+                                    work, review/integration coordination, blocker, assignment, or delivery follow-up remains. Do not
+                                    mutate anything or perform new delivery work. Prefer current verified external evidence over older
+                                    remembered status when they conflict.
+                                    """))
+                    .to("tack:act?id=pm-mission-status-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
+                    .setHeader(TackHeaders.PROMPT, constant("""
                                     Is the entire mission complete from the project-management perspective?
                                     Return true only when durable current-mission evidence shows all required delivery work is complete,
                                     accepted or otherwise fully closed, with no remaining PRODUCT READY work, implementation work,

@@ -125,6 +125,14 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                     .setBody(simple("${body.agentRuns}"))
                     .to("direct:start-agent-runs")
                     .setHeader(TackHeaders.PROMPT, constant("""
+                                    Review current mission completion status once using the smallest authoritative read available.
+                                    Check only current-mission project-management status, current-work/documentation status, and direct
+                                    completion, blocker, or handoff evidence needed to determine whether any required mission outcome remains.
+                                    Do not mutate anything or perform another role's work. Prefer current verified external evidence over
+                                    older remembered status when they conflict.
+                                    """))
+                    .to("tack:act?id=director-mission-status-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
+                    .setHeader(TackHeaders.PROMPT, constant("""
                                     Is the top-level mission 100% complete?
                                     Return true only when durable current-mission external evidence shows every required outcome is fully satisfied.
                                     Active coverage does not itself prove completion. Return false if any required outcome is incomplete, unclear,

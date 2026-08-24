@@ -376,7 +376,7 @@ public class LlmAgentFactory {
                 builder.toolArgumentsErrorHandler(ToolErrorFeedback::arguments);
                 builder.toolExecutionErrorHandler(ToolErrorFeedback::execution);
                 if (maxToolCallingRoundTrips > 0) {
-                    builder.maxToolCallingRoundTrips(maxToolCallingRoundTrips);
+                    builder.maxToolCallingRoundTrips(maxToolCallingRoundTrips + 1);
                 }
                 ResponseFormat responseFormat = getResponseFormat();
                 builder.chatRequestTransformer(request -> forceInitialToolChoice(request, responseFormat));

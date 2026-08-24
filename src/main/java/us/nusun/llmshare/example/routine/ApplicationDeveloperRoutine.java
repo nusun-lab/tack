@@ -59,6 +59,14 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             .to("direct:dev-missing-basics-closeout")
                     .end()
                     .setHeader(TackHeaders.PROMPT, constant("""
+                                    Review current mission completion status once using the smallest authoritative read available.
+                                    Check only current-mission project-management status, current-work/documentation status, and direct
+                                    completion or handoff evidence needed to determine whether any implementation outcome remains.
+                                    Do not mutate anything or begin new development work. Prefer current verified external evidence over
+                                    older remembered status when they conflict.
+                                    """))
+                    .to("tack:act?id=dev-mission-status-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
+                    .setHeader(TackHeaders.PROMPT, constant("""
                                     Is the entire mission complete from the application-development perspective?
                                     Return true only when durable current-mission evidence shows all required implementation outcomes
                                     are complete and no further development, validation, review response, or implementation follow-up remains.
