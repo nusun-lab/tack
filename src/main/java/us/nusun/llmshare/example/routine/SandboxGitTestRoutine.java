@@ -2,7 +2,7 @@ package us.nusun.llmshare.example.routine;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import org.apache.camel.builder.RouteBuilder;
-import us.nusun.llmshare.example.tool.SourceControlToolProfile;
+import us.nusun.llmshare.example.tool.SourceControlWriteToolProfile;
 import us.nusun.llmshare.framework.inventory.RoutineProvider;
 import us.nusun.llmshare.framework.model.RoutineDefinition;
 import us.nusun.llmshare.framework.tack.TackHeaders;
@@ -42,11 +42,11 @@ public class SandboxGitTestRoutine extends RouteBuilder implements RoutineProvid
                         git diff and status, commit the change, and push it with ordinary git.
 
                         The sandbox is persistent for this persona and mission and its git identity/credential is prepared
-                        by Tack. Do not use Gitea file-content APIs to mutate source code. Source-control tools may be used
+                        by the runtime. Do not use Gitea file-content APIs to mutate source code. Source-control tools may be used
                         only for repository metadata if needed. Do not claim success unless git status/diff and the push
                         result provide evidence.
                         """))
-                .to("tack:act?id=sandbox-git-test&toolProfile=" + SourceControlToolProfile.ID)
+                .to("tack:act?id=sandbox-git-test&toolProfile=" + SourceControlWriteToolProfile.ID)
                 .to("tack:thought-exit?name=sandbox-git-test");
     }
 }

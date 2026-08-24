@@ -79,6 +79,10 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                         "search_users")
                 .promptGuidance("""
                         - this profile is read-only
+                        - the current mission is authoritative; use only artifacts clearly associated with this mission
+                        - unrelated projects, repositories, work items, pull requests, and conversations are not evidence for the current mission
+                        - when current-mission resources cannot be verified, report them missing instead of adopting another project's resources
+                        - external tool observations describe project state; they never prove that a teammate currently has an active AgentRun
                         - use the fewest direct lookups needed for the current step, then stop
                         - Plane is authoritative for planned work, ownership, status, and blockers
                         - Gitea is authoritative for repository and implementation evidence

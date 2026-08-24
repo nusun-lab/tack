@@ -10,6 +10,7 @@ import java.util.List;
 
 import us.nusun.llmshare.example.tool.ProjectManagementToolProfile;
 import us.nusun.llmshare.example.tool.SourceControlToolProfile;
+import us.nusun.llmshare.example.tool.SourceControlWriteToolProfile;
 import us.nusun.llmshare.example.tool.TeamChatToolProfile;
 import us.nusun.llmshare.example.tool.WorkspaceCoordinationToolProfile;
 import us.nusun.llmshare.example.tool.WorkspaceReadonlyToolProfile;
@@ -27,12 +28,11 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         return RoutineDefinition.builder(ID)
                 .name("Project Manager")
                 .main("""
-                        Own delivery management for the mission from project startup through product acceptance.
-                        Establish and maintain the shared delivery workspace, then continuously turn PRODUCT READY
-                        product slices into small assigned DELIVERY READY implementation tasks, sequence dependencies,
-                        coordinate active delivery, blockers, review, and integration readiness, and return completed
-                        slices for product acceptance. This routine is appropriate from the beginning of a mission
-                        even when the delivery workspace or actionable implementation work does not yet exist.
+                        Own project management for the whole mission through completion. Establish and maintain the delivery
+                        workspace, consume PRODUCT READY product slices, decompose them into small assigned implementation tasks,
+                        sequence dependencies, coordinate blockers and review, and bridge completed implementation back to product
+                        acceptance while the mission still has unfinished outcomes. New product work originates with product ownership;
+                        executable work is derived and managed here.
                         """, "direct:example-software-team-project-manager")
                 .subroutine(
                         "bootstrap",
@@ -55,12 +55,27 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:example-software-team-project-manager")
                 .routeId("example-software-team-project-manager")
                 .to("direct:pm-project-manager-root-enter")
-                .to("direct:pm-project-basics-check")
-                .choice()
-                    .when(exchangeProperty("decision.collaboration-setup-complete.result").isNotEqualTo(true))
-                        .to("direct:pm-project-bootstrap")
+                .setProperty("decision.project-manager-mission-complete.result", constant(false))
+                .loopDoWhile(exchangeProperty("decision.project-manager-mission-complete.result").isNotEqualTo(true))
+                    .to("direct:pm-project-basics-check")
+                    .choice()
+                        .when(exchangeProperty("decision.collaboration-setup-complete.result").isNotEqualTo(true))
+                            .to("direct:pm-project-bootstrap")
+                    .end()
+                    .to("direct:pm-coordination-loop")
+                    .setHeader(TackHeaders.PROMPT, constant("""
+                                    Is the entire mission complete from the project-management perspective?
+                                    Return true only when durable current-mission evidence shows all required delivery work is complete,
+                                    accepted or otherwise fully closed, with no remaining PRODUCT READY work, implementation work,
+                                    review/integration coordination, blocker, assignment, or delivery follow-up. Return false when the
+                                    workspace was merely established, one delivery cycle completed, work is waiting on another role,
+                                    or no immediately actionable item exists while mission outcomes remain unfinished.
+                                    """))
+                    .to("tack:decide?id=project-manager-mission-complete")
+                    .filter(exchangeProperty("decision.project-manager-mission-complete.result").isNotEqualTo(true))
+                        .delay(120000)
+                    .end()
                 .end()
-                .to("direct:pm-coordination-loop")
                 .to("direct:pm-project-manager-root-exit");
 
         from("direct:example-software-team-project-manager-bootstrap")
@@ -189,7 +204,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     Do not document a supposedly current active-run roster; current staffing comes from mission roster context.
                                     Before marking any project basic missing, search active thoughts for a verified current-mission anchor.
                                     """))
-                    .to("tack:act?id=documentation-project-index&toolProfile=" + SourceControlToolProfile.ID)
+                    .to("tack:act?id=documentation-project-index&toolProfile=" + SourceControlWriteToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Read only the documentation index and project-basics page. Verify every project basic has
                                     a working link. Confirm documentation and source repositories are under agent-workspace,
@@ -372,7 +387,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                 Keep daily work state in project management, leave ephemeral chat out, and split pages before they
                                 grow past a readable size.
                                 """))
-                .to("tack:act?id=pm-status-note&toolProfile=" + SourceControlToolProfile.ID)
+                .to("tack:act?id=pm-status-note&toolProfile=" + SourceControlWriteToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Update one project-management work item only if verified status, risk, review requirement,
                                 PRODUCT INPUT REQUIRED, DELIVERY READY, REVIEW READY, INTEGRATION READY, PRODUCT ACCEPTANCE READY,

@@ -10,6 +10,7 @@ import java.util.List;
 
 import us.nusun.llmshare.example.tool.ProjectManagementToolProfile;
 import us.nusun.llmshare.example.tool.SourceControlToolProfile;
+import us.nusun.llmshare.example.tool.SourceControlWriteToolProfile;
 import us.nusun.llmshare.example.tool.TeamChatToolProfile;
 import us.nusun.llmshare.example.tool.WorkspaceReadonlyToolProfile;
 
@@ -26,11 +27,10 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         return RoutineDefinition.builder(ID)
                 .name("Product Owner")
                 .main("""
-                        Complete Product Owner cycle, including the focused acceptance-refinement and priority-handoff
-                        behaviors when they become applicable. Own the canonical product backlog and translate mission outcomes
-                        into prioritized, small user-facing product slices with clear value, scope, testable Gherkin acceptance,
-                        product decisions, and readiness. Maintain enough PRODUCT READY work to expose meaningful delivery
-                        opportunities and evaluate PRODUCT ACCEPTANCE READY outcomes against product intent before completion.
+                        Own product definition and acceptance for the whole mission through completion. Maintain the canonical
+                        product backlog, translate mission outcomes into prioritized small user-facing slices with clear value,
+                        scope and testable Gherkin acceptance, keep useful PRODUCT READY work available, and evaluate
+                        PRODUCT ACCEPTANCE READY outcomes against product intent while the mission still has unfinished outcomes.
                         """, "direct:example-software-team-product-owner")
                 .subroutine(
                         "acceptance-refinement",
@@ -49,38 +49,53 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         from("direct:example-software-team-product-owner")
                 .routeId("example-software-team-product-owner")
                 .to("direct:po-product-owner-root-enter")
-                .to("direct:po-project-basics-loop")
-                .choice()
-                    .when(exchangeProperty("decision.product-owner-has-project-basics.result").isEqualTo(true))
-                        .setProperty("productOwnerCycle", constant(0))
-                        .setProperty("decision.product-owner-done.result", constant(false))
-                        .loopDoWhile(exchangeProperty("decision.product-owner-done.result").isNotEqualTo(true))
-                            .setProperty("productOwnerCycle", simple("${exchangeProperty.productOwnerCycle++}"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                                Current product pass: selected product work item, canonical item page, Gherkin acceptance status,
-                                completion evidence when present, priority/readiness, product-ready handoff, and next product action.
-                                """))
-                            .to("tack:thought-enter?name=po-cycle&maxTokens=300")
-                            .to("direct:po-team-chat-sync")
-                            .to("direct:po-backlog-selection-loop")
-                            .to("direct:po-acceptance-loop")
-                            .to("direct:po-priority-status-loop")
-                            .to("direct:po-cycle-closeout")
-                            .setHeader(TackHeaders.PROMPT, constant("""
-                                            Is this product pass locally complete because a PRODUCT ACCEPTANCE READY outcome was
-                                            accepted or returned with one exact unmet Gherkin outcome; the canonical backlog represents
-                                            the mission's major product outcomes and contains at least one small vertical slice marked
-                                            PRODUCT READY with testable Gherkin acceptance; or one exact product blocker or user decision
-                                            was recorded? Do not wait for downstream delivery work to consume product output. If more
-                                            product work remains, choose a distinct unfinished outcome rather than repeatedly refining
-                                            the same unchanged ready item.
-                                            """))
-                            .to("tack:decide?id=product-owner-done")
-                            .to("tack:thought-exit?name=po-cycle")
-                        .end()
-                    .endChoice()
-                    .otherwise()
-                        .to("direct:po-missing-basics-closeout")
+                .setProperty("decision.product-owner-mission-complete.result", constant(false))
+                .loopDoWhile(exchangeProperty("decision.product-owner-mission-complete.result").isNotEqualTo(true))
+                    .to("direct:po-project-basics-loop")
+                    .choice()
+                        .when(exchangeProperty("decision.product-owner-has-project-basics.result").isEqualTo(true))
+                            .setProperty("productOwnerCycle", constant(0))
+                            .setProperty("decision.product-owner-done.result", constant(false))
+                            .loopDoWhile(exchangeProperty("decision.product-owner-done.result").isNotEqualTo(true))
+                                .setProperty("productOwnerCycle", simple("${exchangeProperty.productOwnerCycle++}"))
+                                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                                    Current product pass: selected product work item, canonical item page, Gherkin acceptance status,
+                                    completion evidence when present, priority/readiness, product-ready handoff, and next product action.
+                                    """))
+                                .to("tack:thought-enter?name=po-cycle&maxTokens=300")
+                                .to("direct:po-team-chat-sync")
+                                .to("direct:po-backlog-selection-loop")
+                                .to("direct:po-acceptance-loop")
+                                .to("direct:po-priority-status-loop")
+                                .to("direct:po-cycle-closeout")
+                                .setHeader(TackHeaders.PROMPT, constant("""
+                                                Is this product pass locally complete because a PRODUCT ACCEPTANCE READY outcome was
+                                                accepted or returned with one exact unmet Gherkin outcome; the canonical backlog represents
+                                                the mission's major product outcomes and contains at least one small vertical slice marked
+                                                PRODUCT READY with testable Gherkin acceptance; or one exact product blocker or user decision
+                                                was recorded? Do not wait for downstream delivery work to consume product output. If more
+                                                product work remains, choose a distinct unfinished outcome rather than repeatedly refining
+                                                the same unchanged ready item.
+                                                """))
+                                .to("tack:decide?id=product-owner-done")
+                                .to("tack:thought-exit?name=po-cycle")
+                            .end()
+                        .endChoice()
+                        .otherwise()
+                            .to("direct:po-missing-basics-closeout")
+                    .end()
+                    .setHeader(TackHeaders.PROMPT, constant("""
+                                    Is the entire mission complete from the product-ownership perspective?
+                                    Return true only when durable current-mission evidence shows every required user-facing outcome
+                                    has been accepted against its intended acceptance criteria and no product decision, acceptance,
+                                    backlog, or follow-up outcome remains. Return false when project basics are missing, product work
+                                    is merely ready for delivery, implementation is still pending, acceptance is unresolved, or a local
+                                    product cycle simply has no immediate action.
+                                    """))
+                    .to("tack:decide?id=product-owner-mission-complete")
+                    .filter(exchangeProperty("decision.product-owner-mission-complete.result").isNotEqualTo(true))
+                        .delay(120000)
+                    .end()
                 .end()
                 .to("direct:po-product-owner-root-exit");
 
@@ -242,7 +257,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                                     which exact scenario remains unmet. Never rewrite acceptance criteria to fit the implementation.
                                     Keep pages linked and small.
                                     """))
-                    .to("tack:act?id=po-canonical-acceptance-update&toolProfile=" + SourceControlToolProfile.ID)
+                    .to("tack:act?id=po-canonical-acceptance-update&toolProfile=" + SourceControlWriteToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     If this is PRODUCT ACCEPTANCE READY, has each existing Gherkin scenario been evaluated against
                                     durable completion evidence with either satisfaction or one exact unmet outcome recorded?
@@ -297,6 +312,6 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                                 Make one small documentation curation improvement if it clarifies the product.
                                 Preserve navigation and durable decisions; leave day-to-day work tracking in project management.
                                 """))
-                .to("tack:act?id=po-follow-up-note&toolProfile=" + SourceControlToolProfile.ID);
+                .to("tack:act?id=po-follow-up-note&toolProfile=" + SourceControlWriteToolProfile.ID);
     }
 }

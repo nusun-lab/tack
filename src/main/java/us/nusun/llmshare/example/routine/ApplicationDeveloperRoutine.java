@@ -10,6 +10,7 @@ import java.util.List;
 
 import us.nusun.llmshare.example.tool.ProjectManagementToolProfile;
 import us.nusun.llmshare.example.tool.SourceControlToolProfile;
+import us.nusun.llmshare.example.tool.SourceControlWriteToolProfile;
 import us.nusun.llmshare.example.tool.TeamChatToolProfile;
 import us.nusun.llmshare.example.tool.WorkspaceReadonlyToolProfile;
 
@@ -26,10 +27,10 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         return RoutineDefinition.builder(ID)
                 .name("Application Developer")
                 .main("""
-                        Complete Application Developer cycle, including the focused work-selection and implementation
-                        behaviors when they become applicable. Consume assigned DELIVERY READY implementation work, continue
-                        active assigned work, make coherent source changes, validate them, produce reviewable pull-request or
-                        equivalent change evidence, report blockers, and return REVIEW READY delivery evidence for coordination.
+                        Own application development for the whole mission through completion. Continuously consume assigned
+                        DELIVERY READY implementation work, continue active assigned work, make coherent source changes,
+                        validate them, produce reviewable pull-request or equivalent change evidence, report blockers,
+                        and return REVIEW READY delivery evidence while the mission still has unfinished outcomes.
                         """, "direct:example-software-team-application-developer")
                 .subroutine(
                         "work-selection",
@@ -48,12 +49,26 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         from("direct:example-software-team-application-developer")
                 .routeId("example-software-team-application-developer")
                 .to("direct:dev-application-developer-root-enter")
-                .to("direct:dev-project-basics-loop")
-                .choice()
-                    .when(exchangeProperty("decision.developer-has-project-basics.result").isEqualTo(true))
-                        .to("direct:dev-delivery-loop")
-                    .otherwise()
-                        .to("direct:dev-missing-basics-closeout")
+                .setProperty("decision.application-developer-mission-complete.result", constant(false))
+                .loopDoWhile(exchangeProperty("decision.application-developer-mission-complete.result").isNotEqualTo(true))
+                    .to("direct:dev-project-basics-loop")
+                    .choice()
+                        .when(exchangeProperty("decision.developer-has-project-basics.result").isEqualTo(true))
+                            .to("direct:dev-delivery-loop")
+                        .otherwise()
+                            .to("direct:dev-missing-basics-closeout")
+                    .end()
+                    .setHeader(TackHeaders.PROMPT, constant("""
+                                    Is the entire mission complete from the application-development perspective?
+                                    Return true only when durable current-mission evidence shows all required implementation outcomes
+                                    are complete and no further development, validation, review response, or implementation follow-up remains.
+                                    Return false when there is unfinished work, missing project basics, blocked work, pending delivery,
+                                    or simply no eligible assigned task right now. Local cycle completion is not mission completion.
+                                    """))
+                    .to("tack:decide?id=application-developer-mission-complete")
+                    .filter(exchangeProperty("decision.application-developer-mission-complete.result").isNotEqualTo(true))
+                        .delay(120000)
+                    .end()
                 .end()
                 .to("direct:dev-application-developer-root-exit");
 
@@ -163,7 +178,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             .to("direct:dev-no-work-closeout")
                     .end()
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Is this implementation pass complete because one assigned task reached Review with REVIEW READY,
+                                    Is this implementation pass locally complete because one assigned task reached Review with REVIEW READY,
                                     reached Done, became durably BLOCKED with evidence, or because no eligible assigned work exists?
                                     Record the absence of eligible assigned work clearly enough for coordination or orchestration to respond.
                                     Do not finish merely because one small code step landed while a clear next implementation patch remains.
@@ -253,13 +268,14 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .to("tack:act?id=dev-source-context-plan&toolProfile=" + SourceControlToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Apply exactly one coherent source-control patch for the selected task.
-                                    Prefer production code plus a matching test/update. Use or create a task branch and commit if supported.
+                                    Prefer production code plus a matching test/update. Use or create a task branch, validate the
+                                    changed repository when practical, commit the coherent change, and push it for review.
                                     """))
-                    .to("tack:act?id=dev-delivery-step&toolProfile=" + SourceControlToolProfile.ID)
+                    .to("tack:act?id=dev-delivery-step&toolProfile=" + SourceControlWriteToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Check available validation evidence for the patch: tests, CI/status, changed-file review,
-                                    or why validation cannot run with the current tools. Do not claim tests passed unless the
-                                    tool result shows it.
+                                    Check available validation evidence for the patch: tests already run during the repository-writing
+                                    step, remote status, changed-file review, or why validation could not run. Do not claim tests passed
+                                    unless the available evidence shows it.
                                     """))
                     .to("tack:act?id=dev-validation-step&toolProfile=" + SourceControlToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
@@ -296,7 +312,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                 Link source evidence from the item page or engineering index; do not create activity logs.
                                 Keep files compact and split or summarize when they grow too large.
                                 """))
-                .to("tack:act?id=dev-documentation-closeout&toolProfile=" + SourceControlToolProfile.ID)
+                .to("tack:act?id=dev-documentation-closeout&toolProfile=" + SourceControlWriteToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Read recent project chat and reply when delivery evidence, a blocker, or a teammate's question
                                 needs interaction. Link the project-management item and review/blocker evidence when useful;
