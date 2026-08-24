@@ -90,14 +90,13 @@ class ToolLoopGuardChatMemoryTest {
     }
 
     @Test
-    void toolPressureFeedbackIsAttachedToLatestToolResult() {
+    void toolPressureDoesNotModifyToolResults() {
         ToolLoopGuardChatMemory memory = new ToolLoopGuardChatMemory(new RecordingMemory(), 4);
         addExecution(memory, "1", "search", "{\"q\":\"one\"}", "[]");
 
         ToolExecutionResultMessage result = (ToolExecutionResultMessage) memory.messages().getLast();
 
-        assertTrue(result.text().contains("tool calls 1/4"));
-        assertTrue(result.text().contains("budget awareness 25%"));
+        assertEquals("[]", result.text());
     }
 
     private static void addExecution(ChatMemory memory, String id, String name, String arguments, String result) {
