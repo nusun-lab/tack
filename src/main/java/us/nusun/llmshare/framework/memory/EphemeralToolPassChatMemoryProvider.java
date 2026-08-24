@@ -91,7 +91,7 @@ public final class EphemeralToolPassChatMemoryProvider implements ChatMemoryProv
                 .recentToolInteractions(recentToolInteractions)
                 .runtimeWarningSink(runtimeWarningSink)
                 .build();
-        return new ToolLoopGuardChatMemory(memory);
+        return new ToolLoopGuardChatMemory(memory, maxToolCalls);
     }
 
     private static int configuredInt(String name, int fallback) {
