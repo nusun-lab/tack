@@ -136,6 +136,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         .delay(120000)
                     .end()
                 .end()
+                .end()
                 .to("tack:thought-exit?name=orchestration-root");
     }
 }
