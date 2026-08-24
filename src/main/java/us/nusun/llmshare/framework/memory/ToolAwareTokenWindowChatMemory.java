@@ -26,8 +26,7 @@ import java.util.function.Function;
  * smaller deterministic view to the model as context pressure rises.
  */
 public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
-    private static final String RUNTIME_MESSAGE_NAME = "tack-runtime";
-    private static final String REPETITION_FEEDBACK = "[TACK RUNTIME: This unchanged tool execution returned the same result as the previous execution. Do not retry it unchanged. Use the result already in history and choose materially different arguments, another tool, or conclude this path is blocked.]";
+    private static final String JOURNAL_MESSAGE_NAME = "execution-journal";
     private static final int JOURNAL_VALUE_PREVIEW_CHARS = 320;
 
     private final Object id;
@@ -172,11 +171,11 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         int rawTokens = tokenCountEstimator.estimateTokenCountInMessages(rawMessages);
         double historyPressure = ratio(rawTokens, maxTokens());
         double toolPressure = maxToolCalls > 0 ? ratio(toolCalls, maxToolCalls) : 0.0;
-        double pressure = Math.max(historyPressure, toolPressure);
-        int awareness = awarenessPercent(pressure);
+        int awareness = awarenessPercent(Math.max(historyPressure, toolPressure));
 
         if (!compacted && historyPressure < compactionThreshold) {
-            List<ChatMessage> projected = withRepetitionFeedback(rawMessages);
+            List<ChatMessage> projected = new ArrayList<>(rawMessages);
+            applyBudgetWarning(projected, awareness);
             int projectedTokens = tokenCountEstimator.estimateTokenCountInMessages(projected);
             if (awareness > 0) {
                 notifyRuntimeWarning(projectedTokens, false);
@@ -185,25 +184,23 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         }
 
         compacted = true;
-        awareness = 100;
         int rawStart = recentToolHistoryStart(rawMessages, recentToolInteractions);
         int journalCutoff = Math.max(0, journal.size() - recentToolInteractions);
         List<ChatMessage> projected = protectedPrefix(rawMessages);
-        projected.add(UserMessage.from(RUNTIME_MESSAGE_NAME,
-                runtimeText(awareness, rawTokens, true, journalCutoff)));
+        applyBudgetWarning(projected, awareness);
+        addJournal(projected, journalCutoff);
         for (int i = rawStart; i < rawMessages.size(); i++) {
             ChatMessage message = rawMessages.get(i);
             if (!alreadyProtected(projected, message)) {
                 projected.add(message);
             }
         }
-        projected = withRepetitionFeedback(projected);
 
         int projectedTokens = tokenCountEstimator.estimateTokenCountInMessages(projected);
         if (projectedTokens > maxTokens()) {
             projected = protectedPrefix(rawMessages);
-            projected.add(UserMessage.from(RUNTIME_MESSAGE_NAME,
-                    runtimeText(awareness, rawTokens, true, journal.size())));
+            applyBudgetWarning(projected, awareness);
+            addJournal(projected, journal.size());
             projectedTokens = tokenCountEstimator.estimateTokenCountInMessages(projected);
         }
         if (projectedTokens > maxTokens()) {
@@ -214,67 +211,41 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         return projected;
     }
 
-    private List<ChatMessage> withRepetitionFeedback(List<ChatMessage> source) {
-        int repeated = repeatedExecutions();
-        if (repeated <= 0 || journal.isEmpty()) {
-            return new ArrayList<>(source);
+    private void applyBudgetWarning(List<ChatMessage> projected, int awareness) {
+        if (awareness <= 0) {
+            return;
         }
-        JournalEntry latest = journal.getLast();
-        List<ChatMessage> projected = new ArrayList<>(source);
-        for (int i = projected.size() - 1; i >= 0; i--) {
+        String warning = budgetWarning(awareness);
+        for (int i = 0; i < projected.size(); i++) {
             ChatMessage message = projected.get(i);
-            if (message instanceof ToolExecutionResultMessage result
-                    && same(latest.requestId, result.id())
-                    && result.hasSingleText()) {
-                projected.set(i, ToolExecutionResultMessage.builder()
-                        .id(result.id())
-                        .toolName(result.toolName())
-                        .text(result.text() + "\n\n" + REPETITION_FEEDBACK)
-                        .isError(result.isError())
-                        .build());
-                break;
+            if (message instanceof SystemMessage systemMessage) {
+                projected.set(i, SystemMessage.from(systemMessage.text() + "\n\n" + warning));
+                return;
             }
         }
-        return projected;
+        projected.add(0, SystemMessage.from(warning));
     }
 
-    private String runtimeText(int awareness, int rawTokens, boolean compacted, int journalEntries) {
-        StringBuilder text = new StringBuilder("TACK TOOL-PASS RUNTIME\n");
-        if (maxToolCalls > 0) {
-            text.append("- tool calls: ").append(toolCalls).append('/').append(maxToolCalls)
-                    .append(" (").append(percent(ratio(toolCalls, maxToolCalls))).append("%)\n");
-        } else {
-            text.append("- tool calls: ").append(toolCalls).append("\n");
-        }
-        text.append("- replayable raw message history: ~").append(rawTokens).append('/').append(maxTokens())
-                .append(" tokens (").append(percent(ratio(rawTokens, maxTokens()))).append("%)\n");
-        if (awareness > 0) {
-            text.append("- budget awareness level: ").append(awareness).append("%\n");
-        }
-        if (compacted) {
-            text.append("- memory state: exhausted; compaction has begun and remains active for this tool pass\n");
-            text.append("- older raw tool interactions below are represented by a deterministic execution journal; recent interactions remain verbatim\n");
-            if (journalEntries > 0) {
-                text.append("\nDETERMINISTIC EXECUTION JOURNAL\n");
-                appendJournal(text, journalEntries);
-            }
-        }
-        int repeatedExecutions = appendRepeatedExecutions(text);
-        if (repeatedExecutions > 0) {
-            text.append("- REASSESSMENT REQUIRED: the current tool approach is repeating without making progress\n");
-            text.append("- before another tool call, use the result already in history and choose materially different arguments, another tool, or conclude this path is blocked\n");
-            text.append("- do not repeat an unchanged tool execution unless new evidence makes a retry meaningful\n");
-        }
+    private static String budgetWarning(int awareness) {
         if (awareness >= 90) {
-            text.append("- runtime budget is critical; conclude the tool pass unless one essential tool call remains\n");
-        } else if (awareness >= 75) {
-            text.append("- runtime budget is constrained; avoid new exploration and converge on the tool-pass result\n");
-        } else if (awareness >= 50) {
-            text.append("- half of at least one tool-pass budget is consumed; reassess the current approach and avoid unchanged retries\n");
-        } else if (awareness >= 25) {
-            text.append("- budget remains healthy; avoid redundant lookups and unchanged retries\n");
+            return "Runtime budget warning: 90% threshold crossed.\nConclude the current task now.";
         }
-        return text.toString().strip();
+        if (awareness >= 75) {
+            return "Runtime budget warning: 75% threshold crossed.\nStop exploring. Use the evidence already available and finish the current task.";
+        }
+        if (awareness >= 50) {
+            return "Runtime budget warning: 50% threshold crossed.\nConverge on the current task using evidence already gathered. Make additional calls only when necessary to complete it.";
+        }
+        return "Runtime budget warning: 25% threshold crossed.\nStay tightly focused on the current task. Avoid redundant exploration.";
+    }
+
+    private void addJournal(List<ChatMessage> projected, int entries) {
+        if (entries <= 0) {
+            return;
+        }
+        StringBuilder text = new StringBuilder("Execution journal\n");
+        appendJournal(text, entries);
+        projected.add(UserMessage.from(JOURNAL_MESSAGE_NAME, text.toString().strip()));
     }
 
     private void notifyRuntimeWarning(int projectedTokens, boolean compacted) {
@@ -319,15 +290,6 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
             text.append('\n');
             i += repeats;
         }
-    }
-
-    private int appendRepeatedExecutions(StringBuilder text) {
-        int repeated = repeatedExecutions();
-        if (repeated > 0) {
-            text.append("- deterministic repetition signal: ").append(repeated)
-                    .append(" consecutive tool execution(s) repeated unchanged arguments and result\n");
-        }
-        return repeated;
     }
 
     private int repeatedExecutions() {
