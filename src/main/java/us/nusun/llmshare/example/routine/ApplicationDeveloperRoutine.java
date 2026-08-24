@@ -70,6 +70,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                         .delay(120000)
                     .end()
                 .end()
+                .end()
                 .to("direct:dev-application-developer-root-exit");
 
         from("direct:example-software-team-application-developer-work-selection")
