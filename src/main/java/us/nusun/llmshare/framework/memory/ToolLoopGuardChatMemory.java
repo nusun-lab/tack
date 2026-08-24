@@ -81,7 +81,24 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
 
     @Override
     public synchronized List<ChatMessage> messages() {
-        return new LinkedList<>(delegate.messages());
+        List<ChatMessage> projected = new LinkedList<>(delegate.messages());
+        int awareness = toolPressureAwareness();
+        if (awareness <= 0) {
+            return projected;
+        }
+        for (int i = projected.size() - 1; i >= 0; i--) {
+            ChatMessage message = projected.get(i);
+            if (message instanceof ToolExecutionResultMessage result && result.hasSingleText()) {
+                projected.set(i, ToolExecutionResultMessage.builder()
+                        .id(result.id())
+                        .toolName(result.toolName())
+                        .text(result.text() + "\n\n" + pressureFeedback(awareness))
+                        .isError(result.isError())
+                        .build());
+                break;
+            }
+        }
+        return projected;
     }
 
     @Override
@@ -113,6 +130,33 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
             }
         }
         return 0;
+    }
+
+    private int toolPressureAwareness() {
+        if (maxToolCalls <= 0) {
+            return 0;
+        }
+        double pressure = (double) acceptedToolCalls / (double) maxToolCalls;
+        if (pressure >= 0.90) return 90;
+        if (pressure >= 0.75) return 75;
+        if (pressure >= 0.50) return 50;
+        if (pressure >= 0.25) return 25;
+        return 0;
+    }
+
+    private String pressureFeedback(int awareness) {
+        String instruction;
+        if (awareness >= 90) {
+            instruction = "Tool budget is critical. Conclude this tool pass unless one essential materially different call remains.";
+        } else if (awareness >= 75) {
+            instruction = "Tool budget is constrained. Stop exploration and converge using existing evidence.";
+        } else if (awareness >= 50) {
+            instruction = "Half of the tool budget is consumed. Reassess the current approach and avoid equivalent retries or inconsequential argument changes.";
+        } else {
+            instruction = "Tool usage is accumulating. Avoid redundant lookups, equivalent retries, and inconsequential argument changes.";
+        }
+        return "[TACK RUNTIME: tool calls " + acceptedToolCalls + "/" + maxToolCalls
+                + "; budget awareness " + awareness + "%. " + instruction + "]";
     }
 
     private static String resultText(ToolExecutionResultMessage result) {
