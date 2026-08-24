@@ -36,6 +36,27 @@ class ToolLoopGuardChatMemoryTest {
     }
 
     @Test
+    void alternatingTwoStepCycleIsRejectedBeforeFifthExecution() {
+        RecordingMemory delegate = new RecordingMemory();
+        ToolLoopGuardChatMemory memory = new ToolLoopGuardChatMemory(delegate);
+        String publicSearch = "{\"query\":\"matchbox-race-night-app\",\"isPrivate\":false}";
+        String privateSearch = "{\"query\":\"matchbox-race-night-app\",\"isPrivate\":true}";
+
+        addExecution(memory, "1", "gitea.search_repos", publicSearch, "[]");
+        addExecution(memory, "2", "gitea.search_repos", privateSearch, "[]");
+        addExecution(memory, "3", "gitea.search_repos", publicSearch, "[]");
+        addExecution(memory, "4", "gitea.search_repos", privateSearch, "[]");
+
+        ToolLoopGuardChatMemory.RepeatedToolExecutionException failure = assertThrows(
+                ToolLoopGuardChatMemory.RepeatedToolExecutionException.class,
+                () -> memory.add(AiMessage.from(request("5", "gitea.search_repos", publicSearch))));
+
+        assertTrue(failure.getMessage().contains("TACK_RUNTIME_REPEATED_CYCLE"));
+        assertTrue(failure.getMessage().contains("2-step tool cycle"));
+        assertEquals(8, delegate.messages().size());
+    }
+
+    @Test
     void changedRequestBreaksTheLoopAndMayExecute() {
         ToolLoopGuardChatMemory memory = new ToolLoopGuardChatMemory(new RecordingMemory());
         addExecution(memory, "1", "search", "{\"q\":\"matchbox\"}", "[]");
@@ -51,6 +72,32 @@ class ToolLoopGuardChatMemoryTest {
         addExecution(memory, "2", "status", "{}", "ready");
 
         assertDoesNotThrow(() -> memory.add(AiMessage.from(request("3", "status", "{}"))));
+    }
+
+    @Test
+    void individualToolBudgetIsEnforcedBeforeExecution() {
+        RecordingMemory delegate = new RecordingMemory();
+        ToolLoopGuardChatMemory memory = new ToolLoopGuardChatMemory(delegate, 2);
+        addExecution(memory, "1", "search", "{\"q\":\"one\"}", "[]");
+        addExecution(memory, "2", "search", "{\"q\":\"two\"}", "[]");
+
+        ToolLoopGuardChatMemory.ToolCallBudgetExceededException failure = assertThrows(
+                ToolLoopGuardChatMemory.ToolCallBudgetExceededException.class,
+                () -> memory.add(AiMessage.from(request("3", "search", "{\"q\":\"three\"}"))));
+
+        assertTrue(failure.getMessage().contains("TACK_RUNTIME_TOOL_BUDGET_EXHAUSTED"));
+        assertEquals(4, delegate.messages().size());
+    }
+
+    @Test
+    void toolPressureFeedbackIsAttachedToLatestToolResult() {
+        ToolLoopGuardChatMemory memory = new ToolLoopGuardChatMemory(new RecordingMemory(), 4);
+        addExecution(memory, "1", "search", "{\"q\":\"one\"}", "[]");
+
+        ToolExecutionResultMessage result = (ToolExecutionResultMessage) memory.messages().getLast();
+
+        assertTrue(result.text().contains("tool calls 1/4"));
+        assertTrue(result.text().contains("budget awareness 25%"));
     }
 
     private static void addExecution(ChatMemory memory, String id, String name, String arguments, String result) {
