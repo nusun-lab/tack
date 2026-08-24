@@ -58,6 +58,8 @@ public class LlmAgentFactory {
     private static final Logger LOG = LoggerFactory.getLogger(LlmAgentFactory.class);
     private static final HallucinatedToolNameRecoveryStrategy HALLUCINATED_TOOL_NAME_RECOVERY_STRATEGY =
             new HallucinatedToolNameRecoveryStrategy();
+    private static final String SANDBOX_TOOL_SERVER = "sandbox";
+    private static final String SANDBOX_EXEC_TOOL = "sandbox_exec";
 
     @Produces
     @Singleton
@@ -316,11 +318,13 @@ public class LlmAgentFactory {
                         tokenCountEstimator,
                         true,
                         warning -> logRuntimeWarning(exchange, warning)));
+                String profileId = exchange.getProperty("toolProfile", "none", String.class);
+                ToolProfile profile = toolProfiles.getRequired(profileId);
                 List<McpClient> clients = mcpClients(exchange);
                 if (!clients.isEmpty()) {
                     configuration.withMcpClients(clients);
                 }
-                if (sandboxes != null) {
+                if (sandboxes != null && profile.allowsTool(SANDBOX_TOOL_SERVER, SANDBOX_EXEC_TOOL)) {
                     LlmJobEnvelope job = job(exchange);
                     String sandboxName = exchange.getProperty(PersonaSandboxManager.WORKING_STATE_SANDBOX_NAME, String.class);
                     if (blank(sandboxName)) {
@@ -331,7 +335,7 @@ public class LlmAgentFactory {
                     var sandboxTool = sandboxes.tool(sandboxName);
                     if (sandboxTool != null) {
                         configuration.withCustomTools(List.of(sandboxTool));
-                        LOG.info("Registered sandbox_exec for sandbox={} persona={} mission={}", sandboxName,
+                        LOG.info("Registered sandbox_exec for profile={} sandbox={} persona={} mission={}", profile.id(), sandboxName,
                                 firstNonBlank(exchange.getProperty("personaId", String.class), metadata(job, "personaId")),
                                 metadata(job, "missionId"));
                     }
