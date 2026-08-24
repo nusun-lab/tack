@@ -6,23 +6,31 @@ import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.memory.ChatMemory;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
 /**
- * Hard stop for unchanged tool loops. Two identical completed executions are allowed so the model can observe
- * repetition feedback; a third identical request is rejected before the underlying tool executes.
+ * Hard stop for pathological tool loops and tool-pass budget exhaustion.
  */
 public final class ToolLoopGuardChatMemory implements ChatMemory {
+    private static final int MAX_CYCLE_LENGTH = 3;
+
     private final ChatMemory delegate;
+    private final int maxToolCalls;
     private final Map<String, RequestSignature> pending = new HashMap<>();
-    private ExecutionSignature latestExecution;
-    private int consecutiveIdenticalExecutions;
+    private final List<ExecutionSignature> completedExecutions = new ArrayList<>();
+    private int acceptedToolCalls;
 
     public ToolLoopGuardChatMemory(ChatMemory delegate) {
+        this(delegate, 0);
+    }
+
+    public ToolLoopGuardChatMemory(ChatMemory delegate, int maxToolCalls) {
         this.delegate = delegate;
+        this.maxToolCalls = Math.max(0, maxToolCalls);
     }
 
     @Override
@@ -33,16 +41,20 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
     @Override
     public synchronized void add(ChatMessage message) {
         if (message instanceof AiMessage aiMessage && aiMessage.hasToolExecutionRequests()) {
-            for (ToolExecutionRequest request : aiMessage.toolExecutionRequests()) {
+            List<ToolExecutionRequest> requests = aiMessage.toolExecutionRequests();
+            if (maxToolCalls > 0 && acceptedToolCalls + requests.size() > maxToolCalls) {
+                throw new ToolCallBudgetExceededException(maxToolCalls, acceptedToolCalls, requests.size());
+            }
+            for (ToolExecutionRequest request : requests) {
                 RequestSignature signature = RequestSignature.from(request);
-                if (consecutiveIdenticalExecutions >= 2
-                        && latestExecution != null
-                        && latestExecution.request().equals(signature)) {
-                    throw new RepeatedToolExecutionException(signature.toolName());
+                int cycleLength = repeatedCycleLength(signature);
+                if (cycleLength > 0) {
+                    throw new RepeatedToolExecutionException(signature.toolName(), cycleLength);
                 }
             }
             delegate.add(message);
-            for (ToolExecutionRequest request : aiMessage.toolExecutionRequests()) {
+            acceptedToolCalls += requests.size();
+            for (ToolExecutionRequest request : requests) {
                 pending.put(request.id(), RequestSignature.from(request));
             }
             return;
@@ -54,13 +66,10 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
             if (request == null) {
                 return;
             }
-            ExecutionSignature execution = new ExecutionSignature(request, normalize(resultText(result)), result.isError());
-            if (execution.equals(latestExecution)) {
-                consecutiveIdenticalExecutions++;
-            } else {
-                latestExecution = execution;
-                consecutiveIdenticalExecutions = 1;
-            }
+            completedExecutions.add(new ExecutionSignature(
+                    request,
+                    normalize(resultText(result)),
+                    result.isError()));
         }
     }
 
@@ -79,8 +88,31 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
     public synchronized void clear() {
         delegate.clear();
         pending.clear();
-        latestExecution = null;
-        consecutiveIdenticalExecutions = 0;
+        completedExecutions.clear();
+        acceptedToolCalls = 0;
+    }
+
+    private int repeatedCycleLength(RequestSignature nextRequest) {
+        int completed = completedExecutions.size();
+        for (int cycleLength = 1; cycleLength <= MAX_CYCLE_LENGTH; cycleLength++) {
+            if (completed < cycleLength * 2) {
+                continue;
+            }
+            int firstCycleStart = completed - cycleLength * 2;
+            int secondCycleStart = completed - cycleLength;
+            boolean sameCycle = true;
+            for (int i = 0; i < cycleLength; i++) {
+                if (!completedExecutions.get(firstCycleStart + i)
+                        .equals(completedExecutions.get(secondCycleStart + i))) {
+                    sameCycle = false;
+                    break;
+                }
+            }
+            if (sameCycle && completedExecutions.get(secondCycleStart).request().equals(nextRequest)) {
+                return cycleLength;
+            }
+        }
+        return 0;
     }
 
     private static String resultText(ToolExecutionResultMessage result) {
@@ -104,12 +136,31 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
     private record ExecutionSignature(RequestSignature request, String result, boolean error) {
     }
 
-    public static final class RepeatedToolExecutionException extends RuntimeException {
-        public RepeatedToolExecutionException(String toolName) {
-            super("TACK_RUNTIME_REPEATED_EXECUTION: Tool '" + toolName
-                    + "' was requested unchanged after two identical completed executions. "
-                    + "The third execution was refused and this tool pass was terminated. "
-                    + "Use the existing tool results and choose a materially different approach in the next step.");
+    public static class ToolPassTerminatedException extends RuntimeException {
+        protected ToolPassTerminatedException(String message) {
+            super(message);
+        }
+    }
+
+    public static final class RepeatedToolExecutionException extends ToolPassTerminatedException {
+        public RepeatedToolExecutionException(String toolName, int cycleLength) {
+            super(cycleLength == 1
+                    ? "TACK_RUNTIME_REPEATED_EXECUTION: Tool '" + toolName
+                            + "' was requested unchanged after two identical completed executions. "
+                            + "The third execution was refused and this tool pass was terminated. "
+                            + "Use the existing tool results and choose a materially different approach in the next step."
+                    : "TACK_RUNTIME_REPEATED_CYCLE: Tool '" + toolName
+                            + "' would continue a repeated " + cycleLength + "-step tool cycle with unchanged results. "
+                            + "The next execution was refused and this tool pass was terminated. "
+                            + "Use the existing tool results and choose a materially different approach in the next step.");
+        }
+    }
+
+    public static final class ToolCallBudgetExceededException extends ToolPassTerminatedException {
+        public ToolCallBudgetExceededException(int maxToolCalls, int acceptedToolCalls, int requestedToolCalls) {
+            super("TACK_RUNTIME_TOOL_BUDGET_EXHAUSTED: Tool-pass budget is " + maxToolCalls
+                    + " individual tool calls. " + acceptedToolCalls + " have already been accepted and the model requested "
+                    + requestedToolCalls + " more. The request was refused before execution and this tool pass was terminated.");
         }
     }
 }
