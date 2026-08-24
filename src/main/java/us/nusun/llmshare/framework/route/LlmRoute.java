@@ -131,7 +131,7 @@ public class LlmRoute extends RouteBuilder {
                 .doTry()
                     .to("direct:call-llm-agent")
                     .to(publishReplyUri)
-                .doCatch(ToolLoopGuardChatMemory.RepeatedToolExecutionException.class)
+                .doCatch(ToolLoopGuardChatMemory.ToolPassTerminatedException.class)
                     .log(LoggingLevel.WARN, "${exception.message}")
                     .setBody(simple("${exception.message}"))
                     .setBody(method(routeSupport, "succeededResult"))
