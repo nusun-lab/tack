@@ -118,7 +118,6 @@ public class WorkspaceCoordinationToolProfile implements ToolProfileProvider {
                 .defaultArgument(PlaneMcpServer.ID, "list_projects", "fields", "id,name,identifier")
                 .defaultArgument(PlaneMcpServer.ID, "list_work_items", "fields", "id,name,sequence_id,state,priority,assignees")
                 .defaultArgument(PlaneMcpServer.ID, "list_work_items", "per_page", 50)
-                .defaultArgument(MattermostMcpServer.ID, "get_channel_messages", "per_page", 20)
                 .maxResultTokens(maxResultTokens)
                 .build());
     }
