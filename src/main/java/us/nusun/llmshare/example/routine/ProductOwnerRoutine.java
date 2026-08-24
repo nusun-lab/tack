@@ -97,6 +97,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         .delay(120000)
                     .end()
                 .end()
+                .end()
                 .to("direct:po-product-owner-root-exit");
 
         from("direct:example-software-team-product-owner-acceptance-refinement")
