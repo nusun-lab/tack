@@ -88,8 +88,9 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                                     Review current mission completion status once using the smallest authoritative read available.
                                     Check only current-mission project-management status, current-work/documentation status, and direct
                                     completion or handoff evidence needed to determine whether any user-facing outcome, acceptance,
-                                    product decision, backlog item, or product follow-up remains. Do not mutate anything or perform new
-                                    product work. Prefer current verified external evidence over older remembered status when they conflict.
+                                    product decision, backlog item, or product follow-up remains. One verified unfinished required outcome
+                                    is enough to conclude not complete; stop there. Do not mutate anything or perform new product work.
+                                    Prefer current verified external evidence over older remembered status when they conflict.
                                     """))
                     .to("tack:act?id=po-mission-status-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
@@ -177,8 +178,8 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                                 Product work may begin only when there is a usable project-management workspace, a source
                                 repository under agent-workspace, a documentation repository with usable index/current-work
                                 navigation, and usable team chat/project-basics navigation. A static active-roster snapshot
-                                is not a basic. Do not repeatedly reread the workspace and do not begin product work when
-                                any basic is missing.
+                                is not a basic. One confirmed missing required basic is enough to stop this check; record it and stop.
+                                Do not repeatedly reread the workspace or begin product work when any basic is missing.
                                 """))
                 .to("tack:act?id=po-workspace-basics-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
@@ -192,9 +193,9 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .routeId("po-missing-basics-closeout")
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Project basics are not usable for product work. Read recent team chat only if needed.
-                                Reply once to an existing setup thread when a concise product or setup answer helps;
-                                otherwise stay quiet. Do not repost setup requests and do not begin product work without
-                                project management, source repository, documentation repository, and usable navigation.
+                                If no verified project channel is known, stay quiet and stop. Reply once to an existing setup thread
+                                when a concise product or setup answer helps; otherwise stay quiet. Do not repost setup requests and do
+                                not begin product work without project management, source repository, documentation repository, and usable navigation.
                                 """))
                 .to("tack:act?id=po-missing-basics-closeout&toolProfile=" + TeamChatToolProfile.ID);
 
@@ -203,7 +204,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Read recent project chat and join real product conversations.
                                 Answer direct scope or acceptance questions, or ask one named question that improves the backlog.
-                                Avoid generic status and duplicated documentation.
+                                Avoid generic status and duplicated documentation. If no relevant conversation is evident, make no post and stop.
                                 """))
                 .to("tack:act?id=po-team-chat-sync&toolProfile=" + TeamChatToolProfile.ID);
 
@@ -263,7 +264,8 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                                     plus one product decision or open question. Do not add implementation decomposition or code-level
                                     instructions. For PRODUCT ACCEPTANCE READY work, preserve the existing scope and Gherkin criteria;
                                     inspect only the linked completion evidence and record which existing scenarios are satisfied or
-                                    which exact scenario remains unmet. Never rewrite acceptance criteria to fit the implementation.
+                                    which exact scenario remains unmet. If required linked evidence is missing, record that gap and stop;
+                                    do not search for substitute evidence. Never rewrite acceptance criteria to fit the implementation.
                                     Keep pages linked and small.
                                     """))
                     .to("tack:act?id=po-canonical-acceptance-update&toolProfile=" + SourceControlWriteToolProfile.ID)
@@ -315,11 +317,13 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                                 Read recent project chat and continue useful product conversations.
                                 Reply when a teammate needs scope, acceptance, or product judgment; otherwise ask nothing.
                                 Link the project-management item or product page when it helps the conversation.
+                                If no relevant conversation is evident, make no post and stop.
                                 """))
                 .to("tack:act?id=po-team-chat-closeout&toolProfile=" + TeamChatToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Make one small documentation curation improvement if it clarifies the product.
                                 Preserve navigation and durable decisions; leave day-to-day work tracking in project management.
+                                Do not search for an improvement; if none is obvious from current evidence, make no change.
                                 """))
                 .to("tack:act?id=po-follow-up-note&toolProfile=" + SourceControlWriteToolProfile.ID);
     }
