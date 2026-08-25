@@ -62,6 +62,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                     Review current mission completion status once using the smallest authoritative read available.
                                     Check only current-mission project-management status, current-work/documentation status, and direct
                                     completion or handoff evidence needed to determine whether any implementation outcome remains.
+                                    One verified unfinished required outcome is enough to conclude not complete; stop there.
                                     Do not mutate anything or begin new development work. Prefer current verified external evidence over
                                     older remembered status when they conflict.
                                     """))
@@ -143,8 +144,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                 Verify developer project basics once without mutation using the capabilities available to you.
                                 Development may begin only when there is a usable project-management workspace, source repository
                                 under agent-workspace, documentation repository/current-work navigation, canonical acceptance
-                                links, and usable team chat. Do not repeatedly reread project basics and do not start development
-                                work when basics are missing.
+                                links, and usable team chat. One confirmed missing required basic is enough to stop this check;
+                                record it and stop. Do not repeatedly reread project basics or start development when basics are missing.
                                 """))
                 .to("tack:act?id=dev-workspace-basics-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
@@ -159,9 +160,10 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .routeId("dev-missing-basics-closeout")
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Project basics are not usable for development. Read recent team chat only if needed.
-                                Reply once to an existing setup thread when a concise technical setup answer helps;
-                                otherwise stay quiet. Do not repost setup requests, claim work, or begin development without
-                                project management, source repository, documentation repository, and usable navigation.
+                                If no verified project channel is known, stay quiet and stop. Reply once to an existing setup thread
+                                when a concise technical setup answer helps; otherwise stay quiet. Do not repost setup requests, claim
+                                work, or begin development without project management, source repository, documentation repository,
+                                and usable navigation.
                                 """))
                 .to("tack:act?id=dev-missing-basics-closeout&toolProfile=" + TeamChatToolProfile.ID);
 
@@ -202,6 +204,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                 Read recent project chat and join real technical conversations.
                                 Answer direct questions, review requests, or handoffs; if blocked, ask one named question.
                                 Do not volunteer for unassigned work or repeat project-management/documentation data.
+                                If no relevant conversation is evident, make no post and stop.
                                 """))
                 .to("tack:act?id=dev-team-chat-sync&toolProfile=" + TeamChatToolProfile.ID);
 
@@ -272,7 +275,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                     Read only direct documentation links and source files needed for the selected task.
                                     Verify the repository is under agent-workspace. Do not use personal namespaces.
                                     Identify one next coherent patch with files, test/validation target, and branch plan.
-                                    Do not modify source files in this planning step.
+                                    Once one coherent next patch is clear, stop reading. Do not modify source files in this planning step.
                                     """))
                     .to("tack:act?id=dev-source-context-plan&toolProfile=" + SourceControlToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
@@ -319,13 +322,14 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Make one focused documentation improvement if it preserves durable engineering knowledge.
                                 Link source evidence from the item page or engineering index; do not create activity logs.
-                                Keep files compact and split or summarize when they grow too large.
+                                Keep files compact and split or summarize when they grow too large. Do not search for an improvement;
+                                if none is obvious from current evidence, make no change.
                                 """))
                 .to("tack:act?id=dev-documentation-closeout&toolProfile=" + SourceControlWriteToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Read recent project chat and reply when delivery evidence, a blocker, or a teammate's question
                                 needs interaction. Link the project-management item and review/blocker evidence when useful;
-                                avoid generic status.
+                                avoid generic status. If no relevant conversation is evident, make no post and stop.
                                 """))
                 .to("tack:act?id=dev-team-chat-closeout&toolProfile=" + TeamChatToolProfile.ID);
 
