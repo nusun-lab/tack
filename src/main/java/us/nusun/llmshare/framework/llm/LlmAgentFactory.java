@@ -95,6 +95,7 @@ public class LlmAgentFactory {
             @ConfigProperty(name = "llm.model-default.openai.max-tokens") int maxTokens,
             @ConfigProperty(name = "llm.model-default.openai.timeout-ms") long timeoutMs,
             @ConfigProperty(name = "llm.model-default.openai.thinking-off.enabled") boolean thinkingOffEnabled,
+            @ConfigProperty(name = "llm.model-default.openai.reasoning-effort") String reasoningEffort,
             @ConfigProperty(name = "llm.model-default.openai.strict-json-schema", defaultValue = "true") boolean strictJsonSchema,
             @ConfigProperty(name = "llm.model-default.tool-memory.max-tokens", defaultValue = "12000") int memoryMaxTokens,
             @ConfigProperty(name = "llm.model-default.max-tool-calling-round-trips", defaultValue = "4") int maxToolCallingRoundTrips) {
@@ -112,6 +113,7 @@ public class LlmAgentFactory {
                 maxTokens,
                 timeoutMs,
                 thinkingOffEnabled,
+                reasoningEffort,
                 strictJsonSchema);
         return new DynamicAgentFactory(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator,
                 memoryMaxTokens, maxToolCallingRoundTrips, sandboxes, logTokens);
@@ -131,6 +133,7 @@ public class LlmAgentFactory {
             int maxTokens,
             long timeoutMs,
             boolean thinkingOffEnabled,
+            String reasoningEffort,
             boolean strictJsonSchema) {
         LinkedHashMap<String, ChatModel> models = new LinkedHashMap<>();
         for (InferenceLaneDefinition lane : lanes.allLanes()) {
@@ -141,9 +144,11 @@ public class LlmAgentFactory {
             int laneTopK = laneInt(configPrefix, "top-k", topK);
             double laneMinP = laneDouble(configPrefix, "min-p", minP);
             double laneRepetitionPenalty = laneDouble(configPrefix, "repetition-penalty", repetitionPenalty);
+            String laneReasoningEffort = laneString(configPrefix, "reasoning-effort", reasoningEffort);
             String model = selectedModel(lane, defaultModel);
-            LOG.info("Configured inference lane {} model={} sampling temperature={} topP={} presencePenalty={} topK={} minP={} repetitionPenalty={}",
-                    lane.id(), model, laneTemperature, laneTopP, lanePresencePenalty, laneTopK, laneMinP, laneRepetitionPenalty);
+            LOG.info("Configured inference lane {} model={} reasoningEffort={} sampling temperature={} topP={} presencePenalty={} topK={} minP={} repetitionPenalty={}",
+                    lane.id(), model, blank(laneReasoningEffort) ? "provider-default" : laneReasoningEffort,
+                    laneTemperature, laneTopP, lanePresencePenalty, laneTopK, laneMinP, laneRepetitionPenalty);
             models.put(lane.id(), chatModel(
                     firstNonBlank(lane.endpoint(), defaultBaseUrl),
                     firstNonBlank(resolveLaneApiKey(lane), defaultApiKey),
@@ -157,6 +162,7 @@ public class LlmAgentFactory {
                     maxTokens,
                     timeoutMs,
                     thinkingOffEnabled,
+                    laneReasoningEffort,
                     strictJsonSchema));
         }
         return Map.copyOf(models);
@@ -179,6 +185,7 @@ public class LlmAgentFactory {
             int maxTokens,
             long timeoutMs,
             boolean thinkingOffEnabled,
+            String reasoningEffort,
             boolean strictJsonSchema) {
         var builder = OpenAiChatModel.builder()
                 .baseUrl(baseUrl)
@@ -191,6 +198,9 @@ public class LlmAgentFactory {
                 .strictJsonSchema(strictJsonSchema)
                 .timeout(Duration.ofMillis(timeoutMs))
                 .httpClientBuilder(http11ClientBuilder());
+        if (!blank(reasoningEffort)) {
+            builder.reasoningEffort(reasoningEffort.strip());
+        }
 
         Map<String, Object> customParameters = new LinkedHashMap<>();
         customParameters.put("top_k", topK);
@@ -245,6 +255,16 @@ public class LlmAgentFactory {
         }
         return ConfigProvider.getConfig()
                 .getOptionalValue(configPrefix + "." + property, Integer.class)
+                .orElse(fallback);
+    }
+
+    private static String laneString(String configPrefix, String property, String fallback) {
+        if (blank(configPrefix)) {
+            return fallback;
+        }
+        return ConfigProvider.getConfig()
+                .getOptionalValue(configPrefix + "." + property, String.class)
+                .filter(value -> !blank(value))
                 .orElse(fallback);
     }
 
