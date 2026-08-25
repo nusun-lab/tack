@@ -52,6 +52,7 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Singleton
 public class LlmAgentFactory {
@@ -95,7 +96,7 @@ public class LlmAgentFactory {
             @ConfigProperty(name = "llm.model-default.openai.max-tokens") int maxTokens,
             @ConfigProperty(name = "llm.model-default.openai.timeout-ms") long timeoutMs,
             @ConfigProperty(name = "llm.model-default.openai.thinking-off.enabled") boolean thinkingOffEnabled,
-            @ConfigProperty(name = "llm.model-default.openai.reasoning-effort") String reasoningEffort,
+            @ConfigProperty(name = "llm.model-default.openai.reasoning-effort") Optional<String> reasoningEffort,
             @ConfigProperty(name = "llm.model-default.openai.strict-json-schema", defaultValue = "true") boolean strictJsonSchema,
             @ConfigProperty(name = "llm.model-default.tool-memory.max-tokens", defaultValue = "12000") int memoryMaxTokens,
             @ConfigProperty(name = "llm.model-default.max-tool-calling-round-trips", defaultValue = "4") int maxToolCallingRoundTrips) {
@@ -113,7 +114,7 @@ public class LlmAgentFactory {
                 maxTokens,
                 timeoutMs,
                 thinkingOffEnabled,
-                reasoningEffort,
+                reasoningEffort.orElse(null),
                 strictJsonSchema);
         return new DynamicAgentFactory(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator,
                 memoryMaxTokens, maxToolCallingRoundTrips, sandboxes, logTokens);
