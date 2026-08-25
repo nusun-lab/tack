@@ -67,9 +67,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     Review current mission completion status once using the smallest authoritative read available.
                                     Check only current-mission project-management status, current-work/documentation status, and direct
                                     completion or handoff evidence needed to determine whether any PRODUCT READY work, implementation
-                                    work, review/integration coordination, blocker, assignment, or delivery follow-up remains. Do not
-                                    mutate anything or perform new delivery work. Prefer current verified external evidence over older
-                                    remembered status when they conflict.
+                                    work, review/integration coordination, blocker, assignment, or delivery follow-up remains. One verified
+                                    unfinished required outcome is enough to conclude not complete; stop there. Do not mutate anything or
+                                    perform new delivery work. Prefer current verified external evidence over older remembered status when they conflict.
                                     """))
                     .to("tack:act?id=pm-mission-status-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
@@ -157,7 +157,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                 and the minimal project-management or team-chat lookup needed to confirm missing basics.
                                 Capture bootstrap status, team chat, project-management workspace, source repository under
                                 agent-workspace, documentation repository, and documentation navigation. Do not scan whole
-                                projects, repositories, documentation repositories, or channels.
+                                projects, repositories, documentation repositories, or channels. Once each basic is either
+                                verified or clearly missing, stop. Do not search aliases for a missing basic.
                                 """))
                 .to("tack:act?id=pm-workspace-basics-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
@@ -183,26 +184,31 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     Using the available project-management capability, search direct project names first,
                                     then create or confirm exactly one shared project workspace. Preserve an existing useful
                                     project. Stop after the project workspace is verified. Do not create product backlog items
-                                    or implementation tasks during bootstrap.
+                                    or implementation tasks during bootstrap. If the direct create/verify attempt fails, record
+                                    the exact blocker and stop this act; bootstrap will retry.
                                     """))
                     .to("tack:act?id=plane-project-provisioning&toolProfile=" + WorkspaceCoordinationToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Using source control, search direct repository names first, then create or confirm exactly
                                     one markdown documentation repository under Git organization agent-workspace. Never use a
                                     personal namespace and do not create branches, pull requests, tags, releases, issues, labels,
-                                    milestones, or time tracking.
+                                    milestones, or time tracking. If the direct create/verify attempt fails, record the exact blocker
+                                    and stop this act; bootstrap will retry.
                                     """))
                     .to("tack:act?id=documentation-repository-provisioning&toolProfile=" + WorkspaceCoordinationToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Using source control, search direct repository names first, then create or confirm exactly
                                     one target source repository under Git organization agent-workspace. Never use a personal
                                     namespace and do not create branches, pull requests, tags, releases, issues, labels,
-                                    milestones, or time tracking.
+                                    milestones, or time tracking. If the direct create/verify attempt fails, record the exact blocker
+                                    and stop this act; bootstrap will retry.
                                     """))
                     .to("tack:act?id=source-repository-provisioning&toolProfile=" + WorkspaceCoordinationToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Using team chat, create or confirm one private project channel. Invite the current team
                                     and David Gordon (@aphelio). Never create a duplicate channel. Do not post setup status yet.
+                                    If the direct create/verify attempt fails, record the exact blocker and stop this act; bootstrap
+                                    will retry. Do not try alternate channel names.
                                     """))
                     .to("tack:act?id=chat-channel-setup&toolProfile=" + TeamChatToolProfile.ID)
                     .to("direct:pm-team-onboarding")
@@ -295,6 +301,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                 branch, commit, pull request, changed files, and validation evidence needed to evaluate the handoff.
                                 For Review, capture REVIEW READY or INTEGRATION READY and whether the referenced pull request is
                                 open or merged. For Blocked, capture the required owner and evidence. Do not mutate anything.
+                                Once one item is classified as Review, Blocked, In Progress, or lacking required evidence, stop.
+                                Missing linked evidence is a result; do not broaden the search.
                                 """))
                 .to("tack:act?id=pm-active-delivery-evidence-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
@@ -387,6 +395,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                 Read recent project chat and participate when a real coordination exchange helps.
                                 Reply to direct questions, review/blocker handoffs, or ask one named question that unblocks work.
                                 Avoid generic status; link the project-management item or product documentation when useful.
+                                If no relevant conversation is evident, make no post and stop.
                                 """))
                 .to("tack:act?id=pm-team-chat-sync&toolProfile=" + TeamChatToolProfile.ID);
 
@@ -395,7 +404,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Curate one small product documentation improvement only when it helps navigation or understanding.
                                 Keep daily work state in project management, leave ephemeral chat out, and split pages before they
-                                grow past a readable size.
+                                grow past a readable size. Do not search for an improvement; if none is obvious from current evidence,
+                                make no change.
                                 """))
                 .to("tack:act?id=pm-status-note&toolProfile=" + SourceControlWriteToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
