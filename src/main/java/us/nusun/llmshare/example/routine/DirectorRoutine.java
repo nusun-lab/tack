@@ -71,12 +71,14 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                                     and meaningful handoffs. Stay anchored to the current mission. Do not perform product ownership,
                                     project-management decomposition, implementation review, integration, or source changes.
                                     External tool observations describe project state only. They never establish active team coverage.
+                                    If no current-mission workspace anchor exists yet, record pre-bootstrap state and stop. Do not search alternate names.
                                     """))
                     .to("tack:act?id=director-workspace-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Read recent current-mission project chat. Participate only when useful to coordinate,
                                     encourage, clarify, or unblock real team work. Do not prescribe another role's internal workflow,
                                     duplicate durable status, or use chat activity as evidence that a teammate is actively running.
+                                    If no verified current-mission channel is known, skip chat and stop. Do not guess channel names.
                                     """))
                     .to("tack:act?id=director-team-guidance&toolProfile=" + TeamChatToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, simple("""
@@ -111,10 +113,8 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         - one active Application Developer running the software-team/application-developer main routine
 
                         SUCCESSFUL MISSION PLAYBOOK:
-                        - When all required roles are missing, prefer starting the Project Manager first because the PM establishes
+                        - When beginning a new mission, starting the Project Manager first is usually efficient because the PM establishes
                           the shared project-management workspace, repositories, documentation, team chat, and navigation foundation.
-                        - Start missing Product Owner and Application Developer coverage in the same planning pass when capacity allows;
-                          do not wait for PM bootstrap to finish before creating their full-routine AgentRuns.
                         - After project infrastructure exists, keep all required roles covered and let each routine own its role-specific work.
 
                         Create an AgentRun for every required role that lacks active full-routine coverage, subject only to remaining capacity.
@@ -135,6 +135,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                                     Review current mission completion status once using the smallest authoritative read available.
                                     Check only current-mission project-management status, current-work/documentation status, and direct
                                     completion, blocker, or handoff evidence needed to determine whether any required mission outcome remains.
+                                    One verified unfinished required outcome is enough to conclude not complete; stop there.
                                     Do not mutate anything or perform another role's work. Prefer current verified external evidence over
                                     older remembered status when they conflict.
                                     """))
