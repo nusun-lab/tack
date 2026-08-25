@@ -220,6 +220,7 @@ message NetworkEndpoint {
   string enforcement = 5;
   string access = 6;
   repeated uint32 ports = 9;
+  bool allow_encoded_slash = 11;
   string path = 15;
 }
 message NetworkBinary { string path = 1; }

@@ -110,6 +110,13 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         - one active Project Manager running the software-team/project-manager main routine
                         - one active Application Developer running the software-team/application-developer main routine
 
+                        SUCCESSFUL MISSION PLAYBOOK:
+                        - When all required roles are missing, prefer starting the Project Manager first because the PM establishes
+                          the shared project-management workspace, repositories, documentation, team chat, and navigation foundation.
+                        - Start missing Product Owner and Application Developer coverage in the same planning pass when capacity allows;
+                          do not wait for PM bootstrap to finish before creating their full-routine AgentRuns.
+                        - After project infrastructure exists, keep all required roles covered and let each routine own its role-specific work.
+
                         Create an AgentRun for every required role that lacks active full-routine coverage, subject only to remaining capacity.
                         Do not create duplicate coverage for a role already represented by an accepted, scheduled, or running main-routine run.
                         Always use the full main routine, not a subroutine.

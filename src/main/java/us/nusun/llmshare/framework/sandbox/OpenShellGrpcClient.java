@@ -284,6 +284,7 @@ public class OpenShellGrpcClient {
                     .setProtocol("rest")
                     .setEnforcement("enforce")
                     .setAccess("full")
+                    .setAllowEncodedSlash("registry.npmjs.org".equals(host))
                     .build());
         }
         int version;
