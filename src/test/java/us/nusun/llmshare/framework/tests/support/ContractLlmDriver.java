@@ -8,6 +8,7 @@ import us.nusun.llmshare.framework.model.LlmJobRequest;
 import us.nusun.llmshare.framework.model.LlmJobResult;
 
 import java.time.Instant;
+import java.util.Map;
 
 /**
  * Generic deterministic replacement for direct:llm. Tack still builds requests,
@@ -29,15 +30,26 @@ public final class ContractLlmDriver implements Processor {
         String primitive = String.valueOf(request.metadata().get("primitive"));
         String primitiveId = String.valueOf(request.metadata().get("primitiveId"));
         world.record(ContractWorld.EventKind.MODEL, "deterministic_llm_" + request.passType().name().toLowerCase(),
-                primitiveId, "primitive=" + primitive);
+                primitiveId, "primitive=%s lane=%s requester=%s role=%s"
+                        .formatted(primitive, request.laneId(), request.requester(), request.role()));
 
         String content = switch (request.passType()) {
-            case TOOL -> behavior.toolResponse(primitiveId);
-            case SYNTHESIS -> objectMapper.writeValueAsString(behavior.synthesisResponse(primitive, primitiveId));
+            case TOOL -> behavior.toolResponse(request);
+            case SYNTHESIS -> objectMapper.writeValueAsString(
+                    "thought-exit".equals(primitive)
+                            ? thoughtConsolidation(primitiveId)
+                            : behavior.synthesisResponse(request));
         };
 
         LlmJobEnvelope job = LlmJobEnvelope.queued(request.normalized());
         exchange.getMessage().setBody(LlmJobResult.succeeded(
                 job, "contract-model", content, content, Instant.now()));
+    }
+
+    private Map<String, ?> thoughtConsolidation(String thoughtName) {
+        world.record(ContractWorld.EventKind.MODEL, "deterministic_thought_consolidation",
+                thoughtName, "Preserved contract observations in the parent Tack thought");
+        return Map.of(
+                "content", "Deterministic contract observations for " + thoughtName + " were preserved.");
     }
 }

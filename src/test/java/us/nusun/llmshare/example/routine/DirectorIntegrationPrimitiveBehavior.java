@@ -1,5 +1,6 @@
 package us.nusun.llmshare.example.routine;
 
+import us.nusun.llmshare.framework.model.LlmJobRequest;
 import us.nusun.llmshare.framework.tests.support.ContractPrimitiveBehavior;
 import us.nusun.llmshare.framework.tests.support.ContractWorld;
 
@@ -26,7 +27,8 @@ final class DirectorIntegrationPrimitiveBehavior implements ContractPrimitiveBeh
     }
 
     @Override
-    public String toolResponse(String primitiveId) {
+    public String toolResponse(LlmJobRequest request) {
+        String primitiveId = primitiveId(request);
         return switch (primitiveId) {
             case WORKSPACE_REVIEW -> reviewWorkspace();
             case INTEGRATION_MERGE -> mergeSelectedPullRequest();
@@ -35,7 +37,9 @@ final class DirectorIntegrationPrimitiveBehavior implements ContractPrimitiveBeh
     }
 
     @Override
-    public Map<String, ?> synthesisResponse(String primitive, String primitiveId) {
+    public Map<String, ?> synthesisResponse(LlmJobRequest request) {
+        String primitive = primitive(request);
+        String primitiveId = primitiveId(request);
         if ("decide".equals(primitive)) {
             if (!HAS_CANDIDATE.equals(primitiveId)) {
                 throw new AssertionError("Unexpected Director decision primitive: " + primitiveId);

@@ -10,13 +10,33 @@ public record ContractScenario(
         When when,
         Then then) {
 
-    public record Given(Plane plane, Gitea gitea) {
+    public record Given(Workspace workspace, Plane plane, Gitea gitea, Source source) {
+    }
+
+    public record Workspace(
+            String plane,
+            String source,
+            String documentation,
+            String teamChat) {
     }
 
     public record Plane(Map<String, Implementation> implementations) {
     }
 
-    public record Implementation(String state, Handoff handoff) {
+    public record Implementation(
+            String state,
+            String assignee,
+            String activity,
+            DeliveryContext deliveryContext,
+            Handoff handoff,
+            Map<String, PlaneComment> comments) {
+    }
+
+    public record DeliveryContext(
+            String parentAcceptanceReference,
+            String repository,
+            String dependencyContext,
+            String expectedReviewEvidence) {
     }
 
     public record Handoff(
@@ -31,6 +51,12 @@ public record ContractScenario(
             String acceptanceReference) {
     }
 
+    public record PlaneComment(
+            String requiredOwner,
+            String gap,
+            String evidence) {
+    }
+
     public record Gitea(Map<String, PullRequest> pullRequests) {
     }
 
@@ -43,18 +69,32 @@ public record ContractScenario(
             String base) {
     }
 
+    public record Source(Map<String, SourceRepository> repositories) {
+    }
+
+    public record SourceRepository(
+            String revision,
+            String defaultBranch,
+            Map<String, String> branches,
+            Map<String, String> files) {
+    }
+
     public record When(String routine, String entrypoint) {
     }
 
     public record Then(
-            List<PullRequestExpectation> eventually,
-            List<String> never,
-            Limits limits) {
+            List<StateExpectation> eventually,
+            List<String> unchanged,
+            List<EventExpectation> never,
+            List<Limit> limits) {
     }
 
-    public record PullRequestExpectation(String pullRequest, String state) {
+    public record StateExpectation(String path, Object equals) {
     }
 
-    public record Limits(Integer productiveIterations) {
+    public record EventExpectation(String event) {
+    }
+
+    public record Limit(String metric, Integer atMost) {
     }
 }

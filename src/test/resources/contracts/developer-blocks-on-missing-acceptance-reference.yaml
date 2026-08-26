@@ -1,0 +1,54 @@
+scenario: developer-blocks-on-missing-acceptance-reference
+
+given:
+  workspace:
+    plane: available
+    source: available
+    documentation: available
+    teamChat: available
+
+  plane:
+    implementations:
+      A1:
+        state: in_progress
+        assignee: application_developer
+        activity: active
+        deliveryContext:
+          repository: team/service
+          dependencyContext: clear
+          expectedReviewEvidence: branch, commit, pull request, changed files, and validation
+
+  source:
+    repositories:
+      team/service:
+        revision: baseline-revision
+        defaultBranch: main
+        branches:
+          main: baseline-revision
+        files:
+          src/App.java: baseline-content
+
+when:
+  routine: software-team/application-developer
+  entrypoint: implementation
+
+then:
+  eventually:
+    - path: plane.implementations.A1.state
+      equals: in_progress
+    - path: plane.implementations.A1.comments.blocked.requiredOwner
+      equals: project_management
+    - path: plane.implementations.A1.comments.blocked.gap
+      equals: missing_parent_acceptance_reference
+
+  unchanged:
+    - source.repositories.team/service
+
+  never:
+    - event: sourceMutationAttempt
+
+  limits:
+    - metric: deliveryIterations
+      atMost: 6
+    - metric: implementationIterations
+      atMost: 1

@@ -33,11 +33,12 @@ public final class ContractScenarioLoader {
         require(text(scenario.scenario()), resource, "scenario is required");
         require(scenario.given() != null, resource, "given is required");
         require(scenario.given().plane() != null, resource, "given.plane is required");
-        require(scenario.given().gitea() != null, resource, "given.gitea is required");
         Map<String, ContractScenario.Implementation> implementations = scenario.given().plane().implementations();
-        Map<String, ContractScenario.PullRequest> pullRequests = scenario.given().gitea().pullRequests();
+        Map<String, ContractScenario.PullRequest> pullRequests = scenario.given().gitea() == null
+                ? Map.of()
+                : scenario.given().gitea().pullRequests();
         require(implementations != null, resource, "given.plane.implementations is required");
-        require(pullRequests != null, resource, "given.gitea.pullRequests is required");
+        require(pullRequests != null, resource, "given.gitea.pullRequests must be a map when present");
 
         for (Map.Entry<String, ContractScenario.Implementation> entry : implementations.entrySet()) {
             ContractScenario.Implementation implementation = entry.getValue();
@@ -55,10 +56,23 @@ public final class ContractScenarioLoader {
         require(text(scenario.when().entrypoint()), resource, "when.entrypoint is required");
         require(scenario.then() != null, resource, "then is required");
         require(!list(scenario.then().eventually()).isEmpty(), resource, "then.eventually is required");
-        require(scenario.then().limits() != null, resource, "then.limits is required");
-        require(scenario.then().limits().productiveIterations() != null
-                        && scenario.then().limits().productiveIterations() > 0,
-                resource, "then.limits.productiveIterations must be positive");
+        for (ContractScenario.StateExpectation expectation : list(scenario.then().eventually())) {
+            require(text(expectation.path()), resource, "then.eventually.path is required");
+            require(expectation.equals() != null, resource,
+                    "then.eventually.equals is required for " + expectation.path());
+        }
+        for (String path : list(scenario.then().unchanged())) {
+            require(text(path), resource, "then.unchanged paths must not be blank");
+        }
+        for (ContractScenario.EventExpectation expectation : list(scenario.then().never())) {
+            require(expectation != null && text(expectation.event()), resource, "then.never.event is required");
+        }
+        require(!list(scenario.then().limits()).isEmpty(), resource, "then.limits is required");
+        for (ContractScenario.Limit limit : list(scenario.then().limits())) {
+            require(limit != null && text(limit.metric()), resource, "then.limits.metric is required");
+            require(limit.atMost() != null && limit.atMost() >= 0, resource,
+                    "then.limits.atMost must not be negative for " + limit.metric());
+        }
     }
 
     private static boolean text(String value) {

@@ -4,70 +4,88 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
-/** End-state, forbidden-outcome, and bounded-termination assertions. */
+/** Path-based end-state, unchanged-state, event, and bounded-execution assertions. */
 public final class ContractScenarioAssertions {
+    private static final Object MISSING = new Object();
+
     private ContractScenarioAssertions() {
     }
 
     public static void assertSatisfied(ContractExecution execution) {
         ContractScenario scenario = execution.scenario();
         ContractWorld world = execution.world();
+        Map<String, Object> finalState = world.snapshot();
         List<String> violations = new ArrayList<>();
 
-        if (execution.routeFailure() != null) {
+        if (execution.routeFailure() != null
+                && !(execution.routeFailure() instanceof ContractLimitExceededException)) {
             violations.add("production route failed: " + execution.routeFailure());
         }
 
-        Map<String, ContractWorld.PullRequestState> actualStates = world.pullRequestStates();
-        for (ContractScenario.PullRequestExpectation expectation : list(scenario.then().eventually())) {
-            ContractWorld.PullRequestState expected = state(expectation.state());
-            ContractWorld.PullRequestState actual = actualStates.get(expectation.pullRequest());
-            if (actual != expected) {
-                violations.add("expected pull request %s=%s but was %s"
-                        .formatted(expectation.pullRequest(), expected, actual));
+        for (ContractScenario.StateExpectation expectation : list(scenario.then().eventually())) {
+            Object actual = valueAt(finalState, expectation.path());
+            if (actual == MISSING) {
+                violations.add("expected %s=%s but the path does not exist"
+                        .formatted(expectation.path(), expectation.equals()));
+            } else if (!Objects.deepEquals(expectation.equals(), actual)) {
+                violations.add("expected %s=%s but was %s"
+                        .formatted(expectation.path(), expectation.equals(), actual));
             }
         }
 
-        for (String forbidden : list(scenario.then().never())) {
+        for (String path : list(scenario.then().unchanged())) {
+            Object initial = valueAt(execution.initialWorldState(), path);
+            Object actual = valueAt(finalState, path);
+            if (initial == MISSING || actual == MISSING) {
+                violations.add("unchanged path does not exist in both snapshots: " + path);
+            } else if (!Objects.deepEquals(initial, actual)) {
+                violations.add("expected %s to remain unchanged but it changed from %s to %s"
+                        .formatted(path, initial, actual));
+            }
+        }
+
+        for (ContractScenario.EventExpectation forbidden : list(scenario.then().never())) {
             List<ContractWorld.Event> occurrences = world.events().stream()
-                    .filter(event -> canonical(event.action()).equals(canonical(forbidden)))
+                    .filter(event -> canonical(event.action()).equals(canonical(forbidden.event())))
                     .toList();
             if (!occurrences.isEmpty()) {
-                violations.add("forbidden outcome occurred: " + forbidden + " (" + occurrences.size() + " time(s))");
+                violations.add("forbidden event occurred: " + forbidden.event()
+                        + " (" + occurrences.size() + " time(s))");
             }
         }
 
-        int limit = scenario.then().limits().productiveIterations();
-        if (execution.productiveIterations() == null) {
-            violations.add("productive iteration counter was absent after route termination");
-        } else if (execution.productiveIterations() > limit) {
-            violations.add("productive iterations %d exceeded limit %d"
-                    .formatted(execution.productiveIterations(), limit));
+        for (ContractScenario.Limit limit : list(scenario.then().limits())) {
+            Integer actual = execution.metrics().get(limit.metric());
+            if (actual == null) {
+                violations.add("execution metric was not captured: " + limit.metric());
+            } else if (actual > limit.atMost()) {
+                violations.add("metric %s=%d exceeded limit %d"
+                        .formatted(limit.metric(), actual, limit.atMost()));
+            }
         }
 
         if (!violations.isEmpty()) {
-            throw new AssertionError(message(execution, violations, actualStates));
+            throw new AssertionError(message(execution, violations));
         }
     }
 
-    private static String message(
-            ContractExecution execution,
-            List<String> violations,
-            Map<String, ContractWorld.PullRequestState> actualStates) {
-        StringBuilder expected = new StringBuilder();
-        for (ContractScenario.PullRequestExpectation expectation : list(execution.scenario().then().eventually())) {
-            expected.append("  ").append(expectation.pullRequest()).append('=').append(state(expectation.state())).append('\n');
-        }
+    private static String message(ContractExecution execution, List<String> violations) {
+        String expected = list(execution.scenario().then().eventually()).stream()
+                .map(expectation -> "  " + expectation.path() + '=' + expectation.equals())
+                .reduce((a, b) -> a + "\n" + b)
+                .orElse("  (none)");
         return """
                 Contract scenario '%s' failed:
                 %s
 
                 Expected durable outcomes:
-                %sActual pull request states:
-                  %s
+                %s
 
-                Productive iterations: %s (limit %d)
+                Unchanged paths: %s
+                Execution metrics: %s
+                Execution stop: %s
 
                 Final world state:
                 %s
@@ -78,15 +96,22 @@ public final class ContractScenarioAssertions {
                 execution.scenario().scenario(),
                 violations.stream().map(violation -> "  - " + violation).reduce((a, b) -> a + "\n" + b).orElse(""),
                 expected,
-                actualStates,
-                execution.productiveIterations(),
-                execution.scenario().then().limits().productiveIterations(),
+                list(execution.scenario().then().unchanged()),
+                execution.metrics(),
+                execution.routeFailure() == null ? "completed normally" : execution.routeFailure(),
                 indent(execution.world().describeFinalState()),
                 indent(execution.world().describeAudit()));
     }
 
-    private static ContractWorld.PullRequestState state(String value) {
-        return ContractWorld.PullRequestState.valueOf(canonical(value).toUpperCase(Locale.ROOT));
+    private static Object valueAt(Map<String, ?> root, String path) {
+        Object current = root;
+        for (String segment : path.split("\\.")) {
+            if (!(current instanceof Map<?, ?> map) || !map.containsKey(segment)) {
+                return MISSING;
+            }
+            current = map.get(segment);
+        }
+        return current;
     }
 
     private static String canonical(String value) {

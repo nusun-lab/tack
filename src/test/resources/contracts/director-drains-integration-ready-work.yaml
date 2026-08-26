@@ -51,13 +51,14 @@ when:
 
 then:
   eventually:
-    - pullRequest: PR1
-      state: merged
-    - pullRequest: PR2
-      state: merged
+    - path: gitea.pullRequests.PR1.state
+      equals: merged
+    - path: gitea.pullRequests.PR2.state
+      equals: merged
 
   never:
-    - mergeAlreadyMergedPullRequest
+    - event: mergeAlreadyMergedPullRequest
 
   limits:
-    productiveIterations: 6
+    - metric: productiveIterations
+      atMost: 6
