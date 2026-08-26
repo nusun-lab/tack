@@ -142,31 +142,30 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
 
         from("direct:dev-delivery-loop")
                 .routeId("dev-delivery-loop")
-                .setProperty("applicationDeveloperCycle", constant(0))
-                .setProperty("decision.application-developer-done.result", constant(false))
-                .loopDoWhile(exchangeProperty("decision.application-developer-done.result").isNotEqualTo(true))
-                    .setProperty("applicationDeveloperCycle", simple("${exchangeProperty.applicationDeveloperCycle++}"))
+                .to("direct:dev-team-chat-sync")
+                .setProperty("devProductiveIterations", constant(0))
+                .setProperty("devMadeProgress", constant(true))
+                .loopDoWhile(simple("${exchangeProperty.devMadeProgress} == true && ${exchangeProperty.devProductiveIterations} < 6"))
+                    .setProperty("devProductiveIterations", simple("${exchangeProperty.devProductiveIterations++}"))
+                    .setProperty("devMadeProgress", constant(false))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Current developer pass: one assigned implementation child, its real Plane state,
+                        Current developer work unit: one freshly selected assigned implementation child, its real Plane state,
                         parent acceptance, current review disposition, source patch, PR, and validation.
                         """))
                     .to("tack:thought-enter?name=dev-cycle&maxTokens=300")
                     .setProperty("decision.developer-has-work.result", constant(false))
-                    .to("direct:dev-team-chat-sync")
                     .to("direct:dev-work-selection")
                     .choice()
                         .when(exchangeProperty("decision.developer-has-work.result").isEqualTo(true))
                             .to("direct:dev-implementation-loop")
+                            .choice()
+                                .when(exchangeProperty("devImplementationMadeProgress").isEqualTo(true))
+                                    .setProperty("devMadeProgress", constant(true))
+                            .end()
                             .to("direct:dev-work-closeout")
                         .otherwise()
                             .to("direct:dev-no-work-closeout")
                     .end()
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                                    Is this developer pass locally complete because one assigned implementation child
-                                    produced current REVIEW READY evidence, became durably BLOCKED, is waiting on an accepted
-                                    INTEGRATION READY merge, or no eligible assigned implementation work exists?
-                                    """))
-                    .to("tack:decide?id=application-developer-done")
                     .to("tack:thought-exit?name=dev-cycle")
                 .end();
 
@@ -187,12 +186,16 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                         """))
                 .to("tack:thought-enter?name=dev-selection&maxTokens=250")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Using Plane, inspect only IMPLEMENTATION CHILDREN assigned to you.
+                                Using fresh Plane evidence, inspect only IMPLEMENTATION CHILDREN assigned to you.
 
                                 First consider assigned In Progress implementation children. Continue one when implementation
-                                is actively underway or when a newer PM REVIEW FEEDBACK comment requests changes. Do not make
-                                additional code changes to an item that is simply waiting on a current REVIEW READY review or
-                                an INTEGRATION READY Director merge.
+                                is actively underway or when a newer PM REVIEW FEEDBACK comment requests changes. A newer
+                                REVIEW FEEDBACK beginning SOURCE_REFRESH_REQUIRED is actionable recovery work: update the
+                                existing task branch and pull request rather than creating replacements. Prefer current review
+                                feedback/recovery over starting another new code task.
+
+                                Do not make additional code changes to an item that is simply waiting on a current REVIEW READY
+                                review or a current INTEGRATION READY Director merge with no newer PM feedback.
 
                                 If no actionable assigned In Progress child exists, consider one assigned Todo implementation
                                 child. Todo plus assignment is the authoritative PM -> DEV handoff. Verify it references its
@@ -206,7 +209,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Is one assigned actionable implementation child now selected in In Progress?
                                 Return false when every assigned In Progress child is waiting on review/integration and no
-                                assigned Todo child is available.
+                                assigned Todo child or newer REVIEW FEEDBACK recovery is available.
                                 """))
                 .to("tack:decide?id=developer-has-work")
                 .to("tack:thought-exit?name=dev-selection");
@@ -214,6 +217,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         from("direct:dev-implementation-loop")
                 .routeId("dev-implementation-loop")
                 .setProperty("developerImplementationCycle", constant(0))
+                .setProperty("devImplementationMadeProgress", constant(false))
                 .setProperty("decision.developer-implementation-complete.result", constant(false))
                 .loopDoWhile(exchangeProperty("decision.developer-implementation-complete.result").isNotEqualTo(true))
                     .setProperty("developerImplementationCycle", simple("${exchangeProperty.developerImplementationCycle++}"))
@@ -223,27 +227,45 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                         """))
                     .to("tack:thought-enter?name=dev-implementation&maxTokens=250")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Read only the selected In Progress implementation child. Verify it is assigned to you,
-                                    is an implementation child rather than the product parent, and contains parent acceptance
-                                    reference, source repository, dependencies, and expected review evidence. If required delivery
-                                    context is malformed, do not invent it; record the exact PM-owned gap as BLOCKED.
+                                    Read only the selected In Progress implementation child using fresh Plane evidence. Verify
+                                    assignment, parent acceptance reference, repository, dependencies, expected review evidence,
+                                    and the newest PM REVIEW FEEDBACK. If required delivery context is malformed, do not invent it;
+                                    record the exact PM-owned gap as BLOCKED.
                                     """))
                     .to("tack:act?id=dev-task-context-read&toolProfile=" + ProjectManagementToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Read only direct product-acceptance links and source files needed for this implementation
-                                    child. Identify one coherent next patch and validation target. Stop reading when the patch
-                                    is clear. Do not broaden into uncovered product work.
+                                    child. Identify one coherent next patch and validation target. If current PM feedback requires
+                                    source refresh, also inspect the existing task branch/PR against current origin/main so the
+                                    recovery patch is based on fresh source state. Stop reading when the patch is clear.
                                     """))
                     .to("tack:act?id=dev-source-context-plan&toolProfile=" + SourceControlToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Apply exactly one coherent source-control patch for the selected implementation child.
-                                    Use or create a task branch, validate changed behavior when practical, commit the coherent
-                                    change, push it, and create or update one pull request for the task branch. Incorporate
-                                    current PM REVIEW FEEDBACK when present. Avoid duplicate pull requests.
+
+                                    For normal implementation, use or create the task branch, validate changed behavior when
+                                    practical, commit, push, and create or update one pull request. Avoid duplicate PRs.
+
+                                    For newer PM REVIEW FEEDBACK beginning SOURCE_REFRESH_REQUIRED, recover the existing task:
+                                    - fetch current origin/main
+                                    - keep the same task branch and pull request
+                                    - merge current origin/main into the task branch; do not rewrite shared history or force-push
+                                    - resolve conflicts only when the intended combined behavior is clear from current accepted
+                                      requirements and implementation context
+                                    - if resolution requires choosing between incompatible product behavior or architecture not
+                                      established by current evidence, do not guess; leave the task truthfully blocked for the
+                                      appropriate owner
+                                    - rerun relevant validation, commit the recovery when needed, and push the same branch
+
+                                    Incorporate all current PM REVIEW FEEDBACK. Do not create replacement tasks or pull requests.
                                     """))
                     .to("tack:act?id=dev-delivery-step&toolProfile=" + SourceControlWriteToolProfile.ID)
+                    .choice()
+                        .when(exchangeProperty("act.dev-delivery-step.durableProgress").isEqualTo(true))
+                            .setProperty("devImplementationMadeProgress", constant(true))
+                    .end()
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Check available validation and reviewability evidence: changed files, branch, commit,
+                                    Check fresh validation and reviewability evidence: changed files, current branch/head,
                                     pull request state, tests or other validation actually run, and any limitation.
                                     Do not claim validation that did not occur.
                                     """))
@@ -252,19 +274,23 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                     Update exactly the selected implementation child in Plane.
 
                                     Keep it In Progress. When the implementation child is ready for PM review, add or refresh
-                                    one comment beginning REVIEW READY with branch, commit/head, pull request, changed files,
-                                    validation result or limitation, parent product item, and canonical acceptance reference.
-                                    REVIEW READY is a handoff comment, not a Plane state. Do not move to a nonexistent Review state
-                                    and do not move to Done; PM review, Director merge, and PM merge verification happen afterward.
+                                    one comment beginning REVIEW READY with current branch, commit/head, existing pull request,
+                                    changed files, validation result or limitation, parent product item, and canonical acceptance
+                                    reference. A source-refresh recovery must publish fresh REVIEW READY for the new head.
+                                    REVIEW READY is a handoff comment, not a Plane state. Do not move to Done.
 
                                     When blocked, keep the truthful real state and add/refresh one BLOCKED comment naming the
                                     required owner and evidence. Avoid duplicate equivalent handoff comments.
                                     """))
                     .to("tack:act?id=dev-plane-status-evidence-update&toolProfile=" + ProjectManagementToolProfile.ID)
+                    .choice()
+                        .when(exchangeProperty("act.dev-plane-status-evidence-update.durableProgress").isEqualTo(true))
+                            .setProperty("devImplementationMadeProgress", constant(true))
+                    .end()
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Is this implementation step complete for now because current REVIEW READY evidence exists
                                     for a real reviewable diff/PR, or the task is durably BLOCKED? Return false only when there
-                                    is an obvious next production-code/test patch required before review.
+                                    is an obvious next production-code/test/recovery patch required before review.
                                     """))
                     .to("tack:decide?id=developer-implementation-complete")
                     .to("tack:thought-exit?name=dev-implementation")
