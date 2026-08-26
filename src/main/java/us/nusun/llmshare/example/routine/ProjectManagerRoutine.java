@@ -230,13 +230,15 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                 Read at most one highest-value current delivery item using fresh Plane and linked source evidence.
 
                                 Priority:
-                                1. In Progress implementation child with INTEGRATION READY: inspect the exact linked PR and
-                                   current Plane handoff. Determine whether the reviewed head merged, or whether the approval
-                                   became stale because the PR now conflicts/is not mergeable, its head/base changed, or newer
-                                   review/comment activity after the PM review changed the review surface.
-                                2. In Progress implementation child with current REVIEW READY and no later PM disposition:
+                                1. In Progress implementation child with current REVIEW READY and no later PM disposition:
                                    inspect its acceptance reference, current diff/head, changed files, validation, linked PR,
-                                   and current PR review/comment activity.
+                                   and current PR review/comment activity. REVIEW READY work outranks a clean INTEGRATION READY
+                                   item that is merely waiting for the Director, so one approved PR cannot hide later reviews.
+                                2. In Progress implementation child with INTEGRATION READY when its exact linked PR may have
+                                   merged or the approval may have become stale because the PR conflicts/is not mergeable,
+                                   its head/base changed, or newer review/comment activity changed the review surface. If the
+                                   IR is still clean, open, unchanged, and simply waiting for Director merge, leave it alone
+                                   when any other actionable PM item exists.
                                 3. Todo/In Progress implementation child with a current BLOCKED comment needing coordination.
                                 4. Backlog implementation child whose declared dependencies may now all be Done.
                                 5. In Progress product parent whose implementation children may all be Done. Read the parent's
@@ -322,7 +324,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .setProperty("pmTaskPlanningCycle", simple("${exchangeProperty.pmTaskPlanningCycle++}"))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
                         Second-stage decomposition of one product parent: acceptance behaviors, existing implementation
-                        children, technical coverage, dependencies, assignees, and the next missing discrete delivery outcome.
+                        children, technical coverage, dependencies, assignees, product-acceptance feedback, and the next
+                        missing discrete delivery outcome.
                         """))
                     .to("tack:thought-enter?name=pm-planning&maxTokens=300")
                     .setHeader(TackHeaders.PROMPT, constant("""
@@ -332,14 +335,25 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     Your job is the second decomposition: identify independently finishable technical outcomes
                                     whose combined delivery satisfies the parent's existing Gherkin acceptance.
 
-                                    First inspect the parent and its existing implementation children. Build a compact coverage
-                                    map from each acceptance behavior to existing children so you do not duplicate work.
-                                    Then create or refine exactly one missing or oversized implementation child per pass.
+                                    First inspect the parent, its existing implementation children, and any newer unresolved
+                                    PRODUCT ACCEPTANCE FEEDBACK. Build a compact coverage map from each acceptance behavior to
+                                    existing children so you do not duplicate work.
+
+                                    Unresolved PRODUCT ACCEPTANCE FEEDBACK is authoritative evidence that the prior delivery did
+                                    not actually satisfy the named existing acceptance behavior. An implementation child that was
+                                    already Done before that feedback does NOT count as adequate remediation merely because it
+                                    nominally covered the same Gherkin scenario. Create or refine a distinct remediation child
+                                    after the feedback that references the exact feedback and failed existing scenario. Do not
+                                    invent new product scope or rewrite acceptance criteria. Once that feedback has an adequate
+                                    remediation child, normal dependency/assignment rules apply.
+
+                                    Create or refine exactly one missing, remediation, or oversized implementation child per pass.
 
                                     Each implementation child must:
                                     - be linked as a child of the selected product parent
                                     - describe one independently finishable technical outcome, not a new user-facing product slice
                                     - reference the parent's canonical acceptance page and the acceptance behavior(s) it covers
+                                    - for remediation, reference the specific PRODUCT ACCEPTANCE FEEDBACK it addresses
                                     - have one named developer assignee, priority, source repository, dependencies or explicit independence
                                     - name one concrete next implementation step and expected review/validation evidence
                                     - use Todo when its dependencies are satisfied and it is executable now
@@ -359,7 +373,15 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     Return true only when every existing Gherkin acceptance behavior is covered by one or more
                                     non-duplicative implementation children, each child is small enough to finish independently,
                                     dependencies are explicit, and every currently executable child is assigned in Todo.
-                                    Return false while acceptance behavior remains uncovered or a child is still too broad.
+
+                                    Also return false when newer unresolved PRODUCT ACCEPTANCE FEEDBACK is not yet represented by
+                                    a distinct post-feedback remediation implementation child that explicitly addresses the failed
+                                    existing scenario. Older Done children created before that feedback do not satisfy this check.
+                                    Once adequate remediation work exists, it may be Todo, In Progress, or Done according to its
+                                    actual delivery state; planning need not wait for implementation completion.
+
+                                    Return false while acceptance behavior remains uncovered, required remediation is missing,
+                                    or a child is still too broad.
                                     """))
                     .to("tack:decide?id=pm-task-planning-done")
                     .to("tack:thought-exit?name=pm-planning")
