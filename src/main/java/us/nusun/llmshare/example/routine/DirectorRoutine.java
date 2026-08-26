@@ -78,10 +78,13 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Freshly verify only the shared project basics needed for staffing this mission.
                                     Determine whether there is one usable current-mission Plane project, one source repository
-                                    under agent-workspace, one documentation repository with usable navigation, one current-mission
-                                    team-chat channel, and usable team access. Repository existence is sufficient: the source
-                                    repository may legitimately have zero commits before Application Development starts.
+                                    under agent-workspace, one documentation repository with usable navigation, and one
+                                    current-mission team-chat channel that this Director run can access. Repository existence
+                                    is sufficient: the source repository may legitimately have zero commits before Application
+                                    Development starts.
 
+                                    Do not require proof that not-yet-running PO/DEV roles are already members of every shared
+                                    resource. Project Management owns membership alignment as the mission roster changes.
                                     Product work items, implementation children, source commits, tests, pull requests, and
                                     application code are NOT project-basics prerequisites. Their absence must never block
                                     Product Owner or Application Developer staffing once the shared foundation itself exists.
@@ -90,9 +93,10 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                     .to("tack:act?id=director-staffing-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Is the shared delivery foundation currently usable for Product Owner and Application Developer work?
-                                    Return true only when Plane project, source repository, documentation/navigation, team chat,
-                                    and usable access are verified. An empty source repository is valid. Work-item or code absence
-                                    does not make the foundation incomplete.
+                                    Return true only when Plane project, source repository, documentation/navigation, and team chat
+                                    are verified and readable from this Director run. An empty source repository is valid.
+                                    Do not require proof of future PO/DEV membership. Work-item or code absence does not make
+                                    the foundation incomplete.
                                     """))
                     .to("tack:decide?id=director-foundation-ready")
                     .setHeader(TackHeaders.PROMPT, simple("""
