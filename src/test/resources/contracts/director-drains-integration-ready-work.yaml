@@ -1,0 +1,63 @@
+scenario: director-drains-integration-ready-work
+
+given:
+  plane:
+    implementations:
+      A1:
+        state: in_progress
+        handoff:
+          type: integration_ready
+          current: true
+          pullRequest: PR1
+          repository: team/service
+          reviewedHead: a1-reviewed-head
+          reviewedBase: main
+          reviewedAt: 2026-08-01T10:00:00Z
+          validation: passed
+          acceptanceReference: A1-acceptance
+      A2:
+        state: in_progress
+        handoff:
+          type: integration_ready
+          current: true
+          pullRequest: PR2
+          repository: team/service
+          reviewedHead: a2-reviewed-head
+          reviewedBase: main
+          reviewedAt: 2026-08-01T10:05:00Z
+          validation: passed
+          acceptanceReference: A2-acceptance
+
+  gitea:
+    pullRequests:
+      PR1:
+        state: open
+        mergeable: true
+        conflicted: false
+        repository: team/service
+        head: a1-reviewed-head
+        base: main
+      PR2:
+        state: open
+        mergeable: true
+        conflicted: false
+        repository: team/service
+        head: a2-reviewed-head
+        base: main
+
+when:
+  routine: software-team/director
+  entrypoint: integration-loop
+
+then:
+  eventually:
+    - pullRequest: PR1
+      state: merged
+    - pullRequest: PR2
+      state: merged
+
+  never:
+    - mergeAlreadyMergedPullRequest
+
+  limits:
+    productiveIterations: 6
