@@ -88,6 +88,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             .when(exchangeProperty("decision.developer-has-work.result").isNotEqualTo(true))
                                 .to("direct:dev-no-work-closeout")
                         .end()
+                    .endChoice()
                     .otherwise()
                         .to("direct:dev-missing-basics-closeout")
                 .end()
