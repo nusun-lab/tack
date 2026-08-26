@@ -181,32 +181,34 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
 
         from("direct:pm-coordination-loop")
                 .routeId("pm-coordination-loop")
-                .setProperty("projectManagerCycle", constant(0))
-                .setProperty("decision.project-manager-done.result", constant(false))
-                .loopDoWhile(exchangeProperty("decision.project-manager-done.result").isNotEqualTo(true))
-                    .setProperty("projectManagerCycle", simple("${exchangeProperty.projectManagerCycle++}"))
+                .to("direct:pm-team-onboarding")
+                .setProperty("pmProductiveIterations", constant(0))
+                .setProperty("pmMadeProgress", constant(true))
+                .loopDoWhile(simple("${exchangeProperty.pmMadeProgress} == true && ${exchangeProperty.pmProductiveIterations} < 10"))
+                    .setProperty("pmProductiveIterations", simple("${exchangeProperty.pmProductiveIterations++}"))
+                    .setProperty("pmMadeProgress", constant(false))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Current delivery pass: one active implementation child needing review/integration/promotion,
+                        Current delivery pass: one fresh active implementation child needing review/integration/recovery/promotion,
                         or one Todo/active product parent needing second-stage delivery decomposition.
                         """))
                     .to("tack:thought-enter?name=pm-cycle&maxTokens=300")
-                    .to("direct:pm-team-onboarding")
                     .to("direct:pm-active-delivery-check")
+                    .choice()
+                        .when(exchangeProperty("act.pm-active-delivery-update.durableProgress").isEqualTo(true))
+                            .setProperty("pmMadeProgress", constant(true))
+                    .end()
                     .to("direct:pm-work-intake")
                     .choice()
                         .when(exchangeProperty("decision.pm-has-product-for-delivery.result").isEqualTo(true))
                             .to("direct:pm-task-planning-loop")
+                            .choice()
+                                .when(exchangeProperty("pmTaskPlanningMadeProgress").isEqualTo(true))
+                                    .setProperty("pmMadeProgress", constant(true))
+                            .end()
                     .end()
-                    .to("direct:pm-team-sync")
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                                    Is this PM pass locally complete because one concrete delivery action occurred:
-                                    workspace setup was established; one implementation review/integration/promotion was
-                                    coordinated; one product parent was adequately decomposed into implementation children;
-                                    one acceptance handoff was produced; or no current PM action exists and that was verified?
-                                    """))
-                    .to("tack:decide?id=project-manager-done")
                     .to("tack:thought-exit?name=pm-cycle")
-                .end();
+                .end()
+                .to("direct:pm-team-sync");
 
         from("direct:pm-team-onboarding")
                 .routeId("pm-team-onboarding")
@@ -220,26 +222,27 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-active-delivery-check")
                 .routeId("pm-active-delivery-check")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        One delivery-maintenance item: In Progress implementation child awaiting review or merge verification,
-                        blocked Todo/In Progress child, Backlog child whose dependencies may now be satisfied, or active
-                        product parent whose implementation children may all be Done.
+                        One delivery-maintenance item: In Progress implementation child awaiting review, merge verification,
+                        stale/conflicted integration recovery, blocked coordination, dependency promotion, or completed-parent handoff.
                         """))
                 .to("tack:thought-enter?name=pm-active-delivery&maxTokens=300")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Read at most one highest-value current delivery item using Plane's real states only.
+                                Read at most one highest-value current delivery item using fresh Plane and linked source evidence.
 
                                 Priority:
-                                1. In Progress implementation child with INTEGRATION READY: inspect the linked PR and determine
-                                   whether the Director has merged the exact reviewed head.
+                                1. In Progress implementation child with INTEGRATION READY: inspect the exact linked PR and
+                                   current Plane handoff. Determine whether the reviewed head merged, or whether the approval
+                                   became stale because the PR now conflicts/is not mergeable, its head/base changed, or newer
+                                   review/comment activity after the PM review changed the review surface.
                                 2. In Progress implementation child with current REVIEW READY and no later PM disposition:
-                                   inspect its acceptance reference, diff, changed files, validation, and linked PR.
+                                   inspect its acceptance reference, current diff/head, changed files, validation, linked PR,
+                                   and current PR review/comment activity.
                                 3. Todo/In Progress implementation child with a current BLOCKED comment needing coordination.
                                 4. Backlog implementation child whose declared dependencies may now all be Done.
                                 5. In Progress product parent whose implementation children may all be Done.
 
-                                REVIEW READY, INTEGRATION READY, BLOCKED, and PRODUCT ACCEPTANCE READY are handoff/evidence
-                                comments, never Plane states. Do not search for nonexistent Review or Blocked states.
-                                Do not mutate in this read.
+                                REVIEW READY, INTEGRATION READY, REVIEW FEEDBACK, BLOCKED, and PRODUCT ACCEPTANCE READY are
+                                handoff/evidence comments, never Plane states. Do not mutate in this read.
                                 """))
                 .to("tack:act?id=pm-active-delivery-evidence-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
@@ -247,12 +250,19 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
 
                                 - If an INTEGRATION READY implementation child's exact reviewed PR/head is verified merged,
                                   move that implementation child In Progress -> Done.
-                                - If a REVIEW READY implementation child is acceptable against its referenced product
-                                  acceptance and available validation, keep it In Progress and add/refresh one INTEGRATION READY
-                                  comment containing repository, PR, reviewed head commit, validation, and acceptance reference.
-                                  The Director owns the merge. Do not move the task to Done before merge verification.
-                                - If review finds a defect or unmet acceptance behavior, keep the task In Progress and add one
-                                  precise REVIEW FEEDBACK comment. Do not create a duplicate replacement task.
+                                - If an INTEGRATION READY approval is stale because the PR is conflicted/not mergeable, the
+                                  head/base changed, or newer material review/comment activity changed the review surface,
+                                  keep the child In Progress and add/refresh a newer REVIEW FEEDBACK comment. For source drift
+                                  or conflicts, begin the feedback with SOURCE_REFRESH_REQUIRED and include repository, PR,
+                                  current head, expected base, invalidation reason, and the required action: update the existing
+                                  task branch from current main, resolve only unambiguous conflicts, rerun validation, push the
+                                  same branch/PR, and publish fresh REVIEW READY. Never create a replacement child or PR.
+                                - If a REVIEW READY implementation child is acceptable against its referenced product acceptance,
+                                  current diff/review surface, and available validation, keep it In Progress and add/refresh one
+                                  INTEGRATION READY comment containing repository, PR, reviewedHead, reviewedBase, reviewedAt,
+                                  validation, and acceptance reference. The Director owns the merge.
+                                - If review finds a defect, unmet acceptance behavior, or meaningful unresolved PR feedback,
+                                  keep the task In Progress and add one precise REVIEW FEEDBACK comment.
                                 - If a Backlog implementation child's dependencies are all Done and the task is otherwise
                                   actionable and assigned, move it Backlog -> Todo.
                                 - Keep blocked work in its truthful real state and record/refresh one BLOCKED comment naming
@@ -299,6 +309,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-task-planning-loop")
                 .routeId("pm-task-planning-loop")
                 .setProperty("pmTaskPlanningCycle", constant(0))
+                .setProperty("pmTaskPlanningMadeProgress", constant(false))
                 .setProperty("decision.pm-task-planning-done.result", constant(false))
                 .loopDoWhile(exchangeProperty("decision.pm-task-planning-done.result").isNotEqualTo(true))
                     .setProperty("pmTaskPlanningCycle", simple("${exchangeProperty.pmTaskPlanningCycle++}"))
@@ -332,6 +343,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     Never create overlapping children merely because implementation has already begun.
                                     """))
                     .to("tack:act?id=pm-actionable-dev-task&toolProfile=" + ProjectManagementToolProfile.ID)
+                    .choice()
+                        .when(exchangeProperty("act.pm-actionable-dev-task.durableProgress").isEqualTo(true))
+                            .setProperty("pmTaskPlanningMadeProgress", constant(true))
+                    .end()
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Is this product parent's delivery decomposition adequate now?
                                     Return true only when every existing Gherkin acceptance behavior is covered by one or more
