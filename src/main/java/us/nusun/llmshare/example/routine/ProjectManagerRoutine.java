@@ -239,10 +239,13 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                    and current PR review/comment activity.
                                 3. Todo/In Progress implementation child with a current BLOCKED comment needing coordination.
                                 4. Backlog implementation child whose declared dependencies may now all be Done.
-                                5. In Progress product parent whose implementation children may all be Done.
+                                5. In Progress product parent whose implementation children may all be Done. Read the parent's
+                                   PRODUCT ACCEPTANCE READY and PRODUCT ACCEPTANCE FEEDBACK comment ordering as part of this check.
+                                   Unresolved feedback is newer PRODUCT ACCEPTANCE FEEDBACK for which no later remediation work
+                                   has been completed and no later valid PRODUCT ACCEPTANCE READY has superseded it.
 
-                                REVIEW READY, INTEGRATION READY, REVIEW FEEDBACK, BLOCKED, and PRODUCT ACCEPTANCE READY are
-                                handoff/evidence comments, never Plane states. Do not mutate in this read.
+                                REVIEW READY, INTEGRATION READY, REVIEW FEEDBACK, BLOCKED, PRODUCT ACCEPTANCE READY, and
+                                PRODUCT ACCEPTANCE FEEDBACK are handoff/evidence comments, never Plane states. Do not mutate in this read.
                                 """))
                 .to("tack:act?id=pm-active-delivery-evidence-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
@@ -267,9 +270,12 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                   actionable and assigned, move it Backlog -> Todo.
                                 - Keep blocked work in its truthful real state and record/refresh one BLOCKED comment naming
                                   the required owner and evidence.
-                                - If every implementation child of an In Progress product parent is Done, keep the parent
-                                  In Progress and add/refresh PRODUCT ACCEPTANCE READY with the canonical acceptance page and
-                                  completed evidence for Product Ownership.
+                                - If every implementation child of an In Progress product parent is Done, add or refresh
+                                  PRODUCT ACCEPTANCE READY only when there is no newer unresolved PRODUCT ACCEPTANCE FEEDBACK.
+                                  When newer unresolved product feedback exists, do not publish another READY handoff here;
+                                  leave the parent In Progress so work intake can decompose that feedback into remediation work.
+                                  A later PRODUCT ACCEPTANCE READY is valid only after the feedback has been addressed by durable
+                                  delivery evidence. Include the canonical acceptance page and completed evidence.
 
                                 Do not use custom Plane states or labels.
                                 """))
@@ -291,9 +297,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                 product page contains usable user scope and testable Gherkin acceptance. Do not require a magic
                                 readiness comment.
 
-                                Otherwise select an In Progress product parent only when delivery decomposition remains
-                                incomplete or Product Ownership has supplied PRODUCT ACCEPTANCE FEEDBACK that is not yet
-                                represented by an implementation child.
+                                Otherwise select an In Progress product parent when delivery decomposition remains incomplete
+                                or when newer PRODUCT ACCEPTANCE FEEDBACK is unresolved and is not yet represented by adequate
+                                remediation implementation children. Treat newer product feedback as invalidating any older
+                                PRODUCT ACCEPTANCE READY handoff until remediation is durably completed.
 
                                 Never implement the product parent itself. Never treat an implementation child as a product
                                 slice. Do not create new product scope.
