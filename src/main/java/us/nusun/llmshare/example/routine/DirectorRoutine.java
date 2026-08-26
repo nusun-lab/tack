@@ -75,6 +75,26 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                                     actively running. If no verified current-mission channel is known, skip chat and stop.
                                     """))
                     .to("tack:act?id=director-team-guidance&toolProfile=" + TeamChatToolProfile.ID)
+                    .setHeader(TackHeaders.PROMPT, constant("""
+                                    Freshly verify only the shared project basics needed for staffing this mission.
+                                    Determine whether there is one usable current-mission Plane project, one source repository
+                                    under agent-workspace, one documentation repository with usable navigation, one current-mission
+                                    team-chat channel, and usable team access. Repository existence is sufficient: the source
+                                    repository may legitimately have zero commits before Application Development starts.
+
+                                    Product work items, implementation children, source commits, tests, pull requests, and
+                                    application code are NOT project-basics prerequisites. Their absence must never block
+                                    Product Owner or Application Developer staffing once the shared foundation itself exists.
+                                    Do not mutate anything. Stop after the smallest authoritative reads needed to decide.
+                                    """))
+                    .to("tack:act?id=director-staffing-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
+                    .setHeader(TackHeaders.PROMPT, constant("""
+                                    Is the shared delivery foundation currently usable for Product Owner and Application Developer work?
+                                    Return true only when Plane project, source repository, documentation/navigation, team chat,
+                                    and usable access are verified. An empty source repository is valid. Work-item or code absence
+                                    does not make the foundation incomplete.
+                                    """))
+                    .to("tack:decide?id=director-foundation-ready")
                     .setHeader(TackHeaders.PROMPT, simple("""
                         Decide which AgentRuns are useful now.
 
@@ -90,6 +110,9 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         AUTHORITATIVE ACTIVE COVERAGE:
                         ${exchangeProperty.directorActiveMissionRoster}
 
+                        FOUNDATION READY:
+                        ${exchangeProperty.decision.director-foundation-ready.result}
+
                         Capacity: ${exchangeProperty.directorActiveRunCount}/${exchangeProperty.agentRunCapacityMaximum} active,
                         ${exchangeProperty.directorRemainingRunCapacity} remaining.
 
@@ -100,33 +123,25 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         - Plane assignments, commits, pull requests, Mattermost messages, documentation, and other
                           project evidence never establish active AgentRun coverage.
 
-                        USEFUL COVERAGE:
-                        - The steady-state goal is active full-routine coverage from Product Owner, Project Manager,
-                          and Application Developer while their capabilities remain useful to unfinished mission outcomes.
-                        - Do not confuse eventual full-team coverage with starting every role immediately.
-                        - A run is useful only when its routine prerequisites exist or the run itself owns creating them.
-                        - The Project Manager main routine owns the shared delivery foundation: Plane workspace,
-                          agent-workspace repositories, documentation/navigation, team chat, membership, and ongoing
-                          delivery coordination.
-                        - Product Owner and Application Developer routines explicitly require those project basics before
-                          they can do their role work. When those basics are absent or not yet verified, starting those
-                          roles only creates blocked coverage and does not advance the mission.
-                        - Once project basics are durably established, keeping PM, PO, and DEV main-routine coverage
-                          active is normally the lowest-touch way to let the team work continuously.
+                        STAFFING CONTRACT:
+                        - Before the shared foundation is ready, Project Manager main-routine coverage owns creating it.
+                        - Once FOUNDATION READY is true, Product Owner, Project Manager, and Application Developer main-routine
+                          coverage are all useful while the mission remains unfinished. Do not wait for product work items,
+                          implementation children, commits, tests, or application code before starting missing PO/DEV coverage.
+                        - Product Owner creates product slices; therefore product-work absence can never be a prerequisite for
+                          starting Product Owner.
+                        - Application Developer consumes PM-assigned implementation children and will truthfully no-op when none
+                          is ready; an empty source repository is not a reason to withhold Developer coverage after foundation readiness.
                         - If a previously useful run fails or completes while its role still has unfinished mission work,
                           replace that coverage.
 
                         STARTING RUNS:
-                        - Choose the next missing capability from the dependency state above rather than from a fixed role order.
-                        - Prefer full main routines. Use subroutines only for an explicit narrow need.
+                        - Prefer full main routines.
                         - Avoid duplicate active coverage.
                         - Start no more runs than remaining capacity.
                         - Give each new run responsibility for the whole mission through that role, with only concise
                           current-mission context needed to resume.
-                        - Return {"agentRuns":[]} when current useful coverage is sufficient for now.
-
-                        This should naturally produce one foundation-owning run during an unbootstrapped mission, then
-                        expand to full team coverage after the shared workspace is usable, without hard-coded sequencing.
+                        - Return {"agentRuns":[]} only when current useful coverage is sufficient for the readiness state above.
                         """))
                     .to("tack:create?id=planned-agent-runs&schemaId=agent-run-request-list&schema=classpath:schemas/example/software-team/agent-run-requests-schema.json")
                     .unmarshal().json(JsonLibrary.Jackson, MissionRequest.class)
@@ -162,6 +177,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                 .loopDoWhile(simple("${exchangeProperty.directorMadeProgress} == true && ${exchangeProperty.directorProductiveIterations} < 6"))
                     .setProperty("directorProductiveIterations", simple("${exchangeProperty.directorProductiveIterations++}"))
                     .setProperty("directorMadeProgress", constant(false))
+                    .setProperty("decision.director-has-integration-candidate.result", constant(false))
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Read a small fresh current-mission slice sufficient to find at most one In Progress
                                     implementation child carrying a current PM INTEGRATION READY handoff. Plane state and
@@ -171,29 +187,37 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                                     """))
                     .to("tack:act?id=director-workspace-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Own one final pull-request merge action for the team.
-
-                                    Freshly reread the selected implementation child's current Plane comments. A current
-                                    INTEGRATION READY comment from Project Management is the authoritative approval; do not
-                                    require or infer PM approval from a Gitea review or comment.
-
-                                    Then freshly inspect that exact pull request in Gitea. Merge only when:
-                                    - the Plane handoff is still current and contains repository, PR, reviewedHead,
-                                      reviewedBase, reviewedAt, validation, and acceptance reference
-                                    - the PR is still open and targets the reviewed repository/base
-                                    - the current PR head exactly equals reviewedHead
-                                    - the PR is mergeable and not conflicted
-                                    - no newer commit, review, or material PR comment after reviewedAt has changed the review surface
-                                    - current validation evidence does not contradict the PM review
-
-                                    If the head/base/review surface changed, the PR conflicts, or any evidence is ambiguous,
-                                    make no source-control mutation. Project Management owns redisposition through Plane.
-                                    If no eligible PR exists, make no source-control mutation and stop.
+                                    Is exactly one current In Progress implementation child selected with a complete current
+                                    PM INTEGRATION READY handoff and linked pull request? Return false when no eligible candidate
+                                    was found or required handoff fields are missing or ambiguous.
                                     """))
-                    .to("tack:act?id=director-integration-merge&toolProfile=" + IntegrationToolProfile.ID)
+                    .to("tack:decide?id=director-has-integration-candidate")
                     .choice()
-                        .when(exchangeProperty("act.director-integration-merge.durableProgress").isEqualTo(true))
-                            .setProperty("directorMadeProgress", constant(true))
+                        .when(exchangeProperty("decision.director-has-integration-candidate.result").isEqualTo(true))
+                            .setHeader(TackHeaders.PROMPT, constant("""
+                                            Own one final pull-request merge action for the team.
+
+                                            Freshly reread the selected implementation child's current Plane comments. A current
+                                            INTEGRATION READY comment from Project Management is the authoritative approval; do not
+                                            require or infer PM approval from a Gitea review or comment.
+
+                                            Then freshly inspect that exact pull request in Gitea. Merge only when:
+                                            - the Plane handoff is still current and contains repository, PR, reviewedHead,
+                                              reviewedBase, reviewedAt, validation, and acceptance reference
+                                            - the PR is still open and targets the reviewed repository/base
+                                            - the current PR head exactly equals reviewedHead
+                                            - the PR is mergeable and not conflicted
+                                            - no newer commit, review, or material PR comment after reviewedAt has changed the review surface
+                                            - current validation evidence does not contradict the PM review
+
+                                            If the head/base/review surface changed, the PR conflicts, or any evidence is ambiguous,
+                                            make no source-control mutation. Project Management owns redisposition through Plane.
+                                            """))
+                            .to("tack:act?id=director-integration-merge&toolProfile=" + IntegrationToolProfile.ID)
+                            .choice()
+                                .when(exchangeProperty("act.director-integration-merge.durableProgress").isEqualTo(true))
+                                    .setProperty("directorMadeProgress", constant(true))
+                            .endChoice()
                     .end()
                 .end();
     }
