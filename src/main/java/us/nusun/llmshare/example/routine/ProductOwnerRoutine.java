@@ -200,10 +200,15 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .to("tack:thought-enter?name=po-selection&maxTokens=250")
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Using fresh Plane evidence, select exactly one PRODUCT PARENT, never an implementation child.
+
                                 First prefer an In Progress product parent whose implementation children are Done and whose
-                                PM handoff requests product acceptance. Otherwise select one Backlog product slice needing
-                                product definition. If no suitable Backlog slice exists and a required mission user outcome
-                                is genuinely unrepresented, create one Backlog product parent.
+                                latest PM PRODUCT ACCEPTANCE READY handoff is newer than any PRODUCT ACCEPTANCE FEEDBACK on
+                                that parent. A newer PRODUCT ACCEPTANCE FEEDBACK invalidates every older READY handoff; while
+                                such feedback is unresolved, leave the parent to delivery and do not re-accept it.
+
+                                Otherwise select one Backlog product slice needing product definition. If no suitable Backlog
+                                slice exists and a required mission user outcome is genuinely unrepresented, create one Backlog
+                                product parent.
 
                                 Product parents describe observable user value and acceptance. They are not developer tasks.
                                 Do not create implementation children, assign developers, describe code patches, or reselect an
@@ -214,16 +219,17 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Is exactly one current product parent selected for useful Product Owner work now?
                                 Return true only for a selected Backlog product parent needing definition/handoff, or an
-                                In Progress product parent needing product acceptance. Return false when nothing suitable
-                                was selected or created, including when remaining product parents are already Todo and owned
-                                by delivery with no product question returned.
+                                In Progress product parent with a current PRODUCT ACCEPTANCE READY newer than any product
+                                acceptance feedback. Return false when nothing suitable was selected or created, including
+                                when remaining product parents are already Todo and owned by delivery with no product question returned.
                                 """))
                 .to("tack:decide?id=product-owner-has-work")
                 .choice()
                     .when(exchangeProperty("decision.product-owner-has-work.result").isEqualTo(true))
                         .setHeader(TackHeaders.PROMPT, constant("""
-                                        Read only the selected product page, current-work navigation, and direct completion evidence
-                                        linked from the selected item. Do not read the whole documentation repository.
+                                        Read only the selected product page, current-work navigation, direct completion evidence,
+                                        and the selected parent's current PRODUCT ACCEPTANCE READY / PRODUCT ACCEPTANCE FEEDBACK
+                                        ordering. Do not read the whole documentation repository.
                                         """))
                         .to("tack:act?id=po-product-context-read&toolProfile=" + SourceControlToolProfile.ID)
                 .end()
@@ -241,10 +247,12 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                                 For Backlog product work, define one coherent user-facing outcome with value, scope boundaries,
                                 and compact observable Given/When/Then acceptance. Keep technical decomposition out of this page.
 
-                                For an In Progress product parent awaiting acceptance, preserve the existing scope and Gherkin.
-                                Evaluate only durable completion evidence supplied by delivery. Record which existing scenarios
-                                are satisfied or one exact unmet scenario. Never rewrite acceptance criteria to fit implementation.
-                                If required evidence is missing, record the gap and stop rather than searching for substitute evidence.
+                                For an In Progress product parent awaiting acceptance, proceed only when the current PM
+                                PRODUCT ACCEPTANCE READY handoff is newer than any PRODUCT ACCEPTANCE FEEDBACK on the parent.
+                                Preserve the existing scope and Gherkin. Evaluate only durable completion evidence supplied by
+                                delivery. Record which existing scenarios are satisfied or one exact unmet scenario. Never
+                                rewrite acceptance criteria to fit implementation. If required evidence is missing, record the
+                                gap and stop rather than searching for substitute evidence.
                                 """))
                 .to("tack:act?id=po-canonical-acceptance-update&toolProfile=" + SourceControlWriteToolProfile.ID)
                 .to("tack:thought-exit?name=po-acceptance");
@@ -261,11 +269,13 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                                 product questions if any, and requested delivery outcome. PM must not need the comment to
                                 discover eligibility; Todo is authoritative.
 
-                                For an In Progress product parent awaiting acceptance, move it In Progress -> Done only
-                                when durable evidence satisfies every existing Gherkin scenario. If acceptance fails, keep
-                                it In Progress and add or refresh one PRODUCT ACCEPTANCE FEEDBACK comment naming the exact
-                                unmet existing scenario and requested product outcome. Do not move rejected work back to
-                                Backlog or Todo; delivery is already in progress.
+                                For an In Progress product parent awaiting acceptance, move it In Progress -> Done only when
+                                the current PM PRODUCT ACCEPTANCE READY handoff is newer than any PRODUCT ACCEPTANCE FEEDBACK
+                                and durable evidence satisfies every existing Gherkin scenario. If acceptance fails, keep it
+                                In Progress and add or refresh one PRODUCT ACCEPTANCE FEEDBACK comment naming the exact unmet
+                                existing scenario and requested product outcome. That new feedback immediately invalidates the
+                                READY handoff that triggered this acceptance pass. Do not move rejected work back to Backlog
+                                or Todo; delivery is already in progress.
 
                                 Do not change implementation-child states, assign developers, or create delivery tasks.
                                 """))
