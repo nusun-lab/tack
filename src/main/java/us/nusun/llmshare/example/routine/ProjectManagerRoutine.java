@@ -236,10 +236,13 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                    item that is merely waiting for the Director, so one approved PR cannot hide later reviews.
                                 2. In Progress implementation child with INTEGRATION READY when its exact linked PR may have
                                    merged or the approval may have become stale because the PR conflicts/is not mergeable,
-                                   its head/base changed, or newer review/comment activity changed the review surface. If the
-                                   IR is still clean, open, unchanged, and simply waiting for Director merge, leave it alone
-                                   when any other actionable PM item exists.
+                                   is closed without merge, its head/base changed, or newer review/comment activity changed the
+                                   review surface. If the IR is still clean, open, unchanged, and simply waiting for Director
+                                   merge, leave it alone when any other actionable PM item exists.
                                 3. Todo/In Progress implementation child with a current BLOCKED comment needing coordination.
+                                   When the blocker names Project Management as owner because delivery context is missing or
+                                   malformed, read the parent acceptance and canonical repository/work-item evidence needed to
+                                   repair that exact child in place.
                                 4. Backlog implementation child whose declared dependencies may now all be Done.
                                 5. In Progress product parent whose implementation children may all be Done. Read the parent's
                                    PRODUCT ACCEPTANCE READY and PRODUCT ACCEPTANCE FEEDBACK comment ordering as part of this check.
@@ -255,13 +258,15 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
 
                                 - If an INTEGRATION READY implementation child's exact reviewed PR/head is verified merged,
                                   move that implementation child In Progress -> Done.
-                                - If an INTEGRATION READY approval is stale because the PR is conflicted/not mergeable, the
-                                  head/base changed, or newer material review/comment activity changed the review surface,
-                                  keep the child In Progress and add/refresh a newer REVIEW FEEDBACK comment. For source drift
-                                  or conflicts, begin the feedback with SOURCE_REFRESH_REQUIRED and include repository, PR,
-                                  current head, expected base, invalidation reason, and the required action: update the existing
-                                  task branch from current main, resolve only unambiguous conflicts, rerun validation, push the
-                                  same branch/PR, and publish fresh REVIEW READY. Never create a replacement child or PR.
+                                - If an INTEGRATION READY approval is stale because the PR is conflicted/not mergeable, closed
+                                  without merge, the head/base changed, or newer material review/comment activity changed the
+                                  review surface, keep the child In Progress and add/refresh a newer REVIEW FEEDBACK comment.
+                                  For source drift or conflicts, begin the feedback with SOURCE_REFRESH_REQUIRED and include
+                                  repository, PR, current head, expected base, invalidation reason, and the required action:
+                                  update the existing task branch from current main, resolve only unambiguous conflicts, rerun
+                                  validation, push the same branch/PR, and publish fresh REVIEW READY. Never create a replacement
+                                  child or PR. For a closed-unmerged PR, name the precise source-control recovery required rather
+                                  than pretending integration is still pending.
                                 - If a REVIEW READY implementation child is acceptable against its referenced product acceptance,
                                   current diff/review surface, and available validation, keep it In Progress and add/refresh one
                                   INTEGRATION READY comment containing repository, PR, reviewedHead, reviewedBase, reviewedAt,
@@ -270,8 +275,16 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                   keep the task In Progress and add one precise REVIEW FEEDBACK comment.
                                 - If a Backlog implementation child's dependencies are all Done and the task is otherwise
                                   actionable and assigned, move it Backlog -> Todo.
-                                - Keep blocked work in its truthful real state and record/refresh one BLOCKED comment naming
-                                  the required owner and evidence.
+                                - If a current BLOCKED comment names Project Management as owner because required delivery
+                                  context is missing or malformed, repair that exact implementation child in place using fresh
+                                  canonical evidence. Restore missing acceptance reference, repository, dependency/independence,
+                                  assignment, priority, or expected review evidence only when authoritative evidence supports it.
+                                  After the PM-owned gap is actually repaired, add one newer REVIEW FEEDBACK comment beginning
+                                  CONTEXT_REPAIRED that identifies the repaired fields and tells the assigned developer to re-read
+                                  the same child. Do not create a replacement task. If the missing information cannot be resolved
+                                  from authoritative evidence, keep BLOCKED and name the actual external owner/evidence needed.
+                                - For blockers not owned by Project Management, keep the truthful real state and record/refresh
+                                  one BLOCKED comment naming the required owner and evidence.
                                 - If every implementation child of an In Progress product parent is Done, add or refresh
                                   PRODUCT ACCEPTANCE READY only when there is no newer unresolved PRODUCT ACCEPTANCE FEEDBACK.
                                   When newer unresolved product feedback exists, do not publish another READY handoff here;
@@ -296,8 +309,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                 Select at most one PRODUCT PARENT for delivery planning.
 
                                 Prefer a Todo product parent: Todo is the authoritative PO -> PM handoff. Verify its canonical
-                                product page contains usable user scope and testable Gherkin acceptance. Do not require a magic
-                                readiness comment.
+                                product page contains usable user scope and testable Gherkin acceptance. Read the canonical
+                                acceptance from its actual Gitea documentation reference rather than relying on a duplicated
+                                summary in Plane. Do not require a magic readiness comment.
 
                                 Otherwise select an In Progress product parent when delivery decomposition remains incomplete
                                 or when newer PRODUCT ACCEPTANCE FEEDBACK is unresolved and is not yet represented by adequate
@@ -309,8 +323,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                 """))
                 .to("tack:act?id=pm-intake-review&toolProfile=" + ProjectManagementToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Is one Todo or qualifying In Progress product parent selected with usable product acceptance
-                                and a real delivery-decomposition need?
+                                Is one Todo or qualifying In Progress product parent selected with canonical product acceptance
+                                actually readable and a real delivery-decomposition need?
                                 """))
                 .to("tack:decide?id=pm-has-product-for-delivery")
                 .to("tack:thought-exit?name=pm-intake");
@@ -319,9 +333,11 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .routeId("pm-task-planning-loop")
                 .setProperty("pmTaskPlanningCycle", constant(0))
                 .setProperty("pmTaskPlanningMadeProgress", constant(false))
+                .setProperty("pmTaskPlanningPassProgress", constant(true))
                 .setProperty("decision.pm-task-planning-done.result", constant(false))
-                .loopDoWhile(exchangeProperty("decision.pm-task-planning-done.result").isNotEqualTo(true))
+                .loopDoWhile(simple("${exchangeProperty.decision.pm-task-planning-done.result} != true && ${exchangeProperty.pmTaskPlanningPassProgress} == true && ${exchangeProperty.pmTaskPlanningCycle} < 10"))
                     .setProperty("pmTaskPlanningCycle", simple("${exchangeProperty.pmTaskPlanningCycle++}"))
+                    .setProperty("pmTaskPlanningPassProgress", constant(false))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
                         Second-stage decomposition of one product parent: acceptance behaviors, existing implementation
                         children, technical coverage, dependencies, assignees, product-acceptance feedback, and the next
@@ -335,9 +351,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     Your job is the second decomposition: identify independently finishable technical outcomes
                                     whose combined delivery satisfies the parent's existing Gherkin acceptance.
 
-                                    First inspect the parent, its existing implementation children, and any newer unresolved
-                                    PRODUCT ACCEPTANCE FEEDBACK. Build a compact coverage map from each acceptance behavior to
-                                    existing children so you do not duplicate work.
+                                    Freshly read the canonical product acceptance from its Gitea documentation reference, then
+                                    inspect the parent, its existing implementation children, and any newer unresolved PRODUCT
+                                    ACCEPTANCE FEEDBACK. Build a compact coverage map from each acceptance behavior to existing
+                                    children so you do not duplicate work.
 
                                     Unresolved PRODUCT ACCEPTANCE FEEDBACK is authoritative evidence that the prior delivery did
                                     not actually satisfy the named existing acceptance behavior. An implementation child that was
@@ -367,6 +384,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .choice()
                         .when(exchangeProperty("act.pm-actionable-dev-task.durableProgress").isEqualTo(true))
                             .setProperty("pmTaskPlanningMadeProgress", constant(true))
+                            .setProperty("pmTaskPlanningPassProgress", constant(true))
                     .end()
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Is this product parent's delivery decomposition adequate now?
