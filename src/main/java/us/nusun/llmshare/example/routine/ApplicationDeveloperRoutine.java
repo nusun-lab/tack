@@ -227,7 +227,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .setProperty("devImplementationMadeProgress", constant(false))
                 .setProperty("devImplementationStepProgress", constant(true))
                 .setProperty("decision.developer-implementation-complete.result", constant(false))
-                .loopDoWhile(simple("${exchangeProperty.decision.developer-implementation-complete.result} != true && ${exchangeProperty.devImplementationStepProgress} == true && ${exchangeProperty.developerImplementationCycle} < 6"))
+                .loopDoWhile(simple("${exchangeProperty.devImplementationStepProgress} == true && ${exchangeProperty.developerImplementationCycle} < 6"))
                     .setProperty("developerImplementationCycle", simple("${exchangeProperty.developerImplementationCycle++}"))
                     .setProperty("devImplementationStepProgress", constant(false))
                     .setProperty("decision.developer-has-valid-task-context.result", constant(false))
@@ -328,6 +328,10 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                     is an obvious next production-code/test/recovery patch required before review.
                                     """))
                     .to("tack:decide?id=developer-implementation-complete")
+                    .choice()
+                        .when(exchangeProperty("decision.developer-implementation-complete.result").isEqualTo(true))
+                            .setProperty("devImplementationStepProgress", constant(false))
+                    .end()
                     .to("tack:thought-exit?name=dev-implementation")
                 .end();
 
