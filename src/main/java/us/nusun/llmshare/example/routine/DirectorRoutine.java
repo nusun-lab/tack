@@ -186,20 +186,23 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                                     Read a small fresh current-mission slice sufficient to find at most one In Progress
                                     implementation child carrying a current PM INTEGRATION READY handoff whose exact linked
                                     pull request is still OPEN. Plane state/comments are authoritative for approval; Gitea is
-                                    authoritative for pull-request state. Capture repository, PR, reviewed head, reviewed base,
-                                    reviewed time, validation, and acceptance reference.
+                                    authoritative for pull-request state. Capture repository, PR, reviewedHead, reviewedBaseRef,
+                                    reviewedBaseSha, reviewedAt, validation, and acceptance reference.
 
-                                    A merged or otherwise closed pull request is not an eligible Director integration candidate,
-                                    even if Plane still says In Progress with a current INTEGRATION READY comment. Project
-                                    Management owns post-merge closure or redisposition of closed-unmerged work. Do not mutate.
-                                    If no eligible open handoff exists, stop after the smallest read.
+                                    A complete current integration lease must pin both the reviewed head commit and the exact
+                                    reviewed base commit SHA. A branch name alone is insufficient. A merged or otherwise closed
+                                    pull request is not an eligible Director integration candidate, even if Plane still says
+                                    In Progress with a current INTEGRATION READY comment. Project Management owns post-merge
+                                    closure or redisposition of closed-unmerged work. Do not mutate. If no eligible open handoff
+                                    exists, stop after the smallest read.
                                     """))
                     .to("tack:act?id=director-workspace-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Is exactly one current In Progress implementation child selected with a complete current
                                     PM INTEGRATION READY handoff and an exact linked pull request that is still OPEN?
-                                    Return false when no eligible candidate was found, the linked PR is merged/closed, or
-                                    required handoff fields are missing or ambiguous.
+                                    Return true only when repository, PR, reviewedHead, reviewedBaseRef, reviewedBaseSha,
+                                    reviewedAt, validation, and acceptanceRef are present and unambiguous. Return false when
+                                    no eligible candidate was found, the linked PR is merged/closed, or any required lease field is missing.
                                     """))
                     .to("tack:decide?id=director-has-integration-candidate")
                     .choice()
@@ -211,18 +214,21 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                                             INTEGRATION READY comment from Project Management is the authoritative approval; do not
                                             require or infer PM approval from a Gitea review or comment.
 
-                                            Then freshly inspect that exact pull request in Gitea. Merge only when:
+                                            Then freshly inspect that exact pull request and its current base branch head in Gitea.
+                                            Merge only when:
                                             - the Plane handoff is still current and contains repository, PR, reviewedHead,
-                                              reviewedBase, reviewedAt, validation, and acceptance reference
-                                            - the PR is still open and targets the reviewed repository/base
+                                              reviewedBaseRef, reviewedBaseSha, reviewedAt, validation, and acceptanceRef
+                                            - the PR is still open and targets reviewedBaseRef
                                             - the current PR head exactly equals reviewedHead
+                                            - the current commit at reviewedBaseRef exactly equals reviewedBaseSha
                                             - the PR is mergeable and not conflicted
                                             - no newer commit, review, or material PR comment after reviewedAt has changed the review surface
                                             - current validation evidence does not contradict the PM review
 
-                                            If the PR is already merged/closed, the head/base/review surface changed, the PR
-                                            conflicts, or any evidence is ambiguous, make no source-control mutation. Project
-                                            Management owns closure or redisposition through Plane.
+                                            Any change to the base branch commit SHA invalidates the approval even when the base branch
+                                            name is unchanged and the PR remains mergeable. If the PR is already merged/closed, head/base
+                                            lease changed, the PR conflicts, or any evidence is ambiguous, make no source-control mutation.
+                                            Project Management owns closure or redisposition through Plane and must issue fresh review evidence.
                                             """))
                             .to("tack:act?id=director-integration-merge&toolProfile=" + IntegrationToolProfile.ID)
                             .choice()
