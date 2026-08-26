@@ -335,7 +335,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .setProperty("pmTaskPlanningMadeProgress", constant(false))
                 .setProperty("pmTaskPlanningPassProgress", constant(true))
                 .setProperty("decision.pm-task-planning-done.result", constant(false))
-                .loopDoWhile(simple("${exchangeProperty.decision.pm-task-planning-done.result} != true && ${exchangeProperty.pmTaskPlanningPassProgress} == true && ${exchangeProperty.pmTaskPlanningCycle} < 10"))
+                .loopDoWhile(simple("${exchangeProperty.pmTaskPlanningPassProgress} == true && ${exchangeProperty.pmTaskPlanningCycle} < 10"))
                     .setProperty("pmTaskPlanningCycle", simple("${exchangeProperty.pmTaskPlanningCycle++}"))
                     .setProperty("pmTaskPlanningPassProgress", constant(false))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
@@ -402,6 +402,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     or a child is still too broad.
                                     """))
                     .to("tack:decide?id=pm-task-planning-done")
+                    .choice()
+                        .when(exchangeProperty("decision.pm-task-planning-done.result").isEqualTo(true))
+                            .setProperty("pmTaskPlanningPassProgress", constant(false))
+                    .end()
                     .to("tack:thought-exit?name=pm-planning")
                 .end();
 
