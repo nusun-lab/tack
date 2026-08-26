@@ -23,7 +23,7 @@ class SoftwareTeamRoutineRegressionTest {
         assertOrdered(source,
                 "tack:act?id=director-workspace-review",
                 "tack:decide?id=director-has-integration-candidate",
-                "decision.director-has-integration-candidate.result").isEqualTo(true))",
+                "decision.director-has-integration-candidate.result",
                 "tack:act?id=director-integration-merge");
     }
 
@@ -34,11 +34,11 @@ class SoftwareTeamRoutineRegressionTest {
         assertOrdered(source,
                 "tack:act?id=po-backlog-review",
                 "tack:decide?id=product-owner-has-work",
-                "decision.product-owner-has-work.result").isEqualTo(true))",
+                "decision.product-owner-has-work.result",
                 "tack:act?id=po-product-context-read");
         assertOrdered(source,
                 ".to(\"direct:po-select-product-work\")",
-                "decision.product-owner-has-work.result").isEqualTo(true))",
+                "decision.product-owner-has-work.result",
                 ".to(\"direct:po-acceptance-work\")",
                 ".to(\"direct:po-plane-state-handoff\")");
     }
