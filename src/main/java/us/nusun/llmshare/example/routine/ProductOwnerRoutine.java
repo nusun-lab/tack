@@ -145,17 +145,31 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
 
         from("direct:po-product-cycle")
                 .routeId("po-product-cycle")
-                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Current product pass: one selected product slice, its real Plane state, product scope/Gherkin,
+                .to("direct:po-team-chat-sync")
+                .setProperty("poProductiveIterations", constant(0))
+                .setProperty("poMadeProgress", constant(true))
+                .loopDoWhile(simple("${exchangeProperty.poMadeProgress} == true && ${exchangeProperty.poProductiveIterations} < 6"))
+                    .setProperty("poProductiveIterations", simple("${exchangeProperty.poProductiveIterations++}"))
+                    .setProperty("poMadeProgress", constant(false))
+                    .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Current product work unit: one freshly selected product slice, its real Plane state, product scope/Gherkin,
                         delivery or acceptance handoff, and the next distinct product outcome when more work remains.
                         """))
-                .to("tack:thought-enter?name=po-cycle&maxTokens=300")
-                .to("direct:po-team-chat-sync")
-                .to("direct:po-select-product-work")
-                .to("direct:po-acceptance-work")
-                .to("direct:po-plane-state-handoff")
-                .to("direct:po-cycle-closeout")
-                .to("tack:thought-exit?name=po-cycle");
+                    .to("tack:thought-enter?name=po-cycle&maxTokens=300")
+                    .to("direct:po-select-product-work")
+                    .to("direct:po-acceptance-work")
+                    .choice()
+                        .when(exchangeProperty("act.po-canonical-acceptance-update.durableProgress").isEqualTo(true))
+                            .setProperty("poMadeProgress", constant(true))
+                    .end()
+                    .to("direct:po-plane-state-handoff")
+                    .choice()
+                        .when(exchangeProperty("act.po-plane-handoff-update.durableProgress").isEqualTo(true))
+                            .setProperty("poMadeProgress", constant(true))
+                    .end()
+                    .to("tack:thought-exit?name=po-cycle")
+                .end()
+                .to("direct:po-cycle-closeout");
 
         from("direct:po-team-chat-sync")
                 .routeId("po-team-chat-sync")
@@ -175,7 +189,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         """))
                 .to("tack:thought-enter?name=po-selection&maxTokens=250")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Use Plane to select exactly one PRODUCT PARENT, never an implementation child.
+                                Using fresh Plane evidence, select exactly one PRODUCT PARENT, never an implementation child.
                                 First prefer an In Progress product parent whose implementation children are Done and whose
                                 PM handoff requests product acceptance. Otherwise select one Backlog product slice needing
                                 product definition. If no suitable Backlog slice exists and a required mission user outcome
@@ -184,7 +198,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                                 Product parents describe observable user value and acceptance. They are not developer tasks.
                                 Do not create implementation children, assign developers, describe code patches, or reselect an
                                 unchanged Todo product slice already handed to delivery unless a product question was explicitly
-                                returned to you.
+                                returned to you. Stickiness never justifies inventing additional product scope.
                                 """))
                 .to("tack:act?id=po-backlog-review&toolProfile=" + ProjectManagementToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
