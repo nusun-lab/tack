@@ -175,7 +175,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                     .to("direct:dev-work-closeout")
                                 .otherwise()
                                     .to("direct:dev-work-closeout-no-source")
-                            .end()
+                            .endChoice()
                         .otherwise()
                             .to("direct:dev-no-work-closeout")
                     .end()
