@@ -124,11 +124,14 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Verify developer project basics once without mutation. Development requires a usable Plane
                                 workspace, source repository under agent-workspace, documentation/current-work navigation,
-                                canonical product acceptance links, and team chat. One confirmed missing basic is enough to stop.
+                                and team chat. Product acceptance is work-specific context, not a shared-project prerequisite;
+                                verify it only after selecting an implementation child. One confirmed missing shared basic is
+                                enough to stop.
                                 """))
                 .to("tack:act?id=dev-workspace-basics-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Are project basics present and linked enough to do development?
+                                Are the shared project basics present and linked enough to select development work?
+                                Do not require product work or acceptance links to exist yet.
                                 """))
                 .to("tack:decide?id=developer-has-project-basics");
 
