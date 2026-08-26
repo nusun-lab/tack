@@ -4,7 +4,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.model.dataformat.JsonLibrary;
-import us.nusun.llmshare.example.tool.SourceControlToolProfile;
+import us.nusun.llmshare.example.tool.IntegrationToolProfile;
 import us.nusun.llmshare.example.tool.TeamChatToolProfile;
 import us.nusun.llmshare.example.tool.WorkspaceReadonlyToolProfile;
 import us.nusun.llmshare.framework.inventory.RoutineProvider;
@@ -64,33 +64,10 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                     .setProperty("directorActiveMissionRoster", method(missionRosterService, "activeMissionRosterPrompt"))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
                         Current orchestration cycle: authoritative active roster coverage, project-basics readiness,
-                        delivery handoffs, one integration-ready pull request when present, blockers, and useful staffing gaps.
+                        delivery handoffs, integration-ready pull requests, blockers, and useful staffing gaps.
                         """))
                     .to("tack:thought-enter?name=orchestration-cycle&maxTokens=300")
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                                    Read a small current-mission slice sufficient to understand project-basics readiness,
-                                    overall progress, major blockers, and meaningful handoffs. Stay anchored to the current
-                                    mission. Plane state is authoritative for work state; comments and chat provide handoff
-                                    context but never substitute for Backlog, Todo, In Progress, Done, or Cancelled.
-                                    Capture at most one In Progress implementation item whose PM review has produced a current
-                                    INTEGRATION READY handoff and its linked pull request. Do not mutate anything or perform
-                                    product ownership, delivery decomposition, implementation review, or source changes.
-                                    If no current-mission workspace anchor exists yet, record pre-bootstrap state and stop.
-                                    """))
-                    .to("tack:act?id=director-workspace-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                                    Own the final pull-request merge action for the team.
-                                    Using only the current-mission evidence already gathered this cycle, inspect at most one
-                                    pull request linked from an In Progress implementation task carrying a current
-                                    INTEGRATION READY handoff from the Project Manager. Merge it only when the pull request is
-                                    still open, targets the expected repository and base branch, the reviewed head commit has
-                                    not changed, it is mergeable, and available validation evidence does not contradict the
-                                    accepted review. Do not merge work that is merely REVIEW READY, blocked, ambiguous, or
-                                    materially changed since PM review. Do not substitute your own implementation or product
-                                    judgment for the PM's completed delivery review. If no eligible pull request exists, make
-                                    no source-control change and stop.
-                                    """))
-                    .to("tack:act?id=director-integration-merge&toolProfile=" + SourceControlToolProfile.ID)
+                    .to("direct:director-integration-loop")
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Read recent current-mission project chat. Participate only when useful to coordinate,
                                     encourage, clarify, or unblock real team work. Do not prescribe another role's internal
@@ -177,5 +154,47 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                 .end()
                 .end()
                 .to("tack:thought-exit?name=orchestration-root");
+
+        from("direct:director-integration-loop")
+                .routeId("director-integration-loop")
+                .setProperty("directorProductiveIterations", constant(0))
+                .setProperty("directorMadeProgress", constant(true))
+                .loopDoWhile(simple("${exchangeProperty.directorMadeProgress} == true && ${exchangeProperty.directorProductiveIterations} < 6"))
+                    .setProperty("directorProductiveIterations", simple("${exchangeProperty.directorProductiveIterations++}"))
+                    .setProperty("directorMadeProgress", constant(false))
+                    .setHeader(TackHeaders.PROMPT, constant("""
+                                    Read a small fresh current-mission slice sufficient to find at most one In Progress
+                                    implementation child carrying a current PM INTEGRATION READY handoff. Plane state and
+                                    comments are authoritative for the handoff. Capture the linked pull request and the handoff's
+                                    repository, reviewed head, reviewed base, reviewed time, validation, and acceptance reference.
+                                    Do not mutate anything. If no eligible handoff exists, stop after the smallest read.
+                                    """))
+                    .to("tack:act?id=director-workspace-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
+                    .setHeader(TackHeaders.PROMPT, constant("""
+                                    Own one final pull-request merge action for the team.
+
+                                    Freshly reread the selected implementation child's current Plane comments. A current
+                                    INTEGRATION READY comment from Project Management is the authoritative approval; do not
+                                    require or infer PM approval from a Gitea review or comment.
+
+                                    Then freshly inspect that exact pull request in Gitea. Merge only when:
+                                    - the Plane handoff is still current and contains repository, PR, reviewedHead,
+                                      reviewedBase, reviewedAt, validation, and acceptance reference
+                                    - the PR is still open and targets the reviewed repository/base
+                                    - the current PR head exactly equals reviewedHead
+                                    - the PR is mergeable and not conflicted
+                                    - no newer commit, review, or material PR comment after reviewedAt has changed the review surface
+                                    - current validation evidence does not contradict the PM review
+
+                                    If the head/base/review surface changed, the PR conflicts, or any evidence is ambiguous,
+                                    make no source-control mutation. Project Management owns redisposition through Plane.
+                                    If no eligible PR exists, make no source-control mutation and stop.
+                                    """))
+                    .to("tack:act?id=director-integration-merge&toolProfile=" + IntegrationToolProfile.ID)
+                    .choice()
+                        .when(exchangeProperty("act.director-integration-merge.durableProgress").isEqualTo(true))
+                            .setProperty("directorMadeProgress", constant(true))
+                    .end()
+                .end();
     }
 }
