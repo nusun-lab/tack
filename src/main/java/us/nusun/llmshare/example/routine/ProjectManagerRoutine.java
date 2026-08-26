@@ -50,9 +50,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         .when(exchangeProperty("decision.collaboration-setup-complete.result").isEqualTo(true))
                             .to("direct:pm-coordination-loop")
                     .end()
-                    .setHeader(TackHeaders.PROMPT, constant("Review current mission completion once using minimal authoritative evidence. One unfinished parent, child, current unresolved blocker, review, merge, product question, or acceptance follow-up means incomplete. Superseded historical handoff comments are not current blockers. Do not mutate."))
+                    .setHeader(TackHeaders.PROMPT, constant("Review current mission completion once using minimal authoritative evidence. One unfinished parent, child, current unresolved blocker, review, merge, product question, topology finding, or acceptance follow-up means incomplete. Superseded historical handoff comments are not current blockers. Do not mutate."))
                     .to("tack:act?id=pm-mission-status-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
-                    .setHeader(TackHeaders.PROMPT, constant("Is the mission complete from Project Management's perspective? Return true only when all required product parents are Done and no current unresolved delivery, blocker, PRODUCT QUESTION, review, integration, assignment, topology investigation, or acceptance follow-up remains. Ignore historical handoffs superseded by newer disposition evidence."))
+                    .setHeader(TackHeaders.PROMPT, constant("Is the mission complete from Project Management's perspective? Return true only when all required product parents are Done and no current unresolved delivery, blocker, PRODUCT QUESTION, review, integration, assignment, topology investigation/finding, or acceptance follow-up remains. Ignore historical handoffs superseded by newer disposition evidence."))
                     .to("tack:decide?id=project-manager-mission-complete")
                     .filter(exchangeProperty("decision.project-manager-mission-complete.result").isNotEqualTo(true))
                         .delay(120000)
@@ -97,7 +97,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
 
         from("direct:pm-project-manager-root-enter")
                 .routeId("pm-project-manager-root-enter")
-                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Durable delivery anchors: project basics, selected product parent, implementation coverage, product questions, dependency topology, source/review/integration evidence, and team chat."))
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Durable delivery anchors: project basics, selected product parent, implementation coverage, product questions, dependency topology, source/review/integration leases, and team chat."))
                 .to("tack:thought-enter?name=project-manager-routine&maxTokens=500");
 
         from("direct:pm-project-manager-root-exit")
@@ -176,7 +176,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
 
         from("direct:pm-active-delivery-check")
                 .routeId("pm-active-delivery-check")
-                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("One delivery-maintenance item: topology finding, review, integration verification/recovery, actionable blocker/product question, dependency promotion/repair, cancelled coverage, or completed-parent handoff."))
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("One delivery-maintenance item: topology finding/application, review, integration verification/recovery, actionable blocker/product question, dependency promotion/repair, cancelled coverage, or completed-parent handoff."))
                 .to("tack:thought-enter?name=pm-active-delivery&maxTokens=300")
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Read at most one highest-value ACTIONABLE current delivery item using fresh Plane and linked source evidence.
@@ -185,9 +185,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
 
                         Priority:
                         1. In Progress TOPOLOGY INVESTIGATION implementation child with current TECHNICAL FINDING and no later PM disposition.
-                        2. REVIEW READY implementation child with no later PM disposition.
-                        3. INTEGRATION READY child whose PR merged or approval became stale/closed/conflicted/changed. Skip clean open IR merely waiting on Director when other actionable PM work exists.
-                        4. Todo/In Progress implementation child with current BLOCKED only when Project Management can act now:
+                        2. Done TOPOLOGY INVESTIGATION whose TECHNICAL FINDING affects an unfinished product parent and has no later PM TOPOLOGY_APPLIED or PRODUCT QUESTION disposition.
+                        3. REVIEW READY implementation child with no later PM disposition.
+                        4. INTEGRATION READY child whose PR merged or approval became stale/closed/conflicted/changed. Skip clean open IR merely waiting on Director when other actionable PM work exists.
+                        5. Todo/In Progress implementation child with current BLOCKED only when Project Management can act now:
                            - PM owns the blocker and fresh authoritative evidence can repair or redispose it; or
                            - Product Owner owns it and no current PRODUCT QUESTION has yet been emitted; or
                            - a newer PRODUCT HANDOFF resolves the current PRODUCT QUESTION and PM must relay the resolution; or
@@ -195,12 +196,13 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                            - materially newer evidence changed the blocker.
                            If a current PRODUCT QUESTION or PM-coordinated external blocker is already waiting with no newer answer/evidence,
                            skip that blocked child and continue to lower priorities.
-                        5. Backlog child whose dependencies may now be Done, whose dependency edge points to Cancelled work, or whose dependency references a product parent rather than a valid implementation/external prerequisite.
-                        6. Cancelled implementation child whose acceptance behavior remains required, lacks superseding non-cancelled coverage, or is still named as a dependency by unfinished required work.
-                        7. In Progress product parent whose required non-cancelled implementation coverage may all be Done, including PRODUCT ACCEPTANCE READY / FEEDBACK / PRODUCT QUESTION ordering.
+                        6. Backlog child whose dependencies may now be Done, whose dependency edge points to Cancelled work, or whose dependency references a product parent rather than a valid implementation/external prerequisite.
+                        7. Cancelled implementation child whose acceptance behavior remains required, lacks superseding non-cancelled coverage, or is still named as a dependency by unfinished required work.
+                        8. In Progress product parent whose children may now all be terminally dispositioned and required Done coverage complete, including acceptance-lease and topology ordering.
 
                         PRODUCT QUESTION is the authoritative PM -> PO return handoff for product ambiguity or unusable product acceptance.
                         TECHNICAL FINDING is the Developer -> PM return handoff for a TOPOLOGY INVESTIGATION and does not require a PR.
+                        TOPOLOGY_APPLIED is the PM disposition proving a TECHNICAL FINDING has been incorporated into the current delivery graph.
                         In the current routine set, routable BLOCKED coordination owners are Project Management and Product Owner;
                         external conditions are coordinated by Project Management rather than assigning a fictitious internal owner.
                         Cancelled children provide zero delivery coverage and cannot satisfy dependency edges unless the corresponding
@@ -209,20 +211,22 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .to("tack:act?id=pm-active-delivery-evidence-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Update only the item already read.
-                        - TOPOLOGY INVESTIGATION with sufficient current TECHNICAL FINDING: move that investigation child In Progress -> Done. The finding must identify affected work-item ids, observed technical facts, and enough evidence for PM to safely replan or explicitly identify that product judgment is still required. If insufficient, keep it In Progress and add REVIEW FEEDBACK beginning TECHNICAL_FINDING_INCOMPLETE.
+                        - TOPOLOGY INVESTIGATION with sufficient current TECHNICAL FINDING: move that investigation child In Progress -> Done and add a concise PM disposition comment beginning TECHNICAL_FINDING_ACCEPTED. This accepts the evidence for replanning but does NOT by itself mean the topology has been applied.
+                        - Done TOPOLOGY INVESTIGATION with accepted current TECHNICAL FINDING and no later topology disposition: if PM can safely apply the finding now, update the affected dependency/task topology and add a newer comment beginning TOPOLOGY_APPLIED referencing the finding and exact graph changes. If the finding instead requires product judgment, create/refresh PRODUCT QUESTION on the affected product parent; that newer question is the disposition. Do not leave an accepted finding without one of those later dispositions.
                         - Verified merged IR: implementation child In Progress -> Done.
-                        - Stale/conflicted/closed-unmerged/changed IR: keep In Progress and add newer precise REVIEW FEEDBACK; SOURCE_REFRESH_REQUIRED for source drift/conflict.
-                        - Acceptable REVIEW READY: add/refresh INTEGRATION READY with repo, PR, reviewedHead, reviewedBase, reviewedAt, validation, acceptanceRef. Director owns merge.
+                        - Stale/conflicted/closed-unmerged/changed IR: keep In Progress and add newer precise REVIEW FEEDBACK; SOURCE_REFRESH_REQUIRED for source drift/conflict. A closed-unmerged PR is stale review evidence; Developer must refresh the same task/branch and create or reopen a usable PR only when supported by current source-control capabilities, then publish fresh REVIEW READY. Never treat a closed-unmerged PR as current integration evidence.
+                        - Acceptable REVIEW READY: add/refresh INTEGRATION READY with repo, PR, reviewedHead, reviewedBaseRef, reviewedBaseSha, reviewedAt, validation, acceptanceRef. Resolve and record the exact current base commit SHA reviewed, not merely the base branch name. Director owns merge.
                         - Defective REVIEW READY: add precise REVIEW FEEDBACK.
                         - Backlog child with all dependencies Done and otherwise actionable/assigned: Backlog -> Todo.
                         - PM-owned BLOCKED caused by malformed/missing delivery context: repair same child from authoritative evidence, then add newer REVIEW FEEDBACK beginning CONTEXT_REPAIRED. If evidence cannot resolve it and actual missing judgment is product-owned, create/refresh PRODUCT QUESTION on the parent instead.
                         - Product-owned BLOCKED on an implementation child: create/refresh one PRODUCT QUESTION on its product parent only when no current unresolved question already represents that blocker. Reference the blocked child, exact product ambiguity, current canonical acceptance, and evidence needed from Product Owner. Keep child truthfully blocked. Do not refresh an unchanged question merely to create activity.
                         - BLOCKED with a named owner other than Project Management or Product Owner: normalize once to a newer BLOCKED handoff owned by Project Management as coordination owner, preserving the actual external/person/system dependency and exact evidence needed. Director is not a generic blocker consumer; Director only consumes INTEGRATION READY.
-                        - If a newer Product Owner PRODUCT HANDOFF explicitly resolves the PRODUCT QUESTION associated with a blocked child, relay that resolved product decision back to the same child with newer REVIEW FEEDBACK beginning PRODUCT_QUESTION_RESOLVED and instruct the developer to re-read the same child. Do not create a replacement child.
+                        - If a newer Product Owner PRODUCT HANDOFF explicitly resolves the PRODUCT QUESTION associated with a blocked child, relay that resolved product decision back to the same child with newer REVIEW FEEDBACK beginning PRODUCT_QUESTION_RESOLVED and instruct the developer to re-read the same child. Do not create a replacement child. The resolving PRODUCT HANDOFF invalidates all older PRODUCT ACCEPTANCE READY leases on that parent.
                         - If an unchanged blocker is already waiting on its routable owner and no newer evidence exists, make no mutation. It must not prevent unrelated dependency promotion, replanning, review, or acceptance work from being selected on a later read.
                         - Required Cancelled child coverage: treat Cancelled as zero delivered coverage. Keep/reopen planning need on the parent so a non-cancelled replacement/remediation child can cover the still-required existing acceptance behavior. Never count a Cancelled child as satisfying decomposition or acceptance.
                         - An unfinished child must not retain a dependency on Cancelled work or on its own product parent. When authoritative planning evidence identifies the specific replacement/remediation child for a cancelled dependency, rewire the dependent child to that replacement. Remove an invalid dependency only when the technical dependency is demonstrably no longer required; do not invent sequencing.
-                        - Product parent: publish PRODUCT ACCEPTANCE READY only when every required acceptance behavior has durable Done coverage from non-cancelled children and no newer unresolved PRODUCT ACCEPTANCE FEEDBACK or PRODUCT QUESTION exists.
+                        - Before PRODUCT ACCEPTANCE READY, every child under the product parent must be terminally dispositioned: Done, or Cancelled with explicit evidence it is superseded/non-required and contributes no required coverage. Any Todo/In Progress child, active TOPOLOGY INVESTIGATION, accepted-but-unapplied TECHNICAL FINDING, unresolved PRODUCT QUESTION, or newer PRODUCT ACCEPTANCE FEEDBACK blocks READY.
+                        - PRODUCT ACCEPTANCE READY is a lease over the CURRENT product contract. Publish a fresh READY only after the latest PRODUCT QUESTION has been resolved by PRODUCT HANDOFF and all delivery evidence has been reevaluated against that newer handoff. READY must be newer than every PRODUCT ACCEPTANCE FEEDBACK, PRODUCT QUESTION, and PRODUCT HANDOFF on the parent.
                         """))
                 .to("tack:act?id=pm-active-delivery-update&toolProfile=" + ProjectManagementToolProfile.ID)
                 .to("tack:thought-exit?name=pm-active-delivery");
@@ -235,11 +239,11 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Select at most one PRODUCT PARENT.
                         Prefer Todo initial PO handoff. Read its canonical Gitea acceptance. If the acceptance reference is missing/unreadable, Gherkin is unusable/contradictory, or product judgment is required before delivery can proceed, keep its current state and add/refresh one PRODUCT QUESTION comment on that parent naming the exact defect/question and evidence needed from Product Owner. PRODUCT QUESTION is a durable return handoff, not a Plane state.
-                        Otherwise select an In Progress parent when decomposition is incomplete, required Cancelled coverage or invalid dependency edges need replacement/rewiring, PRODUCT ACCEPTANCE FEEDBACK needs remediation, the reachable unfinished dependency graph has no viable executable frontier, a completed TOPOLOGY INVESTIGATION has a current TECHNICAL FINDING that has not yet been applied to the graph, or a newer PO PRODUCT HANDOFF has resolved a prior PRODUCT QUESTION and delivery can resume.
+                        Otherwise select an In Progress parent when decomposition is incomplete, required Cancelled coverage or invalid dependency edges need replacement/rewiring, PRODUCT ACCEPTANCE FEEDBACK needs remediation, the reachable unfinished dependency graph has no viable executable frontier, an accepted TECHNICAL FINDING has not yet been dispositioned/applied, any child remains nonterminal without a required delivery reason, or a newer PO PRODUCT HANDOFF has resolved a prior PRODUCT QUESTION and delivery must reevaluate against the current product contract.
                         Never invent product scope or implement the parent.
                         """))
                 .to("tack:act?id=pm-intake-review&toolProfile=" + ProjectManagementToolProfile.ID)
-                .setHeader(TackHeaders.PROMPT, constant("Is one Todo or qualifying In Progress product parent selected with readable usable acceptance and a real decomposition/replanning/topology-recovery need? Return false when a PRODUCT QUESTION had to be raised and remains unresolved."))
+                .setHeader(TackHeaders.PROMPT, constant("Is one Todo or qualifying In Progress product parent selected with readable usable acceptance and a real decomposition/replanning/topology/lease-recovery need? Return false when a PRODUCT QUESTION had to be raised and remains unresolved."))
                 .to("tack:decide?id=pm-has-product-for-delivery")
                 .to("tack:thought-exit?name=pm-intake");
 
@@ -266,11 +270,14 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         target for one of its implementation children, especially the child's own parent.
 
                         Create or refine exactly one missing, remediation, replacement, oversized child, invalid dependency edge,
-                        or topology-recovery frontier per pass. Every required Gherkin behavior needs non-duplicative non-cancelled
-                        implementation coverage. A Cancelled child provides zero coverage and must be replaced when its acceptance
-                        behavior remains required. Older Done children do not satisfy newer unresolved PRODUCT ACCEPTANCE FEEDBACK
-                        that rejected their behavior; create a distinct post-feedback remediation child. Do not plan through an
-                        unresolved PRODUCT QUESTION.
+                        terminal disposition, or topology-recovery frontier per pass. Every required Gherkin behavior needs non-duplicative
+                        non-cancelled implementation coverage. A Cancelled child provides zero coverage and must be replaced when its
+                        acceptance behavior remains required. Older Done children do not satisfy newer unresolved PRODUCT ACCEPTANCE
+                        FEEDBACK that rejected their behavior. Do not plan through an unresolved PRODUCT QUESTION.
+
+                        If a nonterminal child is no longer required because its work is demonstrably superseded or redundant, explicitly
+                        Cancel it with evidence before parent acceptance. Do not leave obsolete Todo/In Progress children stranded under a
+                        parent that is otherwise ready for acceptance.
 
                         The reachable unfinished dependency graph must be viable:
                         - no child may depend on itself;
@@ -316,7 +323,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
 
                         For a fully viable decomposition require:
                         - every required Gherkin behavior has non-cancelled implementation coverage;
-                        - each child is independently finishable;
+                        - each child is independently finishable or explicitly terminally dispositioned;
                         - the reachable transitive dependency graph has no self-dependency, child->own-parent dependency, or cycle,
                           including across product-parent boundaries;
                         - no unfinished child depends on Cancelled work;
@@ -324,11 +331,13 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                           explicit durable BLOCKED handoff with a routable owner;
                         - every dependency-free or dependency-satisfied executable child is assigned in Todo rather than Backlog;
                         - every newer PRODUCT ACCEPTANCE FEEDBACK has a distinct post-feedback remediation child;
-                        - no required coverage relies on Cancelled children; and
-                        - no unresolved PRODUCT QUESTION blocks product intent.
+                        - no required coverage relies on Cancelled children;
+                        - no unresolved PRODUCT QUESTION blocks product intent; and
+                        - no accepted TECHNICAL FINDING remains without a later TOPOLOGY_APPLIED or PRODUCT QUESTION disposition.
 
                         Return false when an invalid graph has neither a safe repair nor an existing actionable topology investigation,
-                        when required recovery work is missing, or when a current TECHNICAL FINDING is available but has not yet been applied.
+                        when required recovery work is missing, when a current TECHNICAL FINDING is available but has not yet been dispositioned,
+                        or when an obsolete nonterminal child still needs explicit cancellation/disposition.
                         """))
                     .to("tack:decide?id=pm-task-planning-done")
                     .choice().when(exchangeProperty("decision.pm-task-planning-done.result").isEqualTo(true)).setProperty("pmTaskPlanningPassProgress", constant(false)).end()
@@ -337,7 +346,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
 
         from("direct:pm-team-sync")
                 .routeId("pm-team-sync")
-                .setHeader(TackHeaders.PROMPT, constant("Read recent project chat and participate only when a real coordination exchange helps. Plane remains authoritative for assignments, blockers, PRODUCT QUESTION handoffs, topology findings, and state."))
+                .setHeader(TackHeaders.PROMPT, constant("Read recent project chat and participate only when a real coordination exchange helps. Plane remains authoritative for assignments, blockers, PRODUCT QUESTION handoffs, topology findings/dispositions, and state."))
                 .to("tack:act?id=pm-team-chat-sync&toolProfile=" + TeamChatToolProfile.ID);
 
         from("direct:pm-documentation-status-sync")
