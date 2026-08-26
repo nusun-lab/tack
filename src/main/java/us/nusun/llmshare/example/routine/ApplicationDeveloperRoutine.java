@@ -349,7 +349,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                             .setProperty("devImplementationMadeProgress", constant(true))
                                             .setProperty("devImplementationStepProgress", constant(true))
                                     .endChoice()
-                            .end()
+                            .endChoice()
                         .otherwise()
                             .setHeader(TackHeaders.PROMPT, constant("""
                                             Do not touch source. Keep the selected implementation child In Progress and add or
