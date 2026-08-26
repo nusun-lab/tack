@@ -2,18 +2,17 @@ package us.nusun.llmshare.example.routine;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import org.apache.camel.builder.RouteBuilder;
-import us.nusun.llmshare.framework.inventory.RoutineProvider;
-import us.nusun.llmshare.framework.model.RoutineDefinition;
-import us.nusun.llmshare.framework.tack.TackHeaders;
-
-import java.util.List;
-
 import us.nusun.llmshare.example.tool.ProjectManagementToolProfile;
 import us.nusun.llmshare.example.tool.SourceControlToolProfile;
 import us.nusun.llmshare.example.tool.SourceControlWriteToolProfile;
 import us.nusun.llmshare.example.tool.TeamChatToolProfile;
 import us.nusun.llmshare.example.tool.WorkspaceCoordinationToolProfile;
 import us.nusun.llmshare.example.tool.WorkspaceReadonlyToolProfile;
+import us.nusun.llmshare.framework.inventory.RoutineProvider;
+import us.nusun.llmshare.framework.model.RoutineDefinition;
+import us.nusun.llmshare.framework.tack.TackHeaders;
+
+import java.util.List;
 
 @ApplicationScoped
 public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvider {
@@ -28,23 +27,23 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         return RoutineDefinition.builder(ID)
                 .name("Project Manager")
                 .main("""
-                        Own project management for the whole mission through completion. Establish and maintain the delivery
-                        workspace, consume PRODUCT READY product slices, decompose them into small assigned implementation tasks,
-                        sequence dependencies, coordinate blockers and review, and bridge completed implementation back to product
-                        acceptance while the mission still has unfinished outcomes. New product work originates with product ownership;
-                        executable work is derived and managed here.
+                        Own project management for the whole mission through completion. Establish and maintain the shared
+                        delivery workspace, consume Todo product slices from Product Ownership, decompose each product slice
+                        into discrete implementation children, assign and sequence those children, coordinate review and
+                        integration, and return completed In Progress product parents to Product Ownership for acceptance.
+                        Product slices are user outcomes; implementation children are independently finishable technical outcomes.
                         """, "direct:example-software-team-project-manager")
                 .subroutine(
                         "bootstrap",
-                        "Establish only the shared project-management, documentation, source-control, team-chat, access, and navigation foundation required for delivery; this produces workspace infrastructure, not product backlog items or implementation tasks.",
+                        "Establish only the shared Plane, source-control, documentation, team-chat, access, and navigation foundation required for delivery.",
                         "direct:example-software-team-project-manager-bootstrap")
                 .subroutine(
                         "coordination",
-                        "Operate an established delivery workspace with active implementation work or PRODUCT READY product slices; maintain decomposition, assignment, blockers, review, integration readiness, and durable delivery status.",
+                        "Operate an established delivery workspace: decompose Todo product parents, coordinate implementation children, review, integration, blockers, and product acceptance.",
                         "direct:example-software-team-project-manager-coordination")
                 .subroutine(
                         "task-planning",
-                        "Decompose one PRODUCT READY product slice into the small assigned implementation tasks needed to make the whole slice actionable, with explicit dependencies and review evidence.",
+                        "Decompose one Todo or active product parent into discrete implementation children whose combined coverage satisfies the product acceptance.",
                         "direct:example-software-team-project-manager-task-planning")
                 .defaultLane("high-pass")
                 .build();
@@ -64,21 +63,15 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .end()
                     .to("direct:pm-coordination-loop")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Review current mission completion status once using the smallest authoritative read available.
-                                    Check only current-mission project-management status, current-work/documentation status, and direct
-                                    completion or handoff evidence needed to determine whether any PRODUCT READY work, implementation
-                                    work, review/integration coordination, blocker, assignment, or delivery follow-up remains. One verified
-                                    unfinished required outcome is enough to conclude not complete; stop there. Do not mutate anything or
-                                    perform new delivery work. Prefer current verified external evidence over older remembered status when they conflict.
+                                    Review current mission completion status once using the smallest authoritative read.
+                                    One unfinished product parent, implementation child, blocker, review, merge, or acceptance
+                                    follow-up is enough to conclude not complete. Plane state is authoritative. Do not mutate.
                                     """))
                     .to("tack:act?id=pm-mission-status-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Is the entire mission complete from the project-management perspective?
-                                    Return true only when durable current-mission evidence shows all required delivery work is complete,
-                                    accepted or otherwise fully closed, with no remaining PRODUCT READY work, implementation work,
-                                    review/integration coordination, blocker, assignment, or delivery follow-up. Return false when the
-                                    workspace was merely established, one delivery cycle completed, work is waiting on another role,
-                                    or no immediately actionable item exists while mission outcomes remain unfinished.
+                                    Return true only when all required product parents are Done and no implementation,
+                                    review, integration, blocker, assignment, or delivery follow-up remains.
                                     """))
                     .to("tack:decide?id=project-manager-mission-complete")
                     .filter(exchangeProperty("decision.project-manager-mission-complete.result").isNotEqualTo(true))
@@ -95,10 +88,6 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .choice()
                     .when(exchangeProperty("decision.collaboration-setup-complete.result").isNotEqualTo(true))
                         .to("direct:pm-project-bootstrap")
-                .end()
-                .choice()
-                    .when(exchangeProperty("decision.collaboration-setup-complete.result").isEqualTo(true))
-                        .to("direct:pm-team-onboarding")
                 .end()
                 .to("direct:pm-project-manager-root-exit");
 
@@ -118,30 +107,19 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .to("direct:pm-project-basics-check")
                 .choice()
                     .when(exchangeProperty("decision.collaboration-setup-complete.result").isEqualTo(true))
-                        .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                            Focused delivery-planning pass: one PRODUCT READY product slice, its existing implementation
-                            children, remaining decomposition, owners, priorities, dependencies, repositories, acceptance page,
-                            risks, and next executable steps.
-                            """))
-                        .to("tack:thought-enter?name=pm-cycle&maxTokens=300")
-                        .to("direct:pm-documentation-status-sync")
-                        .to("direct:pm-team-onboarding")
-                        .to("direct:pm-work-intake-loop")
+                        .to("direct:pm-work-intake")
                         .choice()
-                            .when(exchangeProperty("decision.pm-has-ready-product-handoff.result").isEqualTo(true))
+                            .when(exchangeProperty("decision.pm-has-product-for-delivery.result").isEqualTo(true))
                                 .to("direct:pm-task-planning-loop")
                         .end()
-                        .to("direct:pm-team-sync")
-                        .to("direct:pm-cycle-closeout")
-                        .to("tack:thought-exit?name=pm-cycle")
                 .end()
                 .to("direct:pm-project-manager-root-exit");
 
         from("direct:pm-project-manager-root-enter")
                 .routeId("pm-project-manager-root-enter")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Durable delivery anchors: documentation index/path, project-basics/current-work pages,
-                        team chat, project-management workspace, and source repository.
+                        Durable delivery anchors: project basics, Plane workspace, selected product parent,
+                        implementation-child coverage, source repository, review/integration evidence, and team chat.
                         """))
                 .to("tack:thought-enter?name=project-manager-routine&maxTokens=500");
 
@@ -151,20 +129,15 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
 
         from("direct:pm-project-basics-check")
                 .routeId("pm-project-basics-check")
+                .setProperty("decision.collaboration-setup-complete.result", constant(false))
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Verify project basics without mutation using the capabilities available to you.
-                                Check only direct anchors from active thoughts, documentation index/project-basics links,
-                                and the minimal project-management or team-chat lookup needed to confirm missing basics.
-                                Capture bootstrap status, team chat, project-management workspace, source repository under
-                                agent-workspace, documentation repository, and documentation navigation. Do not scan whole
-                                projects, repositories, documentation repositories, or channels. Once each basic is either
-                                verified or clearly missing, stop. Do not search aliases for a missing basic.
+                                Verify project basics once without mutation. Confirm exactly one current-mission Plane
+                                workspace, documentation repository/navigation, source repository under agent-workspace,
+                                team chat, and team access. Stop when one required basic is clearly missing.
                                 """))
                 .to("tack:act?id=pm-workspace-basics-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Are project basics verified and current enough for delivery coordination, with Git organization
-                                agent-workspace and working links for team chat, project management, documentation repository,
-                                source repository, and documentation navigation?
+                                Are project basics verified and current enough for delivery coordination?
                                 """))
                 .to("tack:decide?id=collaboration-setup-complete");
 
@@ -174,73 +147,35 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .loopDoWhile(exchangeProperty("decision.collaboration-setup-complete.result").isNotEqualTo(true))
                     .setProperty("collaborationSetupAttempt", simple("${exchangeProperty.collaborationSetupAttempt++}"))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Current bootstrap checklist: project-management workspace, team chat, team membership,
-                        repositories, and documentation navigation. Bootstrap establishes workspace infrastructure only;
-                        product backlog creation and implementation-task creation are outside this flow.
-                        Promote final anchors before bootstrap exits.
+                        Bootstrap only: Plane workspace, team chat, membership, source/documentation repositories,
+                        and navigation. Product backlog items and implementation tasks are not bootstrap artifacts.
                         """))
                     .to("tack:thought-enter?name=pm-bootstrap&maxTokens=300")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Using the available project-management capability, search direct project names first,
-                                    then create or confirm exactly one shared project workspace. Preserve an existing useful
-                                    project. Stop after the project workspace is verified. Do not create product backlog items
-                                    or implementation tasks during bootstrap. If the direct create/verify attempt fails, record
-                                    the exact blocker and stop this act; bootstrap will retry.
+                                    Create or confirm exactly one shared current-mission Plane project. Preserve an existing
+                                    useful project. Do not create product or implementation work during bootstrap.
                                     """))
                     .to("tack:act?id=plane-project-provisioning&toolProfile=" + WorkspaceCoordinationToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Using source control, search direct repository names first, then create or confirm exactly
-                                    one markdown documentation repository under Git organization agent-workspace. Never use a
-                                    personal namespace and do not create branches, pull requests, tags, releases, issues, labels,
-                                    milestones, or time tracking. If the direct create/verify attempt fails, record the exact blocker
-                                    and stop this act; bootstrap will retry.
+                                    Create or confirm exactly one markdown documentation repository under agent-workspace.
+                                    Do not create project-coordination issues in source control.
                                     """))
                     .to("tack:act?id=documentation-repository-provisioning&toolProfile=" + WorkspaceCoordinationToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Using source control, search direct repository names first, then create or confirm exactly
-                                    one target source repository under Git organization agent-workspace. Never use a personal
-                                    namespace and do not create branches, pull requests, tags, releases, issues, labels,
-                                    milestones, or time tracking. If the direct create/verify attempt fails, record the exact blocker
-                                    and stop this act; bootstrap will retry.
+                                    Create or confirm exactly one target source repository under agent-workspace.
                                     """))
                     .to("tack:act?id=source-repository-provisioning&toolProfile=" + WorkspaceCoordinationToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Using team chat, create or confirm one private project channel. Invite the current team
-                                    and David Gordon (@aphelio). Never create a duplicate channel. Do not post setup status yet.
-                                    If the direct create/verify attempt fails, record the exact blocker and stop this act; bootstrap
-                                    will retry. Do not try alternate channel names.
+                                    Create or confirm one private current-mission team-chat channel and keep current team
+                                    membership usable. Never create a duplicate channel.
                                     """))
                     .to("tack:act?id=chat-channel-setup&toolProfile=" + TeamChatToolProfile.ID)
-                    .to("direct:pm-team-onboarding")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Create or update the canonical documentation bootstrap pages.
-                                    Index: navigation only, linking project-basics.
-                                    Project-basics: mission, Git organization agent-workspace, documentation repository URL,
-                                    team chat, project-management workspace, source repository, and stable role directory/responsibilities.
-                                    Do not document a supposedly current active-run roster; current staffing comes from mission roster context.
-                                    Before marking any project basic missing, search active thoughts for a verified current-mission anchor.
+                                    Create or update compact canonical documentation navigation and project-basics pages.
+                                    Include mission, agent-workspace repositories, Plane project, team chat, and role responsibilities.
                                     """))
                     .to("tack:act?id=documentation-project-index&toolProfile=" + SourceControlWriteToolProfile.ID)
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                                    Read only the documentation index and project-basics page. Verify every project basic has
-                                    a working link. Confirm documentation and source repositories are under agent-workspace,
-                                    not a personal namespace. Before marking any project basic missing, search active thoughts
-                                    for a verified current-mission anchor for that artifact.
-                                    """))
-                    .to("tack:act?id=documentation-bootstrap-audit&toolProfile=" + SourceControlToolProfile.ID)
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                                    Using team chat, read recent project conversation. If someone asked about setup, answer
-                                    that thread. Otherwise post only if basics are missing, stale, or blocked. Keep chat to a
-                                    concise pointer; durable project-management and source-control state are authoritative.
-                                    Include the project-basics documentation link.
-                                    """))
-                    .to("tack:act?id=collaboration-setup-message&toolProfile=" + TeamChatToolProfile.ID)
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                                    After this bootstrap pass, does the documentation index and project-basics page link
-                                    Git organization agent-workspace, team chat, project-management workspace, documentation
-                                    repository, source repository, and documentation navigation?
-                                    """))
-                    .to("tack:decide?id=collaboration-setup-complete")
+                    .to("direct:pm-project-basics-check")
                     .to("tack:thought-exit?name=pm-bootstrap")
                 .end();
 
@@ -251,108 +186,114 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .loopDoWhile(exchangeProperty("decision.project-manager-done.result").isNotEqualTo(true))
                     .setProperty("projectManagerCycle", simple("${exchangeProperty.projectManagerCycle++}"))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Current delivery pass: selected PRODUCT READY product slice, decomposition state, selected implementation
-                        task, review/integration state, owners, and risks.
+                        Current delivery pass: one active implementation child needing review/integration/promotion,
+                        or one Todo/active product parent needing second-stage delivery decomposition.
                         """))
                     .to("tack:thought-enter?name=pm-cycle&maxTokens=300")
-                    .to("direct:pm-documentation-status-sync")
                     .to("direct:pm-team-onboarding")
                     .to("direct:pm-active-delivery-check")
-                    .to("direct:pm-work-intake-loop")
+                    .to("direct:pm-work-intake")
                     .choice()
-                        .when(exchangeProperty("decision.pm-has-ready-product-handoff.result").isEqualTo(true))
+                        .when(exchangeProperty("decision.pm-has-product-for-delivery.result").isEqualTo(true))
                             .to("direct:pm-task-planning-loop")
                     .end()
                     .to("direct:pm-team-sync")
-                    .to("direct:pm-cycle-closeout")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Is this delivery pass locally complete because collaboration basics are established and
-                                    one of these occurred: active review, integration, or blocker work was coordinated; one PRODUCT READY
-                                    product slice was adequately decomposed into assigned actionable implementation work; no PRODUCT READY
-                                    product slice exists and that was clearly determined; a completed slice was returned for product
-                                    acceptance; or one exact product-input, assignment, or infrastructure blocker was recorded?
-                                    Do not wait for another role to consume this output.
+                                    Is this PM pass locally complete because one concrete delivery action occurred:
+                                    workspace setup was established; one implementation review/integration/promotion was
+                                    coordinated; one product parent was adequately decomposed into implementation children;
+                                    one acceptance handoff was produced; or no current PM action exists and that was verified?
                                     """))
                     .to("tack:decide?id=project-manager-done")
                     .to("tack:thought-exit?name=pm-cycle")
                 .end();
 
-        from("direct:pm-documentation-status-sync")
-                .routeId("pm-documentation-status-sync")
+        from("direct:pm-team-onboarding")
+                .routeId("pm-team-onboarding")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Read only current mission status anchors. Use documentation index/current-work links,
-                                directly linked project-management items, and recent team-chat handoff context only if needed.
-                                Capture owners, work-item links, canonical documentation pages, agent-workspace repository links,
-                                or broken navigation. Do not sweep unrelated work.
+                                Keep current mission teammates present in Plane and team chat where supported. Add missing
+                                teammates; remove nobody unless mission evidence clearly says they left. Do not let membership
+                                housekeeping obscure delivery work.
                                 """))
-                .to("tack:act?id=pm-workspace-status-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID);
+                .to("tack:act?id=pm-team-onboarding&toolProfile=" + WorkspaceCoordinationToolProfile.ID);
 
         from("direct:pm-active-delivery-check")
                 .routeId("pm-active-delivery-check")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Active delivery coordination: one highest-priority implementation item in Review, Blocked, or In Progress;
-                        REVIEW READY, INTEGRATION READY, merged integration evidence, BLOCKED evidence, parent product slice,
-                        owner, status decision, and next coordination action.
+                        One delivery-maintenance item: In Progress implementation child awaiting review or merge verification,
+                        blocked Todo/In Progress child, Backlog child whose dependencies may now be satisfied, or active
+                        product parent whose implementation children may all be Done.
                         """))
-                .to("tack:thought-enter?name=pm-active-delivery&maxTokens=250")
+                .to("tack:thought-enter?name=pm-active-delivery&maxTokens=300")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Read at most one highest-priority active implementation item, in this order: Review, Blocked,
-                                then In Progress. Read its direct project-management evidence and only the linked source-control
-                                branch, commit, pull request, changed files, and validation evidence needed to evaluate the handoff.
-                                For Review, capture REVIEW READY or INTEGRATION READY and whether the referenced pull request is
-                                open or merged. For Blocked, capture the required owner and evidence. Do not mutate anything.
-                                Once one item is classified as Review, Blocked, In Progress, or lacking required evidence, stop.
-                                Missing linked evidence is a result; do not broaden the search.
+                                Read at most one highest-value current delivery item using Plane's real states only.
+
+                                Priority:
+                                1. In Progress implementation child with INTEGRATION READY: inspect the linked PR and determine
+                                   whether the Director has merged the exact reviewed head.
+                                2. In Progress implementation child with current REVIEW READY and no later PM disposition:
+                                   inspect its acceptance reference, diff, changed files, validation, and linked PR.
+                                3. Todo/In Progress implementation child with a current BLOCKED comment needing coordination.
+                                4. Backlog implementation child whose declared dependencies may now all be Done.
+                                5. In Progress product parent whose implementation children may all be Done.
+
+                                REVIEW READY, INTEGRATION READY, BLOCKED, and PRODUCT ACCEPTANCE READY are handoff/evidence
+                                comments, never Plane states. Do not search for nonexistent Review or Blocked states.
+                                Do not mutate in this read.
                                 """))
                 .to("tack:act?id=pm-active-delivery-evidence-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Update only the active implementation item and, when appropriate, its parent product slice using
-                                the evidence already read. For Review with REVIEW READY, verify implementation against its referenced
-                                acceptance, changed files, validation, and branch/commit/pull request. When implementation review is
-                                accepted but the pull request is still open, leave the task in Review and add or refresh INTEGRATION READY
-                                with the pull request and reviewed evidence. Once the pull request is verified merged, move the task to Done.
-                                When all implementation tasks derived from the same PRODUCT READY product slice are Done, add or refresh
-                                PRODUCT ACCEPTANCE READY on that product slice with its canonical acceptance page and completed evidence.
-                                For Blocked, add PRODUCT INPUT REQUIRED only for a product decision; otherwise record the exact required
-                                coordination action. Do not create duplicate replacement tasks or claim source evidence not present in
-                                the preceding read.
+                                Update at most the delivery item already read.
+
+                                - If an INTEGRATION READY implementation child's exact reviewed PR/head is verified merged,
+                                  move that implementation child In Progress -> Done.
+                                - If a REVIEW READY implementation child is acceptable against its referenced product
+                                  acceptance and available validation, keep it In Progress and add/refresh one INTEGRATION READY
+                                  comment containing repository, PR, reviewed head commit, validation, and acceptance reference.
+                                  The Director owns the merge. Do not move the task to Done before merge verification.
+                                - If review finds a defect or unmet acceptance behavior, keep the task In Progress and add one
+                                  precise REVIEW FEEDBACK comment. Do not create a duplicate replacement task.
+                                - If a Backlog implementation child's dependencies are all Done and the task is otherwise
+                                  actionable and assigned, move it Backlog -> Todo.
+                                - Keep blocked work in its truthful real state and record/refresh one BLOCKED comment naming
+                                  the required owner and evidence.
+                                - If every implementation child of an In Progress product parent is Done, keep the parent
+                                  In Progress and add/refresh PRODUCT ACCEPTANCE READY with the canonical acceptance page and
+                                  completed evidence for Product Ownership.
+
+                                Do not use custom Plane states or labels.
                                 """))
                 .to("tack:act?id=pm-active-delivery-update&toolProfile=" + ProjectManagementToolProfile.ID)
                 .to("tack:thought-exit?name=pm-active-delivery");
 
-        from("direct:pm-team-onboarding")
-                .routeId("pm-team-onboarding")
-                .setHeader(TackHeaders.PROMPT, constant("""
-                                Keep team access current for the verified project. Compare current mission/team members with
-                                project-management workspace members and team-chat channel members. Add every missing teammate
-                                where supported; remove nobody unless the mission clearly says they left. Note source-control
-                                access gaps, but do not block delivery coordination on repository membership.
-                                """))
-                .to("tack:act?id=pm-team-onboarding&toolProfile=" + WorkspaceCoordinationToolProfile.ID);
-
-        from("direct:pm-work-intake-loop")
-                .routeId("pm-work-intake-loop")
-                .setProperty("decision.pm-has-ready-product-handoff.result", constant(false))
+        from("direct:pm-work-intake")
+                .routeId("pm-work-intake")
+                .setProperty("decision.pm-has-product-for-delivery.result", constant(false))
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        One PRODUCT READY product slice under review: work-item id/link, priority, canonical acceptance page,
-                        Gherkin acceptance, existing implementation children, readiness content, and requested next delivery action.
-                        Promote the selected item before intake exits.
+                        One product parent for delivery planning: Todo handoff from PO, or existing In Progress product
+                        parent with uncovered acceptance, acceptance feedback, or incomplete implementation-child coverage.
                         """))
                 .to("tack:thought-enter?name=pm-intake&maxTokens=250")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Determine whether exactly one delivery-ready product slice exists in the canonical product backlog.
-                                Select one only when it contains a current PRODUCT READY comment and its canonical page contains usable
-                                scope and testable Gherkin acceptance. New product work must originate in the product backlog; do not
-                                create product items here. Capture the product item, priority, acceptance page, Gherkin scenarios,
-                                existing implementation tasks, unresolved product questions, and requested next delivery action.
-                                If no ready product slice exists, do not invent acceptance criteria or create implementation work.
+                                Select at most one PRODUCT PARENT for delivery planning.
+
+                                Prefer a Todo product parent: Todo is the authoritative PO -> PM handoff. Verify its canonical
+                                product page contains usable user scope and testable Gherkin acceptance. Do not require a magic
+                                readiness comment.
+
+                                Otherwise select an In Progress product parent only when delivery decomposition remains
+                                incomplete or Product Ownership has supplied PRODUCT ACCEPTANCE FEEDBACK that is not yet
+                                represented by an implementation child.
+
+                                Never implement the product parent itself. Never treat an implementation child as a product
+                                slice. Do not create new product scope.
                                 """))
                 .to("tack:act?id=pm-intake-review&toolProfile=" + ProjectManagementToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Does one current PRODUCT READY product slice exist with usable scope and testable Gherkin acceptance
-                                for delivery decomposition? Return false when no such delivery-ready product slice exists.
+                                Is one Todo or qualifying In Progress product parent selected with usable product acceptance
+                                and a real delivery-decomposition need?
                                 """))
-                .to("tack:decide?id=pm-has-ready-product-handoff")
+                .to("tack:decide?id=pm-has-product-for-delivery")
                 .to("tack:thought-exit?name=pm-intake");
 
         from("direct:pm-task-planning-loop")
@@ -362,28 +303,41 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .loopDoWhile(exchangeProperty("decision.pm-task-planning-done.result").isNotEqualTo(true))
                     .setProperty("pmTaskPlanningCycle", simple("${exchangeProperty.pmTaskPlanningCycle++}"))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Decomposition of the selected PRODUCT READY product slice: existing implementation children,
-                        uncovered acceptance behavior, assignees, repositories, dependencies, next executable steps,
-                        and expected review evidence.
+                        Second-stage decomposition of one product parent: acceptance behaviors, existing implementation
+                        children, technical coverage, dependencies, assignees, and the next missing discrete delivery outcome.
                         """))
-                    .to("tack:thought-enter?name=pm-planning&maxTokens=250")
+                    .to("tack:thought-enter?name=pm-planning&maxTokens=300")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Review the selected PRODUCT READY product slice and implementation tasks already derived from it.
-                                    Decompose by delivery responsibility, dependencies, and independently finishable technical outcomes.
-                                    Create or refine exactly one missing or oversized implementation leaf per pass. A trivial product slice
-                                    may need one implementation task; a larger slice may need several. Every ready leaf must remain linked
-                                    to the parent product slice and canonical Gherkin acceptance, have a named assignee, priority, source
-                                    repository, dependencies or explicit independence, one concrete next code step, expected review evidence,
-                                    and a comment beginning exactly DELIVERY READY. Do not duplicate existing coverage, invent product scope,
-                                    or stop after one task merely because one actionable leaf exists.
+                                    Decompose the selected PRODUCT PARENT into IMPLEMENTATION CHILDREN.
+
+                                    Product-owner slices are intentionally user-facing and may span several technical changes.
+                                    Your job is the second decomposition: identify independently finishable technical outcomes
+                                    whose combined delivery satisfies the parent's existing Gherkin acceptance.
+
+                                    First inspect the parent and its existing implementation children. Build a compact coverage
+                                    map from each acceptance behavior to existing children so you do not duplicate work.
+                                    Then create or refine exactly one missing or oversized implementation child per pass.
+
+                                    Each implementation child must:
+                                    - be linked as a child of the selected product parent
+                                    - describe one independently finishable technical outcome, not a new user-facing product slice
+                                    - reference the parent's canonical acceptance page and the acceptance behavior(s) it covers
+                                    - have one named developer assignee, priority, source repository, dependencies or explicit independence
+                                    - name one concrete next implementation step and expected review/validation evidence
+                                    - use Todo when its dependencies are satisfied and it is executable now
+                                    - use Backlog when a declared dependency prevents execution now
+
+                                    When first taking a Todo product parent into delivery, move the parent Todo -> In Progress.
+                                    Never assign the product parent to the developer as their implementation task.
+                                    Never create overlapping children merely because implementation has already begun.
                                     """))
                     .to("tack:act?id=pm-actionable-dev-task&toolProfile=" + ProjectManagementToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Is the selected PRODUCT READY product slice adequately decomposed for delivery because all required
-                                    implementation work is represented by small assigned DELIVERY READY tasks with clear dependencies and
-                                    together covers the product acceptance, or because one exact missing product input, assignment, or
-                                    infrastructure blocker was durably recorded? Return false when acceptance behavior remains uncovered
-                                    or an implementation item is still too broad to be independently actionable.
+                                    Is this product parent's delivery decomposition adequate now?
+                                    Return true only when every existing Gherkin acceptance behavior is covered by one or more
+                                    non-duplicative implementation children, each child is small enough to finish independently,
+                                    dependencies are explicit, and every currently executable child is assigned in Todo.
+                                    Return false while acceptance behavior remains uncovered or a child is still too broad.
                                     """))
                     .to("tack:decide?id=pm-task-planning-done")
                     .to("tack:thought-exit?name=pm-planning")
@@ -392,27 +346,18 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-team-sync")
                 .routeId("pm-team-sync")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Read recent project chat and participate when a real coordination exchange helps.
-                                Reply to direct questions, review/blocker handoffs, or ask one named question that unblocks work.
-                                Avoid generic status; link the project-management item or product documentation when useful.
-                                If no relevant conversation is evident, make no post and stop.
+                                Read recent project chat and participate when a real coordination exchange helps. Reply to
+                                direct questions, review/blocker handoffs, or ask one named question that unblocks work.
+                                Avoid generic status. Plane remains authoritative for assignment and state.
                                 """))
                 .to("tack:act?id=pm-team-chat-sync&toolProfile=" + TeamChatToolProfile.ID);
 
-        from("direct:pm-cycle-closeout")
-                .routeId("pm-cycle-closeout")
+        from("direct:pm-documentation-status-sync")
+                .routeId("pm-documentation-status-sync")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Curate one small product documentation improvement only when it helps navigation or understanding.
-                                Keep daily work state in project management, leave ephemeral chat out, and split pages before they
-                                grow past a readable size. Do not search for an improvement; if none is obvious from current evidence,
-                                make no change.
+                                Read only current mission delivery/navigation anchors when needed. Keep daily work state in
+                                Plane. Do not sweep documentation.
                                 """))
-                .to("tack:act?id=pm-status-note&toolProfile=" + SourceControlWriteToolProfile.ID)
-                .setHeader(TackHeaders.PROMPT, constant("""
-                                Update one project-management work item only if verified status, risk, review requirement,
-                                PRODUCT INPUT REQUIRED, DELIVERY READY, REVIEW READY, INTEGRATION READY, PRODUCT ACCEPTANCE READY,
-                                or BLOCKED changed. Do not depend on custom states or labels.
-                                """))
-                .to("tack:act?id=pm-release-risk-update&toolProfile=" + ProjectManagementToolProfile.ID);
+                .to("tack:act?id=pm-workspace-status-read&toolProfile=" + SourceControlToolProfile.ID);
     }
 }

@@ -2,17 +2,16 @@ package us.nusun.llmshare.example.routine;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import org.apache.camel.builder.RouteBuilder;
-import us.nusun.llmshare.framework.inventory.RoutineProvider;
-import us.nusun.llmshare.framework.model.RoutineDefinition;
-import us.nusun.llmshare.framework.tack.TackHeaders;
-
-import java.util.List;
-
 import us.nusun.llmshare.example.tool.ProjectManagementToolProfile;
 import us.nusun.llmshare.example.tool.SourceControlToolProfile;
 import us.nusun.llmshare.example.tool.SourceControlWriteToolProfile;
 import us.nusun.llmshare.example.tool.TeamChatToolProfile;
 import us.nusun.llmshare.example.tool.WorkspaceReadonlyToolProfile;
+import us.nusun.llmshare.framework.inventory.RoutineProvider;
+import us.nusun.llmshare.framework.model.RoutineDefinition;
+import us.nusun.llmshare.framework.tack.TackHeaders;
+
+import java.util.List;
 
 @ApplicationScoped
 public class ApplicationDeveloperRoutine extends RouteBuilder implements RoutineProvider {
@@ -27,18 +26,18 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         return RoutineDefinition.builder(ID)
                 .name("Application Developer")
                 .main("""
-                        Own application development for the whole mission through completion. Continuously consume assigned
-                        DELIVERY READY implementation work, continue active assigned work, make coherent source changes,
-                        validate them, produce reviewable pull-request or equivalent change evidence, report blockers,
-                        and return REVIEW READY delivery evidence while the mission still has unfinished outcomes.
+                        Own application development for the whole mission through completion. Consume assigned implementation
+                        children from Plane, continue active work before starting Todo work, make coherent source changes,
+                        validate them, create or update reviewable pull requests, and leave completed implementation work
+                        In Progress with REVIEW READY evidence for Project Manager review. Product parents are never developer tasks.
                         """, "direct:example-software-team-application-developer")
                 .subroutine(
                         "work-selection",
-                        "Find or start one assigned DELIVERY READY implementation task without changing source files.",
+                        "Find or start one assigned implementation child using Plane Todo/In Progress state without changing source files.",
                         "direct:example-software-team-application-developer-work-selection")
                 .subroutine(
                         "implementation",
-                        "Advance one assigned implementation task through source changes, validation, reviewable change evidence, and REVIEW READY or BLOCKED status.",
+                        "Advance one assigned implementation child through source changes, validation, pull-request evidence, and REVIEW READY or BLOCKED handoff.",
                         "direct:example-software-team-application-developer-implementation")
                 .defaultLane("high-pass")
                 .build();
@@ -51,7 +50,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .to("direct:dev-application-developer-root-enter")
                 .setProperty("decision.application-developer-mission-complete.result", constant(false))
                 .loopDoWhile(exchangeProperty("decision.application-developer-mission-complete.result").isNotEqualTo(true))
-                    .to("direct:dev-project-basics-loop")
+                    .to("direct:dev-project-basics-check")
                     .choice()
                         .when(exchangeProperty("decision.developer-has-project-basics.result").isEqualTo(true))
                             .to("direct:dev-delivery-loop")
@@ -59,20 +58,15 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             .to("direct:dev-missing-basics-closeout")
                     .end()
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Review current mission completion status once using the smallest authoritative read available.
-                                    Check only current-mission project-management status, current-work/documentation status, and direct
-                                    completion or handoff evidence needed to determine whether any implementation outcome remains.
-                                    One verified unfinished required outcome is enough to conclude not complete; stop there.
-                                    Do not mutate anything or begin new development work. Prefer current verified external evidence over
-                                    older remembered status when they conflict.
+                                    Review current mission completion status once using the smallest authoritative read.
+                                    One unfinished implementation child or product delivery outcome is enough to conclude not
+                                    complete. Plane state is authoritative. Do not mutate or begin new development in this check.
                                     """))
                     .to("tack:act?id=dev-mission-status-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Is the entire mission complete from the application-development perspective?
-                                    Return true only when durable current-mission evidence shows all required implementation outcomes
-                                    are complete and no further development, validation, review response, or implementation follow-up remains.
-                                    Return false when there is unfinished work, missing project basics, blocked work, pending delivery,
-                                    or simply no eligible assigned task right now. Local cycle completion is not mission completion.
+                                    Return true only when durable current-mission evidence shows no further development,
+                                    validation, review response, or implementation follow-up remains.
                                     """))
                     .to("tack:decide?id=application-developer-mission-complete")
                     .filter(exchangeProperty("decision.application-developer-mission-complete.result").isNotEqualTo(true))
@@ -85,23 +79,15 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         from("direct:example-software-team-application-developer-work-selection")
                 .routeId("example-software-team-application-developer-work-selection")
                 .to("direct:dev-application-developer-root-enter")
-                .to("direct:dev-project-basics-loop")
+                .to("direct:dev-project-basics-check")
                 .choice()
                     .when(exchangeProperty("decision.developer-has-project-basics.result").isEqualTo(true))
-                        .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                            Focused developer selection pass: assigned in-progress or DELIVERY READY to-do task, owner,
-                            status, canonical page, repository, priority, and next code step.
-                            """))
-                        .to("tack:thought-enter?name=dev-cycle&maxTokens=300")
                         .setProperty("decision.developer-has-work.result", constant(false))
-                        .to("direct:dev-team-chat-sync")
-                        .to("direct:dev-work-selection-loop")
+                        .to("direct:dev-work-selection")
                         .choice()
                             .when(exchangeProperty("decision.developer-has-work.result").isNotEqualTo(true))
                                 .to("direct:dev-no-work-closeout")
                         .end()
-                        .to("tack:thought-exit?name=dev-cycle")
-                    .endChoice()
                     .otherwise()
                         .to("direct:dev-missing-basics-closeout")
                 .end()
@@ -110,7 +96,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         from("direct:example-software-team-application-developer-implementation")
                 .routeId("example-software-team-application-developer-implementation")
                 .to("direct:dev-application-developer-root-enter")
-                .to("direct:dev-project-basics-loop")
+                .to("direct:dev-project-basics-check")
                 .choice()
                     .when(exchangeProperty("decision.developer-has-project-basics.result").isEqualTo(true))
                         .to("direct:dev-delivery-loop")
@@ -122,8 +108,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         from("direct:dev-application-developer-root-enter")
                 .routeId("dev-application-developer-root-enter")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Durable developer anchors: documentation index, engineering documentation index,
-                        source repository URL, project-management workspace, team chat, and current-work page.
+                        Durable developer anchors: selected implementation child and Plane state, parent product acceptance,
+                        source repository, branch/commit/pull request, validation evidence, and current review disposition.
                         """))
                 .to("tack:thought-enter?name=application-developer-routine&maxTokens=500");
 
@@ -131,39 +117,25 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .routeId("dev-application-developer-root-exit")
                 .to("tack:thought-exit?name=application-developer-routine");
 
-        from("direct:dev-project-basics-loop")
-                .routeId("dev-project-basics-loop")
+        from("direct:dev-project-basics-check")
+                .routeId("dev-project-basics-check")
                 .setProperty("decision.developer-has-project-basics.result", constant(false))
-                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Current project-basics read: source repository, documentation repository,
-                        project-management workspace, team chat, current work, and engineering navigation.
-                        Promote durable anchors before basics exits.
-                        """))
-                .to("tack:thought-enter?name=dev-basics&maxTokens=300")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Verify developer project basics once without mutation using the capabilities available to you.
-                                Development may begin only when there is a usable project-management workspace, source repository
-                                under agent-workspace, documentation repository/current-work navigation, canonical acceptance
-                                links, and usable team chat. One confirmed missing required basic is enough to stop this check;
-                                record it and stop. Do not repeatedly reread project basics or start development when basics are missing.
+                                Verify developer project basics once without mutation. Development requires a usable Plane
+                                workspace, source repository under agent-workspace, documentation/current-work navigation,
+                                canonical product acceptance links, and team chat. One confirmed missing basic is enough to stop.
                                 """))
                 .to("tack:act?id=dev-workspace-basics-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Are project basics present and linked enough to do development: project management,
-                                source repository under agent-workspace, documentation/current-work navigation,
-                                team chat, and engineering navigation?
+                                Are project basics present and linked enough to do development?
                                 """))
-                .to("tack:decide?id=developer-has-project-basics")
-                .to("tack:thought-exit?name=dev-basics");
+                .to("tack:decide?id=developer-has-project-basics");
 
         from("direct:dev-missing-basics-closeout")
                 .routeId("dev-missing-basics-closeout")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Project basics are not usable for development. Read recent team chat only if needed.
-                                If no verified project channel is known, stay quiet and stop. Reply once to an existing setup thread
-                                when a concise technical setup answer helps; otherwise stay quiet. Do not repost setup requests, claim
-                                work, or begin development without project management, source repository, documentation repository,
-                                and usable navigation.
+                                Project basics are not usable for development. Reply once to a relevant setup conversation
+                                when useful; otherwise stay quiet. Do not claim work or begin development.
                                 """))
                 .to("tack:act?id=dev-missing-basics-closeout&toolProfile=" + TeamChatToolProfile.ID);
 
@@ -174,13 +146,13 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .loopDoWhile(exchangeProperty("decision.application-developer-done.result").isNotEqualTo(true))
                     .setProperty("applicationDeveloperCycle", simple("${exchangeProperty.applicationDeveloperCycle++}"))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Current developer pass: selected assigned task, project-management work-item id/link,
-                        canonical documentation page, branch/commit/pull request, and validation state.
+                        Current developer pass: one assigned implementation child, its real Plane state,
+                        parent acceptance, current review disposition, source patch, PR, and validation.
                         """))
                     .to("tack:thought-enter?name=dev-cycle&maxTokens=300")
                     .setProperty("decision.developer-has-work.result", constant(false))
                     .to("direct:dev-team-chat-sync")
-                    .to("direct:dev-work-selection-loop")
+                    .to("direct:dev-work-selection")
                     .choice()
                         .when(exchangeProperty("decision.developer-has-work.result").isEqualTo(true))
                             .to("direct:dev-implementation-loop")
@@ -189,10 +161,9 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             .to("direct:dev-no-work-closeout")
                     .end()
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Is this implementation pass locally complete because one assigned task reached Review with REVIEW READY,
-                                    reached Done, became durably BLOCKED with evidence, or because no eligible assigned work exists?
-                                    Record the absence of eligible assigned work clearly enough for coordination or orchestration to respond.
-                                    Do not finish merely because one small code step landed while a clear next implementation patch remains.
+                                    Is this developer pass locally complete because one assigned implementation child
+                                    produced current REVIEW READY evidence, became durably BLOCKED, is waiting on an accepted
+                                    INTEGRATION READY merge, or no eligible assigned implementation work exists?
                                     """))
                     .to("tack:decide?id=application-developer-done")
                     .to("tack:thought-exit?name=dev-cycle")
@@ -201,58 +172,43 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         from("direct:dev-team-chat-sync")
                 .routeId("dev-team-chat-sync")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Read recent project chat and join real technical conversations.
-                                Answer direct questions, review requests, or handoffs; if blocked, ask one named question.
-                                Do not volunteer for unassigned work or repeat project-management/documentation data.
-                                If no relevant conversation is evident, make no post and stop.
+                                Read recent project chat and join real technical conversations. Answer direct questions,
+                                review feedback, or handoffs; if blocked, ask one named question. Do not volunteer for
+                                unassigned work or repeat Plane status.
                                 """))
                 .to("tack:act?id=dev-team-chat-sync&toolProfile=" + TeamChatToolProfile.ID);
 
-        from("direct:dev-work-selection-loop")
-                .routeId("dev-work-selection-loop")
-                .setProperty("developerWorkSelectionCycle", constant(0))
-                .setProperty("decision.developer-work-selection-done.result", constant(false))
-                .loopDoWhile(exchangeProperty("decision.developer-work-selection-done.result").isNotEqualTo(true))
-                    .setProperty("developerWorkSelectionCycle", simple("${exchangeProperty.developerWorkSelectionCycle++}"))
-                    .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Task selection only: selected assigned in-progress/to-do task, status, owner, priority,
-                        canonical page, repository, next code step. Promote selected task before selection exits.
+        from("direct:dev-work-selection")
+                .routeId("dev-work-selection")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Task selection only: one assigned implementation child, not a product parent. Prefer actionable
+                        In Progress work, then assigned Todo work. Respect current review/integration wait handoffs.
                         """))
-                    .to("tack:thought-enter?name=dev-selection&maxTokens=250")
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                                    Using project management, review only implementation tasks assigned to you.
-                                    Continue assigned In Progress work before starting new work. Active assigned work may continue
-                                    from its established context; new To Do work must have DELIVERY READY, source repository,
-                                    canonical acceptance page, priority, dependencies or explicit independence, expected review
-                                    evidence, and one concrete next code step. Ignore Backlog, unassigned work, product items,
-                                    and work assigned to others.
-                                    """))
-                    .to("tack:act?id=dev-in-progress-review&toolProfile=" + ProjectManagementToolProfile.ID)
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                                    Is one of your assigned in-progress tasks selected for implementation now?
-                                    """))
-                    .to("tack:decide?id=developer-has-work")
-                    .choice()
-                        .when(exchangeProperty("decision.developer-has-work.result").isNotEqualTo(true))
-                            .setHeader(TackHeaders.PROMPT, constant("""
-                                            Review one assigned To Do implementation task only. Select it only when it has
-                                            an exact DELIVERY READY handoff plus acceptance reference, source repository, priority,
-                                            dependencies or explicit independence, review evidence, and a concrete next code step.
-                                            If selected, move exactly that assigned task to In Progress.
-                                            """))
-                            .to("tack:act?id=dev-assigned-to-do-start&toolProfile=" + ProjectManagementToolProfile.ID)
-                            .setHeader(TackHeaders.PROMPT, constant("""
-                                            Is one of your assigned tasks now selected and in progress?
-                                            """))
-                            .to("tack:decide?id=developer-has-work")
-                    .end()
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                                    Stop selection when assigned active work is selected, or when no eligible assigned
-                                    In Progress or DELIVERY READY To Do implementation task exists. Do not browse or claim backlog/product work.
-                                    """))
-                    .to("tack:decide?id=developer-work-selection-done")
-                    .to("tack:thought-exit?name=dev-selection")
-                .end();
+                .to("tack:thought-enter?name=dev-selection&maxTokens=250")
+                .setHeader(TackHeaders.PROMPT, constant("""
+                                Using Plane, inspect only IMPLEMENTATION CHILDREN assigned to you.
+
+                                First consider assigned In Progress implementation children. Continue one when implementation
+                                is actively underway or when a newer PM REVIEW FEEDBACK comment requests changes. Do not make
+                                additional code changes to an item that is simply waiting on a current REVIEW READY review or
+                                an INTEGRATION READY Director merge.
+
+                                If no actionable assigned In Progress child exists, consider one assigned Todo implementation
+                                child. Todo plus assignment is the authoritative PM -> DEV handoff. Verify it references its
+                                parent product acceptance, source repository, priority, dependencies, and expected review evidence.
+                                If selected, move exactly that implementation child Todo -> In Progress.
+
+                                Ignore Backlog, Done, Cancelled, unassigned work, work assigned to others, and product parents.
+                                Never implement a product parent directly.
+                                """))
+                .to("tack:act?id=dev-work-selection&toolProfile=" + ProjectManagementToolProfile.ID)
+                .setHeader(TackHeaders.PROMPT, constant("""
+                                Is one assigned actionable implementation child now selected in In Progress?
+                                Return false when every assigned In Progress child is waiting on review/integration and no
+                                assigned Todo child is available.
+                                """))
+                .to("tack:decide?id=developer-has-work")
+                .to("tack:thought-exit?name=dev-selection");
 
         from("direct:dev-implementation-loop")
                 .routeId("dev-implementation-loop")
@@ -261,57 +217,53 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .loopDoWhile(exchangeProperty("decision.developer-implementation-complete.result").isNotEqualTo(true))
                     .setProperty("developerImplementationCycle", simple("${exchangeProperty.developerImplementationCycle++}"))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Current implementation step: files inspected/changed, branch, commit/pull request,
-                        validation evidence. Promote branch/commit/validation before implementation exits.
+                        Current implementation step: selected child, parent acceptance behavior, files inspected/changed,
+                        branch, commit, pull request, validation, and current review feedback.
                         """))
                     .to("tack:thought-enter?name=dev-implementation&maxTokens=250")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Using project management, read the selected implementation task only. Verify current status,
-                                    objective, assignee is you, DELIVERY READY context, canonical acceptance page, source repository
-                                    under agent-workspace, dependencies, and expected review evidence.
+                                    Read only the selected In Progress implementation child. Verify it is assigned to you,
+                                    is an implementation child rather than the product parent, and contains parent acceptance
+                                    reference, source repository, dependencies, and expected review evidence. If required delivery
+                                    context is malformed, do not invent it; record the exact PM-owned gap as BLOCKED.
                                     """))
                     .to("tack:act?id=dev-task-context-read&toolProfile=" + ProjectManagementToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Read only direct documentation links and source files needed for the selected task.
-                                    Verify the repository is under agent-workspace. Do not use personal namespaces.
-                                    Identify one next coherent patch with files, test/validation target, and branch plan.
-                                    Once one coherent next patch is clear, stop reading. Do not modify source files in this planning step.
+                                    Read only direct product-acceptance links and source files needed for this implementation
+                                    child. Identify one coherent next patch and validation target. Stop reading when the patch
+                                    is clear. Do not broaden into uncovered product work.
                                     """))
                     .to("tack:act?id=dev-source-context-plan&toolProfile=" + SourceControlToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Apply exactly one coherent source-control patch for the selected task.
-                                    Prefer production code plus a matching test/update. Use or create a task branch, validate the
-                                    changed repository when practical, commit the coherent change, and push it for review.
+                                    Apply exactly one coherent source-control patch for the selected implementation child.
+                                    Use or create a task branch, validate changed behavior when practical, commit the coherent
+                                    change, push it, and create or update one pull request for the task branch. Incorporate
+                                    current PM REVIEW FEEDBACK when present. Avoid duplicate pull requests.
                                     """))
                     .to("tack:act?id=dev-delivery-step&toolProfile=" + SourceControlWriteToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Check available validation evidence for the patch: tests already run during the repository-writing
-                                    step, remote status, changed-file review, or why validation could not run. Do not claim tests passed
-                                    unless the available evidence shows it.
+                                    Check available validation and reviewability evidence: changed files, branch, commit,
+                                    pull request state, tests or other validation actually run, and any limitation.
+                                    Do not claim validation that did not occur.
                                     """))
                     .to("tack:act?id=dev-validation-step&toolProfile=" + SourceControlToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Check review readiness in source control: changed files, branch, commit, validation status,
-                                    and pull request state. When the coherent implementation is ready for review and pull requests
-                                    are supported, create or update one pull request for the task branch rather than leaving only
-                                    an unreviewable branch or commit. Avoid duplicate pull requests. No review-ready status without a real diff.
-                                    """))
-                    .to("tack:act?id=dev-review-readiness&toolProfile=" + SourceControlToolProfile.ID)
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                                    Using project management, update exactly one selected task after verifying current status
-                                    and assignee. Move To Do -> In Progress only for your selected task. Move In Progress -> Review
-                                    only with a real diff plus branch/commit and, when supported, a pull request with available
-                                    validation evidence. When review-ready, create or update a comment beginning exactly REVIEW READY
-                                    with branch, commit, pull request or equivalent diff, changed files, validation result or limitation,
-                                    and canonical acceptance page. When blocked, keep the accurate status and create or update a
-                                    comment beginning exactly BLOCKED naming the required owner with evidence. Do not add duplicate
-                                    equivalent closeout comments.
+                                    Update exactly the selected implementation child in Plane.
+
+                                    Keep it In Progress. When the implementation child is ready for PM review, add or refresh
+                                    one comment beginning REVIEW READY with branch, commit/head, pull request, changed files,
+                                    validation result or limitation, parent product item, and canonical acceptance reference.
+                                    REVIEW READY is a handoff comment, not a Plane state. Do not move to a nonexistent Review state
+                                    and do not move to Done; PM review, Director merge, and PM merge verification happen afterward.
+
+                                    When blocked, keep the truthful real state and add/refresh one BLOCKED comment naming the
+                                    required owner and evidence. Avoid duplicate equivalent handoff comments.
                                     """))
                     .to("tack:act?id=dev-plane-status-evidence-update&toolProfile=" + ProjectManagementToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Is the selected task in Review/Done with REVIEW READY backed by a real diff, branch/commit,
-                                    pull request when supported, and validation evidence, or durably BLOCKED naming the required owner?
-                                    Return false if there is an obvious next production-code or test patch to make.
+                                    Is this implementation step complete for now because current REVIEW READY evidence exists
+                                    for a real reviewable diff/PR, or the task is durably BLOCKED? Return false only when there
+                                    is an obvious next production-code/test patch required before review.
                                     """))
                     .to("tack:decide?id=developer-implementation-complete")
                     .to("tack:thought-exit?name=dev-implementation")
@@ -320,25 +272,22 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         from("direct:dev-work-closeout")
                 .routeId("dev-work-closeout")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Make one focused documentation improvement if it preserves durable engineering knowledge.
-                                Link source evidence from the item page or engineering index; do not create activity logs.
-                                Keep files compact and split or summarize when they grow too large. Do not search for an improvement;
-                                if none is obvious from current evidence, make no change.
+                                Make one focused documentation improvement only when it preserves durable engineering
+                                knowledge for the selected implementation work. Do not create activity logs.
                                 """))
                 .to("tack:act?id=dev-documentation-closeout&toolProfile=" + SourceControlWriteToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Read recent project chat and reply when delivery evidence, a blocker, or a teammate's question
-                                needs interaction. Link the project-management item and review/blocker evidence when useful;
-                                avoid generic status. If no relevant conversation is evident, make no post and stop.
+                                Reply in project chat only when review evidence, a blocker, PM feedback, or a teammate's
+                                question needs interaction. Avoid generic status.
                                 """))
                 .to("tack:act?id=dev-team-chat-closeout&toolProfile=" + TeamChatToolProfile.ID);
 
         from("direct:dev-no-work-closeout")
                 .routeId("dev-no-work-closeout")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Read recent project chat. If no assigned In Progress or DELIVERY READY To Do implementation task exists,
-                                state that fact once when useful so the team can respond. Otherwise stay quiet. Do not browse,
-                                shape, or claim product backlog work and do not self-assign unassigned implementation work.
+                                If no assigned actionable In Progress or Todo implementation child exists, state that fact
+                                once in team chat when useful so PM can respond. Do not browse, shape, implement, or self-assign
+                                product backlog work.
                                 """))
                 .to("tack:act?id=dev-no-work-note&toolProfile=" + TeamChatToolProfile.ID);
     }
