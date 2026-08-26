@@ -184,16 +184,22 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                     .setProperty("decision.director-has-integration-candidate.result", constant(false))
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Read a small fresh current-mission slice sufficient to find at most one In Progress
-                                    implementation child carrying a current PM INTEGRATION READY handoff. Plane state and
-                                    comments are authoritative for the handoff. Capture the linked pull request and the handoff's
-                                    repository, reviewed head, reviewed base, reviewed time, validation, and acceptance reference.
-                                    Do not mutate anything. If no eligible handoff exists, stop after the smallest read.
+                                    implementation child carrying a current PM INTEGRATION READY handoff whose exact linked
+                                    pull request is still OPEN. Plane state/comments are authoritative for approval; Gitea is
+                                    authoritative for pull-request state. Capture repository, PR, reviewed head, reviewed base,
+                                    reviewed time, validation, and acceptance reference.
+
+                                    A merged or otherwise closed pull request is not an eligible Director integration candidate,
+                                    even if Plane still says In Progress with a current INTEGRATION READY comment. Project
+                                    Management owns post-merge closure or redisposition of closed-unmerged work. Do not mutate.
+                                    If no eligible open handoff exists, stop after the smallest read.
                                     """))
                     .to("tack:act?id=director-workspace-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Is exactly one current In Progress implementation child selected with a complete current
-                                    PM INTEGRATION READY handoff and linked pull request? Return false when no eligible candidate
-                                    was found or required handoff fields are missing or ambiguous.
+                                    PM INTEGRATION READY handoff and an exact linked pull request that is still OPEN?
+                                    Return false when no eligible candidate was found, the linked PR is merged/closed, or
+                                    required handoff fields are missing or ambiguous.
                                     """))
                     .to("tack:decide?id=director-has-integration-candidate")
                     .choice()
@@ -214,8 +220,9 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                                             - no newer commit, review, or material PR comment after reviewedAt has changed the review surface
                                             - current validation evidence does not contradict the PM review
 
-                                            If the head/base/review surface changed, the PR conflicts, or any evidence is ambiguous,
-                                            make no source-control mutation. Project Management owns redisposition through Plane.
+                                            If the PR is already merged/closed, the head/base/review surface changed, the PR
+                                            conflicts, or any evidence is ambiguous, make no source-control mutation. Project
+                                            Management owns closure or redisposition through Plane.
                                             """))
                             .to("tack:act?id=director-integration-merge&toolProfile=" + IntegrationToolProfile.ID)
                             .choice()
