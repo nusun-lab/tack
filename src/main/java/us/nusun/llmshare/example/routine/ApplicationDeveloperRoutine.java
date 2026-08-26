@@ -154,6 +154,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .loopDoWhile(simple("${exchangeProperty.devMadeProgress} == true && ${exchangeProperty.devProductiveIterations} < 6"))
                     .setProperty("devProductiveIterations", simple("${exchangeProperty.devProductiveIterations++}"))
                     .setProperty("devMadeProgress", constant(false))
+                    .setProperty("devSourceCloseoutAllowed", constant(false))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
                         Current developer work unit: one freshly selected assigned implementation child, its real Plane state,
                         parent acceptance, topology question when applicable, current review disposition, source evidence,
@@ -169,7 +170,12 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                 .when(exchangeProperty("devImplementationMadeProgress").isEqualTo(true))
                                     .setProperty("devMadeProgress", constant(true))
                             .endChoice()
-                            .to("direct:dev-work-closeout")
+                            .choice()
+                                .when(exchangeProperty("devSourceCloseoutAllowed").isEqualTo(true))
+                                    .to("direct:dev-work-closeout")
+                                .otherwise()
+                                    .to("direct:dev-work-closeout-no-source")
+                            .end()
                         .otherwise()
                             .to("direct:dev-no-work-closeout")
                     .end()
@@ -292,6 +298,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                             .setProperty("devImplementationStepProgress", constant(true))
                                     .endChoice()
                                 .otherwise()
+                                    .setProperty("devSourceCloseoutAllowed", constant(true))
                                     .setHeader(TackHeaders.PROMPT, constant("""
                                                     Read only direct product-acceptance links and source files needed for this implementation
                                                     child. Identify one coherent next patch and validation target. If current PM feedback requires
@@ -306,16 +313,19 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                                     practical, commit, push, and create or update one pull request. Avoid duplicate PRs.
 
                                                     For newer PM REVIEW FEEDBACK beginning SOURCE_REFRESH_REQUIRED, recover the existing task:
-                                                    fetch current origin/main; keep the same task branch and pull request; merge current
-                                                    origin/main without rewriting shared history; resolve only evidence-supported conflicts;
-                                                    rerun relevant validation; and push the same branch. If resolution requires choosing between
-                                                    incompatible product behavior, do not guess. Record BLOCKED owned by Product Owner so PM can
-                                                    route PRODUCT QUESTION. For technical coordination not answerable from current evidence,
-                                                    record BLOCKED owned by Project Management and state the missing technical evidence. Do not
-                                                    invent Director/Architect/Infrastructure as workflow owners in this routine set.
+                                                    fetch current origin/main; keep the same task branch; merge current origin/main without
+                                                    rewriting shared history; resolve only evidence-supported conflicts; rerun relevant validation;
+                                                    and push the same branch. Reuse the same PR when it is open. If the prior PR is closed-unmerged,
+                                                    reopen it when the available source-control tool supports that operation; otherwise create one new
+                                                    PR for the SAME existing task branch only after confirming no usable open PR exists. This is PR
+                                                    recovery, not a replacement task/branch. Publish fresh REVIEW READY for the resulting current PR/head.
+                                                    If resolution requires choosing between incompatible product behavior, do not guess. Record BLOCKED
+                                                    owned by Product Owner so PM can route PRODUCT QUESTION. For technical coordination not answerable
+                                                    from current evidence, record BLOCKED owned by Project Management and state the missing technical
+                                                    evidence. Do not invent Director/Architect/Infrastructure as workflow owners in this routine set.
 
                                                     Incorporate all current PM REVIEW FEEDBACK, including clarified product decisions from
-                                                    PRODUCT_QUESTION_RESOLVED. Do not create replacement tasks or pull requests.
+                                                    PRODUCT_QUESTION_RESOLVED. Do not create replacement tasks or branches.
                                                     """))
                                     .to("tack:act?id=dev-delivery-step&toolProfile=" + SourceControlWriteToolProfile.ID)
                                     .choice()
@@ -351,6 +361,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                     .endChoice()
                             .endChoice()
                         .otherwise()
+                            .setProperty("devSourceCloseoutAllowed", constant(false))
                             .setHeader(TackHeaders.PROMPT, constant("""
                                             Do not touch source. Keep the selected implementation child In Progress and add or
                                             refresh one BLOCKED comment naming the exact missing or malformed PM-owned delivery
@@ -382,14 +393,16 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .routeId("dev-work-closeout")
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Make one focused documentation improvement only when it preserves durable engineering knowledge
-                                for normal implementation work. A TOPOLOGY INVESTIGATION normally needs no documentation write
-                                beyond its TECHNICAL FINDING unless an existing canonical technical document obviously needs correction.
-                                Do not create activity logs.
+                                for this VALID normal implementation work. Do not create activity logs.
                                 """))
                 .to("tack:act?id=dev-documentation-closeout&toolProfile=" + SourceControlWriteToolProfile.ID)
+                .to("direct:dev-work-closeout-no-source");
+
+        from("direct:dev-work-closeout-no-source")
+                .routeId("dev-work-closeout-no-source")
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Reply in project chat only when review evidence, a blocker, topology finding, PM feedback, or a
-                                teammate's question needs interaction. Avoid generic status.
+                                teammate's question needs interaction. Avoid generic status. This closeout has no source-write capability.
                                 """))
                 .to("tack:act?id=dev-team-chat-closeout&toolProfile=" + TeamChatToolProfile.ID);
 
