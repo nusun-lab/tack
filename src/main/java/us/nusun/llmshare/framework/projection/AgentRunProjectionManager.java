@@ -143,7 +143,12 @@ public class AgentRunProjectionManager {
             return Map.of("type", "failure", "summary", failure);
         }
         if (run.latestStepResult() != null) {
-            return Map.of("type", "step", "summary", run.latestStepResult().summary());
+            LinkedHashMap<String, Object> latest = new LinkedHashMap<>();
+            latest.put("type", "step");
+            if (run.latestStepResult().summary() != null) {
+                latest.put("summary", run.latestStepResult().summary());
+            }
+            return Map.copyOf(latest);
         }
         if (run.latestDecisionResult() != null) {
             return Map.of("type", "decision", "result", run.latestDecisionResult().result(), "reason", run.latestDecisionResult().reason());
