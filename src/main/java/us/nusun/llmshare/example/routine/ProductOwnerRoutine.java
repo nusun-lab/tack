@@ -85,7 +85,10 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .choice()
                     .when(exchangeProperty("decision.product-owner-has-project-basics.result").isEqualTo(true))
                         .to("direct:po-select-product-work")
-                        .to("direct:po-acceptance-work")
+                        .choice()
+                            .when(exchangeProperty("decision.product-owner-has-work.result").isEqualTo(true))
+                                .to("direct:po-acceptance-work")
+                        .endChoice()
                         .to("direct:po-cycle-closeout")
                     .otherwise()
                         .to("direct:po-missing-basics-closeout")
@@ -99,8 +102,11 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .choice()
                     .when(exchangeProperty("decision.product-owner-has-project-basics.result").isEqualTo(true))
                         .to("direct:po-select-product-work")
-                        .to("direct:po-acceptance-work")
-                        .to("direct:po-plane-state-handoff")
+                        .choice()
+                            .when(exchangeProperty("decision.product-owner-has-work.result").isEqualTo(true))
+                                .to("direct:po-acceptance-work")
+                                .to("direct:po-plane-state-handoff")
+                        .endChoice()
                         .to("direct:po-cycle-closeout")
                     .otherwise()
                         .to("direct:po-missing-basics-closeout")
@@ -157,15 +163,18 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         """))
                     .to("tack:thought-enter?name=po-cycle&maxTokens=300")
                     .to("direct:po-select-product-work")
-                    .to("direct:po-acceptance-work")
                     .choice()
-                        .when(exchangeProperty("act.po-canonical-acceptance-update.durableProgress").isEqualTo(true))
-                            .setProperty("poMadeProgress", constant(true))
-                    .end()
-                    .to("direct:po-plane-state-handoff")
-                    .choice()
-                        .when(exchangeProperty("act.po-plane-handoff-update.durableProgress").isEqualTo(true))
-                            .setProperty("poMadeProgress", constant(true))
+                        .when(exchangeProperty("decision.product-owner-has-work.result").isEqualTo(true))
+                            .to("direct:po-acceptance-work")
+                            .choice()
+                                .when(exchangeProperty("act.po-canonical-acceptance-update.durableProgress").isEqualTo(true))
+                                    .setProperty("poMadeProgress", constant(true))
+                            .endChoice()
+                            .to("direct:po-plane-state-handoff")
+                            .choice()
+                                .when(exchangeProperty("act.po-plane-handoff-update.durableProgress").isEqualTo(true))
+                                    .setProperty("poMadeProgress", constant(true))
+                            .endChoice()
                     .end()
                     .to("tack:thought-exit?name=po-cycle")
                 .end()
@@ -182,6 +191,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
 
         from("direct:po-select-product-work")
                 .routeId("po-select-product-work")
+                .setProperty("decision.product-owner-has-work.result", constant(false))
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
                         Product selection: one product parent only, never an implementation child. Prefer acceptance work,
                         then one Backlog user outcome needing refinement, then create a missing product outcome only when
@@ -202,10 +212,21 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                                 """))
                 .to("tack:act?id=po-backlog-review&toolProfile=" + ProjectManagementToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Read only the selected product page, current-work navigation, and direct completion evidence
-                                linked from the selected item. Do not read the whole documentation repository.
+                                Is exactly one current product parent selected for useful Product Owner work now?
+                                Return true only for a selected Backlog product parent needing definition/handoff, or an
+                                In Progress product parent needing product acceptance. Return false when nothing suitable
+                                was selected or created, including when remaining product parents are already Todo and owned
+                                by delivery with no product question returned.
                                 """))
-                .to("tack:act?id=po-product-context-read&toolProfile=" + SourceControlToolProfile.ID)
+                .to("tack:decide?id=product-owner-has-work")
+                .choice()
+                    .when(exchangeProperty("decision.product-owner-has-work.result").isEqualTo(true))
+                        .setHeader(TackHeaders.PROMPT, constant("""
+                                        Read only the selected product page, current-work navigation, and direct completion evidence
+                                        linked from the selected item. Do not read the whole documentation repository.
+                                        """))
+                        .to("tack:act?id=po-product-context-read&toolProfile=" + SourceControlToolProfile.ID)
+                .end()
                 .to("tack:thought-exit?name=po-selection");
 
         from("direct:po-acceptance-work")
