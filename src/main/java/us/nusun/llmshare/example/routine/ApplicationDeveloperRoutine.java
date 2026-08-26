@@ -197,7 +197,10 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                 existing task branch and pull request rather than creating replacements. A newer REVIEW FEEDBACK
                                 beginning CONTEXT_REPAIRED is also actionable: Project Management has repaired the prior
                                 PM-owned delivery-context blocker, so reselect the same child and freshly validate its context
-                                before touching source. Prefer current feedback/recovery over starting another new code task.
+                                before touching source. A newer REVIEW FEEDBACK beginning PRODUCT_QUESTION_RESOLVED is likewise
+                                actionable: Product Ownership resolved the product question through Project Management, so
+                                reselect the same child, reread its parent acceptance and current task context, and continue
+                                only from that clarified product contract. Prefer current feedback/recovery over starting another new code task.
 
                                 Do not make additional code changes to an item that is simply waiting on a current REVIEW READY
                                 review or a current INTEGRATION READY Director merge with no newer PM feedback.
@@ -213,10 +216,10 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .to("tack:act?id=dev-work-selection&toolProfile=" + ProjectManagementToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Is one assigned actionable implementation child now selected in In Progress?
-                                Return true for a child with newer PM REVIEW FEEDBACK such as SOURCE_REFRESH_REQUIRED or
-                                CONTEXT_REPAIRED that requires another developer pass. Return false when every assigned In
-                                Progress child is waiting on review/integration and no assigned Todo child or newer actionable
-                                PM feedback is available.
+                                Return true for a child with newer PM REVIEW FEEDBACK such as SOURCE_REFRESH_REQUIRED,
+                                CONTEXT_REPAIRED, or PRODUCT_QUESTION_RESOLVED that requires another developer pass. Return
+                                false when every assigned In Progress child is waiting on review/integration and no assigned
+                                Todo child or newer actionable PM feedback is available.
                                 """))
                 .to("tack:decide?id=developer-has-work")
                 .to("tack:thought-exit?name=dev-selection");
@@ -239,7 +242,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Read only the selected In Progress implementation child using fresh Plane evidence. Verify
                                     assignment, parent acceptance reference, repository, dependencies, expected review evidence,
-                                    and the newest PM REVIEW FEEDBACK. Do not mutate in this read. If required delivery context
+                                    and the newest PM REVIEW FEEDBACK. For PRODUCT_QUESTION_RESOLVED, reread the clarified parent
+                                    acceptance before deciding source work. Do not mutate in this read. If required delivery context
                                     is malformed or missing, identify the exact PM-owned gap and stop reading.
                                     """))
                     .to("tack:act?id=dev-task-context-read&toolProfile=" + ProjectManagementToolProfile.ID)
@@ -276,7 +280,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                               appropriate owner
                                             - rerun relevant validation, commit the recovery when needed, and push the same branch
 
-                                            Incorporate all current PM REVIEW FEEDBACK. Do not create replacement tasks or pull requests.
+                                            Incorporate all current PM REVIEW FEEDBACK, including clarified product decisions from
+                                            PRODUCT_QUESTION_RESOLVED. Do not create replacement tasks or pull requests.
                                             """))
                             .to("tack:act?id=dev-delivery-step&toolProfile=" + SourceControlWriteToolProfile.ID)
                             .choice()
