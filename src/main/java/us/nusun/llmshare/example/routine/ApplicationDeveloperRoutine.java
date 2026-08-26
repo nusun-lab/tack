@@ -224,6 +224,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .setProperty("decision.developer-implementation-complete.result", constant(false))
                 .loopDoWhile(exchangeProperty("decision.developer-implementation-complete.result").isNotEqualTo(true))
                     .setProperty("developerImplementationCycle", simple("${exchangeProperty.developerImplementationCycle++}"))
+                    .setProperty("decision.developer-has-valid-task-context.result", constant(false))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
                         Current implementation step: selected child, parent acceptance behavior, files inspected/changed,
                         branch, commit, pull request, validation, and current review feedback.
@@ -232,63 +233,85 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Read only the selected In Progress implementation child using fresh Plane evidence. Verify
                                     assignment, parent acceptance reference, repository, dependencies, expected review evidence,
-                                    and the newest PM REVIEW FEEDBACK. If required delivery context is malformed, do not invent it;
-                                    record the exact PM-owned gap as BLOCKED.
+                                    and the newest PM REVIEW FEEDBACK. Do not mutate in this read. If required delivery context
+                                    is malformed or missing, identify the exact PM-owned gap and stop reading.
                                     """))
                     .to("tack:act?id=dev-task-context-read&toolProfile=" + ProjectManagementToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Read only direct product-acceptance links and source files needed for this implementation
-                                    child. Identify one coherent next patch and validation target. If current PM feedback requires
-                                    source refresh, also inspect the existing task branch/PR against current origin/main so the
-                                    recovery patch is based on fresh source state. Stop reading when the patch is clear.
+                                    Is the selected implementation child's delivery context valid enough to touch source?
+                                    Return true only when assignment, parent acceptance reference, source repository, dependency
+                                    state, and expected review evidence are sufficiently clear. Return false when any required
+                                    context is missing, contradictory, or malformed.
                                     """))
-                    .to("tack:act?id=dev-source-context-plan&toolProfile=" + SourceControlToolProfile.ID)
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                                    Apply exactly one coherent source-control patch for the selected implementation child.
-
-                                    For normal implementation, use or create the task branch, validate changed behavior when
-                                    practical, commit, push, and create or update one pull request. Avoid duplicate PRs.
-
-                                    For newer PM REVIEW FEEDBACK beginning SOURCE_REFRESH_REQUIRED, recover the existing task:
-                                    - fetch current origin/main
-                                    - keep the same task branch and pull request
-                                    - merge current origin/main into the task branch; do not rewrite shared history or force-push
-                                    - resolve conflicts only when the intended combined behavior is clear from current accepted
-                                      requirements and implementation context
-                                    - if resolution requires choosing between incompatible product behavior or architecture not
-                                      established by current evidence, do not guess; leave the task truthfully blocked for the
-                                      appropriate owner
-                                    - rerun relevant validation, commit the recovery when needed, and push the same branch
-
-                                    Incorporate all current PM REVIEW FEEDBACK. Do not create replacement tasks or pull requests.
-                                    """))
-                    .to("tack:act?id=dev-delivery-step&toolProfile=" + SourceControlWriteToolProfile.ID)
+                    .to("tack:decide?id=developer-has-valid-task-context")
                     .choice()
-                        .when(exchangeProperty("act.dev-delivery-step.durableProgress").isEqualTo(true))
-                            .setProperty("devImplementationMadeProgress", constant(true))
-                    .end()
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                                    Check fresh validation and reviewability evidence: changed files, current branch/head,
-                                    pull request state, tests or other validation actually run, and any limitation.
-                                    Do not claim validation that did not occur.
-                                    """))
-                    .to("tack:act?id=dev-validation-step&toolProfile=" + SourceControlToolProfile.ID)
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                                    Update exactly the selected implementation child in Plane.
+                        .when(exchangeProperty("decision.developer-has-valid-task-context.result").isEqualTo(true))
+                            .setHeader(TackHeaders.PROMPT, constant("""
+                                            Read only direct product-acceptance links and source files needed for this implementation
+                                            child. Identify one coherent next patch and validation target. If current PM feedback requires
+                                            source refresh, also inspect the existing task branch/PR against current origin/main so the
+                                            recovery patch is based on fresh source state. Stop reading when the patch is clear.
+                                            """))
+                            .to("tack:act?id=dev-source-context-plan&toolProfile=" + SourceControlToolProfile.ID)
+                            .setHeader(TackHeaders.PROMPT, constant("""
+                                            Apply exactly one coherent source-control patch for the selected implementation child.
 
-                                    Keep it In Progress. When the implementation child is ready for PM review, add or refresh
-                                    one comment beginning REVIEW READY with current branch, commit/head, existing pull request,
-                                    changed files, validation result or limitation, parent product item, and canonical acceptance
-                                    reference. A source-refresh recovery must publish fresh REVIEW READY for the new head.
-                                    REVIEW READY is a handoff comment, not a Plane state. Do not move to Done.
+                                            For normal implementation, use or create the task branch, validate changed behavior when
+                                            practical, commit, push, and create or update one pull request. Avoid duplicate PRs.
 
-                                    When blocked, keep the truthful real state and add/refresh one BLOCKED comment naming the
-                                    required owner and evidence. Avoid duplicate equivalent handoff comments.
-                                    """))
-                    .to("tack:act?id=dev-plane-status-evidence-update&toolProfile=" + ProjectManagementToolProfile.ID)
-                    .choice()
-                        .when(exchangeProperty("act.dev-plane-status-evidence-update.durableProgress").isEqualTo(true))
-                            .setProperty("devImplementationMadeProgress", constant(true))
+                                            For newer PM REVIEW FEEDBACK beginning SOURCE_REFRESH_REQUIRED, recover the existing task:
+                                            - fetch current origin/main
+                                            - keep the same task branch and pull request
+                                            - merge current origin/main into the task branch; do not rewrite shared history or force-push
+                                            - resolve conflicts only when the intended combined behavior is clear from current accepted
+                                              requirements and implementation context
+                                            - if resolution requires choosing between incompatible product behavior or architecture not
+                                              established by current evidence, do not guess; leave the task truthfully blocked for the
+                                              appropriate owner
+                                            - rerun relevant validation, commit the recovery when needed, and push the same branch
+
+                                            Incorporate all current PM REVIEW FEEDBACK. Do not create replacement tasks or pull requests.
+                                            """))
+                            .to("tack:act?id=dev-delivery-step&toolProfile=" + SourceControlWriteToolProfile.ID)
+                            .choice()
+                                .when(exchangeProperty("act.dev-delivery-step.durableProgress").isEqualTo(true))
+                                    .setProperty("devImplementationMadeProgress", constant(true))
+                            .endChoice()
+                            .setHeader(TackHeaders.PROMPT, constant("""
+                                            Check fresh validation and reviewability evidence: changed files, current branch/head,
+                                            pull request state, tests or other validation actually run, and any limitation.
+                                            Do not claim validation that did not occur.
+                                            """))
+                            .to("tack:act?id=dev-validation-step&toolProfile=" + SourceControlToolProfile.ID)
+                            .setHeader(TackHeaders.PROMPT, constant("""
+                                            Update exactly the selected implementation child in Plane.
+
+                                            Keep it In Progress. When the implementation child is ready for PM review, add or refresh
+                                            one comment beginning REVIEW READY with current branch, commit/head, existing pull request,
+                                            changed files, validation result or limitation, parent product item, and canonical acceptance
+                                            reference. A source-refresh recovery must publish fresh REVIEW READY for the new head.
+                                            REVIEW READY is a handoff comment, not a Plane state. Do not move to Done.
+
+                                            When blocked by implementation evidence, keep the truthful real state and add/refresh one
+                                            BLOCKED comment naming the required owner and evidence. Avoid duplicate equivalent handoff comments.
+                                            """))
+                            .to("tack:act?id=dev-plane-status-evidence-update&toolProfile=" + ProjectManagementToolProfile.ID)
+                            .choice()
+                                .when(exchangeProperty("act.dev-plane-status-evidence-update.durableProgress").isEqualTo(true))
+                                    .setProperty("devImplementationMadeProgress", constant(true))
+                            .endChoice()
+                        .otherwise()
+                            .setHeader(TackHeaders.PROMPT, constant("""
+                                            Do not touch source. Keep the selected implementation child In Progress and add or
+                                            refresh one BLOCKED comment naming the exact missing or malformed PM-owned delivery
+                                            context discovered in the fresh task read and identifying Project Management as the
+                                            required owner. Avoid duplicate equivalent comments.
+                                            """))
+                            .to("tack:act?id=dev-invalid-context-blocked&toolProfile=" + ProjectManagementToolProfile.ID)
+                            .choice()
+                                .when(exchangeProperty("act.dev-invalid-context-blocked.durableProgress").isEqualTo(true))
+                                    .setProperty("devImplementationMadeProgress", constant(true))
+                            .endChoice()
                     .end()
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Is this implementation step complete for now because current REVIEW READY evidence exists
