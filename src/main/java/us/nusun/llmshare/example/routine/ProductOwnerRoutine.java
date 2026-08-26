@@ -3,7 +3,6 @@ package us.nusun.llmshare.example.routine;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.apache.camel.builder.RouteBuilder;
 import us.nusun.llmshare.example.tool.ProjectManagementToolProfile;
-import us.nusun.llmshare.example.tool.SourceControlToolProfile;
 import us.nusun.llmshare.example.tool.SourceControlWriteToolProfile;
 import us.nusun.llmshare.example.tool.TeamChatToolProfile;
 import us.nusun.llmshare.example.tool.WorkspaceReadonlyToolProfile;
@@ -229,9 +228,10 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         .setHeader(TackHeaders.PROMPT, constant("""
                                         Read only the selected product page, current-work navigation, direct completion evidence,
                                         and the selected parent's current PRODUCT ACCEPTANCE READY / PRODUCT ACCEPTANCE FEEDBACK
-                                        ordering. Do not read the whole documentation repository.
+                                        ordering. Use Plane for handoff ordering and Gitea for canonical product/delivery evidence.
+                                        Do not read the whole documentation repository.
                                         """))
-                        .to("tack:act?id=po-product-context-read&toolProfile=" + SourceControlToolProfile.ID)
+                        .to("tack:act?id=po-product-context-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .end()
                 .to("tack:thought-exit?name=po-selection");
 
