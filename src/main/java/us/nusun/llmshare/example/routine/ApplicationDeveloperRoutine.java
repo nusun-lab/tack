@@ -161,7 +161,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             .choice()
                                 .when(exchangeProperty("devImplementationMadeProgress").isEqualTo(true))
                                     .setProperty("devMadeProgress", constant(true))
-                            .end()
+                            .endChoice()
                             .to("direct:dev-work-closeout")
                         .otherwise()
                             .to("direct:dev-no-work-closeout")
