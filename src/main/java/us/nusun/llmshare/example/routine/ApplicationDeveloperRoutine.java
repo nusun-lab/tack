@@ -194,8 +194,10 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                 First consider assigned In Progress implementation children. Continue one when implementation
                                 is actively underway or when a newer PM REVIEW FEEDBACK comment requests changes. A newer
                                 REVIEW FEEDBACK beginning SOURCE_REFRESH_REQUIRED is actionable recovery work: update the
-                                existing task branch and pull request rather than creating replacements. Prefer current review
-                                feedback/recovery over starting another new code task.
+                                existing task branch and pull request rather than creating replacements. A newer REVIEW FEEDBACK
+                                beginning CONTEXT_REPAIRED is also actionable: Project Management has repaired the prior
+                                PM-owned delivery-context blocker, so reselect the same child and freshly validate its context
+                                before touching source. Prefer current feedback/recovery over starting another new code task.
 
                                 Do not make additional code changes to an item that is simply waiting on a current REVIEW READY
                                 review or a current INTEGRATION READY Director merge with no newer PM feedback.
@@ -211,8 +213,10 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .to("tack:act?id=dev-work-selection&toolProfile=" + ProjectManagementToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Is one assigned actionable implementation child now selected in In Progress?
-                                Return false when every assigned In Progress child is waiting on review/integration and no
-                                assigned Todo child or newer REVIEW FEEDBACK recovery is available.
+                                Return true for a child with newer PM REVIEW FEEDBACK such as SOURCE_REFRESH_REQUIRED or
+                                CONTEXT_REPAIRED that requires another developer pass. Return false when every assigned In
+                                Progress child is waiting on review/integration and no assigned Todo child or newer actionable
+                                PM feedback is available.
                                 """))
                 .to("tack:decide?id=developer-has-work")
                 .to("tack:thought-exit?name=dev-selection");
@@ -221,9 +225,11 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .routeId("dev-implementation-loop")
                 .setProperty("developerImplementationCycle", constant(0))
                 .setProperty("devImplementationMadeProgress", constant(false))
+                .setProperty("devImplementationStepProgress", constant(true))
                 .setProperty("decision.developer-implementation-complete.result", constant(false))
-                .loopDoWhile(exchangeProperty("decision.developer-implementation-complete.result").isNotEqualTo(true))
+                .loopDoWhile(simple("${exchangeProperty.decision.developer-implementation-complete.result} != true && ${exchangeProperty.devImplementationStepProgress} == true && ${exchangeProperty.developerImplementationCycle} < 6"))
                     .setProperty("developerImplementationCycle", simple("${exchangeProperty.developerImplementationCycle++}"))
+                    .setProperty("devImplementationStepProgress", constant(false))
                     .setProperty("decision.developer-has-valid-task-context.result", constant(false))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
                         Current implementation step: selected child, parent acceptance behavior, files inspected/changed,
@@ -276,6 +282,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             .choice()
                                 .when(exchangeProperty("act.dev-delivery-step.durableProgress").isEqualTo(true))
                                     .setProperty("devImplementationMadeProgress", constant(true))
+                                    .setProperty("devImplementationStepProgress", constant(true))
                             .endChoice()
                             .setHeader(TackHeaders.PROMPT, constant("""
                                             Check fresh validation and reviewability evidence: changed files, current branch/head,
@@ -299,6 +306,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             .choice()
                                 .when(exchangeProperty("act.dev-plane-status-evidence-update.durableProgress").isEqualTo(true))
                                     .setProperty("devImplementationMadeProgress", constant(true))
+                                    .setProperty("devImplementationStepProgress", constant(true))
                             .endChoice()
                         .otherwise()
                             .setHeader(TackHeaders.PROMPT, constant("""
@@ -311,6 +319,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             .choice()
                                 .when(exchangeProperty("act.dev-invalid-context-blocked.durableProgress").isEqualTo(true))
                                     .setProperty("devImplementationMadeProgress", constant(true))
+                                    .setProperty("devImplementationStepProgress", constant(true))
                             .endChoice()
                     .end()
                     .setHeader(TackHeaders.PROMPT, constant("""
