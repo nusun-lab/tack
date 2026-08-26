@@ -28,8 +28,9 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .main("""
                         Own application development for the whole mission through completion. Consume assigned implementation
                         children from Plane, continue active work before starting Todo work, make coherent source changes,
-                        validate them, create or update reviewable pull requests, and leave completed implementation work
-                        In Progress with REVIEW READY evidence for Project Manager review. Product parents are never developer tasks.
+                        investigate explicitly assigned delivery-topology questions when needed, validate work, create or update
+                        reviewable pull requests, and leave durable REVIEW READY, TECHNICAL FINDING, or BLOCKED evidence for
+                        Project Manager follow-up. Product parents are never developer tasks.
                         """, "direct:example-software-team-application-developer")
                 .subroutine(
                         "work-selection",
@@ -37,7 +38,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                         "direct:example-software-team-application-developer-work-selection")
                 .subroutine(
                         "implementation",
-                        "Advance one assigned implementation child through source changes, validation, pull-request evidence, and REVIEW READY or BLOCKED handoff.",
+                        "Advance one assigned implementation child through source changes or topology investigation, validation, and a durable REVIEW READY, TECHNICAL FINDING, or BLOCKED handoff.",
                         "direct:example-software-team-application-developer-implementation")
                 .defaultLane("high-pass")
                 .build();
@@ -59,14 +60,15 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .end()
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Review current mission completion status once using the smallest authoritative read.
-                                    One unfinished implementation child or product delivery outcome is enough to conclude not
-                                    complete. Plane state is authoritative. Do not mutate or begin new development in this check.
+                                    One unfinished implementation child, topology investigation, or product delivery outcome is enough
+                                    to conclude not complete. Plane state is authoritative. Superseded historical handoffs are not
+                                    current work. Do not mutate or begin new development in this check.
                                     """))
                     .to("tack:act?id=dev-mission-status-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Is the entire mission complete from the application-development perspective?
                                     Return true only when durable current-mission evidence shows no further development,
-                                    validation, review response, or implementation follow-up remains.
+                                    topology investigation, validation, review response, or implementation follow-up remains.
                                     """))
                     .to("tack:decide?id=application-developer-mission-complete")
                     .filter(exchangeProperty("decision.application-developer-mission-complete.result").isNotEqualTo(true))
@@ -110,7 +112,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .routeId("dev-application-developer-root-enter")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
                         Durable developer anchors: selected implementation child and Plane state, parent product acceptance,
-                        source repository, branch/commit/pull request, validation evidence, and current review disposition.
+                        source repository, topology question when present, branch/commit/pull request, validation evidence,
+                        technical findings, and current review disposition.
                         """))
                 .to("tack:thought-enter?name=application-developer-routine&maxTokens=500");
 
@@ -153,7 +156,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .setProperty("devMadeProgress", constant(false))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
                         Current developer work unit: one freshly selected assigned implementation child, its real Plane state,
-                        parent acceptance, current review disposition, source patch, PR, and validation.
+                        parent acceptance, topology question when applicable, current review disposition, source evidence,
+                        patch/PR when applicable, and validation.
                         """))
                     .to("tack:thought-enter?name=dev-cycle&maxTokens=300")
                     .setProperty("decision.developer-has-work.result", constant(false))
@@ -185,30 +189,27 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .routeId("dev-work-selection")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
                         Task selection only: one assigned implementation child, not a product parent. Prefer actionable
-                        In Progress work, then assigned Todo work. Respect current review/integration wait handoffs.
+                        In Progress work, then assigned Todo work. Respect current review/integration/finding wait handoffs.
                         """))
                 .to("tack:thought-enter?name=dev-selection&maxTokens=250")
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Using fresh Plane evidence, inspect only IMPLEMENTATION CHILDREN assigned to you.
 
                                 First consider assigned In Progress implementation children. Continue one when implementation
-                                is actively underway or when a newer PM REVIEW FEEDBACK comment requests changes. A newer
-                                REVIEW FEEDBACK beginning SOURCE_REFRESH_REQUIRED is actionable recovery work: update the
-                                existing task branch and pull request rather than creating replacements. A newer REVIEW FEEDBACK
-                                beginning CONTEXT_REPAIRED is also actionable: Project Management has repaired the prior
-                                PM-owned delivery-context blocker, so reselect the same child and freshly validate its context
-                                before touching source. A newer REVIEW FEEDBACK beginning PRODUCT_QUESTION_RESOLVED is likewise
-                                actionable: Product Ownership resolved the product question through Project Management, so
-                                reselect the same child, reread its parent acceptance and current task context, and continue
-                                only from that clarified product contract. Prefer current feedback/recovery over starting another new code task.
+                                or an explicit TOPOLOGY INVESTIGATION is actively underway, or when a newer PM REVIEW FEEDBACK
+                                requests another pass. A newer REVIEW FEEDBACK beginning SOURCE_REFRESH_REQUIRED is actionable
+                                recovery work. CONTEXT_REPAIRED and PRODUCT_QUESTION_RESOLVED are also actionable and require
+                                fresh task/product-context validation. REVIEW FEEDBACK beginning TECHNICAL_FINDING_INCOMPLETE is
+                                actionable only for the same TOPOLOGY INVESTIGATION and asks for a more precise finding.
 
-                                Do not make additional code changes to an item that is simply waiting on a current REVIEW READY
-                                review or a current INTEGRATION READY Director merge with no newer PM feedback.
+                                Do not make additional changes to an item simply waiting on current REVIEW READY, INTEGRATION READY,
+                                or TECHNICAL FINDING with no newer PM disposition.
 
-                                If no actionable assigned In Progress child exists, consider one assigned Todo implementation
-                                child. Todo plus assignment is the authoritative PM -> DEV handoff. Verify it references its
-                                parent product acceptance, source repository, priority, dependencies, and expected review evidence.
-                                If selected, move exactly that implementation child Todo -> In Progress.
+                                If no actionable assigned In Progress child exists, consider one assigned Todo implementation child.
+                                Todo plus assignment is the authoritative PM -> DEV handoff. A description beginning TOPOLOGY INVESTIGATION
+                                is an executable evidence-gathering child, not a normal code-delivery task: it must be dependency-free,
+                                name affected work-item ids, acceptance/source context, and an exact technical question. If selected,
+                                move exactly that child Todo -> In Progress.
 
                                 Ignore Backlog, Done, Cancelled, unassigned work, work assigned to others, and product parents.
                                 Never implement a product parent directly.
@@ -216,10 +217,10 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .to("tack:act?id=dev-work-selection&toolProfile=" + ProjectManagementToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
                                 Is one assigned actionable implementation child now selected in In Progress?
-                                Return true for a child with newer PM REVIEW FEEDBACK such as SOURCE_REFRESH_REQUIRED,
-                                CONTEXT_REPAIRED, or PRODUCT_QUESTION_RESOLVED that requires another developer pass. Return
-                                false when every assigned In Progress child is waiting on review/integration and no assigned
-                                Todo child or newer actionable PM feedback is available.
+                                Return true for normal implementation, an active TOPOLOGY INVESTIGATION, or a child with newer PM
+                                REVIEW FEEDBACK such as SOURCE_REFRESH_REQUIRED, CONTEXT_REPAIRED, PRODUCT_QUESTION_RESOLVED,
+                                or TECHNICAL_FINDING_INCOMPLETE. Return false when every assigned In Progress child is waiting on
+                                review/integration/finding disposition and no assigned Todo child or newer actionable PM feedback exists.
                                 """))
                 .to("tack:decide?id=developer-has-work")
                 .to("tack:thought-exit?name=dev-selection");
@@ -234,85 +235,121 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .setProperty("developerImplementationCycle", simple("${exchangeProperty.developerImplementationCycle++}"))
                     .setProperty("devImplementationStepProgress", constant(false))
                     .setProperty("decision.developer-has-valid-task-context.result", constant(false))
+                    .setProperty("decision.developer-is-topology-investigation.result", constant(false))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Current implementation step: selected child, parent acceptance behavior, files inspected/changed,
-                        branch, commit, pull request, validation, and current review feedback.
+                        Current implementation step: selected child, task type, parent acceptance behavior, source evidence,
+                        branch/PR when applicable, validation, current PM feedback, and technical finding when applicable.
                         """))
                     .to("tack:thought-enter?name=dev-implementation&maxTokens=250")
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Read only the selected In Progress implementation child using fresh Plane evidence. Verify
-                                    assignment, parent acceptance reference, repository, dependencies, expected review evidence,
-                                    and the newest PM REVIEW FEEDBACK. For PRODUCT_QUESTION_RESOLVED, reread the clarified parent
-                                    acceptance before deciding source work. Do not mutate in this read. If required delivery context
-                                    is malformed or missing, identify the exact PM-owned gap and stop reading.
+                                    assignment, parent acceptance reference, repository, dependencies, expected durable handoff,
+                                    and newest PM REVIEW FEEDBACK. For PRODUCT_QUESTION_RESOLVED, reread clarified parent acceptance.
+                                    For TOPOLOGY INVESTIGATION, verify it is dependency-free and names affected work-item ids plus
+                                    one exact technical sequencing/integration question. Do not mutate in this read. If required
+                                    delivery context is malformed or missing, identify the exact PM-owned gap and stop reading.
                                     """))
                     .to("tack:act?id=dev-task-context-read&toolProfile=" + ProjectManagementToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Is the selected implementation child's delivery context valid enough to touch source?
-                                    Return true only when assignment, parent acceptance reference, source repository, dependency
-                                    state, and expected review evidence are sufficiently clear. Return false when any required
-                                    context is missing, contradictory, or malformed.
+                                    Is the selected implementation child's context valid enough to perform its assigned work?
+                                    For normal delivery require assignment, parent acceptance, repository, dependency state, and
+                                    expected review evidence. For TOPOLOGY INVESTIGATION require assignment, repository, dependency-free
+                                    state, affected work-item ids, acceptance references, and exact technical question. Return false
+                                    when required context is missing, contradictory, or malformed.
                                     """))
                     .to("tack:decide?id=developer-has-valid-task-context")
                     .choice()
                         .when(exchangeProperty("decision.developer-has-valid-task-context.result").isEqualTo(true))
                             .setHeader(TackHeaders.PROMPT, constant("""
-                                            Read only direct product-acceptance links and source files needed for this implementation
-                                            child. Identify one coherent next patch and validation target. If current PM feedback requires
-                                            source refresh, also inspect the existing task branch/PR against current origin/main so the
-                                            recovery patch is based on fresh source state. Stop reading when the patch is clear.
+                                            Is this selected implementation child explicitly a TOPOLOGY INVESTIGATION?
+                                            Return true only when its current description begins TOPOLOGY INVESTIGATION and its
+                                            expected durable outcome is TECHNICAL FINDING rather than REVIEW READY.
                                             """))
-                            .to("tack:act?id=dev-source-context-plan&toolProfile=" + SourceControlToolProfile.ID)
-                            .setHeader(TackHeaders.PROMPT, constant("""
-                                            Apply exactly one coherent source-control patch for the selected implementation child.
-
-                                            For normal implementation, use or create the task branch, validate changed behavior when
-                                            practical, commit, push, and create or update one pull request. Avoid duplicate PRs.
-
-                                            For newer PM REVIEW FEEDBACK beginning SOURCE_REFRESH_REQUIRED, recover the existing task:
-                                            - fetch current origin/main
-                                            - keep the same task branch and pull request
-                                            - merge current origin/main into the task branch; do not rewrite shared history or force-push
-                                            - resolve conflicts only when the intended combined behavior is clear from current accepted
-                                              requirements and implementation context
-                                            - if resolution requires choosing between incompatible product behavior or architecture not
-                                              established by current evidence, do not guess; leave the task truthfully blocked for the
-                                              appropriate owner
-                                            - rerun relevant validation, commit the recovery when needed, and push the same branch
-
-                                            Incorporate all current PM REVIEW FEEDBACK, including clarified product decisions from
-                                            PRODUCT_QUESTION_RESOLVED. Do not create replacement tasks or pull requests.
-                                            """))
-                            .to("tack:act?id=dev-delivery-step&toolProfile=" + SourceControlWriteToolProfile.ID)
+                            .to("tack:decide?id=developer-is-topology-investigation")
                             .choice()
-                                .when(exchangeProperty("act.dev-delivery-step.durableProgress").isEqualTo(true))
-                                    .setProperty("devImplementationMadeProgress", constant(true))
-                                    .setProperty("devImplementationStepProgress", constant(true))
-                            .endChoice()
-                            .setHeader(TackHeaders.PROMPT, constant("""
-                                            Check fresh validation and reviewability evidence: changed files, current branch/head,
-                                            pull request state, tests or other validation actually run, and any limitation.
-                                            Do not claim validation that did not occur.
-                                            """))
-                            .to("tack:act?id=dev-validation-step&toolProfile=" + SourceControlToolProfile.ID)
-                            .setHeader(TackHeaders.PROMPT, constant("""
-                                            Update exactly the selected implementation child in Plane.
+                                .when(exchangeProperty("decision.developer-is-topology-investigation.result").isEqualTo(true))
+                                    .setHeader(TackHeaders.PROMPT, constant("""
+                                                    Investigate only the source/docs and affected Plane work needed to answer this
+                                                    topology question. Trace the referenced dependencies and inspect source boundaries,
+                                                    interfaces, existing implementation ordering, and accepted behavior. Do not change
+                                                    source code merely to create progress. Stop when the requested sequencing/dependency
+                                                    facts are established or the remaining uncertainty is clearly product-owned.
+                                                    """))
+                                    .to("tack:act?id=dev-topology-investigation&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
+                                    .setHeader(TackHeaders.PROMPT, constant("""
+                                                    Update exactly the selected TOPOLOGY INVESTIGATION child in Plane. Keep it In Progress
+                                                    and add or refresh one comment beginning TECHNICAL FINDING. Include affected work-item
+                                                    ids, observed source/contract facts, the evidence-backed recommended dependency or
+                                                    sequencing correction, and any residual product question. If evidence cannot establish
+                                                    a safe technical recommendation, say exactly what product judgment is required rather
+                                                    than guessing. TECHNICAL FINDING is the durable Developer -> PM handoff; no PR or REVIEW
+                                                    READY is required for this investigation. Avoid duplicate equivalent findings.
+                                                    """))
+                                    .to("tack:act?id=dev-topology-finding-update&toolProfile=" + ProjectManagementToolProfile.ID)
+                                    .choice()
+                                        .when(exchangeProperty("act.dev-topology-finding-update.durableProgress").isEqualTo(true))
+                                            .setProperty("devImplementationMadeProgress", constant(true))
+                                            .setProperty("devImplementationStepProgress", constant(true))
+                                    .endChoice()
+                                .otherwise()
+                                    .setHeader(TackHeaders.PROMPT, constant("""
+                                                    Read only direct product-acceptance links and source files needed for this implementation
+                                                    child. Identify one coherent next patch and validation target. If current PM feedback requires
+                                                    source refresh, also inspect the existing task branch/PR against current origin/main so the
+                                                    recovery patch is based on fresh source state. Stop reading when the patch is clear.
+                                                    """))
+                                    .to("tack:act?id=dev-source-context-plan&toolProfile=" + SourceControlToolProfile.ID)
+                                    .setHeader(TackHeaders.PROMPT, constant("""
+                                                    Apply exactly one coherent source-control patch for the selected implementation child.
 
-                                            Keep it In Progress. When the implementation child is ready for PM review, add or refresh
-                                            one comment beginning REVIEW READY with current branch, commit/head, existing pull request,
-                                            changed files, validation result or limitation, parent product item, and canonical acceptance
-                                            reference. A source-refresh recovery must publish fresh REVIEW READY for the new head.
-                                            REVIEW READY is a handoff comment, not a Plane state. Do not move to Done.
+                                                    For normal implementation, use or create the task branch, validate changed behavior when
+                                                    practical, commit, push, and create or update one pull request. Avoid duplicate PRs.
 
-                                            When blocked by implementation evidence, keep the truthful real state and add/refresh one
-                                            BLOCKED comment naming the required owner and evidence. Avoid duplicate equivalent handoff comments.
-                                            """))
-                            .to("tack:act?id=dev-plane-status-evidence-update&toolProfile=" + ProjectManagementToolProfile.ID)
-                            .choice()
-                                .when(exchangeProperty("act.dev-plane-status-evidence-update.durableProgress").isEqualTo(true))
-                                    .setProperty("devImplementationMadeProgress", constant(true))
-                                    .setProperty("devImplementationStepProgress", constant(true))
-                            .endChoice()
+                                                    For newer PM REVIEW FEEDBACK beginning SOURCE_REFRESH_REQUIRED, recover the existing task:
+                                                    fetch current origin/main; keep the same task branch and pull request; merge current
+                                                    origin/main without rewriting shared history; resolve only evidence-supported conflicts;
+                                                    rerun relevant validation; and push the same branch. If resolution requires choosing between
+                                                    incompatible product behavior, do not guess. Record BLOCKED owned by Product Owner so PM can
+                                                    route PRODUCT QUESTION. For technical coordination not answerable from current evidence,
+                                                    record BLOCKED owned by Project Management and state the missing technical evidence. Do not
+                                                    invent Director/Architect/Infrastructure as workflow owners in this routine set.
+
+                                                    Incorporate all current PM REVIEW FEEDBACK, including clarified product decisions from
+                                                    PRODUCT_QUESTION_RESOLVED. Do not create replacement tasks or pull requests.
+                                                    """))
+                                    .to("tack:act?id=dev-delivery-step&toolProfile=" + SourceControlWriteToolProfile.ID)
+                                    .choice()
+                                        .when(exchangeProperty("act.dev-delivery-step.durableProgress").isEqualTo(true))
+                                            .setProperty("devImplementationMadeProgress", constant(true))
+                                            .setProperty("devImplementationStepProgress", constant(true))
+                                    .endChoice()
+                                    .setHeader(TackHeaders.PROMPT, constant("""
+                                                    Check fresh validation and reviewability evidence: changed files, current branch/head,
+                                                    pull request state, tests or other validation actually run, and any limitation.
+                                                    Do not claim validation that did not occur.
+                                                    """))
+                                    .to("tack:act?id=dev-validation-step&toolProfile=" + SourceControlToolProfile.ID)
+                                    .setHeader(TackHeaders.PROMPT, constant("""
+                                                    Update exactly the selected implementation child in Plane.
+
+                                                    Keep it In Progress. When ready for PM review, add or refresh one comment beginning REVIEW READY
+                                                    with current branch, commit/head, existing PR, changed files, validation, parent product item,
+                                                    and canonical acceptance reference. A source-refresh recovery must publish fresh REVIEW READY.
+                                                    REVIEW READY is a handoff comment, not a Plane state. Do not move to Done.
+
+                                                    When blocked by implementation evidence, keep the truthful real state and add/refresh one BLOCKED
+                                                    comment. Use Product Owner only for unresolved product intent/acceptance judgment. Use Project
+                                                    Management for malformed delivery context, technical coordination, or external/system dependencies;
+                                                    name the actual external condition and evidence needed inside the comment. These are the routable
+                                                    blocker owners in the current routine set. Avoid duplicate equivalent handoff comments.
+                                                    """))
+                                    .to("tack:act?id=dev-plane-status-evidence-update&toolProfile=" + ProjectManagementToolProfile.ID)
+                                    .choice()
+                                        .when(exchangeProperty("act.dev-plane-status-evidence-update.durableProgress").isEqualTo(true))
+                                            .setProperty("devImplementationMadeProgress", constant(true))
+                                            .setProperty("devImplementationStepProgress", constant(true))
+                                    .endChoice()
+                            .end()
                         .otherwise()
                             .setHeader(TackHeaders.PROMPT, constant("""
                                             Do not touch source. Keep the selected implementation child In Progress and add or
@@ -328,9 +365,10 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             .endChoice()
                     .end()
                     .setHeader(TackHeaders.PROMPT, constant("""
-                                    Is this implementation step complete for now because current REVIEW READY evidence exists
-                                    for a real reviewable diff/PR, or the task is durably BLOCKED? Return false only when there
-                                    is an obvious next production-code/test/recovery patch required before review.
+                                    Is this implementation step complete for now because current REVIEW READY evidence exists,
+                                    current TECHNICAL FINDING exists for a TOPOLOGY INVESTIGATION, or the task is durably BLOCKED?
+                                    Return false only when there is an obvious next production-code/test/recovery/investigation step
+                                    required before the appropriate handoff.
                                     """))
                     .to("tack:decide?id=developer-implementation-complete")
                     .choice()
@@ -343,13 +381,15 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         from("direct:dev-work-closeout")
                 .routeId("dev-work-closeout")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Make one focused documentation improvement only when it preserves durable engineering
-                                knowledge for the selected implementation work. Do not create activity logs.
+                                Make one focused documentation improvement only when it preserves durable engineering knowledge
+                                for normal implementation work. A TOPOLOGY INVESTIGATION normally needs no documentation write
+                                beyond its TECHNICAL FINDING unless an existing canonical technical document obviously needs correction.
+                                Do not create activity logs.
                                 """))
                 .to("tack:act?id=dev-documentation-closeout&toolProfile=" + SourceControlWriteToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                                Reply in project chat only when review evidence, a blocker, PM feedback, or a teammate's
-                                question needs interaction. Avoid generic status.
+                                Reply in project chat only when review evidence, a blocker, topology finding, PM feedback, or a
+                                teammate's question needs interaction. Avoid generic status.
                                 """))
                 .to("tack:act?id=dev-team-chat-closeout&toolProfile=" + TeamChatToolProfile.ID);
 
