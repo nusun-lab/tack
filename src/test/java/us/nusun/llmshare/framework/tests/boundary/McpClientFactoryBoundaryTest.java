@@ -47,6 +47,58 @@ class McpClientFactoryBoundaryTest {
     }
 
     @Test
+    void reusesCachedClientAcrossProfilesForSamePersonaAndConnection() {
+        McpClientFactory factory = factory();
+        Persona persona = Persona.builder("persona-a")
+                .name("Persona A")
+                .identity(FrameworkFixtures.SERVER_ALPHA, "alpha-secret", "@alpha-agent")
+                .build();
+        McpServerDefinition sharedServer = server(FrameworkFixtures.SERVER_ALPHA, "http://alpha.example/mcp");
+        ToolProfile readProfile = ToolProfile.builder("read-tools")
+                .mcpServer(sharedServer)
+                .allowTool(FrameworkFixtures.SERVER_ALPHA, "alpha_get")
+                .build();
+        ToolProfile writeProfile = ToolProfile.builder("write-tools")
+                .mcpServer(sharedServer)
+                .allowTool(FrameworkFixtures.SERVER_ALPHA, "alpha_post")
+                .build();
+
+        List<McpClient> readClients = factory.clientsFor(persona, readProfile);
+        List<McpClient> writeClients = factory.clientsFor(persona, writeProfile);
+
+        assertEquals(1, readClients.size());
+        assertEquals(1, writeClients.size());
+        assertEquals(readClients.getFirst().key(), writeClients.getFirst().key());
+        assertEquals(1, factory.cachedClientCount());
+        assertEquals(1, factory.cacheMisses());
+        assertEquals(1, factory.cacheHits());
+    }
+
+    @Test
+    void separatesCachedClientsForDifferentPersonaCredentials() {
+        McpClientFactory factory = factory();
+        Persona personaA = Persona.builder("persona-a")
+                .name("Persona A")
+                .identity(FrameworkFixtures.SERVER_ALPHA, "alpha-secret-a", "@alpha-a")
+                .build();
+        Persona personaB = Persona.builder("persona-b")
+                .name("Persona B")
+                .identity(FrameworkFixtures.SERVER_ALPHA, "alpha-secret-b", "@alpha-b")
+                .build();
+        ToolProfile profile = ToolProfile.builder("shared-tools")
+                .mcpServer(server(FrameworkFixtures.SERVER_ALPHA, "http://alpha.example/mcp"))
+                .allowAllTools(FrameworkFixtures.SERVER_ALPHA)
+                .build();
+
+        factory.clientsFor(personaA, profile);
+        factory.clientsFor(personaB, profile);
+
+        assertEquals(2, factory.cachedClientCount());
+        assertEquals(2, factory.cacheMisses());
+        assertEquals(0, factory.cacheHits());
+    }
+
+    @Test
     void missingUrlOrTokenSkipsOnlyThatServerClient() {
         McpClientFactory factory = factory();
         Persona persona = Persona.builder("persona-a")
