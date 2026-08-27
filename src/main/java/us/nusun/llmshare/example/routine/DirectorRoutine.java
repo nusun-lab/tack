@@ -100,7 +100,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                                     """))
                     .to("tack:decide?id=director-foundation-ready")
                     .setHeader(TackHeaders.PROMPT, simple("""
-                        Decide which AgentRuns are useful now.
+                        Decide which AgentRuns are required now.
 
                         Mission:
                         ${exchangeProperty.mission.goal}
@@ -127,25 +127,37 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         - Plane assignments, commits, pull requests, Mattermost messages, documentation, and other
                           project evidence never establish active AgentRun coverage.
 
-                        STAFFING CONTRACT:
-                        - Before the shared foundation is ready, Project Manager main-routine coverage owns creating it.
-                        - Once FOUNDATION READY is true, Product Owner, Project Manager, and Application Developer main-routine
-                          coverage are all useful while the mission remains unfinished. Do not wait for product work items,
-                          implementation children, commits, tests, or application code before starting missing PO/DEV coverage.
+                        REQUIRED COVERAGE:
+                        - If FOUNDATION READY is false, the required active main-routine coverage set is exactly:
+                          Project Manager.
+                        - If FOUNDATION READY is true and the mission is unfinished, the required active main-routine
+                          coverage set is exactly: Product Owner, Project Manager, and Application Developer.
+                        - Once FOUNDATION READY is true, do not wait for product work items, implementation children,
+                          commits, tests, or application code before filling missing Product Owner or Application Developer coverage.
                         - Product Owner creates product slices; therefore product-work absence can never be a prerequisite for
                           starting Product Owner.
                         - Application Developer consumes PM-assigned implementation children and will truthfully no-op when none
                           is ready; an empty source repository is not a reason to withhold Developer coverage after foundation readiness.
-                        - If a previously useful run fails or completes while its role still has unfinished mission work,
-                          replace that coverage.
+
+                        MISSING-COVERAGE RULE:
+                        - Compute missing coverage as REQUIRED COVERAGE minus AUTHORITATIVE ACTIVE COVERAGE.
+                        - Match coverage by required role and its full main routine. An accepted, scheduled, or running main-routine
+                          AgentRun for a required role means that role is PRESENT, not missing.
+                        - Emit AgentRuns ONLY for roles in the missing-coverage set.
+                        - NEVER emit a second AgentRun for a role that already has accepted, scheduled, or running main-routine coverage,
+                          even when there is additional work, a new handoff, idle capacity, or another useful task for that role.
+                        - One active full main-routine AgentRun owns that role's whole-mission responsibility. Additional work is handled
+                          inside that run, not by duplicate staffing.
+                        - If a previously required run completes, fails, or is cancelled while that role remains required, it is no longer
+                          active coverage and may be replaced on a later staffing cycle.
 
                         STARTING RUNS:
-                        - Prefer full main routines.
-                        - Avoid duplicate active coverage.
+                        - Create one AgentRun for each missing required role, subject only to remaining capacity.
+                        - Prefer full main routines; required coverage is main-routine coverage, not subroutine coverage.
                         - Start no more runs than remaining capacity.
                         - Give each new run responsibility for the whole mission through that role, with only concise
                           current-mission context needed to resume.
-                        - Return {"agentRuns":[]} only when current useful coverage is sufficient for the readiness state above.
+                        - Return {"agentRuns":[]} when the missing-coverage set is empty or capacity prevents another start.
                         """))
                     .to("tack:create?id=planned-agent-runs&schemaId=agent-run-request-list&schema=classpath:schemas/example/software-team/agent-run-requests-schema.json")
                     .unmarshal().json(JsonLibrary.Jackson, MissionRequest.class)
