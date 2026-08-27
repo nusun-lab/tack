@@ -297,7 +297,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                         .when(exchangeProperty("act.dev-topology-finding-update.durableProgress").isEqualTo(true))
                                             .setProperty("devImplementationMadeProgress", constant(true))
                                             .setProperty("devImplementationStepProgress", constant(true))
-                                    .endChoice()
+                                    .end().endChoice()
                                 .otherwise()
                                     .setProperty("devSourceCloseoutAllowed", constant(true))
                                     .setHeader(TackHeaders.PROMPT, constant("""
@@ -333,7 +333,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                         .when(exchangeProperty("act.dev-delivery-step.durableProgress").isEqualTo(true))
                                             .setProperty("devImplementationMadeProgress", constant(true))
                                             .setProperty("devImplementationStepProgress", constant(true))
-                                    .endChoice()
+                                    .end()
                                     .setHeader(TackHeaders.PROMPT, constant("""
                                                     Check fresh validation and reviewability evidence: changed files, current branch/head,
                                                     pull request state, tests or other validation actually run, and any limitation.
@@ -359,8 +359,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                         .when(exchangeProperty("act.dev-plane-status-evidence-update.durableProgress").isEqualTo(true))
                                             .setProperty("devImplementationMadeProgress", constant(true))
                                             .setProperty("devImplementationStepProgress", constant(true))
-                                    .endChoice()
-                            .endChoice()
+                                    .end()
+                            .end().endChoice()
                         .otherwise()
                             .setProperty("devSourceCloseoutAllowed", constant(false))
                             .setHeader(TackHeaders.PROMPT, constant("""
@@ -374,7 +374,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                 .when(exchangeProperty("act.dev-invalid-context-blocked.durableProgress").isEqualTo(true))
                                     .setProperty("devImplementationMadeProgress", constant(true))
                                     .setProperty("devImplementationStepProgress", constant(true))
-                            .endChoice()
+                            .end()
                     .end()
                     .setHeader(TackHeaders.PROMPT, constant("""
                                     Is this implementation step complete for now because current REVIEW READY evidence exists,
