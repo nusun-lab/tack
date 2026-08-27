@@ -128,7 +128,7 @@ class HallucinatedToolNameRecoveryStrategyTest {
     }
 
     @Test
-    void repeatedHallucinatedToolNamesRemainBoundedByRoundTripLimit() {
+    void repeatedHallucinatedToolNamesAreStoppedByLoopGuard() {
         ScriptedChatModel model = ScriptedChatModel.alwaysHallucinates();
         Agent agent = factory("low-pass", model).createAgent(exchange("low-pass"));
 
@@ -136,9 +136,9 @@ class HallucinatedToolNameRecoveryStrategyTest {
                 new AiAgentBody<>("Inspect project state.", "You are a tester.", "memory-repeated"),
                 probeToolProvider()));
 
-        assertTrue(model.requests.size() > 1);
-        assertTrue(model.requests.size() <= 6);
-        assertTrue(failure.getMessage().contains("exceeded 4 tool calling round trips"));
+        assertEquals(3, model.requests.size());
+        assertTrue(failure.getMessage().contains("TACK_RUNTIME_REPEATED_EXECUTION"));
+        assertTrue(failure.getMessage().contains("third execution was refused"));
     }
 
     @Test

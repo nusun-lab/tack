@@ -28,6 +28,14 @@ spec:
               value: "4000"
             - name: AGENT_TOOL_PROFILE_WORKSPACE_COORDINATION_MAX_RESULT_TOKENS
               value: "5000"
+            - name: AGENT_SANDBOX_OPENSHELL_ENABLED
+              value: "true"
+            - name: QUARKUS_GRPC_CLIENTS__OPENSHELL__HOST
+              value: openshell.tack.svc.cluster.local
+            - name: QUARKUS_GRPC_CLIENTS__OPENSHELL__PORT
+              value: "8080"
+            - name: QUARKUS_GRPC_CLIENTS__OPENSHELL__PLAIN_TEXT
+              value: "true"
 ---
 apiVersion: v1
 kind: Service

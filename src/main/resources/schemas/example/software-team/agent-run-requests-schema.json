@@ -9,7 +9,6 @@
         "properties": {
           "personaId": { "type": "string" },
           "routineId": { "type": "string" },
-          "subroutineId": { "type": "string" },
           "input": { "type": "object" }
         },
         "required": ["personaId", "routineId"],

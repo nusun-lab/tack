@@ -13,6 +13,7 @@ import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
 import us.nusun.llmshare.framework.memory.EphemeralToolPassChatMemoryProvider;
 import us.nusun.llmshare.framework.memory.ToolAwareTokenWindowChatMemory;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -58,23 +59,37 @@ class ToolAwareMemoryTest {
     }
 
     @Test
-    void toolCallBudgetAwarenessAppearsAtQuarterBudgetWithoutCompaction() {
-        ToolAwareTokenWindowChatMemory memory = memory(1000, 4, 0.50, 3);
+    void quarterBudgetAddsSystemWarningWithoutAdvertisingHeadroom() {
+        List<String> warnings = new ArrayList<>();
+        ToolAwareTokenWindowChatMemory memory = ToolAwareTokenWindowChatMemory.builder()
+                .id("agent-run-1")
+                .maxTokens(100, new FixedTokenCountEstimator())
+                .alwaysKeepSystemMessageFirst(true)
+                .maxToolCalls(4)
+                .compactionThreshold(0.50)
+                .recentToolInteractions(3)
+                .runtimeWarningSink(warnings::add)
+                .build();
         memory.add(SystemMessage.from("system"));
         memory.add(UserMessage.from("tool pass"));
         addExecution(memory, "1", "search", "{\"q\":\"seed\"}", "[]", false);
 
         List<ChatMessage> projected = memory.messages();
-        String runtime = runtimeText(projected);
+        String system = systemText(projected);
 
-        assertTrue(runtime.contains("tool calls: 1/4 (25%)"));
-        assertTrue(runtime.contains("budget awareness level: 25%"));
-        assertTrue(projected.stream().anyMatch(message -> message instanceof AiMessage));
-        assertTrue(projected.stream().anyMatch(message -> message instanceof ToolExecutionResultMessage));
+        assertEquals(1, warnings.size());
+        assertTrue(warnings.getFirst().contains("tool-pass context: context=22% tokens=22/100"));
+        assertTrue(warnings.getFirst().contains("tools=1/4"));
+        assertTrue(system.contains("Runtime budget warning: 25% threshold crossed."));
+        assertFalse(system.contains("1/4"));
+        assertFalse(system.contains("remaining"));
+        assertFalse(system.toLowerCase().contains("healthy"));
+        assertFalse(projected.stream().anyMatch(ToolAwareMemoryTest::isLegacyRuntimeUserMessage));
+        assertInstanceOf(ToolExecutionResultMessage.class, projected.getLast());
     }
 
     @Test
-    void compactionReplacesOldRawToolMessagesWithDeterministicJournalAndKeepsRecentInteraction() {
+    void compactionUsesDeterministicJournalAndKeepsRecentInteraction() {
         ToolAwareTokenWindowChatMemory memory = memory(45, 12, 0.50, 1);
         memory.add(SystemMessage.from("system"));
         memory.add(UserMessage.from("tool pass"));
@@ -82,38 +97,126 @@ class ToolAwareMemoryTest {
         addExecution(memory, "2", "create_repo", "{\"readme\":\"long\"}", "[Readme]: MaxSize", true);
 
         List<ChatMessage> projected = memory.messages();
-        String runtime = runtimeText(projected);
+        String journal = journalText(projected);
 
-        assertTrue(runtime.contains("DETERMINISTIC EXECUTION JOURNAL"));
-        assertTrue(runtime.contains("search({\"q\":\"seed\"})"));
-        assertTrue(runtime.contains("SUCCESS: []"));
+        assertTrue(journal.contains("Execution journal"));
+        assertTrue(journal.contains("search({\"q\":\"seed\"})"));
+        assertTrue(journal.contains("SUCCESS: []"));
+        assertTrue(systemText(projected).contains("Runtime budget warning:"));
+        assertFalse(projected.stream().anyMatch(ToolAwareMemoryTest::isLegacyRuntimeUserMessage));
         assertFalse(projected.contains(AiMessage.from(request("1", "search", "{\"q\":\"seed\"}"))));
         assertTrue(projected.contains(AiMessage.from(request("2", "create_repo", "{\"readme\":\"long\"}"))));
+        assertInstanceOf(ToolExecutionResultMessage.class, projected.getLast());
     }
 
     @Test
-    void repeatedIdenticalExecutionsAreSurfacedDeterministically() {
-        ToolAwareTokenWindowChatMemory memory = memory(1000, 8, 0.90, 3);
+    void compactedContextLogReportsExhaustedMemoryAndProjectedPromptSeparately() {
+        List<String> warnings = new ArrayList<>();
+        ToolAwareTokenWindowChatMemory memory = ToolAwareTokenWindowChatMemory.builder()
+                .id("agent-run-1")
+                .maxTokens(45, new FixedTokenCountEstimator())
+                .alwaysKeepSystemMessageFirst(true)
+                .maxToolCalls(12)
+                .compactionThreshold(0.50)
+                .recentToolInteractions(1)
+                .runtimeWarningSink(warnings::add)
+                .build();
         memory.add(SystemMessage.from("system"));
         memory.add(UserMessage.from("tool pass"));
-        addExecution(memory, "1", "create_repo", "{\"readme\":\"x\"}", "[Readme]: MaxSize", true);
-        addExecution(memory, "2", "create_repo", "{\"readme\":\"x\"}", "[Readme]: MaxSize", true);
+        addExecution(memory, "1", "search", "{}", "[]", false);
+        addExecution(memory, "2", "lookup", "{}", "result", false);
 
-        String runtime = runtimeText(memory.messages());
+        List<ChatMessage> projected = memory.messages();
+        int projectedTokens = new FixedTokenCountEstimator().estimateTokenCountInMessages(projected);
 
-        assertTrue(runtime.contains("deterministic repetition signal: 1"));
+        assertEquals(1, warnings.size());
+        assertTrue(warnings.getFirst().contains("context=100% memory=exhausted"));
+        assertTrue(warnings.getFirst().contains("projected-context=" + Math.round((double) projectedTokens / 45.0 * 100.0) + "%"));
+        assertTrue(warnings.getFirst().contains("projected-tokens=" + projectedTokens + "/45"));
+        assertTrue(warnings.getFirst().contains("compacted=true"));
     }
 
     @Test
-    void everyToolRequestConsumesToolBudget() {
-        ToolAwareTokenWindowChatMemory memory = memory(1000, 4, 0.90, 3);
+    void repeatedIdenticalExecutionIsLoggedButDoesNotModifyToolResult() {
+        List<String> warnings = new ArrayList<>();
+        ToolAwareTokenWindowChatMemory memory = ToolAwareTokenWindowChatMemory.builder()
+                .id("agent-run-1")
+                .maxTokens(1000, new FixedTokenCountEstimator())
+                .alwaysKeepSystemMessageFirst(true)
+                .maxToolCalls(8)
+                .compactionThreshold(0.90)
+                .recentToolInteractions(3)
+                .runtimeWarningSink(warnings::add)
+                .build();
+        memory.add(SystemMessage.from("system"));
+        memory.add(UserMessage.from("tool pass"));
+        addExecution(memory, "1", "search", "{\"q\":\"butterfly-garden\"}", "[]", false);
+        addExecution(memory, "2", "search", "{\"q\":\"butterfly-garden\"}", "[]", false);
+
+        List<ChatMessage> projected = memory.messages();
+        ToolExecutionResultMessage result = assertInstanceOf(ToolExecutionResultMessage.class, projected.getLast());
+
+        assertEquals(1, warnings.size());
+        assertTrue(warnings.getFirst().contains("repeats=1 reassessment=required"));
+        assertEquals("[]", result.text());
+        assertFalse(projected.stream().anyMatch(ToolAwareMemoryTest::isLegacyRuntimeUserMessage));
+    }
+
+    @Test
+    void differentExecutionClearsTrailingRepetitionLog() {
+        List<String> warnings = new ArrayList<>();
+        ToolAwareTokenWindowChatMemory memory = ToolAwareTokenWindowChatMemory.builder()
+                .id("agent-run-1")
+                .maxTokens(1000, new FixedTokenCountEstimator())
+                .alwaysKeepSystemMessageFirst(true)
+                .maxToolCalls(8)
+                .compactionThreshold(0.90)
+                .recentToolInteractions(3)
+                .runtimeWarningSink(warnings::add)
+                .build();
+        memory.add(SystemMessage.from("system"));
+        memory.add(UserMessage.from("tool pass"));
+        addExecution(memory, "1", "search", "{\"q\":\"butterfly-garden\"}", "[]", false);
+        addExecution(memory, "2", "search", "{\"q\":\"butterfly-garden\"}", "[]", false);
+        memory.messages();
+        warnings.clear();
+        addExecution(memory, "3", "search", "{\"q\":\"butterfly\"}", "[]", false);
+
+        List<ChatMessage> projected = memory.messages();
+        ToolExecutionResultMessage result = assertInstanceOf(ToolExecutionResultMessage.class, projected.getLast());
+
+        assertEquals(1, warnings.size());
+        assertFalse(warnings.getFirst().contains("reassessment=required"));
+        assertEquals("[]", result.text());
+    }
+
+    @Test
+    void everyToolRequestConsumesToolBudgetWithoutAdvertisingMaximum() {
+        List<String> warnings = new ArrayList<>();
+        ToolAwareTokenWindowChatMemory memory = ToolAwareTokenWindowChatMemory.builder()
+                .id("agent-run-1")
+                .maxTokens(1000, new FixedTokenCountEstimator())
+                .alwaysKeepSystemMessageFirst(true)
+                .maxToolCalls(4)
+                .compactionThreshold(0.90)
+                .recentToolInteractions(3)
+                .runtimeWarningSink(warnings::add)
+                .build();
         memory.add(SystemMessage.from("system"));
         memory.add(UserMessage.from("tool pass"));
         memory.add(AiMessage.from(List.of(
                 request("1", "search", "{}"),
                 request("2", "lookup", "{}"))));
 
-        assertTrue(runtimeText(memory.messages()).contains("tool calls: 2/4 (50%)"));
+        List<ChatMessage> projected = memory.messages();
+        String system = systemText(projected);
+
+        assertEquals(1, warnings.size());
+        assertTrue(warnings.getFirst().contains("tools=2/4"));
+        assertTrue(system.contains("Runtime budget warning: 50% threshold crossed."));
+        assertFalse(system.contains("2/4"));
+        assertFalse(projected.stream().anyMatch(ToolAwareMemoryTest::isLegacyRuntimeUserMessage));
+        assertInstanceOf(AiMessage.class, projected.getLast());
     }
 
     @Test
@@ -156,11 +259,24 @@ class ToolAwareMemoryTest {
         return ToolExecutionRequest.builder().id(id).name(name).arguments(arguments).build();
     }
 
-    private static String runtimeText(List<ChatMessage> messages) {
+    private static String systemText(List<ChatMessage> messages) {
+        return messages.stream()
+                .filter(SystemMessage.class::isInstance)
+                .map(SystemMessage.class::cast)
+                .map(SystemMessage::text)
+                .findFirst()
+                .orElse("");
+    }
+
+    private static boolean isLegacyRuntimeUserMessage(ChatMessage message) {
+        return message instanceof UserMessage userMessage && "tack-runtime".equals(userMessage.name());
+    }
+
+    private static String journalText(List<ChatMessage> messages) {
         return messages.stream()
                 .filter(UserMessage.class::isInstance)
                 .map(UserMessage.class::cast)
-                .filter(message -> "tack-runtime".equals(message.name()))
+                .filter(message -> "execution-journal".equals(message.name()))
                 .map(UserMessage::singleText)
                 .findFirst()
                 .orElse("");

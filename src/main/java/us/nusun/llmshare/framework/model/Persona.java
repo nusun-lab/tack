@@ -8,6 +8,7 @@ import java.util.Map;
 public record Persona(
         String id,
         String name,
+        String email,
         String description,
         List<String> traits,
         String label,
@@ -31,6 +32,7 @@ public record Persona(
     public static final class Builder {
         private final String id;
         private String name;
+        private String email;
         private String description;
         private final List<String> traits = new ArrayList<>();
         private String label;
@@ -43,6 +45,7 @@ public record Persona(
         }
 
         public Builder name(String name) { this.name = name; return this; }
+        public Builder email(String email) { this.email = email; return this; }
         public Builder description(String description) { this.description = description; return this; }
         public Builder trait(String trait) { this.traits.add(trait); return this; }
         public Builder traits(List<String> traits) { this.traits.addAll(traits); return this; }
@@ -63,7 +66,7 @@ public record Persona(
         }
 
         public Persona build() {
-            return new Persona(id, name, description, traits, label, color, agentRunStartAssignable, identities);
+            return new Persona(id, name, email, description, traits, label, color, agentRunStartAssignable, identities);
         }
     }
 }

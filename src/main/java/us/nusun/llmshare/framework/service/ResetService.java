@@ -5,6 +5,7 @@ import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import us.nusun.llmshare.framework.llm.KafkaTopicProvisioner;
 import us.nusun.llmshare.framework.projection.ProjectionStore;
+import us.nusun.llmshare.framework.sandbox.PersonaSandboxManager;
 import us.nusun.llmshare.framework.state.AgentRunStore;
 
 import java.util.LinkedHashMap;
@@ -17,6 +18,7 @@ public class ResetService {
     @Inject ProjectionStore projections;
     @Inject AgentRunStore agentRuns;
     @Inject KafkaTopicProvisioner kafkaTopics;
+    @Inject PersonaSandboxManager sandboxes;
 
     public Map<String, Object> reset() throws Exception {
         return resetResponse(null);
@@ -28,6 +30,7 @@ public class ResetService {
 
     private Map<String, Object> resetResponse(String requestId) throws Exception {
         List<String> purgedTopics = kafkaTopics.purgeConfiguredTopics();
+        List<String> destroyedSandboxes = sandboxes.destroyAll();
         projections.clear();
         agentRuns.clear();
         LinkedHashMap<String, Object> response = new LinkedHashMap<>();
@@ -36,6 +39,7 @@ public class ResetService {
             response.put("requestId", requestId);
         }
         response.put("kafkaTopicsPurged", purgedTopics);
+        response.put("sandboxesDestroyed", destroyedSandboxes);
         return Map.copyOf(response);
     }
 }

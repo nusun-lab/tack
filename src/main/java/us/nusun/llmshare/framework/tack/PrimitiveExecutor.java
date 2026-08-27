@@ -48,6 +48,7 @@ import java.util.stream.Collectors;
 @ApplicationScoped
 public class PrimitiveExecutor {
     private static final String THOUGHT_CONTENT_SCHEMA = "classpath:schemas/thought-content-result-schema.json";
+    private static final String ACT_SYNTHESIS_SCHEMA = "classpath:schemas/act-synthesis-result-schema.json";
 
     @Inject ObjectMapper objectMapper;
     @Inject ThoughtStackSupport thoughts;
@@ -115,19 +116,30 @@ public class PrimitiveExecutor {
         LlmJobResult synthesisResult = callLlm(
                 exchange,
                 llm,
-                llmRequest(exchange, laneId, LlmPassType.SYNTHESIS, "synthesis", renderActSynthesisPrompt(exchange, request, leaf, toolResult, observedAt), THOUGHT_CONTENT_SCHEMA),
+                llmRequest(exchange, laneId, LlmPassType.SYNTHESIS, "synthesis", renderActSynthesisPrompt(exchange, request, leaf, toolResult, observedAt), ACT_SYNTHESIS_SCHEMA),
                 "act thought synthesis pass");
         projections.record(exchange, "SYNTHESIS_PASS_COMPLETED");
-        ThoughtContentResult rewrite = parse(synthesisResult.content(), ThoughtContentResult.class);
-        if (rewrite.content() == null || rewrite.content().isBlank()) {
+        ActSynthesisResult synthesis = parse(synthesisResult.content(), ActSynthesisResult.class);
+        if (synthesis.content() == null || synthesis.content().isBlank()) {
             throw new FrameworkPrimitiveException("Act synthesis returned blank thought content");
         }
-        ThoughtFrame rewritten = stack.rewrite(leaf.id(), rewrite.content(), Instant.now());
+        ThoughtFrame rewritten = stack.rewrite(leaf.id(), synthesis.content(), Instant.now());
         recordThoughtRewritten(exchange, rewritten, "act", request.id());
 
-        StepResult result = new StepResult(request.id(), toolResult.content(), List.of());
+        StepResult result = new StepResult(
+                request.id(),
+                synthesis.content(),
+                synthesis.summary(),
+                synthesis.outcome(),
+                synthesis.durableProgress(),
+                synthesis.confidence(),
+                List.of());
         run.apply(result);
         exchange.setProperty("latestStepResult", result);
+        exchange.setProperty("act." + request.id() + ".outcome", result.outcome());
+        exchange.setProperty("act." + request.id() + ".durableProgress", result.durableProgress());
+        exchange.setProperty("act." + request.id() + ".confidence", result.confidence());
+        exchange.setProperty("act." + request.id() + ".summary", result.summary());
         exchange.getMessage().setBody(result);
         projections.record(exchange, "ACT_COMPLETED");
     }
@@ -374,6 +386,7 @@ public class PrimitiveExecutor {
                     - The preceding action has already completed; do not repeat it.
                     - Treat the supplied latest observation as the newest evidence.
                     - Rewrite the current thought as current-state memory, not hidden chain-of-thought.
+                    - Evaluate only what the completed act actually accomplished; do not infer success from intent.
                     """;
             case "decision" -> """
 
@@ -492,16 +505,32 @@ public class PrimitiveExecutor {
                 %s
 
                 ## SYNTHESIS PROMPT - DO THIS NOW
-                Rewrite the current thought as complete, compact, current memory.
+                Rewrite the current thought as complete, compact, current memory and evaluate the completed act.
 
-                Preserve still-relevant prior content.
-                Incorporate durable facts learned during this operation.
-                Resolve conflicts in favor of newer evidence.
-                Exclude transient reasoning, raw tool mechanics, and irrelevant detail.
-                Fit the stated thought purpose and token budget.
+                Memory:
+                - Preserve still-relevant prior content.
+                - Incorporate durable facts learned during this operation.
+                - Resolve conflicts in favor of newer evidence.
+                - Exclude transient reasoning, raw tool mechanics, and irrelevant detail.
+                - Fit the stated thought purpose and token budget.
+
+                Outcome:
+                - SUCCEEDED: the requested act completed as intended.
+                - PARTIAL: useful work occurred but the requested act still has a directly actionable remainder.
+                - BLOCKED: the requested act cannot continue without another role, external event, or missing authoritative input.
+                - NOOP: the act completed correctly but found nothing to change or do.
+                - FAILED: the act did not accomplish its requested objective.
+
+                Durable progress:
+                - true only when this act materially changed durable external mission state, completed a required handoff,
+                  produced validated implementation evidence, or resolved an actionable condition.
+                - false for reads, understanding, unchanged verification, generic status/chat, or rediscovering existing state.
+                - detecting a blocker alone is not durable progress; recording the required durable blocker/handoff may be.
+
+                Confidence is telemetry only. Estimate confidence in this evaluation from 0.0 to 1.0; it does not authorize actions.
 
                 Return JSON only:
-                {"content":"One coherent updated thought."}
+                {"content":"One coherent updated thought.","summary":"One compact statement of what this act accomplished.","outcome":"SUCCEEDED|PARTIAL|BLOCKED|NOOP|FAILED","durableProgress":true,"confidence":0.95}
                 """.formatted(
                 missionLevelContext(exchange),
                 safeText(request.id()),
@@ -542,7 +571,7 @@ public class PrimitiveExecutor {
                 missionLevelContext(exchange),
                 safeText(request.id()),
                 renderThoughtFramesForModel(stack(exchange).frames()),
-                asJson(currentRun(exchange).latestStepResult()),
+                renderStepResultForModel(currentRun(exchange).latestStepResult()),
                 safeText(request.prompt()));
     }
 
@@ -681,6 +710,19 @@ public class PrimitiveExecutor {
             out.append("  content: ").append(safeText(frame.content())).append('\n');
         }
         return out.toString();
+    }
+
+    private String renderStepResultForModel(StepResult result) {
+        if (result == null) {
+            return "null";
+        }
+        LinkedHashMap<String, Object> compact = new LinkedHashMap<>();
+        compact.put("actId", result.actId());
+        compact.put("summary", result.summary());
+        compact.put("outcome", result.outcome());
+        compact.put("durableProgress", result.durableProgress());
+        compact.put("confidence", result.confidence());
+        return asJson(compact);
     }
 
     private void recordThoughtRewritten(Exchange exchange, ThoughtFrame frame, String primitive, String cause) {

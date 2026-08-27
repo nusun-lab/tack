@@ -41,7 +41,6 @@ public class RoutineCatalog {
         return routine;
     }
 
-
     public SubroutineDefinition requireSubroutine(String routineId, String subroutineId) {
         return getRequired(routineId).requireSubroutine(subroutineId);
     }
@@ -62,10 +61,14 @@ public class RoutineCatalog {
     }
 
     public String startableJson() {
-        return json(all());
+        return json(all().stream()
+                .map(routine -> new AdvertisedRoutine(routine.id(), routine.name(), routine.description()))
+                .toList());
     }
 
     private String json(Object value) {
         return json.write(value, "routine");
     }
+
+    private record AdvertisedRoutine(String id, String name, String description) { }
 }

@@ -16,6 +16,7 @@ import us.nusun.llmshare.framework.model.AgentRunScheduled;
 import us.nusun.llmshare.framework.model.Mission;
 import us.nusun.llmshare.framework.model.MissionRequest;
 import us.nusun.llmshare.framework.projection.AgentRunProjectionManager;
+import us.nusun.llmshare.framework.sandbox.PersonaSandboxManager;
 import us.nusun.llmshare.framework.state.AgentRun;
 import us.nusun.llmshare.framework.state.AgentRunStore;
 
@@ -33,6 +34,7 @@ public class AgentRunAdmissionService {
     @Inject RoutineCatalog routines;
     @Inject AgentRunProjectionManager projections;
     @Inject AgentRunStore agentRuns;
+    @Inject PersonaSandboxManager sandboxes;
 
     public AgentRunAdmission admit(
             @Body AgentRunRequest request,
@@ -129,6 +131,11 @@ public class AgentRunAdmissionService {
         List<AgentRunAdmission> admissions = new ArrayList<>();
         synchronized (agentRuns) {
             validateCapacity(mission, preparedRuns, capacityMaximum);
+            if (sandboxes != null) {
+                for (PreparedAgentRun prepared : preparedRuns) {
+                    sandboxes.ensureReady(mission, personas.getRequired(prepared.run().personaId()), prepared.run());
+                }
+            }
             agentRuns.putMission(mission);
             for (PreparedAgentRun prepared : preparedRuns) {
                 agentRuns.putRun(prepared.run());

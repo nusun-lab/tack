@@ -13,13 +13,16 @@ public class ProjectManagementToolProfile implements ToolProfileProvider {
     public static final String ID = "project-management";
 
     private final PlaneMcpServer plane;
+    private final GiteaMcpServer gitea;
     private final int maxResultTokens;
 
     @Inject
     public ProjectManagementToolProfile(
             PlaneMcpServer plane,
+            GiteaMcpServer gitea,
             @ConfigProperty(name = "agent.tool.profile.project-management.max-result-tokens", defaultValue = "5000") int maxResultTokens) {
         this.plane = plane;
+        this.gitea = gitea;
         this.maxResultTokens = maxResultTokens;
     }
 
@@ -27,10 +30,25 @@ public class ProjectManagementToolProfile implements ToolProfileProvider {
     public List<ToolProfile> toolProfiles() {
         return List.of(ToolProfile.builder(ID)
                 .mcpServer(plane.definition())
+                .mcpServer(gitea.definition())
+                .allowTools(GiteaMcpServer.ID,
+                        "get_me",
+                        "list_my_repos",
+                        "list_org_repos",
+                        "search_repos",
+                        "get_repository_tree",
+                        "get_dir_contents",
+                        "get_file_contents",
+                        "list_branches",
+                        "list_commits",
+                        "get_commit",
+                        "list_pull_requests",
+                        "pull_request_read")
                 .promptGuidance("""
                         - find direct existing projects and work items before creating anything
                         - work on only the project or work item named by the current step
                         - Plane is the sole source of truth for planned work, assignments, status, blockers, dependencies, priorities, and delivery planning
+                        - Gitea reads are for canonical product acceptance and linked implementation/review evidence only; do not coordinate planned work in Gitea
                         - avoid duplicate projects or work items
                         - record blockers plainly with owner and evidence
                         - keep each work item small; split oversized items and move detail into children instead of copying it
@@ -75,9 +93,38 @@ public class ProjectManagementToolProfile implements ToolProfileProvider {
                         "retrieve_workspace_page",
                         "retrieve_project_page",
                         "create_workspace_page",
-                        "create_project_page")
+                        "create_project_page",
+                        "list_pages",
+                        "create_page",
+                        "retrieve_page",
+                        "attach_page_to_work_item",
+                        "detach_page_from_work_item",
+                        "list_work_item_pages",
+                        "get_project_estimate",
+                        "list_project_estimate_points",
+                        "create_project_estimate",
+                        "update_project_estimate",
+                        "delete_project_estimate",
+                        "link_estimate_to_project",
+                        "create_project_estimate_points",
+                        "update_project_estimate_point",
+                        "delete_project_estimate_point",
+                        "manage_work_item_type_properties",
+                        "list_work_item_property_options",
+                        "retrieve_work_item_property_option",
+                        "create_work_item_property_option",
+                        "update_work_item_property_option",
+                        "delete_work_item_property_option",
+                        "get_work_item_property_value",
+                        "set_work_item_property_value",
+                        "delete_work_item_property_value",
+                        "import_work_item_types_to_project",
+                        "resolve_work_item_type",
+                        "count_work_items",
+                        "get_features")
                 .defaultArgument(PlaneMcpServer.ID, "list_projects", "fields", "id,name,identifier")
                 .defaultArgument(PlaneMcpServer.ID, "list_work_items", "fields", "id,name,sequence_id,state,priority,assignees")
+                .defaultArgument(PlaneMcpServer.ID, "list_work_items", "per_page", 50)
                 .maxResultTokens(maxResultTokens)
                 .build());
     }

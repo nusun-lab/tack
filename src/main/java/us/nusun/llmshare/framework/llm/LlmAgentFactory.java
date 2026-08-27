@@ -34,6 +34,7 @@ import org.slf4j.LoggerFactory;
 import us.nusun.llmshare.framework.inventory.InferenceLaneRegistry;
 import us.nusun.llmshare.framework.inventory.PersonaCatalog;
 import us.nusun.llmshare.framework.inventory.ToolProfileRegistry;
+import us.nusun.llmshare.framework.logging.LogTokens;
 import us.nusun.llmshare.framework.mcp.McpClientFactory;
 import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
 import us.nusun.llmshare.framework.memory.EphemeralToolPassChatMemoryProvider;
@@ -43,6 +44,7 @@ import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.model.Persona;
 import us.nusun.llmshare.framework.model.RoutineDefinition;
 import us.nusun.llmshare.framework.model.ToolProfile;
+import us.nusun.llmshare.framework.sandbox.PersonaSandboxManager;
 
 import java.io.IOException;
 import java.net.http.HttpClient;
@@ -50,12 +52,15 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Singleton
 public class LlmAgentFactory {
     private static final Logger LOG = LoggerFactory.getLogger(LlmAgentFactory.class);
     private static final HallucinatedToolNameRecoveryStrategy HALLUCINATED_TOOL_NAME_RECOVERY_STRATEGY =
             new HallucinatedToolNameRecoveryStrategy();
+    private static final String SANDBOX_TOOL_SERVER = "sandbox";
+    private static final String SANDBOX_EXEC_TOOL = "sandbox_exec";
 
     @Produces
     @Singleton
@@ -76,6 +81,8 @@ public class LlmAgentFactory {
             McpClientFactory mcpClientFactory,
             ToolProfileRegistry toolProfiles,
             PersonaCatalog personas,
+            PersonaSandboxManager sandboxes,
+            LogTokens logTokens,
             TokenCountEstimator tokenCountEstimator,
             @ConfigProperty(name = "llm.model-default.openai.base-url") String defaultBaseUrl,
             @ConfigProperty(name = "llm.model-default.openai.api-key") String defaultApiKey,
@@ -89,6 +96,7 @@ public class LlmAgentFactory {
             @ConfigProperty(name = "llm.model-default.openai.max-tokens") int maxTokens,
             @ConfigProperty(name = "llm.model-default.openai.timeout-ms") long timeoutMs,
             @ConfigProperty(name = "llm.model-default.openai.thinking-off.enabled") boolean thinkingOffEnabled,
+            @ConfigProperty(name = "llm.model-default.openai.reasoning-effort") Optional<String> reasoningEffort,
             @ConfigProperty(name = "llm.model-default.openai.strict-json-schema", defaultValue = "true") boolean strictJsonSchema,
             @ConfigProperty(name = "llm.model-default.tool-memory.max-tokens", defaultValue = "12000") int memoryMaxTokens,
             @ConfigProperty(name = "llm.model-default.max-tool-calling-round-trips", defaultValue = "4") int maxToolCallingRoundTrips) {
@@ -106,8 +114,10 @@ public class LlmAgentFactory {
                 maxTokens,
                 timeoutMs,
                 thinkingOffEnabled,
+                reasoningEffort.orElse(null),
                 strictJsonSchema);
-        return new DynamicAgentFactory(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator, memoryMaxTokens, maxToolCallingRoundTrips);
+        return new DynamicAgentFactory(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator,
+                memoryMaxTokens, maxToolCallingRoundTrips, sandboxes, logTokens);
     }
 
     private static Map<String, ChatModel> laneModels(
@@ -124,6 +134,7 @@ public class LlmAgentFactory {
             int maxTokens,
             long timeoutMs,
             boolean thinkingOffEnabled,
+            String reasoningEffort,
             boolean strictJsonSchema) {
         LinkedHashMap<String, ChatModel> models = new LinkedHashMap<>();
         for (InferenceLaneDefinition lane : lanes.allLanes()) {
@@ -134,9 +145,11 @@ public class LlmAgentFactory {
             int laneTopK = laneInt(configPrefix, "top-k", topK);
             double laneMinP = laneDouble(configPrefix, "min-p", minP);
             double laneRepetitionPenalty = laneDouble(configPrefix, "repetition-penalty", repetitionPenalty);
+            String laneReasoningEffort = laneString(configPrefix, "reasoning-effort", reasoningEffort);
             String model = selectedModel(lane, defaultModel);
-            LOG.info("Configured inference lane {} model={} sampling temperature={} topP={} presencePenalty={} topK={} minP={} repetitionPenalty={}",
-                    lane.id(), model, laneTemperature, laneTopP, lanePresencePenalty, laneTopK, laneMinP, laneRepetitionPenalty);
+            LOG.info("Configured inference lane {} model={} reasoningEffort={} sampling temperature={} topP={} presencePenalty={} topK={} minP={} repetitionPenalty={}",
+                    lane.id(), model, blank(laneReasoningEffort) ? "provider-default" : laneReasoningEffort,
+                    laneTemperature, laneTopP, lanePresencePenalty, laneTopK, laneMinP, laneRepetitionPenalty);
             models.put(lane.id(), chatModel(
                     firstNonBlank(lane.endpoint(), defaultBaseUrl),
                     firstNonBlank(resolveLaneApiKey(lane), defaultApiKey),
@@ -150,6 +163,7 @@ public class LlmAgentFactory {
                     maxTokens,
                     timeoutMs,
                     thinkingOffEnabled,
+                    laneReasoningEffort,
                     strictJsonSchema));
         }
         return Map.copyOf(models);
@@ -172,6 +186,7 @@ public class LlmAgentFactory {
             int maxTokens,
             long timeoutMs,
             boolean thinkingOffEnabled,
+            String reasoningEffort,
             boolean strictJsonSchema) {
         var builder = OpenAiChatModel.builder()
                 .baseUrl(baseUrl)
@@ -184,6 +199,9 @@ public class LlmAgentFactory {
                 .strictJsonSchema(strictJsonSchema)
                 .timeout(Duration.ofMillis(timeoutMs))
                 .httpClientBuilder(http11ClientBuilder());
+        if (!blank(reasoningEffort)) {
+            builder.reasoningEffort(reasoningEffort.strip());
+        }
 
         Map<String, Object> customParameters = new LinkedHashMap<>();
         customParameters.put("top_k", topK);
@@ -241,6 +259,16 @@ public class LlmAgentFactory {
                 .orElse(fallback);
     }
 
+    private static String laneString(String configPrefix, String property, String fallback) {
+        if (blank(configPrefix)) {
+            return fallback;
+        }
+        return ConfigProvider.getConfig()
+                .getOptionalValue(configPrefix + "." + property, String.class)
+                .filter(value -> !blank(value))
+                .orElse(fallback);
+    }
+
     private static boolean blank(String value) {
         return value == null || value.isBlank();
     }
@@ -251,6 +279,8 @@ public class LlmAgentFactory {
         private final McpClientFactory mcpClientFactory;
         private final ToolProfileRegistry toolProfiles;
         private final PersonaCatalog personas;
+        private final PersonaSandboxManager sandboxes;
+        private final LogTokens logTokens;
         private static final int DEFAULT_MAX_TOOL_CALLING_ROUND_TRIPS = 4;
 
         private final TokenCountEstimator tokenCountEstimator;
@@ -259,10 +289,25 @@ public class LlmAgentFactory {
         private CamelContext camelContext;
 
         public DynamicAgentFactory(InferenceLaneRegistry lanes, Map<String, ChatModel> laneModels, McpClientFactory mcpClientFactory, ToolProfileRegistry toolProfiles, PersonaCatalog personas, TokenCountEstimator tokenCountEstimator, int memoryMaxTokens) {
-            this(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator, memoryMaxTokens, DEFAULT_MAX_TOOL_CALLING_ROUND_TRIPS);
+            this(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator, memoryMaxTokens,
+                    DEFAULT_MAX_TOOL_CALLING_ROUND_TRIPS, null, null);
         }
 
         public DynamicAgentFactory(InferenceLaneRegistry lanes, Map<String, ChatModel> laneModels, McpClientFactory mcpClientFactory, ToolProfileRegistry toolProfiles, PersonaCatalog personas, TokenCountEstimator tokenCountEstimator, int memoryMaxTokens, int maxToolCallingRoundTrips) {
+            this(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator, memoryMaxTokens,
+                    maxToolCallingRoundTrips, null, null);
+        }
+
+        public DynamicAgentFactory(InferenceLaneRegistry lanes, Map<String, ChatModel> laneModels, McpClientFactory mcpClientFactory,
+                                   ToolProfileRegistry toolProfiles, PersonaCatalog personas, TokenCountEstimator tokenCountEstimator,
+                                   int memoryMaxTokens, int maxToolCallingRoundTrips, PersonaSandboxManager sandboxes) {
+            this(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator, memoryMaxTokens,
+                    maxToolCallingRoundTrips, sandboxes, null);
+        }
+
+        public DynamicAgentFactory(InferenceLaneRegistry lanes, Map<String, ChatModel> laneModels, McpClientFactory mcpClientFactory,
+                                   ToolProfileRegistry toolProfiles, PersonaCatalog personas, TokenCountEstimator tokenCountEstimator,
+                                   int memoryMaxTokens, int maxToolCallingRoundTrips, PersonaSandboxManager sandboxes, LogTokens logTokens) {
             this.lanes = lanes;
             this.laneModels = laneModels;
             this.mcpClientFactory = mcpClientFactory;
@@ -271,6 +316,8 @@ public class LlmAgentFactory {
             this.tokenCountEstimator = tokenCountEstimator;
             this.memoryMaxTokens = memoryMaxTokens;
             this.maxToolCallingRoundTrips = maxToolCallingRoundTrips;
+            this.sandboxes = sandboxes;
+            this.logTokens = logTokens;
         }
 
         @Override
@@ -287,10 +334,32 @@ public class LlmAgentFactory {
             LlmPassType passType = passType(exchange);
             AgentConfiguration configuration = new AgentConfiguration().withChatModel(model);
             if (passType == LlmPassType.TOOL) {
-                configuration.withChatMemoryProvider(new EphemeralToolPassChatMemoryProvider(memoryMaxTokens, tokenCountEstimator, true));
+                configuration.withChatMemoryProvider(new EphemeralToolPassChatMemoryProvider(
+                        memoryMaxTokens,
+                        tokenCountEstimator,
+                        true,
+                        warning -> logRuntimeWarning(exchange, warning)));
+                String profileId = exchange.getProperty("toolProfile", "none", String.class);
+                ToolProfile profile = toolProfiles.getRequired(profileId);
                 List<McpClient> clients = mcpClients(exchange);
                 if (!clients.isEmpty()) {
                     configuration.withMcpClients(clients);
+                }
+                if (sandboxes != null && profile.allowsTool(SANDBOX_TOOL_SERVER, SANDBOX_EXEC_TOOL)) {
+                    LlmJobEnvelope job = job(exchange);
+                    String sandboxName = exchange.getProperty(PersonaSandboxManager.WORKING_STATE_SANDBOX_NAME, String.class);
+                    if (blank(sandboxName)) {
+                        String missionId = metadata(job, "missionId");
+                        String personaId = firstNonBlank(exchange.getProperty("personaId", String.class), metadata(job, "personaId"));
+                        sandboxName = sandboxes.sandboxNameFor(missionId, personaId);
+                    }
+                    var sandboxTool = sandboxes.tool(sandboxName);
+                    if (sandboxTool != null) {
+                        configuration.withCustomTools(List.of(sandboxTool));
+                        LOG.info("Registered sandbox_exec for profile={} sandbox={} persona={} mission={}", profile.id(), sandboxName,
+                                firstNonBlank(exchange.getProperty("personaId", String.class), metadata(job, "personaId")),
+                                metadata(job, "missionId"));
+                    }
                 }
             }
             Agent agent = configuration.getChatMemoryProvider() == null ? new AgentWithoutMemory(configuration) : new TackToolAgent(configuration, maxToolCallingRoundTrips);
@@ -328,10 +397,20 @@ public class LlmAgentFactory {
                 builder.toolArgumentsErrorHandler(ToolErrorFeedback::arguments);
                 builder.toolExecutionErrorHandler(ToolErrorFeedback::execution);
                 if (maxToolCallingRoundTrips > 0) {
-                    builder.maxToolCallingRoundTrips(maxToolCallingRoundTrips);
+                    builder.maxToolCallingRoundTrips(maxToolCallingRoundTrips + 1);
                 }
                 ResponseFormat responseFormat = getResponseFormat();
                 builder.chatRequestTransformer(request -> forceInitialToolChoice(request, responseFormat));
+            }
+        }
+
+        private void logRuntimeWarning(Exchange exchange, String warning) {
+            String label = firstNonBlank(exchange.getProperty("agentLabel", String.class), "LLM");
+            String color = exchange.getProperty("agentLogColor", String.class);
+            if (logTokens != null) {
+                logTokens.print(logTokens.wrap(label, color, "RUNTIME WARNING " + warning));
+            } else {
+                LOG.warn("[{}] RUNTIME WARNING {}", label, warning);
             }
         }
 
@@ -392,6 +471,14 @@ public class LlmAgentFactory {
             }
             LlmJobEnvelope job = job(exchange);
             return job == null || job.passType() == null ? LlmPassType.SYNTHESIS : job.passType();
+        }
+
+        private static String metadata(LlmJobEnvelope job, String key) {
+            if (job == null || job.metadata() == null) {
+                return null;
+            }
+            Object value = job.metadata().get(key);
+            return value == null ? null : String.valueOf(value);
         }
 
         private static Object jobId(LlmJobEnvelope job) {

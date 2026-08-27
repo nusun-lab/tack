@@ -15,6 +15,7 @@ import us.nusun.llmshare.framework.model.AgentRunScheduled;
 import us.nusun.llmshare.framework.model.Mission;
 import us.nusun.llmshare.framework.model.RoutineDefinition;
 import us.nusun.llmshare.framework.projection.AgentRunProjectionManager;
+import us.nusun.llmshare.framework.sandbox.PersonaSandboxManager;
 import us.nusun.llmshare.framework.service.AgentRunAdmissionService;
 import us.nusun.llmshare.framework.state.AgentRun;
 import us.nusun.llmshare.framework.state.AgentRunStore;
@@ -148,6 +149,10 @@ public class AgentRunRoute extends RouteBuilder {
         exchange.setProperty("routine", routine);
         exchange.setProperty("subroutine", run.subroutineId() == null ? null : routine.requireSubroutine(run.subroutineId()));
         exchange.setProperty("agentRunRouteUri", routines.routeUriFor(run));
+        Object sandboxName = run.workingState().get(PersonaSandboxManager.WORKING_STATE_SANDBOX_NAME);
+        if (sandboxName != null && !String.valueOf(sandboxName).isBlank()) {
+            exchange.setProperty(PersonaSandboxManager.WORKING_STATE_SANDBOX_NAME, String.valueOf(sandboxName));
+        }
         exchange.getIn().setBody(initialRoutineBody(run));
     }
 

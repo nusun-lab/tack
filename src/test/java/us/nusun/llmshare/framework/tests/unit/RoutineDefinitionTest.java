@@ -7,6 +7,7 @@ import us.nusun.llmshare.framework.model.RoutineDefinition;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -92,7 +93,7 @@ class RoutineDefinitionTest {
     }
 
     @Test
-    void subroutinesAreExposedThroughInventorySerialization() {
+    void startableInventoryAdvertisesOnlyTopLevelRoutineSelection() {
         RoutineCatalog catalog = new RoutineCatalog(List.of(RoutineDefinition.builder("test/routine")
                 .name("Test Routine")
                 .description("A routine with focused entry points.")
@@ -103,9 +104,12 @@ class RoutineDefinitionTest {
         String json = catalog.startableJson();
 
         assertTrue(json.contains("test/routine"));
-        assertTrue(json.contains("subroutines"));
-        assertTrue(json.contains("phase-a"));
-        assertTrue(json.contains("Perform only phase A."));
-        assertTrue(json.contains("direct:test-routine-phase-a"));
+        assertTrue(json.contains("Test Routine"));
+        assertTrue(json.contains("A routine with focused entry points."));
+        assertFalse(json.contains("subroutines"));
+        assertFalse(json.contains("phase-a"));
+        assertFalse(json.contains("Perform only phase A."));
+        assertFalse(json.contains("direct:test-routine-phase-a"));
+        assertFalse(json.contains("main routine"));
     }
 }

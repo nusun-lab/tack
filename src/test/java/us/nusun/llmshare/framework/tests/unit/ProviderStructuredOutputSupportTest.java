@@ -80,6 +80,7 @@ class ProviderStructuredOutputSupportTest {
                 int.class,
                 long.class,
                 boolean.class,
+                String.class,
                 boolean.class);
         laneModels.setAccessible(true);
 
@@ -98,6 +99,7 @@ class ProviderStructuredOutputSupportTest {
                 128,
                 1000L,
                 false,
+                null,
                 true);
 
         assertEquals(Set.of("low-pass", "high-pass"), models.keySet());
