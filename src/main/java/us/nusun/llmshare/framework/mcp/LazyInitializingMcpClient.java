@@ -31,6 +31,7 @@ public final class LazyInitializingMcpClient implements McpClient {
     private final Supplier<McpClient> supplier;
 
     private volatile McpClient delegate;
+    private volatile boolean closed;
     private final Object lock = new Object();
 
     public LazyInitializingMcpClient(
@@ -139,18 +140,32 @@ public final class LazyInitializingMcpClient implements McpClient {
 
     @Override
     public void close() throws Exception {
-        McpClient current = delegate;
+        McpClient current;
+        synchronized (lock) {
+            if (closed) {
+                return;
+            }
+            closed = true;
+            current = delegate;
+            delegate = null;
+        }
         if (current != null) {
             current.close();
         }
     }
 
     private McpClient delegate() {
+        if (closed) {
+            throw closedException();
+        }
         McpClient current = delegate;
         if (current != null) {
             return current;
         }
         synchronized (lock) {
+            if (closed) {
+                throw closedException();
+            }
             current = delegate;
             if (current != null) {
                 return current;
@@ -173,6 +188,12 @@ public final class LazyInitializingMcpClient implements McpClient {
                         e);
             }
         }
+    }
+
+    private IllegalStateException closedException() {
+        return new IllegalStateException(
+                "MCP client is closed for service '%s' identity '%s' url '%s'"
+                        .formatted(serviceName, identityKey, url));
     }
 
     private static String rootMessage(Throwable throwable) {
