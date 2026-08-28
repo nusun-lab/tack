@@ -31,6 +31,7 @@ public class ProfiledMcpClient implements McpClient {
     private final LogTokens logTokens;
     private final int globalMaxResultTokens;
     private final TokenCountEstimator tokenCountEstimator;
+    private final boolean ownsDelegate;
 
     public ProfiledMcpClient(McpClient delegate, String server, ToolProfile profile) {
         this(delegate, server, profile, null, null, McpToolResultLimiter.DISABLED);
@@ -41,6 +42,10 @@ public class ProfiledMcpClient implements McpClient {
     }
 
     public ProfiledMcpClient(McpClient delegate, String server, ToolProfile profile, Persona persona, LogTokens logTokens, int globalMaxResultTokens, TokenCountEstimator tokenCountEstimator) {
+        this(delegate, server, profile, persona, logTokens, globalMaxResultTokens, tokenCountEstimator, true);
+    }
+
+    public ProfiledMcpClient(McpClient delegate, String server, ToolProfile profile, Persona persona, LogTokens logTokens, int globalMaxResultTokens, TokenCountEstimator tokenCountEstimator, boolean ownsDelegate) {
         this.delegate = delegate;
         this.server = server;
         this.profile = profile;
@@ -48,6 +53,7 @@ public class ProfiledMcpClient implements McpClient {
         this.logTokens = logTokens;
         this.globalMaxResultTokens = globalMaxResultTokens;
         this.tokenCountEstimator = tokenCountEstimator == null ? new ApproximateTokenCountEstimator() : tokenCountEstimator;
+        this.ownsDelegate = ownsDelegate;
     }
 
     @Override public String key() { return delegate.key(); }
@@ -67,7 +73,7 @@ public class ProfiledMcpClient implements McpClient {
     @Override public McpGetPromptResult getPrompt(String name, Map<String, Object> arguments) { return delegate.getPrompt(name, arguments); }
     @Override public void checkHealth() { delegate.checkHealth(); }
     @Override public void setRoots(List<McpRoot> roots) { delegate.setRoots(roots); }
-    @Override public void close() throws Exception { delegate.close(); }
+    @Override public void close() throws Exception { if (ownsDelegate) delegate.close(); }
 
     private List<ToolSpecification> filterAndLog(List<ToolSpecification> tools) {
         List<ToolSpecification> filtered = filter(tools);
