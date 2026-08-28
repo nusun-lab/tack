@@ -350,7 +350,8 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
     }
 
     private static boolean alreadyProtected(List<ChatMessage> projected, ChatMessage message) {
-        return (message instanceof SystemMessage || message instanceof UserMessage) && projected.contains(message);
+        return message instanceof SystemMessage
+                || (message instanceof UserMessage && projected.contains(message));
     }
 
     private static int recentToolHistoryStart(List<ChatMessage> messages, int interactions) {
