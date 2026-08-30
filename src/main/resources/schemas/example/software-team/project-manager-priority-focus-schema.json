@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "focus": {
+      "type": "string",
+      "enum": ["bootstrap", "active-delivery", "planning", "onboarding", "coordination", "documentation", "completion", "wait"]
+    }
+  },
+  "required": ["focus"],
+  "additionalProperties": false
+}
