@@ -47,7 +47,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                             - bootstrap: any shared Plane/source/docs/chat foundation basic is missing or unusable.
                             - active-delivery: a current review, integration disposition, merged-PR closure, topology finding, blocker, dependency promotion/repair, cancelled coverage, product-question return, or completed-parent handoff can be acted on now. Prefer this promptly for REVIEW READY or post-merge work so integration latency stays low.
                             - planning: usable product work exists and the assigned executable Developer Todo backlog is too shallow, incomplete, or needs topology/remediation planning. Build a modest backlog without inventing work.
-                            - onboarding: the shared foundation exists but current mission roster membership needs alignment.
+                            - onboarding: current mission roster membership in Plane or team chat needs alignment, including later roster changes or access drift. This remains a reusable focus even though bootstrap should onboard the current roster while creating those resources.
                             - coordination: a fresh team exchange needs Project Manager participation.
                             - documentation: a concrete durable navigation/status curation need exists; daily work state belongs in Plane.
                             - completion: durable evidence makes mission completion plausible enough for the dedicated completion check.
@@ -74,7 +74,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                             .to("direct:pm-planning-focus")
                             .to("tack:thought-exit?name=pm-planning-focus")
                         .when(exchangeProperty("pmPriorityFocus").isEqualTo("onboarding"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused current-roster membership alignment after the shared foundation exists."))
+                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused current-roster membership alignment for later roster changes, missed bootstrap membership, or access drift."))
                             .to("tack:thought-enter?name=pm-onboarding-focus&maxTokens=250")
                             .to("direct:pm-team-onboarding")
                             .to("tack:thought-exit?name=pm-onboarding-focus")
@@ -215,10 +215,12 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         Verify only the shared foundation needed to enter coordination: exactly one current-mission Plane project,
                         documentation repository/navigation, source repository under agent-workspace, and mission team-chat channel,
                         all accessible to this Project Manager run. Do not require every current or future teammate to already have
-                        membership everywhere; pm-team-onboarding owns roster membership alignment after the foundation exists. Do not mutate.
+                        membership everywhere; pm-team-onboarding owns ongoing roster membership alignment. During bootstrap, however,
+                        creation of the Plane project and team-chat channel should onboard every teammate already present in the current
+                        mission roster. Future teammates may be added later through the onboarding focus. Do not mutate.
                         """))
                 .to("tack:act?id=pm-workspace-basics-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
-                .setHeader(TackHeaders.PROMPT, constant("Are Plane, source repo, docs/navigation, and mission chat verified and readable by this Project Manager run? Return true without requiring full-team membership."))
+                .setHeader(TackHeaders.PROMPT, constant("Are Plane, source repo, docs/navigation, and mission chat verified and readable by this Project Manager run? Return true without requiring future-team membership."))
                 .to("tack:decide?id=collaboration-setup-complete");
 
         from("direct:pm-project-bootstrap")
@@ -228,9 +230,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .loopDoWhile(simple("${exchangeProperty.decision.collaboration-setup-complete.result} != true && ${exchangeProperty.pmBootstrapMadeProgress} == true && ${exchangeProperty.collaborationSetupAttempt} < 6"))
                     .setProperty("collaborationSetupAttempt", simple("${exchangeProperty.collaborationSetupAttempt++}"))
                     .setProperty("pmBootstrapMadeProgress", constant(false))
-                    .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Bootstrap only: Plane project, source/docs repositories, mission chat, and navigation. Product work and full-team membership are not bootstrap prerequisites."))
+                    .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Bootstrap only: Plane project, source/docs repositories, mission chat, navigation, and immediate access for teammates already in the current roster. Product work is not a bootstrap prerequisite."))
                     .to("tack:thought-enter?name=pm-bootstrap&maxTokens=300")
-                    .setHeader(TackHeaders.PROMPT, constant("Create or confirm exactly one current-mission Plane project. Preserve an existing useful project. Do not create product or implementation work."))
+                    .setHeader(TackHeaders.PROMPT, constant("Create or confirm exactly one current-mission Plane project. Preserve an existing useful project. In the same pass, reconcile that project's membership against the CURRENT MISSION ROSTER: add every teammate who already exists in the roster and is available in the Plane workspace. Do not add hypothetical/future personas, remove nobody, and do not create product or implementation work."))
                     .to("tack:act?id=plane-project-provisioning&toolProfile=" + WorkspaceCoordinationToolProfile.ID)
                     .choice().when(exchangeProperty("act.plane-project-provisioning.durableProgress").isEqualTo(true)).setProperty("pmBootstrapMadeProgress", constant(true)).end()
                     .setHeader(TackHeaders.PROMPT, constant("Create or confirm exactly one markdown documentation repository under agent-workspace. Do not create planned work in source control."))
@@ -239,7 +241,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .setHeader(TackHeaders.PROMPT, constant("Create or confirm exactly one target source repository under agent-workspace."))
                     .to("tack:act?id=source-repository-provisioning&toolProfile=" + WorkspaceCoordinationToolProfile.ID)
                     .choice().when(exchangeProperty("act.source-repository-provisioning.durableProgress").isEqualTo(true)).setProperty("pmBootstrapMadeProgress", constant(true)).end()
-                    .setHeader(TackHeaders.PROMPT, constant("Create or confirm one private current-mission team-chat channel accessible to Project Management. Never create a duplicate channel. Full roster membership is handled after bootstrap."))
+                    .setHeader(TackHeaders.PROMPT, constant("Create or confirm one private current-mission team-chat channel accessible to Project Management. Never create a duplicate channel. In the same pass, add every teammate already present in the CURRENT MISSION ROSTER to the channel when supported. Do not add hypothetical/future personas and remove nobody. Later roster changes or access drift remain the responsibility of the reusable onboarding focus."))
                     .to("tack:act?id=chat-channel-setup&toolProfile=" + TeamChatToolProfile.ID)
                     .choice().when(exchangeProperty("act.chat-channel-setup.durableProgress").isEqualTo(true)).setProperty("pmBootstrapMadeProgress", constant(true)).end()
                     .setHeader(TackHeaders.PROMPT, constant("Create or update compact canonical navigation/project-basics documentation linking mission, repositories, Plane project, team chat, and role responsibilities."))
@@ -274,7 +276,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
 
         from("direct:pm-team-onboarding")
                 .routeId("pm-team-onboarding")
-                .setHeader(TackHeaders.PROMPT, constant("Keep current mission teammates present in Plane and team chat where supported. Add missing current teammates after the shared foundation exists. Remove nobody without clear mission evidence."))
+                .setHeader(TackHeaders.PROMPT, constant("Reconcile the CURRENT MISSION ROSTER against Plane project and mission team-chat membership. Add missing current teammates where supported, including teammates added after bootstrap or access drift discovered later. Do not add hypothetical personas and remove nobody without clear mission evidence."))
                 .to("tack:act?id=pm-team-onboarding&toolProfile=" + WorkspaceCoordinationToolProfile.ID);
 
         from("direct:pm-active-delivery-check")
