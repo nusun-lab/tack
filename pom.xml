@@ -69,7 +69,6 @@
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-micrometer-registry-prometheus</artifactId>
         </dependency>
-
         <dependency>
             <groupId>org.apache.camel.quarkus</groupId>
             <artifactId>camel-quarkus-core</artifactId>
@@ -119,7 +118,6 @@
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j-http-client-jdk</artifactId>
         </dependency>
-
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-junit</artifactId>
@@ -193,7 +191,8 @@
                         <goals>
                             <goal>integration-test</goal>
                             <goal>verify</goal>
-                        </executions>
+                        </goals>
+                    </execution>
                 </executions>
                 <configuration>
                     <systemPropertyVariables>
