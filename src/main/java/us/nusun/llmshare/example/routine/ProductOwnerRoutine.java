@@ -33,14 +33,8 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         current acceptance contract. Product slices describe user outcomes; implementation decomposition belongs
                         to the Project Manager.
                         """, "direct:example-software-team-product-owner")
-                .subroutine(
-                        "acceptance-refinement",
-                        "Refine one Backlog product slice or answer one returned product question with clear scope and testable Gherkin acceptance.",
-                        "direct:example-software-team-product-owner-acceptance-refinement")
-                .subroutine(
-                        "priority-handoff",
-                        "Move one ready product slice Backlog -> Todo, answer one returned product question, or accept/reject one completed In Progress product outcome.",
-                        "direct:example-software-team-product-owner-priority-handoff")
+                .subroutine("acceptance-refinement", "Refine one Backlog product slice or answer one returned product question with clear scope and testable Gherkin acceptance.", "direct:example-software-team-product-owner-acceptance-refinement")
+                .subroutine("priority-handoff", "Move one ready product slice Backlog -> Todo, answer one returned product question, or accept/reject one completed In Progress product outcome.", "direct:example-software-team-product-owner-priority-handoff")
                 .defaultLane("high-pass")
                 .build();
     }
@@ -55,20 +49,14 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                     .to("direct:po-orientation")
                     .setHeader(TackHeaders.PROMPT, constant("""
                             Choose exactly one highest-priority Product Owner focus for the next focused pass.
-
                             Allowed focus values, in priority order when genuinely actionable:
                             - missing-basics: the shared Plane/source/docs/chat foundation is not usable for product work.
-                            - product-work: there is an unresolved PRODUCT QUESTION, a current product acceptance candidate,
-                              a Backlog product slice needing definition/handoff, an unrepresented required user-facing outcome,
-                              or the delivery-ready Todo product backlog is too shallow. Stay in product work long enough to build
-                              a modest useful backlog, one product slice per act, without inventing speculative scope.
+                            - product-work: there is an unresolved PRODUCT QUESTION, a current product acceptance candidate, a Backlog product slice needing definition/handoff, an unrepresented required user-facing outcome, or the delivery-ready Todo product backlog is too shallow. Stay in product work long enough to build a modest useful backlog, one product slice per act, without inventing speculative scope.
                             - coordination: a fresh team conversation needs Product Owner judgment or clarification.
                             - closeout: a concrete product documentation/chat curation follow-up is useful after durable product work.
                             - completion: durable evidence makes mission completion plausible enough for the dedicated completion check.
                             - wait: none of the above is useful now; avoid generic status or repeated no-op traversal.
-
-                            Plane real states remain authoritative lifecycle state. Preserve current PRODUCT QUESTION/HANDOFF and
-                            acceptance-lease behavior on this branch. Return only the focus object.
+                            Plane real states remain authoritative lifecycle state. Preserve current PRODUCT QUESTION/HANDOFF and acceptance-lease behavior on this branch. Return only the focus object.
                             """))
                     .to("tack:create?id=po-priority-focus&schemaId=product-owner-priority-focus&schema=classpath:schemas/example/software-team/product-owner-priority-focus-schema.json")
                     .unmarshal().json(JsonLibrary.Jackson, PriorityFocus.class)
@@ -79,7 +67,6 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                             .to("tack:thought-enter?name=po-missing-basics-focus&maxTokens=250")
                             .to("direct:po-missing-basics-closeout")
                             .to("tack:thought-exit?name=po-missing-basics-focus")
-                            .delay(120000)
                         .when(exchangeProperty("poPriorityFocus").isEqualTo("product-work"))
                             .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused product work: resolve high-priority product returns/acceptance, then define and hand off product slices one at a time until a modest delivery-ready backlog exists or no useful product work remains."))
                             .to("tack:thought-enter?name=po-product-work-focus&maxTokens=400")
@@ -100,9 +87,6 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                             .to("tack:thought-enter?name=po-completion-focus&maxTokens=300")
                             .to("direct:po-completion-focus")
                             .to("tack:thought-exit?name=po-completion-focus")
-                            .filter(exchangeProperty("decision.product-owner-mission-complete.result").isNotEqualTo(true))
-                                .delay(120000)
-                            .end()
                         .otherwise()
                             .delay(120000)
                     .end()
