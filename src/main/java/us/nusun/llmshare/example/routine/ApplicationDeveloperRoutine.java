@@ -19,9 +19,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
     public static final String ID = "software-team/application-developer";
 
     @Override
-    public List<RoutineDefinition> routines() {
-        return List.of(routine());
-    }
+    public List<RoutineDefinition> routines() { return List.of(routine()); }
 
     public RoutineDefinition routine() {
         return RoutineDefinition.builder(ID)
@@ -33,14 +31,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                         reviewable pull requests, and leave durable REVIEW READY, TECHNICAL FINDING, or BLOCKED evidence for
                         Project Manager follow-up. Product parents are never developer tasks.
                         """, "direct:example-software-team-application-developer")
-                .subroutine(
-                        "work-selection",
-                        "Find or start one assigned implementation child using Plane Todo/In Progress state without changing source files.",
-                        "direct:example-software-team-application-developer-work-selection")
-                .subroutine(
-                        "implementation",
-                        "Advance one assigned implementation child through source changes or topology investigation, validation, and a durable REVIEW READY, TECHNICAL FINDING, or BLOCKED handoff.",
-                        "direct:example-software-team-application-developer-implementation")
+                .subroutine("work-selection", "Find or start one assigned implementation child using Plane Todo/In Progress state without changing source files.", "direct:example-software-team-application-developer-work-selection")
+                .subroutine("implementation", "Advance one assigned implementation child through source changes or topology investigation, validation, and a durable REVIEW READY, TECHNICAL FINDING, or BLOCKED handoff.", "direct:example-software-team-application-developer-implementation")
                 .defaultLane("high-pass")
                 .build();
     }
@@ -55,24 +47,13 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .to("direct:dev-orientation")
                     .setHeader(TackHeaders.PROMPT, constant("""
                             Choose exactly one highest-priority Application Developer focus for the next focused pass.
-
                             Allowed focus values, in priority order when genuinely actionable:
                             - missing-basics: the shared Plane/source/docs/chat foundation is not usable for development.
-                            - implementation: an assigned In Progress implementation child has actionable implementation work or
-                              newer PM REVIEW FEEDBACK, or there is no source-delivery child waiting on current REVIEW READY /
-                              INTEGRATION READY and one assigned Todo implementation child is ready to start. Stay focused on one
-                              selected implementation child through its current implementation loop.
-                            - coordination: a fresh technical conversation, direct question, blocker exchange, or review feedback
-                              needs Developer participation outside the selected implementation flow.
-                            - completion: durable evidence makes development-side mission completion plausible enough for the
-                              dedicated completion check.
-                            - wait: current assigned source work is waiting on REVIEW READY / INTEGRATION READY / TECHNICAL FINDING
-                              disposition with no newer PM feedback, or no useful work is currently available. In particular, do not
-                              start another Todo source task merely because the current PR is waiting for PM/Director integration.
-
-                            Keep unmerged source WIP shallow. Product and PM backlogs may be deep, but the Developer should normally
-                            carry one source integration unit at a time. Preserve current review/integration handoff semantics on this
-                            branch. Return only the focus object.
+                            - implementation: an assigned In Progress implementation child has actionable implementation work or newer PM REVIEW FEEDBACK, or there is no source-delivery child waiting on current REVIEW READY / INTEGRATION READY and one assigned Todo implementation child is ready to start. Stay focused on one selected implementation child through its current implementation loop.
+                            - coordination: a fresh technical conversation, direct question, blocker exchange, or review feedback needs Developer participation outside the selected implementation flow.
+                            - completion: durable evidence makes development-side mission completion plausible enough for the dedicated completion check.
+                            - wait: current assigned source work is waiting on REVIEW READY / INTEGRATION READY / TECHNICAL FINDING disposition with no newer PM feedback, or no useful work is currently available. Do not start another Todo source task merely because the current PR is waiting for PM/Director integration.
+                            Keep unmerged source WIP shallow. Product and PM backlogs may be deep, but the Developer should normally carry one source integration unit at a time. Preserve current review/integration handoff semantics on this branch. Return only the focus object.
                             """))
                     .to("tack:create?id=dev-priority-focus&schemaId=application-developer-priority-focus&schema=classpath:schemas/example/software-team/application-developer-priority-focus-schema.json")
                     .unmarshal().json(JsonLibrary.Jackson, PriorityFocus.class)
@@ -83,20 +64,10 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             .to("tack:thought-enter?name=dev-missing-basics-focus&maxTokens=250")
                             .to("direct:dev-missing-basics-closeout")
                             .to("tack:thought-exit?name=dev-missing-basics-focus")
-                            .delay(120000)
                         .when(exchangeProperty("devPriorityFocus").isEqualTo("implementation"))
                             .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused implementation unit: one assigned implementation child, its task/product context, source or topology work, validation, and durable current handoff."))
                             .to("tack:thought-enter?name=dev-implementation-focus&maxTokens=450")
-                            .setProperty("decision.developer-has-work.result", constant(false))
-                            .setProperty("devSourceCloseoutAllowed", constant(false))
-                            .to("direct:dev-work-selection")
-                            .choice()
-                                .when(exchangeProperty("decision.developer-has-work.result").isEqualTo(true))
-                                    .to("direct:dev-implementation-loop")
-                                    .to("direct:dev-work-closeout-dispatch")
-                                .otherwise()
-                                    .to("direct:dev-no-work-closeout")
-                            .end()
+                            .to("direct:dev-implementation-focus")
                             .to("tack:thought-exit?name=dev-implementation-focus")
                         .when(exchangeProperty("devPriorityFocus").isEqualTo("coordination"))
                             .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused Developer coordination for one fresh technical, blocker, review-feedback, or teammate exchange."))
@@ -108,9 +79,6 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             .to("tack:thought-enter?name=dev-completion-focus&maxTokens=300")
                             .to("direct:dev-completion-focus")
                             .to("tack:thought-exit?name=dev-completion-focus")
-                            .filter(exchangeProperty("decision.application-developer-mission-complete.result").isNotEqualTo(true))
-                                .delay(120000)
-                            .end()
                         .otherwise()
                             .delay(120000)
                     .end()
@@ -130,6 +98,19 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                         Do not mutate, select, or implement work in this orientation pass.
                         """))
                 .to("tack:act?id=dev-orientation&toolProfile=" + WorkspaceReadonlyToolProfile.ID);
+
+        from("direct:dev-implementation-focus")
+                .routeId("dev-implementation-focus")
+                .setProperty("decision.developer-has-work.result", constant(false))
+                .setProperty("devSourceCloseoutAllowed", constant(false))
+                .to("direct:dev-work-selection")
+                .choice()
+                    .when(exchangeProperty("decision.developer-has-work.result").isEqualTo(true))
+                        .to("direct:dev-implementation-loop")
+                        .to("direct:dev-work-closeout-dispatch")
+                    .otherwise()
+                        .to("direct:dev-no-work-closeout")
+                .end();
 
         from("direct:dev-completion-focus")
                 .routeId("dev-completion-focus")
