@@ -15,8 +15,8 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
-        <quarkus.platform.version>3.39.0.CR1</quarkus.platform.version>
-        <camel-quarkus.version>3.39.0-SNAPSHOT</camel-quarkus.version>
+        <quarkus.platform.version>3.39.0</quarkus.platform.version>
+        <camel-quarkus.version>3.39.0</camel-quarkus.version>
         <langchain4j.version>1.16.3</langchain4j.version>
         <surefire-plugin.version>3.5.3</surefire-plugin.version>
         <jacoco-plugin.version>0.8.13</jacoco-plugin.version>
@@ -47,19 +47,6 @@
             </dependency>
         </dependencies>
     </dependencyManagement>
-
-    <repositories>
-        <repository>
-            <id>apache-snapshots</id>
-            <url>https://repository.apache.org/snapshots/</url>
-            <releases>
-                <enabled>false</enabled>
-            </releases>
-            <snapshots>
-                <enabled>true</enabled>
-            </snapshots>
-        </repository>
-    </repositories>
 
     <dependencies>
         <dependency>
@@ -206,8 +193,7 @@
                         <goals>
                             <goal>integration-test</goal>
                             <goal>verify</goal>
-                        </goals>
-                    </execution>
+                        </executions>
                 </executions>
                 <configuration>
                     <systemPropertyVariables>
