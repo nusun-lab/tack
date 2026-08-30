@@ -42,7 +42,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
     public void configure() {
         from("direct:example-software-team-director")
                 .routeId("example-software-team-director")
-                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Durable orchestration anchors: mission goal, authoritative active roster coverage, verified current-mission project basics, blockers, major handoffs, and last focused outcome."))
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Durable orchestration anchors: mission goal, authoritative active roster coverage, verified current-mission project basics, product-backlog presence, blockers, major handoffs, and last focused outcome."))
                 .to("tack:thought-enter?name=orchestration-root&maxTokens=500")
                 .setProperty("directorCycle", constant(0))
                 .setProperty("decision.director-mission-complete.result", constant(false))
@@ -59,13 +59,21 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                             Mission: ${exchangeProperty.mission.goal}
                             AUTHORITATIVE ACTIVE COVERAGE: ${exchangeProperty.directorActiveMissionRoster}
                             Capacity: ${exchangeProperty.directorActiveRunCount}/${exchangeProperty.agentRunCapacityMaximum} active, ${exchangeProperty.directorRemainingRunCapacity} remaining.
+
+                            Staffing policy is phase-based and must be applied when ranking focus:
+                            - PM is required whenever the unfinished mission lacks an active Project Manager. PM owns bootstrap.
+                            - Before the shared Plane/source/docs/chat foundation is usable, PM is the only additional required role.
+                            - Once the shared foundation is usable, PO becomes required immediately even when Plane has zero work items. PO is what creates/populates the product backlog; never wait for backlog before staffing PO.
+                            - Once at least one current-mission product parent/backlog item exists in Plane, Developer becomes required. Do not wait for PM-created implementation children before staffing Developer; PM can decompose while Developer comes online.
+                            - A missing role required by the current phase makes staffing genuinely actionable. Integration still outranks staffing when a real current integration candidate exists; otherwise staffing outranks guidance, completion, and wait.
+
                             Allowed focus values, in priority order when genuinely actionable:
                             - integration: an open PM-approved integration candidate may exist; route here promptly. Deep PR/lease validation belongs inside this focus.
-                            - staffing: required active main-routine coverage appears missing, foundation readiness needs staffing evaluation, or a required run may need replacement.
+                            - staffing: evaluate the explicit phase policy above against the authoritative mission roster, shared-foundation signal, and product-backlog signal; route here whenever required active coverage is missing or a required run may need replacement.
                             - guidance: a fresh coordination exchange or blocker would materially benefit from Director participation.
                             - completion: durable evidence makes mission completion plausible enough for the dedicated completion check.
                             - wait: none is presently useful; avoid ceremonial polling or duplicate activity.
-                            External artifacts never establish active AgentRun coverage; the mission roster is authoritative. Return only the focus object.
+                            External artifacts never establish active AgentRun coverage; the mission roster is authoritative. Do not invent additional staffing prerequisites from project maturity or work-item visibility. Return only the focus object.
                             """))
                     .to("tack:create?id=director-priority-focus&schemaId=director-priority-focus&schema=classpath:schemas/example/software-team/director-priority-focus-schema.json")
                     .unmarshal().json(JsonLibrary.Jackson, PriorityFocus.class)
@@ -77,7 +85,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                             .to("direct:director-integration-loop")
                             .to("tack:thought-exit?name=director-integration-focus")
                         .when(exchangeProperty("directorPriorityFocus").isEqualTo("staffing"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused staffing work: shared-foundation readiness, authoritative active roster coverage, missing required roles, and remaining mission capacity."))
+                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused staffing work: shared-foundation readiness, product-backlog presence, authoritative active roster coverage, phase-required roles, and remaining mission capacity."))
                             .to("tack:thought-enter?name=director-staffing-focus&maxTokens=350")
                             .to("direct:director-staffing-focus")
                             .to("tack:thought-exit?name=director-staffing-focus")
@@ -100,7 +108,14 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
 
         from("direct:director-orientation")
                 .routeId("director-orientation")
-                .setHeader(TackHeaders.PROMPT, constant("Read the smallest fresh current-mission slice needed to rank the Director's next focus: possible current PM INTEGRATION READY/open PR signal, project-basics signal relevant to staffing, one fresh coordination/blocker signal, and whether durable state plausibly approaches completion. Do not deeply validate a PR here. Do not infer active AgentRuns from project artifacts. Do not mutate."))
+                .setHeader(TackHeaders.PROMPT, constant("""
+                        Read the smallest fresh current-mission slice needed to rank the Director's next focus. Capture only:
+                        possible current PM INTEGRATION READY/open PR signal; whether the shared Plane/source/docs/chat foundation
+                        appears usable; whether at least one current-mission product parent/backlog item exists in Plane; one fresh
+                        coordination/blocker signal; and whether durable state plausibly approaches completion. Report observations,
+                        not a made-up staffing sequence. The staffing policy is supplied separately to the router. Do not deeply
+                        validate a PR here. Do not infer active AgentRuns from project artifacts. Do not mutate.
+                        """))
                 .to("tack:act?id=director-orientation&toolProfile=" + WorkspaceReadonlyToolProfile.ID);
 
         from("direct:director-guidance-focus")
@@ -111,15 +126,18 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:director-staffing-focus")
                 .routeId("director-staffing-focus")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Freshly verify only the shared project basics needed for staffing this mission: one current-mission Plane project,
-                        one source repository under agent-workspace, one documentation repository with usable navigation, and one accessible
-                        current-mission team-chat channel. An empty source repository is valid. Do not require not-yet-running PO/DEV roles
-                        to already be members everywhere; PM owns membership alignment. Product work, implementation children, commits,
-                        tests, PRs, and application code are not project-basics prerequisites. Do not mutate.
+                        Freshly verify only the staffing phase signals for this mission: one current-mission Plane project,
+                        one source repository under agent-workspace, one documentation repository with usable navigation, one accessible
+                        current-mission team-chat channel, and whether at least one current-mission PRODUCT PARENT/backlog item exists in Plane.
+                        An empty source repository is valid. Product backlog existence is only an existence signal; do not require implementation
+                        children, commits, tests, PRs, or application code. Do not require not-yet-running PO/DEV roles to already be members
+                        everywhere; PM owns membership alignment. Do not mutate.
                         """))
                 .to("tack:act?id=director-staffing-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
-                .setHeader(TackHeaders.PROMPT, constant("Is the shared delivery foundation usable for PO and Developer work? Return true only when Plane project, source repository, documentation/navigation, and team chat are verified and readable. An empty source repository is valid; do not require future PO/DEV membership or work/code existence."))
+                .setHeader(TackHeaders.PROMPT, constant("Is the shared delivery foundation usable for Product Owner and later Developer work? Return true only when Plane project, source repository, documentation/navigation, and team chat are verified and readable. An empty source repository is valid; do not require future PO/DEV membership or work/code existence."))
                 .to("tack:decide?id=director-foundation-ready")
+                .setHeader(TackHeaders.PROMPT, constant("Does at least one current-mission product parent/backlog item exist in Plane? Return true for any verified current product-parent work item regardless of lifecycle state. Return false when no such product item exists or the evidence is missing. Do not require implementation children."))
+                .to("tack:decide?id=director-product-backlog-exists")
                 .setHeader(TackHeaders.PROMPT, simple("""
                     Decide which AgentRuns are required now.
                     Mission: ${exchangeProperty.mission.goal}
@@ -127,8 +145,14 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                     Available routines: ${bean:routineCatalog.startableJson}
                     AUTHORITATIVE ACTIVE COVERAGE: ${exchangeProperty.directorActiveMissionRoster}
                     FOUNDATION READY: ${exchangeProperty.decision.director-foundation-ready.result}
+                    PRODUCT BACKLOG EXISTS: ${exchangeProperty.decision.director-product-backlog-exists.result}
                     Capacity: ${exchangeProperty.directorActiveRunCount}/${exchangeProperty.agentRunCapacityMaximum} active, ${exchangeProperty.directorRemainingRunCapacity} remaining.
-                    The mission roster is the only source of truth for active AgentRun coverage. Only accepted/scheduled/running main-routine AgentRuns count. If foundation is false, required active main-routine coverage is exactly PM. If foundation is true and mission unfinished, required coverage is exactly PO, PM, DEV. Never duplicate an already-active required role. Create one run per missing required role subject to remaining capacity. Return {"agentRuns":[]} when none is missing or capacity prevents another start.
+                    The mission roster is the only source of truth for active AgentRun coverage. Only accepted/scheduled/running main-routine AgentRuns count.
+                    Phase policy for an unfinished mission:
+                    - PM is always required. If foundation is false, required active coverage is PM only.
+                    - If foundation is true and product backlog does not yet exist, required active coverage is PM + PO. PO must be started even with zero work items because PO populates the product backlog.
+                    - If foundation is true and product backlog exists, required active coverage is PM + PO + DEV. Developer should be started once product backlog exists; do not wait for implementation children.
+                    Never duplicate an already-active required role. Create one run per missing required role subject to remaining capacity. Return {"agentRuns":[]} when none is missing or capacity prevents another start.
                     """))
                 .to("tack:create?id=planned-agent-runs&schemaId=agent-run-request-list&schema=classpath:schemas/example/software-team/agent-run-requests-schema.json")
                 .unmarshal().json(JsonLibrary.Jackson, MissionRequest.class)
