@@ -2,6 +2,7 @@ package us.nusun.llmshare.example.routine;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import org.apache.camel.builder.RouteBuilder;
+import org.apache.camel.model.dataformat.JsonLibrary;
 import us.nusun.llmshare.example.tool.ProjectManagementToolProfile;
 import us.nusun.llmshare.example.tool.SourceControlToolProfile;
 import us.nusun.llmshare.example.tool.SourceControlWriteToolProfile;
@@ -41,25 +42,153 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .to("direct:pm-project-manager-root-enter")
                 .setProperty("decision.project-manager-mission-complete.result", constant(false))
                 .loopDoWhile(exchangeProperty("decision.project-manager-mission-complete.result").isNotEqualTo(true))
-                    .to("direct:pm-project-basics-check")
+                    .to("direct:pm-orientation")
+                    .setHeader(TackHeaders.PROMPT, constant("""
+                            Choose exactly one highest-priority Project Manager focus for the next focused pass.
+
+                            Allowed focus values, in priority order when genuinely actionable:
+                            - bootstrap: any shared Plane/source/docs/chat foundation basic is missing or unusable.
+                            - active-delivery: a current review, integration disposition, merged-PR closure, topology finding,
+                              blocker, dependency promotion/repair, cancelled coverage, product-question return, or completed-parent
+                              handoff can be acted on now. Prefer this promptly for REVIEW READY or post-merge work so integration
+                              latency stays low.
+                            - planning: usable product work exists and the assigned executable Developer Todo backlog is too shallow,
+                              incomplete, or needs topology/remediation planning. Build a modest backlog without inventing work.
+                            - onboarding: the shared foundation exists but current mission roster membership needs alignment.
+                            - coordination: a fresh team exchange needs Project Manager participation.
+                            - documentation: a concrete durable navigation/status curation need exists; daily work state belongs in Plane.
+                            - completion: durable evidence makes mission completion plausible enough for the dedicated completion check.
+                            - wait: no focus above is currently useful; do not create ceremonial activity.
+
+                            Pick one focus only. Preserve current delivery ownership and handoff semantics. Return only the focus object.
+                            """))
+                    .to("tack:create?id=pm-priority-focus&schemaId=project-manager-priority-focus&schema=classpath:schemas/example/software-team/project-manager-priority-focus-schema.json")
+                    .unmarshal().json(JsonLibrary.Jackson, PriorityFocus.class)
+                    .process(exchange -> exchange.setProperty("pmPriorityFocus", exchange.getMessage().getBody(PriorityFocus.class).focus()))
                     .choice()
-                        .when(exchangeProperty("decision.collaboration-setup-complete.result").isNotEqualTo(true))
-                            .to("direct:pm-project-bootstrap")
-                    .end()
-                    .choice()
-                        .when(exchangeProperty("decision.collaboration-setup-complete.result").isEqualTo(true))
-                            .to("direct:pm-coordination-loop")
-                    .end()
-                    .setHeader(TackHeaders.PROMPT, constant("Review current mission completion once using minimal authoritative evidence. One unfinished parent, child, current unresolved blocker, review, merge, product question, topology finding, or acceptance follow-up means incomplete. Superseded historical handoff comments are not current blockers. Do not mutate."))
-                    .to("tack:act?id=pm-mission-status-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
-                    .setHeader(TackHeaders.PROMPT, constant("Is the mission complete from Project Management's perspective? Return true only when all required product parents are Done and no current unresolved delivery, blocker, PRODUCT QUESTION, review, integration, assignment, topology investigation/finding, or acceptance follow-up remains. Ignore historical handoffs superseded by newer disposition evidence."))
-                    .to("tack:decide?id=project-manager-mission-complete")
-                    .filter(exchangeProperty("decision.project-manager-mission-complete.result").isNotEqualTo(true))
-                        .delay(120000)
+                        .when(exchangeProperty("pmPriorityFocus").isEqualTo("bootstrap"))
+                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused workspace bootstrap until shared collaboration basics are usable or no further bootstrap progress is possible."))
+                            .to("tack:thought-enter?name=pm-bootstrap-focus&maxTokens=350")
+                            .to("direct:pm-project-basics-check")
+                            .choice()
+                                .when(exchangeProperty("decision.collaboration-setup-complete.result").isNotEqualTo(true))
+                                    .to("direct:pm-project-bootstrap")
+                            .end()
+                            .to("tack:thought-exit?name=pm-bootstrap-focus")
+                        .when(exchangeProperty("pmPriorityFocus").isEqualTo("active-delivery"))
+                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused delivery supervision: stay on current review/integration/blocker/topology/promotion work while it continues producing useful dispositions."))
+                            .to("tack:thought-enter?name=pm-active-delivery-focus&maxTokens=400")
+                            .to("direct:pm-active-delivery-focus")
+                            .to("tack:thought-exit?name=pm-active-delivery-focus")
+                        .when(exchangeProperty("pmPriorityFocus").isEqualTo("planning"))
+                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused delivery planning: decompose product work one implementation child at a time until a modest executable Developer backlog exists or planning can no longer progress."))
+                            .to("tack:thought-enter?name=pm-planning-focus&maxTokens=400")
+                            .to("direct:pm-planning-focus")
+                            .to("tack:thought-exit?name=pm-planning-focus")
+                        .when(exchangeProperty("pmPriorityFocus").isEqualTo("onboarding"))
+                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused current-roster membership alignment after the shared foundation exists."))
+                            .to("tack:thought-enter?name=pm-onboarding-focus&maxTokens=250")
+                            .to("direct:pm-team-onboarding")
+                            .to("tack:thought-exit?name=pm-onboarding-focus")
+                        .when(exchangeProperty("pmPriorityFocus").isEqualTo("coordination"))
+                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused Project Manager team coordination for one fresh actionable exchange."))
+                            .to("tack:thought-enter?name=pm-coordination-focus&maxTokens=250")
+                            .to("direct:pm-team-sync")
+                            .to("tack:thought-exit?name=pm-coordination-focus")
+                        .when(exchangeProperty("pmPriorityFocus").isEqualTo("documentation"))
+                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused durable workspace/navigation curation; current work state remains in Plane."))
+                            .to("tack:thought-enter?name=pm-documentation-focus&maxTokens=250")
+                            .to("direct:pm-documentation-status-sync")
+                            .to("tack:thought-exit?name=pm-documentation-focus")
+                        .when(exchangeProperty("pmPriorityFocus").isEqualTo("completion"))
+                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused Project Manager mission completion evaluation using minimal authoritative evidence."))
+                            .to("tack:thought-enter?name=pm-completion-focus&maxTokens=300")
+                            .to("direct:pm-completion-focus")
+                            .to("tack:thought-exit?name=pm-completion-focus")
+                            .filter(exchangeProperty("decision.project-manager-mission-complete.result").isNotEqualTo(true))
+                                .delay(120000)
+                            .end()
+                        .otherwise()
+                            .delay(120000)
                     .end()
                 .end()
                 .end()
                 .to("direct:pm-project-manager-root-exit");
+
+        from("direct:pm-orientation")
+                .routeId("pm-orientation")
+                .setHeader(TackHeaders.PROMPT, constant("""
+                        Read the smallest fresh current-mission slice needed to rank Project Management's next focus.
+                        Determine only: whether shared project basics are usable; whether one high-value active delivery/review/
+                        integration/blocker/topology/promotion item is actionable now; whether usable product parents exist and the
+                        assigned executable Developer Todo backlog appears shallow; whether roster membership needs alignment; whether
+                        one fresh coordination exchange needs PM attention; whether durable documentation/navigation has an obvious
+                        concrete gap; and whether mission completion is plausible. Do not mutate. Do not deeply solve any selected
+                        focus here. Stop when routing signals are clear.
+                        """))
+                .to("tack:act?id=pm-orientation&toolProfile=" + WorkspaceReadonlyToolProfile.ID);
+
+        from("direct:pm-active-delivery-focus")
+                .routeId("pm-active-delivery-focus")
+                .setProperty("pmFocusedDeliveryIterations", constant(0))
+                .setProperty("pmFocusedDeliveryContinue", constant(true))
+                .loopDoWhile(simple("${exchangeProperty.pmFocusedDeliveryContinue} == true && ${exchangeProperty.pmFocusedDeliveryIterations} < 6"))
+                    .setProperty("pmFocusedDeliveryIterations", simple("${exchangeProperty.pmFocusedDeliveryIterations++}"))
+                    .setProperty("pmFocusedDeliveryContinue", constant(false))
+                    .to("direct:pm-active-delivery-check")
+                    .choice()
+                        .when(exchangeProperty("act.pm-active-delivery-update.durableProgress").isEqualTo(true))
+                            .setProperty("pmFocusedDeliveryContinue", constant(true))
+                    .end()
+                .end();
+
+        from("direct:pm-planning-focus")
+                .routeId("pm-planning-focus")
+                .setProperty("pmFocusedPlanningIterations", constant(0))
+                .setProperty("pmFocusedPlanningContinue", constant(true))
+                .setProperty("decision.pm-dev-backlog-deep-enough.result", constant(false))
+                .loopDoWhile(simple("${exchangeProperty.pmFocusedPlanningContinue} == true && ${exchangeProperty.pmFocusedPlanningIterations} < 5"))
+                    .setProperty("pmFocusedPlanningIterations", simple("${exchangeProperty.pmFocusedPlanningIterations++}"))
+                    .setProperty("pmFocusedPlanningContinue", constant(false))
+                    .to("direct:pm-work-intake")
+                    .choice()
+                        .when(exchangeProperty("decision.pm-has-product-for-delivery.result").isEqualTo(true))
+                            .to("direct:pm-task-planning-loop")
+                            .choice()
+                                .when(exchangeProperty("pmTaskPlanningMadeProgress").isEqualTo(true))
+                                    .setProperty("pmFocusedPlanningContinue", constant(true))
+                            .end()
+                    .end()
+                    .to("direct:pm-dev-backlog-depth-check")
+                    .choice()
+                        .when(exchangeProperty("decision.pm-dev-backlog-deep-enough.result").isEqualTo(true))
+                            .setProperty("pmFocusedPlanningContinue", constant(false))
+                    .end()
+                .end();
+
+        from("direct:pm-dev-backlog-depth-check")
+                .routeId("pm-dev-backlog-depth-check")
+                .setHeader(TackHeaders.PROMPT, constant("""
+                        Read only the current assigned executable Developer implementation backlog in Plane. Count Todo children
+                        that are assigned, dependency-satisfied, non-cancelled, and sufficiently actionable from their current
+                        description/acceptance linkage. Also note whether additional usable product parents are already available
+                        for safe decomposition. Do not mutate and do not inspect source code.
+                        """))
+                .to("tack:act?id=pm-dev-backlog-depth-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
+                .setHeader(TackHeaders.PROMPT, constant("""
+                        Is the executable assigned Developer backlog deep enough for focused delivery without encouraging speculative
+                        over-planning? Return true when there are several successive actionable Todo implementation units ready,
+                        normally about 3-5, or when current product/dependency constraints make further safe planning inappropriate.
+                        Return false when useful product work is available but the executable Todo queue is still too shallow.
+                        """))
+                .to("tack:decide?id=pm-dev-backlog-deep-enough");
+
+        from("direct:pm-completion-focus")
+                .routeId("pm-completion-focus")
+                .setHeader(TackHeaders.PROMPT, constant("Review current mission completion once using minimal authoritative evidence. One unfinished parent, child, current unresolved blocker, review, merge, product question, topology finding, or acceptance follow-up means incomplete. Superseded historical handoff comments are not current blockers. Do not mutate."))
+                .to("tack:act?id=pm-mission-status-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
+                .setHeader(TackHeaders.PROMPT, constant("Is the mission complete from Project Management's perspective? Return true only when all required product parents are Done and no current unresolved delivery, blocker, PRODUCT QUESTION, review, integration, assignment, topology investigation/finding, or acceptance follow-up remains. Ignore historical handoffs superseded by newer disposition evidence."))
+                .to("tack:decide?id=project-manager-mission-complete");
 
         from("direct:example-software-team-project-manager-bootstrap")
                 .routeId("example-software-team-project-manager-bootstrap")
