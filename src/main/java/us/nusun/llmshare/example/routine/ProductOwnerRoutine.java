@@ -18,20 +18,17 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
     public static final String ID = "software-team/product-owner";
 
     @Override
-    public List<RoutineDefinition> routines() {
-        return List.of(routine());
-    }
+    public List<RoutineDefinition> routines() { return List.of(routine()); }
 
     public RoutineDefinition routine() {
         return RoutineDefinition.builder(ID)
                 .name("Product Owner")
                 .main("""
-                        Own product definition and acceptance for the whole mission through completion. Decompose mission
-                        outcomes into prioritized small user-facing product slices, maintain their canonical Gherkin acceptance,
-                        answer explicit product questions returned by delivery, move delivery-ready product slices from Backlog
-                        to Todo, and accept completed In Progress product outcomes only when durable evidence satisfies their
-                        current acceptance contract. Product slices describe user outcomes; implementation decomposition belongs
-                        to the Project Manager.
+                        Own product definition and acceptance for the whole mission through completion. Stay ahead of Project
+                        Management with a modest queue of prioritized, acceptance-ready user-facing product slices, answer explicit
+                        product questions returned by delivery, move delivery-ready product slices from Backlog to Todo, and accept
+                        completed In Progress product outcomes only when durable evidence satisfies their current acceptance contract.
+                        Product slices describe user outcomes; implementation decomposition belongs to the Project Manager.
                         """, "direct:example-software-team-product-owner")
                 .subroutine("acceptance-refinement", "Refine one Backlog product slice or answer one returned product question with clear scope and testable Gherkin acceptance.", "direct:example-software-team-product-owner-acceptance-refinement")
                 .subroutine("priority-handoff", "Move one ready product slice Backlog -> Todo, answer one returned product question, or accept/reject one completed In Progress product outcome.", "direct:example-software-team-product-owner-priority-handoff")
@@ -49,14 +46,15 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                     .to("direct:po-orientation")
                     .setHeader(TackHeaders.PROMPT, constant("""
                             Choose exactly one highest-priority Product Owner focus for the next focused pass.
+                            Operating model: PO should normally stay ahead of PM with several ready product slices, typically about 3-5 when the remaining mission safely supports that depth. An In Progress product slice does NOT prevent defining independent future slices.
                             Allowed focus values, in priority order when genuinely actionable:
                             - missing-basics: the shared Plane/source/docs/chat foundation is not usable for product work.
-                            - product-work: there is an unresolved PRODUCT QUESTION, a current product acceptance candidate, a Backlog product slice needing definition/handoff, an unrepresented required user-facing outcome, or the delivery-ready Todo product backlog is too shallow. Stay in product work long enough to build a modest useful backlog, one product slice per act, without inventing speculative scope.
-                            - coordination: a fresh team conversation needs Product Owner judgment or clarification.
+                            - product-work: there is an unresolved PRODUCT QUESTION, a completed product acceptance candidate, a Backlog product slice needing definition/handoff, an unrepresented required user-facing outcome, or the delivery-ready Todo product backlog is below the useful buffer. Stay in product work long enough to build that buffer, one product slice per act.
+                            - coordination: there is a useful product message to initiate, or a fresh team conversation needs Product Owner judgment/clarification.
                             - closeout: a concrete product documentation/chat curation follow-up is useful after durable product work.
                             - completion: durable evidence makes mission completion plausible enough for the dedicated completion check.
-                            - wait: none of the above is useful now; avoid generic status or repeated no-op traversal.
-                            Plane real states remain authoritative lifecycle state. Preserve current PRODUCT QUESTION/HANDOFF and acceptance-lease behavior on this branch. Return only the focus object.
+                            - wait: none of the above is useful now. A shallow product backlog while safely definable mission scope remains is actionable product work, not a reason to wait.
+                            Plane real states are authoritative lifecycle state. Comments provide evidence/context only and must not become named workflow states or approval leases. Fresh orientation evidence outranks older HOLD/wait conclusions. Return only the focus object.
                             """))
                     .to("tack:create?id=po-priority-focus&schemaId=product-owner-priority-focus&schema=classpath:schemas/example/software-team/product-owner-priority-focus-schema.json")
                     .unmarshal().json(JsonLibrary.Jackson, PriorityFocus.class)
@@ -68,12 +66,12 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                             .to("direct:po-missing-basics-closeout")
                             .to("tack:thought-exit?name=po-missing-basics-focus")
                         .when(exchangeProperty("poPriorityFocus").isEqualTo("product-work"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused product work: resolve high-priority product returns/acceptance, then define and hand off product slices one at a time until a modest delivery-ready backlog exists or no useful product work remains."))
+                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused product work: resolve current product questions/acceptance, then define and hand off one product slice per act until several delivery-ready product slices are queued or no additional safe product work remains."))
                             .to("tack:thought-enter?name=po-product-work-focus&maxTokens=400")
                             .to("direct:po-product-work-focus")
                             .to("tack:thought-exit?name=po-product-work-focus")
                         .when(exchangeProperty("poPriorityFocus").isEqualTo("coordination"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused Product Owner coordination for one fresh scope, acceptance, or product-judgment exchange."))
+                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused Product Owner coordination for one useful initiated handoff/question or one fresh scope, acceptance, or product-judgment exchange."))
                             .to("tack:thought-enter?name=po-coordination-focus&maxTokens=250")
                             .to("direct:po-team-chat-sync")
                             .to("tack:thought-exit?name=po-coordination-focus")
@@ -97,12 +95,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         from("direct:po-orientation")
                 .routeId("po-orientation")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Read the smallest fresh current-mission slice needed to rank the Product Owner's next focus. Determine
-                        only: whether shared project basics are usable; whether there is an unresolved PRODUCT QUESTION, current
-                        acceptance candidate, Backlog slice needing definition, or genuinely unrepresented user outcome; whether
-                        the delivery-ready Todo product backlog appears shallow; whether one fresh team exchange needs product
-                        judgment; whether one concrete closeout curation need exists; and whether mission completion is plausible.
-                        Do not mutate and do not perform the selected product work here. Stop when routing signals are clear.
+                        Read the smallest fresh current-mission slice needed to rank Product Owner focus. Determine only: whether shared basics are usable; whether there is an unresolved PRODUCT QUESTION; whether an In Progress product parent now has all required implementation children terminal with durable completion evidence; whether Backlog slices need definition; whether genuinely unrepresented user-facing outcomes remain; delivery-ready Todo product-parent depth; one useful message worth initiating or fresh team exchange needing product judgment; one concrete closeout need; and completion plausibility. Prefer verified project/docs ids already in thought rather than rediscovering workspaces. Report observations only. Do not recommend a next focus, preserve an older HOLD conclusion against newer evidence, mutate, or perform selected product work here.
                         """))
                 .to("tack:act?id=po-orientation&toolProfile=" + WorkspaceReadonlyToolProfile.ID);
 
@@ -138,35 +131,19 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         from("direct:po-product-backlog-depth-check")
                 .routeId("po-product-backlog-depth-check")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Read only the current product-parent backlog in Plane. Count delivery-ready Todo product slices with usable
-                        canonical acceptance, and note whether unresolved PRODUCT QUESTION or current acceptance-candidate work remains.
-                        Do not mutate or inspect implementation details.
+                        Read only current product-parent queue depth in Plane. Count delivery-ready Todo product slices with usable canonical acceptance. Note unresolved PRODUCT QUESTION or completed In Progress acceptance work, and whether additional distinct required user-facing mission outcomes can still be safely represented. Existing In Progress product work does not reduce desired ready-buffer depth. Do not mutate or inspect implementation details.
                         """))
                 .to("tack:act?id=po-product-backlog-depth-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Is the product backlog deep enough for Project Management to maintain useful delivery planning without
-                        speculative product invention? Return false whenever a current PRODUCT QUESTION or acceptance candidate still
-                        requires Product Owner work. Otherwise return true when several usable Todo product slices are ready, normally
-                        about 3-5, or when the mission has no additional safely definable user-facing slice right now.
+                        Is PO sufficiently ahead of Project Management? Return false whenever a current product question or completed acceptance candidate requires PO action. Otherwise normally require about 3-5 usable Todo product slices when enough safely definable mission scope remains. Return false when the queue is shallower and another distinct required user-facing outcome can be defined without speculation, even when existing product parents are already In Progress. Return true with a shallower queue only when remaining mission size or missing product evidence makes further safe definition inappropriate.
                         """))
                 .to("tack:decide?id=po-product-backlog-deep-enough");
 
         from("direct:po-completion-focus")
                 .routeId("po-completion-focus")
-                .setHeader(TackHeaders.PROMPT, constant("""
-                        Review current mission completion status once using the smallest authoritative read.
-                        One verified unfinished user-facing outcome or unresolved PRODUCT QUESTION is enough to
-                        conclude not complete. Plane state is authoritative. Historical handoffs superseded by newer
-                        disposition evidence are not current work. Do not mutate anything in this check.
-                        """))
+                .setHeader(TackHeaders.PROMPT, constant("Review mission completion once using the smallest authoritative read and known ids. One verified unfinished user-facing outcome or unresolved product question is enough to conclude not complete. Plane real state is authoritative; comments are evidence/context only. Do not mutate."))
                 .to("tack:act?id=po-mission-status-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
-                .setHeader(TackHeaders.PROMPT, constant("""
-                        Is the entire mission complete from the product-ownership perspective?
-                        Return true only when every required user-facing outcome is represented and accepted Done
-                        against its current intended acceptance criteria, with no unresolved PRODUCT QUESTION,
-                        product decision, stale acceptance lease, or acceptance follow-up. Todo or In Progress
-                        product work means the mission is not complete.
-                        """))
+                .setHeader(TackHeaders.PROMPT, constant("Is the entire mission complete from product ownership? Return true only when every required user-facing outcome is represented and Done against its current intended acceptance criteria with no unresolved product question/decision or acceptance follow-up. Todo or In Progress product work means not complete."))
                 .to("tack:decide?id=product-owner-mission-complete");
 
         from("direct:example-software-team-product-owner-acceptance-refinement")
@@ -206,11 +183,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
 
         from("direct:po-product-owner-root-enter")
                 .routeId("po-product-owner-root-enter")
-                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Durable product anchors: canonical product backlog, selected product slice and Plane state,
-                        returned product questions, acceptance-lease ordering, product documentation, current-work page,
-                        project-management workspace, and source repository.
-                        """))
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Durable product anchors: verified project/docs/chat ids, product queue depth, selected product parent/Plane state, returned product questions, canonical acceptance, child completion evidence for acceptance, and source repository."))
                 .to("tack:thought-enter?name=product-owner-routine&maxTokens=500");
 
         from("direct:po-product-owner-root-exit")
@@ -220,23 +193,14 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         from("direct:po-project-basics-check")
                 .routeId("po-project-basics-check")
                 .setProperty("decision.product-owner-has-project-basics.result", constant(false))
-                .setHeader(TackHeaders.PROMPT, constant("""
-                        Verify product project basics once without mutation. Product work requires a usable Plane
-                        workspace, source repository under agent-workspace, documentation repository/navigation,
-                        and team chat. One confirmed missing required basic is enough to stop. Do not repeatedly
-                        reread the workspace or begin product work when basics are missing.
-                        """))
+                .setHeader(TackHeaders.PROMPT, constant("Verify product project basics once without mutation. Product work requires usable Plane, source repo, docs/navigation, and team chat. Prefer known verified ids from thought. One confirmed missing required basic is enough to stop. Do not repeatedly rediscover the workspace."))
                 .to("tack:act?id=po-workspace-basics-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("Are project basics present and linked enough to do product work?"))
                 .to("tack:decide?id=product-owner-has-project-basics");
 
         from("direct:po-missing-basics-closeout")
                 .routeId("po-missing-basics-closeout")
-                .setHeader(TackHeaders.PROMPT, constant("""
-                        Project basics are not usable for product work. Read recent team chat only if needed.
-                        Reply once to a relevant setup conversation when useful; otherwise stay quiet. Do not create
-                        product work until the shared workspace is usable.
-                        """))
+                .setHeader(TackHeaders.PROMPT, constant("Project basics are not usable for product work. Initiate or reply to one concise setup question only when it would help PM repair a concrete missing basic sooner; otherwise stay quiet. Do not create product work until shared workspace is usable."))
                 .to("tack:act?id=po-missing-basics-closeout&toolProfile=" + TeamChatToolProfile.ID);
 
         from("direct:po-product-cycle")
@@ -247,7 +211,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .loopDoWhile(simple("${exchangeProperty.poMadeProgress} == true && ${exchangeProperty.poProductiveIterations} < 6"))
                     .setProperty("poProductiveIterations", simple("${exchangeProperty.poProductiveIterations++}"))
                     .setProperty("poMadeProgress", constant(false))
-                    .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Current product work unit: one freshly selected product slice, its real Plane state, product scope/Gherkin, returned product question, current acceptance lease, delivery or acceptance handoff, and the next distinct product outcome when more work remains."))
+                    .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Current product work unit: one selected product parent, real Plane state, user scope/Gherkin, returned product question or completion evidence, and next distinct user outcome when queue depth remains shallow."))
                     .to("tack:thought-enter?name=po-cycle&maxTokens=300")
                     .to("direct:po-select-product-work")
                     .choice()
@@ -264,103 +228,42 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         from("direct:po-team-chat-sync")
                 .routeId("po-team-chat-sync")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Read recent project chat and join real product conversations. Answer direct scope or
-                        acceptance questions, or ask one named question that materially improves product definition.
-                        Avoid generic status. If no relevant conversation is evident, make no post.
+                        Read only recent project chat needed for one useful product exchange. Do not require an existing conversation before posting. Initiate one concise message when a newly ready product slice, clarified product question, acceptance result, or named product decision would help PM/Developer act sooner; otherwise answer one fresh scope/acceptance question. Link the authoritative product parent/canonical acceptance when useful. Avoid generic status.
                         """))
                 .to("tack:act?id=po-team-chat-sync&toolProfile=" + TeamChatToolProfile.ID);
 
         from("direct:po-select-product-work")
                 .routeId("po-select-product-work")
                 .setProperty("decision.product-owner-has-work.result", constant(false))
-                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Product selection: one product parent only, never an implementation child. Prefer an explicit returned
-                        product question, then a current acceptance lease, then one Backlog user outcome needing refinement, then
-                        create a missing product outcome only when the mission has an unrepresented user-facing outcome.
-                        """))
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Product selection: one product parent only, never an implementation child. Prefer unresolved product judgment, then completed acceptance candidate, then Backlog definition, then create one missing distinct required user outcome when ready-buffer depth is shallow."))
                 .to("tack:thought-enter?name=po-selection&maxTokens=250")
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Using fresh Plane evidence, select exactly one PRODUCT PARENT, never an implementation child.
 
-                        First prefer a Todo or In Progress product parent with an unresolved PRODUCT QUESTION from
-                        Project Management. A PRODUCT QUESTION is unresolved only when it is newer than the latest
-                        Product Owner PRODUCT HANDOFF that explicitly resolves that question. This is the authoritative
-                        delivery -> Product Owner return edge for unusable acceptance, product ambiguity, or a product-owned
-                        blocker discovered during implementation.
+                        First prefer a Todo/In Progress product parent with an unresolved product-owned question from delivery. Treat the question content and later clarifying evidence as context; comments are not hidden workflow state.
 
-                        Otherwise prefer an In Progress product parent only when its PM PRODUCT ACCEPTANCE READY is a
-                        CURRENT LEASE over the current product contract. Current means that READY is newer than every
-                        PRODUCT ACCEPTANCE FEEDBACK, PRODUCT QUESTION, and PRODUCT HANDOFF on that parent. Any newer
-                        product question or Product Owner handoff invalidates an older READY even when the question has
-                        since been resolved; delivery must publish a fresh READY against the clarified contract.
+                        Otherwise prefer an In Progress product parent for acceptance when all required implementation children are Done (or explicitly Cancelled as superseded/non-required with replacement coverage), no active topology investigation affects it, and durable current completion/validation evidence exists for the acceptance criteria. Do not require a magic PM PRODUCT ACCEPTANCE READY phrase.
 
-                        Before accepting, also verify every implementation child under the product parent has a terminal
-                        delivery disposition: Done, or Cancelled with explicit evidence that it is superseded/non-required
-                        and contributes no required acceptance coverage. Do not accept while any required Todo/In Progress
-                        child remains, while any Todo/In Progress TOPOLOGY INVESTIGATION affects this product, or while a
-                        current TECHNICAL FINDING affecting this product lacks a later PM TOPOLOGY_APPLIED disposition.
-                        Cancelled implementation children provide zero delivery coverage and must have superseding required
-                        Done coverage unless the corresponding product scope itself was explicitly cancelled.
+                        Otherwise select one Backlog product slice needing definition. If no suitable Backlog slice exists, the delivery-ready Todo product queue is below the normal useful buffer, and a distinct required mission user outcome is genuinely unrepresented, create exactly one Backlog product parent now. Existing In Progress product work does not block defining independent future product slices.
 
-                        Otherwise select one Backlog product slice needing product definition. If no suitable Backlog
-                        slice exists and a required mission user outcome is genuinely unrepresented, create one Backlog
-                        product parent.
-
-                        Product parents describe observable user value and acceptance. They are not developer tasks.
-                        Do not create implementation children, assign developers, or describe code patches. A Todo or
-                        In Progress parent is Product Owner actionable only for a current PRODUCT QUESTION or a current
-                        PRODUCT ACCEPTANCE READY lease. Stickiness never justifies inventing additional product scope.
+                        Product parents describe observable user value/acceptance, never code patches. Do not create implementation children or assign developers.
                         """))
                 .to("tack:act?id=po-backlog-review&toolProfile=" + ProjectManagementToolProfile.ID)
-                .setHeader(TackHeaders.PROMPT, constant("""
-                        Is exactly one current product parent selected for useful Product Owner work now?
-                        Return true for a Todo/In Progress parent with an unresolved PRODUCT QUESTION, a Backlog parent
-                        needing definition/handoff, or an In Progress parent with a CURRENT PRODUCT ACCEPTANCE READY lease
-                        newer than every PRODUCT ACCEPTANCE FEEDBACK, PRODUCT QUESTION, and PRODUCT HANDOFF, with every child
-                        terminally dispositioned and no unresolved topology evidence. Return false otherwise.
-                        """))
+                .setHeader(TackHeaders.PROMPT, constant("Is exactly one current product parent selected for useful PO work now: unresolved product judgment, Backlog definition/handoff, completed In Progress acceptance candidate based on real child states/evidence, or a newly created missing product outcome? Return false otherwise."))
                 .to("tack:decide?id=product-owner-has-work")
                 .choice()
                     .when(exchangeProperty("decision.product-owner-has-work.result").isEqualTo(true))
-                        .setHeader(TackHeaders.PROMPT, constant("""
-                                Read only the selected product page, current-work navigation, direct completion evidence,
-                                child terminal dispositions, and the selected parent's current PRODUCT QUESTION / PRODUCT HANDOFF /
-                                PRODUCT ACCEPTANCE READY / PRODUCT ACCEPTANCE FEEDBACK / TECHNICAL FINDING / TOPOLOGY_APPLIED ordering.
-                                Use Plane for handoff ordering and Gitea for canonical product/delivery evidence. Do not read
-                                the whole documentation repository.
-                                """))
+                        .setHeader(TackHeaders.PROMPT, constant("Read only the selected canonical product page, direct Plane parent/child states, current product-question context when relevant, and direct durable completion evidence needed for acceptance. Prefer known ids. Do not scan the whole documentation repository or depend on named workflow comments."))
                         .to("tack:act?id=po-product-context-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .end()
                 .to("tack:thought-exit?name=po-selection");
 
         from("direct:po-acceptance-work")
                 .routeId("po-acceptance-work")
-                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Selected product parent: user value, in/out scope, existing Gherkin, current PRODUCT QUESTION when
-                        present, Plane state, current acceptance lease, child terminal dispositions, completion evidence when
-                        acceptance is requested, and one exact unmet outcome when acceptance fails.
-                        """))
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Selected product parent: user value, scope/Gherkin, current product question when present, Plane state, child terminal dispositions, direct completion evidence when acceptance is requested, and one exact unmet outcome when acceptance fails."))
                 .to("tack:thought-enter?name=po-acceptance&maxTokens=250")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Curate or evaluate exactly one compact canonical product page for the selected product parent.
-
-                        For an unresolved PRODUCT QUESTION, answer exactly the returned product question using the mission
-                        and current canonical product intent. Repair an unreadable or malformed acceptance page when needed,
-                        or clarify ambiguous scope/Gherkin when product judgment is genuinely required. Preserve established
-                        product intent and do not invent technical decomposition. The answer must leave a usable canonical
-                        acceptance reference for delivery.
-
-                        For Backlog product work, define one coherent user-facing outcome with value, scope boundaries,
-                        and compact observable Given/When/Then acceptance. Keep technical decomposition out of this page.
-
-                        For an In Progress product parent awaiting acceptance, proceed only when the current PM
-                        PRODUCT ACCEPTANCE READY is newer than every PRODUCT ACCEPTANCE FEEDBACK, PRODUCT QUESTION, and
-                        PRODUCT HANDOFF on the parent. Verify every implementation child is Done or explicitly Cancelled as
-                        superseded/non-required, no active TOPOLOGY INVESTIGATION affects this product, and every current
-                        TECHNICAL FINDING has a later PM TOPOLOGY_APPLIED disposition. Preserve the current scope and Gherkin.
-                        Evaluate only durable completion evidence supplied by delivery. Record which existing scenarios are
-                        satisfied or one exact unmet scenario. Never rewrite acceptance criteria to fit implementation.
-                        If required evidence is missing, record the gap and stop rather than searching for substitute evidence.
+                        Curate or evaluate exactly one compact canonical product page for the selected product parent. For unresolved product judgment, answer exactly the returned question using mission and current product intent, leaving usable canonical acceptance. For Backlog work, define one coherent user-facing outcome with scope boundaries and compact observable Given/When/Then acceptance; keep technical decomposition out. For an In Progress acceptance candidate, require real child states and durable completion/validation evidence, not a named PM approval comment. Preserve current scope/Gherkin, evaluate only existing acceptance, and never rewrite criteria to fit implementation. If evidence is missing, record the exact gap and stop.
                         """))
                 .to("tack:act?id=po-canonical-acceptance-update&toolProfile=" + SourceControlWriteToolProfile.ID)
                 .to("tack:thought-exit?name=po-acceptance");
@@ -368,34 +271,13 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         from("direct:po-plane-state-handoff")
                 .routeId("po-plane-state-handoff")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Update only the selected PRODUCT PARENT using Plane's real states:
-                        Backlog, Todo, In Progress, Done, Cancelled.
+                        Update only the selected PRODUCT PARENT using Plane real states: Backlog, Todo, In Progress, Done, Cancelled. Comments are concise evidence/context, never named workflow states.
 
-                        For an answered PRODUCT QUESTION on a Todo or In Progress product parent, keep the parent's
-                        current delivery state unchanged and add one newer PRODUCT HANDOFF comment that explicitly
-                        references/resolves the latest PRODUCT QUESTION, links the usable canonical acceptance page,
-                        and states the clarified product outcome. That newer handoff invalidates every older PRODUCT
-                        ACCEPTANCE READY and is the authoritative Product Owner -> Project Management return edge.
-                        Do not create implementation work yourself.
+                        For answered product questions on Todo/In Progress parents, keep current lifecycle state unchanged and add concise context linking the clarified canonical acceptance when useful. Do not require PM to discover readiness from a magic comment.
 
-                        For a Backlog product slice whose user scope and Gherkin acceptance are usable, move it
-                        Backlog -> Todo. This state transition is the authoritative initial handoff to Project Management.
-                        Add one concise PRODUCT HANDOFF comment with the canonical acceptance page, priority, open
-                        product questions if any, and requested delivery outcome. PM must not need the comment to
-                        discover initial Todo eligibility; Todo is authoritative.
+                        For a Backlog product slice whose user scope/Gherkin are usable, move Backlog -> Todo. That state transition is the authoritative initial handoff to PM. Add only concise context/links when useful.
 
-                        For an In Progress product parent awaiting acceptance, move it In Progress -> Done only when the
-                        current PM PRODUCT ACCEPTANCE READY is newer than every PRODUCT ACCEPTANCE FEEDBACK, PRODUCT QUESTION,
-                        and PRODUCT HANDOFF, every required Gherkin scenario has durable Done coverage, every child is Done
-                        or explicitly Cancelled as superseded/non-required, no active topology investigation affects the
-                        product, and every current TECHNICAL FINDING has a later PM TOPOLOGY_APPLIED disposition. If acceptance
-                        fails, keep it In Progress and add or refresh one PRODUCT ACCEPTANCE FEEDBACK naming the exact unmet
-                        existing scenario or lease/disposition gap. That feedback immediately invalidates the READY that
-                        triggered this acceptance pass. Do not move rejected work back to Backlog or Todo.
-
-                        Cancelled implementation children never count as delivered acceptance coverage. Accept a parent
-                        with historical Cancelled children only when every required behavior has superseding durable Done
-                        coverage or the corresponding product scope itself was explicitly cancelled.
+                        For an In Progress product parent, move In Progress -> Done only when every required acceptance scenario has durable Done implementation coverage/evidence, every required child is Done or explicitly Cancelled as superseded/non-required with replacement coverage, and no unresolved topology/product question remains. If acceptance fails, keep In Progress and leave concise evidence naming the exact unmet existing scenario/gap. Do not manufacture PRODUCT ACCEPTANCE READY/FEEDBACK/HANDOFF state machines in comments.
 
                         Do not change implementation-child states, assign developers, or create delivery tasks.
                         """))
@@ -403,15 +285,9 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
 
         from("direct:po-cycle-closeout")
                 .routeId("po-cycle-closeout")
-                .setHeader(TackHeaders.PROMPT, constant("""
-                        Continue a useful product conversation only when a teammate needs product judgment.
-                        Otherwise stay quiet. Link the product parent or canonical acceptance page when useful.
-                        """))
+                .setHeader(TackHeaders.PROMPT, constant("Initiate or continue one useful product conversation when a newly ready slice, product clarification, acceptance result, or teammate question would help someone act sooner. Do not require an existing thread. Otherwise stay quiet. Link authoritative product evidence when useful."))
                 .to("tack:act?id=po-team-chat-closeout&toolProfile=" + TeamChatToolProfile.ID)
-                .setHeader(TackHeaders.PROMPT, constant("""
-                        Make one small product-documentation curation improvement only when obvious from current
-                        evidence. Preserve navigation and durable decisions; leave work tracking in Plane.
-                        """))
+                .setHeader(TackHeaders.PROMPT, constant("Make one small product-documentation curation improvement only when obvious from current evidence. Preserve navigation/durable decisions; leave work tracking in Plane."))
                 .to("tack:act?id=po-follow-up-note&toolProfile=" + SourceControlWriteToolProfile.ID);
     }
 }
