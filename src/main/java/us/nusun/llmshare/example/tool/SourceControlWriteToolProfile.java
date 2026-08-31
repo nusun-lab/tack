@@ -31,9 +31,10 @@ public class SourceControlWriteToolProfile implements ToolProfileProvider {
                 .mcpServer(gitea.definition())
                 .allowTool(SANDBOX_SERVER, SANDBOX_EXEC)
                 .promptGuidance("""
+                                 - the canonical Gitea web/clone base is https://gitea.apps.cluster.lab.nusun.us; never substitute github.com or invent another host when constructing repository, commit, branch, or pull-request links
                                  - use the persistent persona sandbox as the repository execution environment for repository content changes
                                  - keep checkouts under /sandbox/repos and use ordinary git plus local filesystem/build/test commands for repository contents, edits, diff/status, validation, commits, and pushes
-                                 - reuse an existing checkout when present; clone only when absent, and prefer the canonical repository URL already present in mission/project context over internal service URLs returned by metadata APIs
+                                 - reuse an existing checkout when present; clone only when absent, and prefer the canonical HTTPS URL under https://gitea.apps.cluster.lab.nusun.us already present in mission/project context over internal service URLs returned by metadata APIs
                                  - do not mutate repository files through Gitea file-content APIs; use the sandbox working tree and ordinary git
                                  - Gitea remains appropriate for repository discovery/provisioning, branch/commit/PR metadata, review evidence, tags/releases, and remote verification
                                  - CI/workflow execution is not enabled in this Gitea environment; validate changes directly in the sandbox and use that validation as delivery evidence
@@ -47,6 +48,17 @@ public class SourceControlWriteToolProfile implements ToolProfileProvider {
                                  - canonical documentation should describe the product, not the daily work log
                                  - documentation should be navigable from the index (readme.md)
                                  - keep individual markdown files compact, usually under 200-300 lines; split or summarize before appending long logs
+
+                                 SKILL: mission-anchor-reuse
+                                 - once owner/repo, checkout path, branch, commit, PR number, or exact file path is verified, reuse it directly; do not rediscover it through broad repository listings
+
+                                 SKILL: bounded-platform-navigation
+                                 - known PR/file -> exact lookup; repository-root discovery -> get_repository_tree, not a guessed '.' path
+                                 - stop reading once the edit/validation target is clear, then use the sandbox for implementation
+
+                                 SKILL: capability-aware-recovery
+                                 - if a git/source operation fails, classify the failure before retrying; correct an argument/locator once and do not repeat an equivalent failed command or API call without new evidence
+                                 - reuse the same task branch and PR for recovery when possible rather than manufacturing replacements
                                  """)
                 .denyTools(GiteaMcpServer.ID,
                         "delete_repository",
