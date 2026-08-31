@@ -33,7 +33,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
     public RoutineDefinition routine() {
         return RoutineDefinition.builder(ID)
                 .name("Director")
-                .main("Full Director routine: understand current mission progress, maintain useful team coverage, encourage collaboration, merge delivery-approved pull requests, and keep the mission moving until durable evidence shows the entire mission is complete.", "direct:example-software-team-director")
+                .main("Full Director routine: understand current mission progress, maintain useful team coverage, encourage collaboration, merge safe pull requests promptly, and keep the mission moving until durable evidence shows the entire mission is complete.", "direct:example-software-team-director")
                 .defaultLane("high-pass")
                 .build();
     }
@@ -42,7 +42,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
     public void configure() {
         from("direct:example-software-team-director")
                 .routeId("example-software-team-director")
-                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Durable orchestration anchors: mission goal, authoritative active roster coverage, verified current-mission project basics, product-backlog presence, blockers, major handoffs, and last focused outcome."))
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Durable orchestration anchors: mission goal, authoritative active roster coverage, verified current-mission project/repo/channel ids, product-backlog presence, open integration work, blockers, major handoffs, and last focused outcome."))
                 .to("tack:thought-enter?name=orchestration-root&maxTokens=500")
                 .setProperty("directorCycle", constant(0))
                 .setProperty("decision.director-mission-complete.result", constant(false))
@@ -63,24 +63,25 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                             Staffing policy is phase-based and must be applied when ranking focus:
                             - PM is required whenever the unfinished mission lacks an active Project Manager. PM owns bootstrap.
                             - Before the shared Plane/source/docs/chat foundation is usable, PM is the only additional required role.
-                            - Once the shared foundation is usable, PO becomes required immediately even when Plane has zero work items. PO is what creates/populates the product backlog; never wait for backlog before staffing PO.
+                            - Once the shared foundation is usable, PO becomes required immediately even when Plane has zero work items. PO creates and maintains the product backlog; never wait for backlog before staffing PO.
                             - Once at least one current-mission product parent/backlog item exists in Plane, Developer becomes required. Do not wait for PM-created implementation children before staffing Developer; PM can decompose while Developer comes online.
-                            - A missing role required by the current phase makes staffing genuinely actionable. Integration still outranks staffing when a real current integration candidate exists; otherwise staffing outranks guidance, completion, and wait.
+                            - A missing role required by the current phase makes staffing genuinely actionable.
 
                             Allowed focus values, in priority order when genuinely actionable:
-                            - integration: an open PM-approved integration candidate may exist; route here promptly. Deep PR/lease validation belongs inside this focus.
+                            - integration: an In Progress implementation child has a linked OPEN pull request that may be ready for safe merge. A PM approval comment or named comment state is NOT required. Route here promptly so integration latency stays low.
                             - staffing: evaluate the explicit phase policy above against the authoritative mission roster, shared-foundation signal, and product-backlog signal; route here whenever required active coverage is missing or a required run may need replacement.
-                            - guidance: a fresh coordination exchange or blocker would materially benefit from Director participation.
+                            - guidance: there is a useful coordination message to initiate, or a fresh coordination exchange/blocker would materially benefit from Director participation.
                             - completion: durable evidence makes mission completion plausible enough for the dedicated completion check.
                             - wait: none is presently useful; avoid ceremonial polling or duplicate activity.
-                            External artifacts never establish active AgentRun coverage; the mission roster is authoritative. Do not invent additional staffing prerequisites from project maturity or work-item visibility. Return only the focus object.
+
+                            Fresh orientation evidence outranks older thought conclusions. Use durable thought for anchors, not as authority for a previous focus choice. Do not invent additional staffing, review, or integration prerequisites that are not stated here. External artifacts never establish active AgentRun coverage; the mission roster is authoritative. Return only the focus object.
                             """))
                     .to("tack:create?id=director-priority-focus&schemaId=director-priority-focus&schema=classpath:schemas/example/software-team/director-priority-focus-schema.json")
                     .unmarshal().json(JsonLibrary.Jackson, PriorityFocus.class)
                     .process(exchange -> exchange.setProperty("directorPriorityFocus", exchange.getMessage().getBody(PriorityFocus.class).focus()))
                     .choice()
                         .when(exchangeProperty("directorPriorityFocus").isEqualTo("integration"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused integration work: current PM integration lease, exact open PR, reviewed head/base commits, merge safety, and one resulting integration outcome."))
+                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused integration work: one In Progress implementation child, its exact linked open PR, current head/base, validation evidence, merge safety, and resulting integration outcome."))
                             .to("tack:thought-enter?name=director-integration-focus&maxTokens=350")
                             .to("direct:director-integration-loop")
                             .to("tack:thought-exit?name=director-integration-focus")
@@ -90,7 +91,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                             .to("direct:director-staffing-focus")
                             .to("tack:thought-exit?name=director-staffing-focus")
                         .when(exchangeProperty("directorPriorityFocus").isEqualTo("guidance"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused Director coordination: one current conversation, blocker, clarification, or unblock opportunity that merits Director participation."))
+                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused Director coordination: one useful message to initiate or one current conversation, blocker, clarification, or unblock opportunity that merits Director participation."))
                             .to("tack:thought-enter?name=director-guidance-focus&maxTokens=300")
                             .to("direct:director-guidance-focus")
                             .to("tack:thought-exit?name=director-guidance-focus")
@@ -110,17 +111,24 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                 .routeId("director-orientation")
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Read the smallest fresh current-mission slice needed to rank the Director's next focus. Capture only:
-                        possible current PM INTEGRATION READY/open PR signal; whether the shared Plane/source/docs/chat foundation
-                        appears usable; whether at least one current-mission product parent/backlog item exists in Plane; one fresh
-                        coordination/blocker signal; and whether durable state plausibly approaches completion. Report observations,
-                        not a made-up staffing sequence. The staffing policy is supplied separately to the router. Do not deeply
-                        validate a PR here. Do not infer active AgentRuns from project artifacts. Do not mutate.
+                        whether an In Progress implementation child has a linked OPEN PR; whether the shared Plane/source/docs/chat
+                        foundation appears usable; whether at least one current-mission product parent/backlog item exists in Plane;
+                        one fresh coordination/blocker signal or useful message worth initiating; and whether durable state plausibly
+                        approaches completion. If the current thought already contains verified project/repo/channel ids, use direct
+                        lookups by those anchors rather than listing whole workspaces. Report current observations only. Do not recommend
+                        a next focus, invent sequencing policy, or preserve an older HOLD/wait conclusion when fresh evidence differs.
+                        Do not deeply validate a PR here. Do not infer active AgentRuns from project artifacts. Do not mutate.
                         """))
                 .to("tack:act?id=director-orientation&toolProfile=" + WorkspaceReadonlyToolProfile.ID);
 
         from("direct:director-guidance-focus")
                 .routeId("director-guidance-focus")
-                .setHeader(TackHeaders.PROMPT, constant("Read recent current-mission project chat. Participate only when useful to coordinate, encourage, clarify, or unblock real team work. Do not prescribe another role's internal workflow, duplicate durable status, or use chat activity as active-run evidence."))
+                .setHeader(TackHeaders.PROMPT, constant("""
+                        Read only recent current-mission project chat. Do not require an existing conversation before posting.
+                        Initiate one concise message when a meaningful merge, blocker, staffing/foundation transition, question,
+                        clarification, or unblock notification would help a current teammate act sooner; otherwise reply to one fresh
+                        useful exchange. Avoid generic status and duplicate durable state. Plane and Gitea remain authoritative.
+                        """))
                 .to("tack:act?id=director-team-guidance&toolProfile=" + TeamChatToolProfile.ID);
 
         from("direct:director-staffing-focus")
@@ -129,9 +137,10 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         Freshly verify only the staffing phase signals for this mission: one current-mission Plane project,
                         one source repository under agent-workspace, one documentation repository with usable navigation, one accessible
                         current-mission team-chat channel, and whether at least one current-mission PRODUCT PARENT/backlog item exists in Plane.
-                        An empty source repository is valid. Product backlog existence is only an existence signal; do not require implementation
-                        children, commits, tests, PRs, or application code. Do not require not-yet-running PO/DEV roles to already be members
-                        everywhere; PM owns membership alignment. Do not mutate.
+                        Prefer direct lookup using verified ids already present in current thought. An empty source repository is valid.
+                        Product backlog existence is only an existence signal; do not require implementation children, commits, tests,
+                        PRs, or application code. Do not require not-yet-running PO/DEV roles to already be members everywhere; PM owns
+                        membership alignment. Do not mutate.
                         """))
                 .to("tack:act?id=director-staffing-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("Is the shared delivery foundation usable for Product Owner and later Developer work? Return true only when Plane project, source repository, documentation/navigation, and team chat are verified and readable. An empty source repository is valid; do not require future PO/DEV membership or work/code existence."))
@@ -161,7 +170,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
 
         from("direct:director-completion-focus")
                 .routeId("director-completion-focus")
-                .setHeader(TackHeaders.PROMPT, constant("Review current mission completion once using the smallest authoritative read. One verified unfinished required outcome is enough to conclude not complete. Do not mutate or perform another role's work."))
+                .setHeader(TackHeaders.PROMPT, constant("Review current mission completion once using the smallest authoritative read. Prefer known ids. One verified unfinished required outcome is enough to conclude not complete. Do not mutate or perform another role's work."))
                 .to("tack:act?id=director-mission-status-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("Is the top-level mission 100% complete? Return true only when durable current-mission evidence shows every required outcome fully satisfied. Return false for anything incomplete, unclear, blocked, merely planned, waiting, or lacking verified evidence."))
                 .to("tack:decide?id=director-mission-complete");
@@ -176,23 +185,25 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                     .setProperty("decision.director-has-integration-candidate.result", constant(false))
                     .setHeader(TackHeaders.PROMPT, constant("""
                             Read a small fresh current-mission slice sufficient to find at most one In Progress implementation child
-                            carrying a current PM INTEGRATION READY handoff whose exact linked PR is still OPEN. Plane state/comments
-                            are authoritative for approval; Gitea is authoritative for PR state. Capture repository, PR, reviewedHead,
-                            reviewedBaseRef, reviewedBaseSha, reviewedAt, validation, and acceptance reference. A complete current lease
-                            pins both reviewed head and exact reviewed base SHA. Closed/merged PRs are not candidates. Do not mutate.
+                            with an exact linked PR that is still OPEN. Plane state/assignment and task evidence identify the implementation
+                            unit; Gitea is authoritative for PR state. Capture repository, PR, current head/base, changed files, validation,
+                            parent/acceptance reference, and any current evidence-backed blocker or review concern. Named comment states such
+                            as REVIEW READY or INTEGRATION READY are not required and must not gate integration. Closed/merged PRs are not
+                            candidates for merge. Prefer verified ids already present in thought. Do not mutate.
                             """))
                     .to("tack:act?id=director-workspace-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
-                    .setHeader(TackHeaders.PROMPT, constant("Is exactly one current In Progress implementation child selected with a complete current PM INTEGRATION READY handoff and exact linked PR still OPEN? Require repository, PR, reviewedHead, reviewedBaseRef, reviewedBaseSha, reviewedAt, validation, acceptanceRef."))
+                    .setHeader(TackHeaders.PROMPT, constant("Is exactly one current In Progress implementation child selected with an exact linked PR still OPEN and enough task/validation context to perform a safe integration check? Do not require any named PM approval or handoff comment."))
                     .to("tack:decide?id=director-has-integration-candidate")
                     .choice()
                         .when(exchangeProperty("decision.director-has-integration-candidate.result").isEqualTo(true))
                             .setHeader(TackHeaders.PROMPT, constant("""
-                                    Own one final pull-request merge action. Freshly reread the selected child's current Plane comments,
-                                    then the exact PR and current base branch head. Merge only when the current INTEGRATION READY lease is
-                                    complete and current, PR open and targeting reviewedBaseRef, PR head equals reviewedHead, current base
-                                    commit equals reviewedBaseSha, PR mergeable/non-conflicted, no newer material review-surface change exists,
-                                    and validation does not contradict PM review. Any base/head/lease drift invalidates approval. If ambiguous,
-                                    closed, merged, stale, or conflicted, make no source mutation; PM owns redisposition.
+                                    Own one final pull-request merge action. Freshly read the exact PR and current base branch head plus only
+                                    the selected child's evidence needed to judge safety. Merge when the PR is open, targets the intended base,
+                                    current head/base are known, the PR is mergeable/non-conflicted, validation evidence is credible for the
+                                    task, current implementation satisfies the linked acceptance scope, and no newer evidence-backed blocker
+                                    or review concern contradicts merge. Do not require a PM approval phrase or named comment state. If ambiguous,
+                                    stale, conflicted, failing validation, or product intent is unresolved, make no source mutation and leave
+                                    concise evidence/context for the responsible role rather than manufacturing workflow state in comments.
                                     """))
                             .to("tack:act?id=director-integration-merge&toolProfile=" + IntegrationToolProfile.ID)
                             .choice()
