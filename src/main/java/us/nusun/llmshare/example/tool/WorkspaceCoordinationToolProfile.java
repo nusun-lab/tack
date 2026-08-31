@@ -104,20 +104,36 @@ public class WorkspaceCoordinationToolProfile implements ToolProfileProvider {
                         "get_user_by_username",
                         "search_users")
                 .promptGuidance("""
-                        - search direct names before creating artifacts
-                        - create or update only the artifact named by the current step, then stop
-                        - Plane is the sole system for projects, planned work, assignments, status, and blockers
+                        - search direct names before creating artifacts; create or update only the artifact named by the current step, then stop
+                        - Plane is the sole system for projects, planned work, assignments, status, blockers, dependencies, and priorities
                         - never create or manage planned work through Gitea issues
-                        - use Gitea only for repository discovery, repository creation, and implementation evidence; do not block on Gitea team onboarding
+                        - use Gitea only for repository discovery, repository creation, and implementation evidence; the canonical Gitea web/clone base is https://gitea.apps.cluster.lab.nusun.us
+                        - when constructing repository links or clone URLs, use https://gitea.apps.cluster.lab.nusun.us rather than github.com or an invented/internal hostname
                         - CI/workflow execution is not enabled in this Gitea environment; do not inspect or rely on Actions/workflows or CI checks
-                        - use Mattermost for concise questions, handoffs, and notifications
-                        - keep Plane project and Mattermost channel membership aligned with the current team
-                        - link to durable Plane or Gitea artifacts instead of duplicating their contents
-                        - update existing artifacts rather than creating near-duplicates
+                        - use Mattermost for concise questions, handoffs, and notifications; keep Plane project and Mattermost channel membership aligned with the current team
+                        - link to durable Plane or Gitea artifacts instead of duplicating their contents; update existing artifacts rather than creating near-duplicates
+
+                        SKILL: mission-anchor-reuse
+                        - once a Plane project UUID, work-item UUID/identifier, Gitea owner/repo, Mattermost team id, or channel id is verified, reuse that exact locator
+                        - never shorten or reconstruct UUIDs; do not relist known resources unless direct lookup fails or fresh evidence says the anchor is stale
+
+                        SKILL: plane-work-item-navigation
+                        - scope work-item calls to the verified project id; prefer retrieve_work_item_by_identifier for human keys and complete UUIDs only for retrieve_work_item
+                        - use sparse list_work_items for discovery, then retrieve only the selected rich item when needed
+                        - on rich-response shape failure, use sparse evidence where sufficient instead of retrying the same failing shape
+
+                        SKILL: bounded-platform-navigation
+                        - known Gitea PR/file -> exact lookup; repository-root discovery -> get_repository_tree, not a guessed '.' path
+                        - known Mattermost channel -> channel id and recent bounded messages/thread; search broadly only when location is unknown
+                        - stop once the current operation has enough evidence
+
+                        SKILL: capability-aware-recovery
+                        - validation error -> correct arguments once; 404 -> resolve exact locator once; response-shape failure -> switch to sparse/supported representation
+                        - do not repeat an equivalent failed call without new evidence
                         """)
                 .defaultArgument(PlaneMcpServer.ID, "list_projects", "fields", "id,name,identifier")
                 .defaultArgument(PlaneMcpServer.ID, "list_work_items", "fields", "id,name,sequence_id,state,priority,assignees")
-                .defaultArgument(PlaneMcpServer.ID, "list_work_items", "per_page", 50)
+                .defaultArgument(PlaneMcpServer.ID, "list_work_items", "per_page", 12)
                 .maxResultTokens(maxResultTokens)
                 .build());
     }
