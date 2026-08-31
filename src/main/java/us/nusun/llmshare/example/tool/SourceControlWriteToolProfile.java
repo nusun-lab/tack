@@ -35,6 +35,9 @@ public class SourceControlWriteToolProfile implements ToolProfileProvider {
                                  - use the persistent persona sandbox as the repository execution environment for repository content changes
                                  - keep checkouts under /sandbox/repos and use ordinary git plus local filesystem/build/test commands for repository contents, edits, diff/status, validation, commits, and pushes
                                  - reuse an existing checkout when present; clone only when absent, and prefer the canonical HTTPS URL under https://gitea.apps.cluster.lab.nusun.us already present in mission/project context over internal service URLs returned by metadata APIs
+                                 - an existing but empty source repository is a valid implementation starting point; the first assigned Developer may initialize the repository, establish a minimal baseline/default branch when needed, then create/use the task branch and continue normal delivery
+                                 - do not require PM to seed main, announce the assignment in chat, or pre-confirm a Gitea collaborator grant before attempting assigned work
+                                 - do not invent permission blockers: attempt the normal clone/push/PR workflow; only an actual authentication/authorization failure is evidence of a source-access blocker
                                  - do not mutate repository files through Gitea file-content APIs; use the sandbox working tree and ordinary git
                                  - Gitea remains appropriate for repository discovery/provisioning, branch/commit/PR metadata, review evidence, tags/releases, and remote verification
                                  - CI/workflow execution is not enabled in this Gitea environment; validate changes directly in the sandbox and use that validation as delivery evidence
@@ -59,6 +62,7 @@ public class SourceControlWriteToolProfile implements ToolProfileProvider {
                                  SKILL: capability-aware-recovery
                                  - if a git/source operation fails, classify the failure before retrying; correct an argument/locator once and do not repeat an equivalent failed command or API call without new evidence
                                  - reuse the same task branch and PR for recovery when possible rather than manufacturing replacements
+                                 - on an empty remote, initialize once and proceed; on an actual 401/403 or rejected push, record that concrete failure rather than requiring speculative permission verification beforehand
                                  """)
                 .denyTools(GiteaMcpServer.ID,
                         "delete_repository",
