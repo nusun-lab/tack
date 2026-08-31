@@ -30,6 +30,8 @@ public class SourceControlToolProfile implements ToolProfileProvider {
                 .promptGuidance("""
                                  - the canonical Gitea web/clone base is https://gitea.apps.cluster.lab.nusun.us; never substitute github.com or invent another host when constructing repository, commit, branch, or pull-request links
                                  - read only the direct files or links needed for the current step before writing
+                                 - an existing accessible repository with zero commits/branches is valid source context; report it as empty, not missing or blocked, and do not require a preexisting main/default branch
+                                 - do not infer a permission blocker merely because push permission has not been tested; only an actual authentication/authorization failure proves that blocker
                                  - make one focused source-control change per step unless the act prompt says otherwise
                                  - when sandbox_exec is available, use the persistent persona sandbox as the repository execution environment
                                  - in that sandbox, keep checkouts under /sandbox/repos and use ordinary git plus local filesystem/build/test commands for repository contents, edits, diff/status, validation, commits, and pushes
