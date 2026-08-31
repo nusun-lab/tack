@@ -122,6 +122,14 @@ public class WorkspaceCoordinationToolProfile implements ToolProfileProvider {
                         - use sparse list_work_items for discovery, then retrieve only the selected rich item when needed
                         - on rich-response shape failure, use sparse evidence where sufficient instead of retrying the same failing shape
 
+                        SKILL: plane-membership-model
+                        - keep three sets distinct: CURRENT MISSION ROSTER = active AgentRuns; Plane workspace members = Plane accounts available for project membership; Plane project members = accounts actually granted access to this project
+                        - never infer workspace membership from the mission roster, never infer project membership from workspace membership, and never infer an active AgentRun from either Plane set
+                        - for onboarding, resolve each CURRENT MISSION ROSTER Plane identity against get_workspace_members, compare those resolved accounts with get_project_members, and add every resolved current-roster account missing from the project
+                        - a teammate who started after bootstrap is expected to already have a Plane workspace account; absence from an earlier roster says nothing about whether that account exists
+                        - do not declare onboarding complete from an old project-member list; freshly compare the CURRENT MISSION ROSTER with current project/channel membership
+                        - when reporting, state exactly which current-roster identities were resolved in the workspace, already project members, newly added, or unresolved; never claim that non-roster personas do not exist in the workspace unless directly verified and relevant
+
                         SKILL: bounded-platform-navigation
                         - known Gitea PR/file -> exact lookup; repository-root discovery -> get_repository_tree, not a guessed '.' path
                         - known Mattermost channel -> channel id and recent bounded messages/thread; search broadly only when location is unknown
