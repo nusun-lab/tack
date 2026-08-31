@@ -32,7 +32,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         work:product labels distinguish Product Owner outcomes from PM work:implementation children.
                         """, "direct:example-software-team-product-owner")
                 .subroutine("acceptance-refinement", "Refine one Backlog product slice or answer one returned product question with clear scope and testable Gherkin acceptance.", "direct:example-software-team-product-owner-acceptance-refinement")
-                .subroutine("priority-handoff", "Move one ready product slice Backlog -> Todo, answer one returned product question, or accept/reject one completed In Progress product outcome.", "direct:example-software-team/product-owner-priority-handoff")
+                .subroutine("priority-handoff", "Move one ready product slice Backlog -> Todo, answer one returned product question, or accept/reject one completed In Progress product outcome.", "direct:example-software-team-product-owner-priority-handoff")
                 .defaultLane("high-pass")
                 .build();
     }
