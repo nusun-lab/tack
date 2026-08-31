@@ -40,6 +40,7 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                         "list_projects",
                         "retrieve_project",
                         "get_project_members",
+                        "get_workspace_members",
                         "list_work_items",
                         "retrieve_work_item",
                         "retrieve_work_item_by_identifier",
@@ -71,6 +72,7 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                         "list_my_channels",
                         "get_channel",
                         "get_channel_by_name",
+                        "get_channel_members",
                         "get_channel_messages",
                         "get_thread",
                         "search_messages",
@@ -98,6 +100,13 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                         - for human keys such as RCY-2, prefer retrieve_work_item_by_identifier; use retrieve_work_item only with a complete UUID returned by Plane
                         - use sparse list_work_items for discovery, select the item, then retrieve only that item when rich description/comments are actually needed
                         - if rich retrieval has a response-shape/deserialization problem, use the sparse list representation for facts it can prove rather than retrying the same failing shape
+
+                        SKILL: plane-membership-model
+                        - keep three sets distinct: the current mission roster (who is actively running), Plane workspace members (accounts available in Plane), and Plane project members (accounts granted access to this project)
+                        - mission-roster presence does not prove Plane workspace or project membership; Plane workspace membership does not prove project membership; Plane project membership does not prove an active AgentRun
+                        - use get_workspace_members only to resolve whether a current-roster Plane identity exists; use get_project_members to establish actual project membership
+                        - never infer that a teammate is absent from the Plane workspace merely because they were not in an earlier mission roster, and never infer that a teammate is already onboarded merely because their Plane account exists
+                        - when reporting membership, name the set explicitly: current-roster member, workspace member, or project member
 
                         SKILL: bounded-platform-navigation
                         - use the fewest direct lookups needed for the current step, then stop
