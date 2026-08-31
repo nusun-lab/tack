@@ -100,6 +100,14 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                         - for human keys such as RCY-2, prefer retrieve_work_item_by_identifier; use retrieve_work_item only with a complete UUID returned by Plane
                         - use sparse list_work_items for discovery, select the item, then retrieve only that item when rich description/comments are actually needed
                         - if rich retrieval has a response-shape/deserialization problem, use the sparse list representation for facts it can prove rather than retrying the same failing shape
+                        - a field omitted by a sparse projection is UNKNOWN, not negative evidence; never infer no parent, no label, no assignee, or no dependency merely because that field was not returned
+
+                        SKILL: plane-work-classification
+                        - use Plane labels as durable work classification, not lifecycle state: work:product = Product Owner top-level user outcome; work:implementation = Project Manager implementation child
+                        - lifecycle remains entirely in Plane states such as Backlog, Todo, In Progress, Done, and Cancelled; classification labels never substitute for lifecycle state
+                        - product queue depth counts only items carrying work:product; implementation queue depth counts only items carrying work:implementation
+                        - never count a work:implementation item as product backlog and never treat a work:product item as Developer implementation work
+                        - when labels were not returned by the current projection, classification is unknown until labels are read; do not guess from item wording
 
                         SKILL: plane-membership-model
                         - keep three sets distinct: the current mission roster (who is actively running), Plane workspace members (accounts available in Plane), and Plane project members (accounts granted access to this project)
@@ -107,6 +115,7 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                         - use get_workspace_members only to resolve whether a current-roster Plane identity exists; use get_project_members to establish actual project membership
                         - never infer that a teammate is absent from the Plane workspace merely because they were not in an earlier mission roster, and never infer that a teammate is already onboarded merely because their Plane account exists
                         - when reporting membership, name the set explicitly: current-roster member, workspace member, or project member
+                        - one contradictory empty membership response does not erase a recent verified membership set; repeat one direct membership read before declaring access drift unless a teammate has an actual access failure
 
                         SKILL: bounded-platform-navigation
                         - use the fewest direct lookups needed for the current step, then stop
@@ -121,7 +130,7 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                         - distinguish verified observations from assumptions
                         """)
                 .defaultArgument(PlaneMcpServer.ID, "list_projects", "fields", "id,name,identifier")
-                .defaultArgument(PlaneMcpServer.ID, "list_work_items", "fields", "id,name,sequence_id,state,priority,assignees")
+                .defaultArgument(PlaneMcpServer.ID, "list_work_items", "fields", "id,name,sequence_id,state,priority,assignees,labels")
                 .defaultArgument(PlaneMcpServer.ID, "list_work_items", "per_page", 12)
                 .maxResultTokens(maxResultTokens)
                 .build());
