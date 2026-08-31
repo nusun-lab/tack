@@ -49,11 +49,32 @@ public class ProjectManagementToolProfile implements ToolProfileProvider {
                         - work on only the project or work item named by the current step
                         - Plane is the sole source of truth for planned work, assignments, status, blockers, dependencies, priorities, and delivery planning
                         - Gitea reads are for canonical product acceptance and linked implementation/review evidence only; do not coordinate planned work in Gitea
+                        - the canonical Gitea web/clone base is https://gitea.apps.cluster.lab.nusun.us; when constructing or interpreting repository links, use that host rather than github.com or an invented/internal hostname
                         - avoid duplicate projects or work items
                         - record blockers plainly with owner and evidence
                         - keep each work item small; split oversized items and move detail into children instead of copying it
                         - when splitting work, make the parent summarize instead of duplicating child content
-                        - keep product discovery in Backlog, PM-ready implementation work in To Do, active assigned work in In Progress, and verified outcomes in Done""")
+                        - keep product discovery in Backlog, PM-ready implementation work in To Do, active assigned work in In Progress, and verified outcomes in Done
+
+                        SKILL: mission-anchor-reuse
+                        - once a Plane project UUID, work-item UUID/identifier, Gitea owner/repo, branch, or PR is verified, reuse that exact locator
+                        - never shorten or reconstruct UUIDs; a human key such as RCY-2 is an identifier, not a UUID
+                        - do not relist projects or repositories just to rediscover a known resource; rediscover only after direct lookup fails or fresh evidence says the anchor is stale
+
+                        SKILL: plane-work-item-navigation
+                        - scope Plane work-item operations to the verified project id
+                        - prefer retrieve_work_item_by_identifier for human keys and retrieve_work_item only for complete UUIDs returned by Plane
+                        - use sparse list_work_items for discovery and queue inspection; retrieve a rich item only after selecting it and only when its richer fields are needed
+                        - if rich retrieval fails because of response shape/deserialization, use the sparse list representation for facts it proves rather than retrying the same shape
+
+                        SKILL: bounded-platform-navigation
+                        - for a known Gitea PR or file, read that exact PR/path; use get_repository_tree for repository-root discovery rather than guessing a directory such as '.'
+                        - stop reading when the current planning/delivery question has enough evidence; do not enumerate unrelated project or repository state
+
+                        SKILL: capability-aware-recovery
+                        - on a schema/validation error, correct arguments once; on 404, resolve the exact locator once; on response-shape failure, switch to a sparse/supported representation
+                        - never repeat an equivalent failed call without new evidence
+                        """)
                 .denyTools(PlaneMcpServer.ID,
                         "delete_project",
                         "delete_work_item",
@@ -124,7 +145,7 @@ public class ProjectManagementToolProfile implements ToolProfileProvider {
                         "get_features")
                 .defaultArgument(PlaneMcpServer.ID, "list_projects", "fields", "id,name,identifier")
                 .defaultArgument(PlaneMcpServer.ID, "list_work_items", "fields", "id,name,sequence_id,state,priority,assignees")
-                .defaultArgument(PlaneMcpServer.ID, "list_work_items", "per_page", 50)
+                .defaultArgument(PlaneMcpServer.ID, "list_work_items", "per_page", 12)
                 .maxResultTokens(maxResultTokens)
                 .build());
     }
