@@ -65,13 +65,7 @@ public class LlmRoute extends RouteBuilder {
                 .bean(routeSupport, "logModelResponse")
                 .choice()
                     .when(simple("${body.status} == 'SUCCEEDED' && ${body.content} != null && ${body.content} != '' && ${exchangeProperty.llmJob.responseSchema} != null && ${exchangeProperty.llmJob.responseSchema} != ''"))
-                        .setProperty("llmResult", body())
-                        .doTry()
-                            .setBody(simple("${body.content}"))
-                            .toD("json-validator:${exchangeProperty.llmJob.responseSchema}")
-                        .doFinally()
-                            .setBody(exchangeProperty("llmResult"))
-                        .end()
+                        .bean(routeSupport, "validateResponseSchema")
                 .end()
                 .validate(body().isInstanceOf(LlmJobResult.class));
 
