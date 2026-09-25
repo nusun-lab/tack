@@ -45,10 +45,13 @@ import us.nusun.llmshare.framework.model.Persona;
 import us.nusun.llmshare.framework.model.RoutineDefinition;
 import us.nusun.llmshare.framework.model.ToolProfile;
 import us.nusun.llmshare.framework.sandbox.PersonaSandboxManager;
+import us.nusun.llmshare.framework.service.MissionRosterService;
+import us.nusun.llmshare.framework.tool.MissionRosterTool;
 
 import java.io.IOException;
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -82,6 +85,7 @@ public class LlmAgentFactory {
             ToolProfileRegistry toolProfiles,
             PersonaCatalog personas,
             PersonaSandboxManager sandboxes,
+            MissionRosterService missionRoster,
             LogTokens logTokens,
             TokenCountEstimator tokenCountEstimator,
             @ConfigProperty(name = "llm.model-default.openai.base-url") String defaultBaseUrl,
@@ -117,7 +121,7 @@ public class LlmAgentFactory {
                 reasoningEffort.orElse(null),
                 strictJsonSchema);
         return new DynamicAgentFactory(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator,
-                memoryMaxTokens, maxToolCallingRoundTrips, sandboxes, logTokens);
+                memoryMaxTokens, maxToolCallingRoundTrips, sandboxes, logTokens, missionRoster);
     }
 
     private static Map<String, ChatModel> laneModels(
@@ -281,6 +285,7 @@ public class LlmAgentFactory {
         private final PersonaCatalog personas;
         private final PersonaSandboxManager sandboxes;
         private final LogTokens logTokens;
+        private final MissionRosterService missionRoster;
         private static final int DEFAULT_MAX_TOOL_CALLING_ROUND_TRIPS = 4;
 
         private final TokenCountEstimator tokenCountEstimator;
@@ -308,6 +313,14 @@ public class LlmAgentFactory {
         public DynamicAgentFactory(InferenceLaneRegistry lanes, Map<String, ChatModel> laneModels, McpClientFactory mcpClientFactory,
                                    ToolProfileRegistry toolProfiles, PersonaCatalog personas, TokenCountEstimator tokenCountEstimator,
                                    int memoryMaxTokens, int maxToolCallingRoundTrips, PersonaSandboxManager sandboxes, LogTokens logTokens) {
+            this(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator, memoryMaxTokens,
+                    maxToolCallingRoundTrips, sandboxes, logTokens, null);
+        }
+
+        public DynamicAgentFactory(InferenceLaneRegistry lanes, Map<String, ChatModel> laneModels, McpClientFactory mcpClientFactory,
+                                   ToolProfileRegistry toolProfiles, PersonaCatalog personas, TokenCountEstimator tokenCountEstimator,
+                                   int memoryMaxTokens, int maxToolCallingRoundTrips, PersonaSandboxManager sandboxes, LogTokens logTokens,
+                                   MissionRosterService missionRoster) {
             this.lanes = lanes;
             this.laneModels = laneModels;
             this.mcpClientFactory = mcpClientFactory;
@@ -318,6 +331,7 @@ public class LlmAgentFactory {
             this.maxToolCallingRoundTrips = maxToolCallingRoundTrips;
             this.sandboxes = sandboxes;
             this.logTokens = logTokens;
+            this.missionRoster = missionRoster;
         }
 
         @Override
@@ -345,21 +359,28 @@ public class LlmAgentFactory {
                 if (!clients.isEmpty()) {
                     configuration.withMcpClients(clients);
                 }
+                LlmJobEnvelope job = job(exchange);
+                List<Object> customTools = new ArrayList<>();
+                String missionId = metadata(job, "missionId");
+                if (missionRoster != null && !blank(missionId)) {
+                    customTools.add(new MissionRosterTool(missionRoster, missionId));
+                }
                 if (sandboxes != null && profile.allowsTool(SANDBOX_TOOL_SERVER, SANDBOX_EXEC_TOOL)) {
-                    LlmJobEnvelope job = job(exchange);
                     String sandboxName = exchange.getProperty(PersonaSandboxManager.WORKING_STATE_SANDBOX_NAME, String.class);
                     if (blank(sandboxName)) {
-                        String missionId = metadata(job, "missionId");
                         String personaId = firstNonBlank(exchange.getProperty("personaId", String.class), metadata(job, "personaId"));
                         sandboxName = sandboxes.sandboxNameFor(missionId, personaId);
                     }
                     var sandboxTool = sandboxes.tool(sandboxName);
                     if (sandboxTool != null) {
-                        configuration.withCustomTools(List.of(sandboxTool));
+                        customTools.add(sandboxTool);
                         LOG.info("Registered sandbox_exec for profile={} sandbox={} persona={} mission={}", profile.id(), sandboxName,
                                 firstNonBlank(exchange.getProperty("personaId", String.class), metadata(job, "personaId")),
-                                metadata(job, "missionId"));
+                                missionId);
                     }
+                }
+                if (!customTools.isEmpty()) {
+                    configuration.withCustomTools(customTools);
                 }
             }
             Agent agent = configuration.getChatMemoryProvider() == null ? new AgentWithoutMemory(configuration) : new TackToolAgent(configuration, maxToolCallingRoundTrips);
