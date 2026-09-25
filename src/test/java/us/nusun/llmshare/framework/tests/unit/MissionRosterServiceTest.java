@@ -10,6 +10,7 @@ import us.nusun.llmshare.framework.service.MissionRosterService;
 import us.nusun.llmshare.framework.state.AgentRun;
 import us.nusun.llmshare.framework.state.AgentRunStore;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
+import us.nusun.llmshare.framework.tool.MissionRosterTool;
 
 import java.time.Instant;
 import java.util.List;
@@ -140,6 +141,22 @@ class MissionRosterServiceTest {
 
         assertFalse(roster.contains("run-complete"));
         assertEquals(2, entryCount(roster));
+    }
+
+    @Test
+    void missionRosterToolReturnsOnlyCurrentActiveMissionRuns() {
+        AgentRunStore store = storeWithRuns();
+        AgentRun complete = new AgentRun("run-complete", "mission-1", "persona-a", "routine-a", Map.of());
+        complete.status(AgentRun.STATUS_COMPLETE);
+        store.putRun(complete);
+
+        String roster = new MissionRosterTool(service(store), "mission-1").mission_roster();
+
+        assertEquals(2, entryCount(roster));
+        assertTrue(roster.contains("agentRunId: run-a"));
+        assertTrue(roster.contains("agentRunId: run-c"));
+        assertFalse(roster.contains("run-complete"));
+        assertFalse(roster.contains("run-b-other-mission"));
     }
 
     private static long entryCount(String roster) {
