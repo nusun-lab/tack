@@ -2,6 +2,11 @@ package us.nusun.llmshare.framework.llm;
 
 import static us.nusun.llmshare.framework.model.FrameworkText.firstNonBlank;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.networknt.schema.Error;
+import com.networknt.schema.SchemaRegistry;
+import com.networknt.schema.SpecificationVersion;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.Body;
@@ -9,6 +14,7 @@ import org.apache.camel.CamelContext;
 import org.apache.camel.Exchange;
 import org.apache.camel.ExchangeProperty;
 import org.apache.camel.ServiceStatus;
+import org.apache.camel.support.ResourceHelper;
 import org.apache.camel.component.langchain4j.agent.api.AiAgentBody;
 import us.nusun.llmshare.framework.inventory.InferenceLaneRegistry;
 import us.nusun.llmshare.framework.logging.LogTokens;
@@ -16,7 +22,10 @@ import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
 import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.LlmJobResult;
 
+import java.io.InputStream;
 import java.time.Instant;
+import java.util.List;
+import java.util.stream.Collectors;
 import java.util.UUID;
 
 @ApplicationScoped
@@ -90,6 +99,30 @@ public class LlmRouteSupport {
     public void logModelResponse(@Body LlmJobResult result, Exchange exchange) {
         String content = result == null ? null : result.content();
         logTokens().print(logTokens().wrap(agentLabel(exchange), agentLogColor(exchange), "RESPONSE " + content));
+    }
+
+    public void validateResponseSchema(@Body LlmJobResult result, @ExchangeProperty("llmJob") LlmJobEnvelope job,
+            Exchange exchange) throws Exception {
+        if (result == null || result.content() == null || result.content().isBlank()
+                || job == null || job.responseSchema() == null || job.responseSchema().isBlank()) {
+            return;
+        }
+        String schemaText = exchange.getContext().resolvePropertyPlaceholders(job.responseSchema());
+        if (ResourceHelper.hasScheme(schemaText)) {
+            try (InputStream in = ResourceHelper.resolveMandatoryResourceAsInputStream(exchange.getContext(), schemaText)) {
+                schemaText = exchange.getContext().getTypeConverter().mandatoryConvertTo(String.class, in);
+            }
+        }
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode schema = mapper.readTree(schemaText);
+        JsonNode response = mapper.readTree(result.content());
+        List<Error> errors = SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
+                .getSchema(schema)
+                .validate(response);
+        if (!errors.isEmpty()) {
+            String message = errors.stream().map(Error::getMessage).sorted().collect(Collectors.joining("; "));
+            throw new IllegalArgumentException("LLM response schema validation failed: " + message);
+        }
     }
 
     public LlmJobResult succeededResult(
