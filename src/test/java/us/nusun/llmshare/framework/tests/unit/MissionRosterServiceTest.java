@@ -150,7 +150,7 @@ class MissionRosterServiceTest {
         complete.status(AgentRun.STATUS_COMPLETE);
         store.putRun(complete);
 
-        String roster = new MissionRosterTool(service(store), "mission-1")
+        String roster = new MissionRosterTool(service(store), "mission-1", 5)
                 .mission_roster(null, null, null, null, null);
 
         assertEquals(2, entryCount(roster));
@@ -169,7 +169,7 @@ class MissionRosterServiceTest {
         complete.status(AgentRun.STATUS_COMPLETE);
         store.putRun(complete);
 
-        String roster = new MissionRosterTool(service(store), "mission-1")
+        String roster = new MissionRosterTool(service(store), "mission-1", 5)
                 .mission_roster("history", null, null, null, null);
 
         assertEquals(3, entryCount(roster));
@@ -180,7 +180,7 @@ class MissionRosterServiceTest {
 
     @Test
     void missionRosterToolCanReturnOnlyRequestedPlatformHandles() {
-        String roster = new MissionRosterTool(service(storeWithRuns()), "mission-1")
+        String roster = new MissionRosterTool(service(storeWithRuns()), "mission-1", 5)
                 .mission_roster(null, "contacts", "persona-a", null, "beta-mcp");
 
         assertEquals(1, entryCount(roster));
@@ -192,7 +192,7 @@ class MissionRosterServiceTest {
 
     @Test
     void missionRosterToolCoverageOmitsHandlesAndRunIds() {
-        String roster = new MissionRosterTool(service(storeWithRuns()), "mission-1")
+        String roster = new MissionRosterTool(service(storeWithRuns()), "mission-1", 5)
                 .mission_roster(null, "coverage", null, null, null);
 
         assertEquals(2, entryCount(roster));
@@ -208,7 +208,7 @@ class MissionRosterServiceTest {
         second.status(AgentRun.STATUS_RUNNING);
         store.putRun(second);
 
-        String roster = new MissionRosterTool(service(store), "mission-1")
+        String roster = new MissionRosterTool(service(store), "mission-1", 5)
                 .mission_roster(null, "contacts", "persona-a", null, null);
 
         assertEquals(1, entryCount(roster));
