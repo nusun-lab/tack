@@ -173,8 +173,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         
                         Also capture shared basics; one actionable
                         blocker/topology/dependency/merged-work/product-return signal; usable work:product; assigned
-                        executable work:implementation Todo depth; useful dependency-blocked work:implementation; one fresh inbound coordination signal; concrete
-                        docs/navigation drift.
+                        executable work:implementation Todo depth; useful dependency-blocked work:implementation;
+                        one fresh inbound coordination signal; concrete docs/navigation drift.
                         Count work by classification label, not wording. A sparse projection that omits labels/parent is
                         unknown, not negative evidence. If thought already
                         contains verified project/repo/channel ids, use direct lookups instead of listing whole
