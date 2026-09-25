@@ -54,7 +54,6 @@ public class ProjectManagementToolProfile implements ToolProfileProvider {
                         - record blockers plainly with owner and evidence
                         - keep each work item small; split oversized items and move detail into children instead of copying it
                         - when splitting work, make the parent summarize instead of duplicating child content
-                        - keep product discovery in Backlog, PM-ready implementation work in Todo, active assigned work in In Progress, and verified outcomes in Done
 
 
                         SKILL: software-team-cooperation
