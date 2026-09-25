@@ -197,8 +197,9 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                     - If foundation is yes and no product parent is In Progress, required active coverage is PM + PO.
                       PO populates the product backlog and PM may claim ready product work.
                     - If foundation is yes and a product parent is In Progress, required active coverage is PM + PO +
-                      DEV. The PM claim is sufficient demand; do not wait for implementation Todo children. Never duplicate an already-active required role. Create one run per missing required
-                      role subject to remaining capacity. Return {"agentRuns":[]} when none is
+                      DEV. The PM claim is sufficient demand; do not wait for implementation Todo children. Never
+                      duplicate an already-active required role. Create one run per missing required role subject to
+                      remaining capacity. Return {"agentRuns":[]} when none is
                       missing or capacity prevents another start.
                     """))
                 .to("tack:create?id=planned-agent-runs&schemaId=agent-run-request-list&schema=classpath:schemas/example/software-team/agent-run-requests-schema.json")
