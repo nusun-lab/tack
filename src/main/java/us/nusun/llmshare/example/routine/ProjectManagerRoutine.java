@@ -124,9 +124,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .routeId("pm-focus-planning")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
                         Focused delivery planning: take one work:product parent at a time and establish its complete
-                        reasonable work:implementation story/dependency set. Dependency-satisfied stories become
-                        assigned Todo; dependency-blocked future stories exist now in Backlog. Repeat across product
-                        parents only as needed to maintain useful forward inventory for Developer.
+                        reasonable work:implementation story/dependency set. With an active Developer, executable stories
+                        become assigned Todo; otherwise they remain Backlog until assignment is possible. Repeat only
+                        while another product parent has useful safe planning work.
                         """))
                 .to("tack:thought-enter?name=pm-planning-focus&maxTokens=400")
                 .to("direct:pm-planning-focus")
