@@ -191,11 +191,12 @@ class MissionRosterServiceTest {
     }
 
     @Test
-    void missionRosterToolCoverageOmitsHandlesAndRunIds() {
+    void missionRosterToolCoverageIncludesCapacityButOmitsHandlesAndRunIds() {
         String roster = new MissionRosterTool(service(storeWithRuns()), "mission-1", 5)
                 .mission_roster(null, "coverage", null, null, null);
 
         assertEquals(2, entryCount(roster));
+        assertTrue(roster.contains("capacity: active=2 maximum=5 remaining=3"));
         assertTrue(roster.contains("routineId=routine-a"));
         assertFalse(roster.contains("handles:"));
         assertFalse(roster.contains("agentRunId="));
