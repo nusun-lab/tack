@@ -8,7 +8,6 @@ import org.apache.camel.component.langchain4j.agent.api.Agent;
 import org.apache.camel.component.langchain4j.agent.api.AgentFactory;
 import org.apache.camel.component.kafka.KafkaConstants;
 import org.apache.camel.impl.DefaultCamelContext;
-import org.jboss.logmanager.Level;
 import org.jboss.logmanager.LogContext;
 import org.jboss.logmanager.Logger;
 import org.junit.jupiter.api.Test;
@@ -107,8 +106,8 @@ class LlmRouteFrameworkRouteTest {
 
         Logger camelErrorHandler = LogContext.getLogContext()
                 .getLogger("org.apache.camel.processor.errorhandler.DefaultErrorHandler");
-        Level previousLevel = camelErrorHandler.getLevel();
-        camelErrorHandler.setLevel(Level.OFF);
+        java.util.logging.Level previousLevel = camelErrorHandler.getLevel();
+        camelErrorHandler.setLevel(java.util.logging.Level.OFF);
         try (DefaultCamelContext context = context(replies, kafka)) {
             context.start();
 
