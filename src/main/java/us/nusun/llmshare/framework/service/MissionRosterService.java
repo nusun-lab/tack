@@ -15,7 +15,10 @@ import us.nusun.llmshare.framework.model.SubroutineDefinition;
 import us.nusun.llmshare.framework.state.AgentRun;
 import us.nusun.llmshare.framework.state.AgentRunStore;
 
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -76,12 +79,20 @@ public class MissionRosterService {
         String normalizedView = normalizeView(view, normalizedScope);
         Set<String> platformFilter = csvSet(platforms);
 
-        String roster = agentRuns.runsByMission(missionId).stream()
+        List<AgentRun> runs = agentRuns.runsByMission(missionId).stream()
                 .filter(run -> !"active".equals(normalizedScope) || AgentRunStore.isActiveStatus(run.status()))
                 .filter(run -> blank(personaId) || personaId.strip().equals(run.personaId()))
                 .filter(run -> blank(routineId) || routineId.strip().equals(run.routineId()))
-                .map(run -> renderView(run, normalizedView, platformFilter))
-                .collect(Collectors.joining("\n"));
+                .sorted("history".equals(normalizedScope)
+                        ? Comparator.comparing(AgentRun::startedAt).reversed()
+                        : Comparator.comparing(AgentRun::id))
+                .toList();
+
+        String roster = "contacts".equals(normalizedView)
+                ? contactsView(runs, platformFilter)
+                : runs.stream()
+                        .map(run -> renderView(run, normalizedView, platformFilter))
+                        .collect(Collectors.joining("\n"));
         return roster.isBlank() ? "(none)" : roster;
     }
 
@@ -96,11 +107,21 @@ public class MissionRosterService {
     private String renderView(AgentRun run, String view, Set<String> platforms) {
         return switch (view) {
             case "coverage" -> coverageEntry(run);
-            case "contacts" -> contactsEntry(run, platforms);
             case "runs" -> runsEntry(run, platforms);
             case "full" -> fullEntry(run, platforms);
             default -> throw new IllegalArgumentException("Unsupported roster view: " + view);
         };
+    }
+
+    private String contactsView(List<AgentRun> runs, Set<String> platforms) {
+        Map<String, List<AgentRun>> byPersona = runs.stream()
+                .collect(Collectors.groupingBy(
+                        AgentRun::personaId,
+                        LinkedHashMap::new,
+                        Collectors.toList()));
+        return byPersona.values().stream()
+                .map(personaRuns -> contactsEntry(personaRuns, platforms))
+                .collect(Collectors.joining("\n"));
     }
 
     private String coverageEntry(AgentRun run) {
@@ -113,8 +134,25 @@ public class MissionRosterService {
                 run.status());
     }
 
-    private String contactsEntry(AgentRun run, Set<String> platforms) {
-        return coverageEntry(run) + " | handles: " + renderIdentities(personas.getRequired(run.personaId()), platforms);
+    private String contactsEntry(List<AgentRun> runs, Set<String> platforms) {
+        AgentRun first = runs.getFirst();
+        Persona persona = personas.getRequired(first.personaId());
+        String routineIds = runs.stream()
+                .map(AgentRun::routineId)
+                .distinct()
+                .sorted()
+                .collect(Collectors.joining(","));
+        String statuses = runs.stream()
+                .map(AgentRun::status)
+                .distinct()
+                .sorted()
+                .collect(Collectors.joining(","));
+        return "- %s | personaId=%s | routineIds=%s | statuses=%s | handles: %s".formatted(
+                persona.name(),
+                first.personaId(),
+                routineIds,
+                statuses,
+                renderIdentities(persona, platforms));
     }
 
     private String runsEntry(AgentRun run, Set<String> platforms) {
