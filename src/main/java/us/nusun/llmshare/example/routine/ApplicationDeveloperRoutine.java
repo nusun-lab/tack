@@ -147,9 +147,10 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                         """))
                 .to("tack:act?id=dev-mission-status-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Is the entire mission complete from application development? Answer yes only when durable
-                        current-mission evidence shows no further work:implementation, topology investigation,
-                        validation, open task PR, or implementation follow-up remains.
+                        Is Developer quiescent because no Developer action remains? Answer yes only when current evidence
+                        shows no assigned actionable implementation/topology work, validation, open task PR needing
+                        Developer changes, or implementation follow-up. This does not establish top-level mission
+                        completion; Director owns that decision.
                         """))
                 .to("tack:decide?id=application-developer-mission-complete");
 
@@ -344,7 +345,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             dependencies, expected validation evidence, and any newer concrete feedback/blocker context. For
                             topology investigation verify dependency-free exact technical question. A repository may be
                             empty; no branch/main is required in task context. Do not mutate. If required delivery context
-                            is malformed/missing, identify exact PM-owned gap and stop reading.
+                            is malformed/missing, identify the exact PM-owned gap and stop reading. Keep claimed work In
+                            Progress when a later blocker needs PM/PO action; evidence is the signal, not state rollback.
                             """))
                     .to("tack:act?id=dev-task-context-read&toolProfile=" + ProjectManagementToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
@@ -376,9 +378,9 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                     .setHeader(TackHeaders.PROMPT, constant("""
                                             Update only the selected topology-investigation child. Keep it In Progress and add/refresh one
                                             concise evidence comment containing affected work ids, observed source/contract facts,
-                                            evidence-backed dependency/sequencing recommendation, and residual product question if any. Do
-                                            not encode a named TECHNICAL FINDING workflow state; the comment is
-                                            evidence/context. Avoid duplicate equivalent evidence.
+                                            evidence-backed dependency/sequencing recommendation, and residual product question if any.
+                                            PM owns dependency/topology mutation, so do not restructure other work items yourself. Do not
+                                            encode a named TECHNICAL FINDING workflow state; avoid duplicate equivalent evidence.
                                             """))
                                     .to("tack:act?id=dev-topology-finding-update&toolProfile=" + ProjectManagementToolProfile.ID)
                                     .choice()
