@@ -1,5 +1,6 @@
 package us.nusun.llmshare.framework.tool;
 
+import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import us.nusun.llmshare.framework.service.MissionRosterService;
 
@@ -12,8 +13,21 @@ public final class MissionRosterTool {
         this.missionId = missionId;
     }
 
-    @Tool("Read the authoritative current active AgentRun roster for this mission, including each active persona, routine/subroutine, run hierarchy, focused input, status, and prompt-safe platform identities. Use this when current teammate coverage, assignment identity, onboarding, or access reconciliation matters.")
-    public String mission_roster() {
-        return roster.activeMissionRosterPrompt(missionId);
+    @Tool("""
+            Read mission roster information. Defaults to the active roster in a compact contacts view with names,
+            roles, statuses, and tool handles. Use scope=history for past and current AgentRuns; history defaults to
+            a compact run view. Use view=coverage for staffing checks, contacts for cross-tool handles, runs for run
+            history, or full only when detailed run input/subroutine context is actually needed. Optional personaId,
+            routineId, and comma-separated platforms filters narrow the result.
+            """)
+    public String mission_roster(
+            @P(value = "active (default) or history", required = false) String scope,
+            @P(value = "coverage, contacts, runs, or full; defaults to contacts for active and runs for history", required = false)
+            String view,
+            @P(value = "Optional exact persona id filter", required = false) String personaId,
+            @P(value = "Optional exact routine id filter", required = false) String routineId,
+            @P(value = "Optional comma-separated platform filter such as mattermost,plane,gitea", required = false)
+            String platforms) {
+        return roster.rosterView(missionId, scope, view, personaId, routineId, platforms);
     }
 }
