@@ -258,8 +258,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-completion-focus")
                 .routeId("pm-completion-focus")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Call mission_roster with view=coverage first, then review current mission completion once using minimal authoritative
-                        evidence. One unfinished work:product parent, work:implementation child, current unresolved blocker, merge, product
+                        Call mission_roster with view=coverage first, then review current mission completion once using
+                        minimal authoritative evidence. One unfinished work:product parent, work:implementation child, current unresolved blocker, merge, product
                         question, topology finding, acceptance follow-up, or current-roster access gap means incomplete.
                         Comments are evidence/context, never hidden workflow state. Do not mutate.
                         """))
