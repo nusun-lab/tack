@@ -135,7 +135,7 @@ public class MissionRosterService {
     }
 
     private String contactsEntry(List<AgentRun> runs, Set<String> platforms) {
-        AgentRun first = runs.getFirst();
+        AgentRun first = runs.get(0);
         Persona persona = personas.getRequired(first.personaId());
         String routineIds = runs.stream()
                 .map(AgentRun::routineId)
