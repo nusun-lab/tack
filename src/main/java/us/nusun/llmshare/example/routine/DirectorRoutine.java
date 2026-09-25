@@ -47,7 +47,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                 .setProperty("directorCycle", constant(0))
                 .setProperty("decision.director-mission-complete.result", constant("no"))
                 .setProperty(AgentRunAdmissionService.CAPACITY_MAXIMUM_PROPERTY, constant(MAX_ACTIVE_MISSION_RUNS))
-                .loopDoWhile(exchangeProperty("decision.director-mission-complete.result").isNotEqualTo(true))
+                .loopDoWhile(exchangeProperty("decision.director-mission-complete.result").isNotEqualTo("yes"))
                     .setProperty("directorCycle", simple("${exchangeProperty.directorCycle++}"))
                     .setProperty("directorCapacity", method(agentRunCapacityService, "capacityForCurrentMission"))
                     .setProperty("directorActiveRunCount", simple("${exchangeProperty.directorCapacity.active}"))

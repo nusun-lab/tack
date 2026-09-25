@@ -42,7 +42,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .routeId("example-software-team-product-owner")
                 .to("direct:po-product-owner-root-enter")
                 .setProperty("decision.product-owner-mission-complete.result", constant("no"))
-                .loopDoWhile(exchangeProperty("decision.product-owner-mission-complete.result").isNotEqualTo(true))
+                .loopDoWhile(exchangeProperty("decision.product-owner-mission-complete.result").isNotEqualTo("yes"))
                     .to("direct:po-orientation")
                     .setHeader(TackHeaders.PROMPT, constant("""
                             Choose exactly one highest-priority Product Owner focus for the next focused pass.

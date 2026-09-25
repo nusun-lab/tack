@@ -43,7 +43,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .routeId("example-software-team-application-developer")
                 .to("direct:dev-application-developer-root-enter")
                 .setProperty("decision.application-developer-mission-complete.result", constant("no"))
-                .loopDoWhile(exchangeProperty("decision.application-developer-mission-complete.result").isNotEqualTo(true))
+                .loopDoWhile(exchangeProperty("decision.application-developer-mission-complete.result").isNotEqualTo("yes"))
                     .to("direct:dev-orientation")
                     .setHeader(TackHeaders.PROMPT, constant("""
                             Choose exactly one highest-priority Application Developer focus for the next focused pass.
@@ -120,7 +120,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                         .setProperty("decision.developer-has-work.result", constant("no"))
                         .to("direct:dev-work-selection")
                         .choice()
-                            .when(exchangeProperty("decision.developer-has-work.result").isNotEqualTo(true))
+                            .when(exchangeProperty("decision.developer-has-work.result").isNotEqualTo("yes"))
                                 .to("direct:dev-no-work-closeout")
                         .end()
                     .endChoice()

@@ -38,7 +38,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .routeId("example-software-team-project-manager")
                 .to("direct:pm-project-manager-root-enter")
                 .setProperty("decision.project-manager-mission-complete.result", constant("no"))
-                .loopDoWhile(exchangeProperty("decision.project-manager-mission-complete.result").isNotEqualTo(true))
+                .loopDoWhile(exchangeProperty("decision.project-manager-mission-complete.result").isNotEqualTo("yes"))
                     .to("direct:pm-orientation")
                     .setHeader(TackHeaders.PROMPT, constant("""
                             Choose exactly one highest-priority Project Manager focus for the next focused pass.
@@ -115,7 +115,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .routeId("pm-bootstrap-focus-dispatch")
                 .to("direct:pm-project-basics-check")
                 .choice()
-                    .when(exchangeProperty("decision.collaboration-setup-complete.result").isNotEqualTo(true))
+                    .when(exchangeProperty("decision.collaboration-setup-complete.result").isNotEqualTo("yes"))
                         .to("direct:pm-project-bootstrap")
                 .end();
 
@@ -182,7 +182,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .to("direct:pm-project-manager-root-enter")
                 .to("direct:pm-project-basics-check")
                 .choice()
-                    .when(exchangeProperty("decision.collaboration-setup-complete.result").isNotEqualTo(true))
+                    .when(exchangeProperty("decision.collaboration-setup-complete.result").isNotEqualTo("yes"))
                         .to("direct:pm-project-bootstrap")
                 .end()
                 .to("direct:pm-project-manager-root-exit");
