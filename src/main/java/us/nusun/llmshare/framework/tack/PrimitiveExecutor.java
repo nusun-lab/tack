@@ -31,7 +31,6 @@ import us.nusun.llmshare.framework.model.ThoughtFrame;
 import us.nusun.llmshare.framework.model.ToolProfile;
 import us.nusun.llmshare.framework.projection.AgentRunProjectionManager;
 import us.nusun.llmshare.framework.routine.ThoughtStackSupport;
-import us.nusun.llmshare.framework.service.MissionRosterService;
 import us.nusun.llmshare.framework.state.AgentRun;
 import us.nusun.llmshare.framework.state.AgentRunStore;
 import us.nusun.llmshare.framework.state.ThoughtStack;
@@ -55,7 +54,6 @@ public class PrimitiveExecutor {
     @Inject PersonaCatalog personas;
     @Inject RoutineCatalog routines;
     @Inject ToolProfileRegistry toolProfiles;
-    @Inject MissionRosterService missionRoster;
     @Inject InferenceLaneRegistry lanes;
     @Inject AgentRunProjectionManager projections;
 
@@ -675,14 +673,10 @@ public class PrimitiveExecutor {
                 %s
 
                 ### Routine context:
-                %s
-
-                ### Mission roster:
                 %s""".formatted(
                 mission == null ? "(none)" : safeText(mission.goal()),
                 renderAgentRunInput(currentRun(exchange)),
-                renderRoutineSummary(currentRoutine(exchange)),
-                missionRoster().missionRosterPrompt(exchange));
+                renderRoutineSummary(currentRoutine(exchange)));
     }
 
     private String renderCurrentThought(ThoughtFrame frame) {
@@ -933,12 +927,6 @@ public class PrimitiveExecutor {
 
     private InferenceLaneRegistry lanes() {
         return lanes == null ? new InferenceLaneRegistry(List.of()) : lanes;
-    }
-
-    private MissionRosterService missionRoster() {
-        return missionRoster == null
-                ? new MissionRosterService(new AgentRunStore(), personas, routines)
-                : missionRoster;
     }
 
     private ThoughtStackSupport thoughts() {
