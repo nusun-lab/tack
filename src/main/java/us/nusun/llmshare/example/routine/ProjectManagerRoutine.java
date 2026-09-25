@@ -328,8 +328,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Call mission_roster first and retain the authoritative current active AgentRun roster for
                         bootstrap/onboarding. Then verify only the shared foundation needed to enter coordination:
-                        exactly one current-mission Plane project, documentation repository/navigation, source repository under agent-workspace, and
-                        mission team-chat channel, all accessible to this Project Manager run. Prefer direct lookup by
+                        exactly one current-mission Plane project, documentation repository/navigation, source
+                        repository under agent-workspace, and mission team-chat channel, all accessible to this Project
+                        Manager run. Prefer direct lookup by
                         verified ids already in thought. An existing empty source repository is valid foundation; do not
                         require main/default branch, commits, or application code.
                         
