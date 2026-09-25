@@ -76,8 +76,8 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                             - staffing: evaluate the explicit phase policy above against the authoritative mission roster,
                               shared-foundation signal, and product-backlog signal; route here whenever required active
                               coverage is missing or a required run may need replacement.
-                            - guidance: there is a useful coordination message to initiate, or a fresh coordination
-                              exchange/blocker would materially benefit from Director participation.
+                            - guidance: a fresh coordination exchange/blocker needs Director judgment, or a Director-owned
+                              merge/staffing outcome requires concise awareness to unblock another role.
                             - wait: none is presently useful; avoid ceremonial polling or duplicate activity.
                             
                             Fresh orientation evidence outranks older thought conclusions. Use durable thought for anchors,
@@ -136,8 +136,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         only: authoritative current active AgentRun coverage/capacity; whether
                         an In Progress implementation child has a linked OPEN PR; whether the shared
                         Plane/source/docs/chat foundation appears usable; whether at least one current-mission product
-                        parent/backlog item exists in Plane; one fresh coordination/blocker signal or useful message
-                        worth initiating. If the current
+                        parent/backlog item exists in Plane; one fresh inbound coordination/blocker signal. If the current
                         thought already contains verified project/repo/channel ids, use direct lookups by those anchors
                         rather than listing whole workspaces. Report current observations only. Do not recommend a next
                         focus, invent sequencing policy, or preserve an older HOLD/wait conclusion when fresh evidence
