@@ -64,9 +64,8 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                             - Once the shared foundation is usable, PO becomes required immediately even when Plane has zero
                               work items. PO creates and maintains the product backlog;
                               never wait for backlog before staffing PO.
-                            - Once at least one current-mission product parent/backlog item exists in Plane, Developer
-                              becomes required. Do not wait for PM-created implementation children before staffing
-                              Developer; PM can decompose while Developer comes online.
+                            - Once PM claims a work:product parent In Progress, Developer becomes required. That claim is
+                              the staffing-demand signal; do not require implementation Todo to exist first.
                             - A missing role required by the current phase makes staffing genuinely actionable.
                             
                             Allowed focus values, in priority order when genuinely actionable:
@@ -136,7 +135,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         only: authoritative current active AgentRun coverage/capacity; whether
                         an In Progress implementation child has a linked OPEN PR; whether the shared
                         Plane/source/docs/chat foundation appears usable; whether at least one current-mission product
-                        parent/backlog item exists in Plane; one fresh inbound coordination/blocker signal. If the current
+                        work:product parent is In Progress; one fresh inbound coordination/blocker signal. If the current
                         thought already contains verified project/repo/channel ids, use direct lookups by those anchors
                         rather than listing whole workspaces. Report current observations only. Do not recommend a next
                         focus, invent sequencing policy, or preserve an older HOLD/wait conclusion when fresh evidence
@@ -163,7 +162,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         AgentRun coverage/capacity; one current-mission Plane
                         project, one source repository under agent-workspace, one documentation repository with usable
                         navigation, one accessible current-mission team-chat channel, and whether at least one
-                        current-mission PRODUCT PARENT/backlog item exists in Plane. Prefer direct lookup using verified
+                        current-mission work:product parent is In Progress in Plane. Prefer direct lookup using verified
                         ids already present in current thought. An empty source repository is valid. Product backlog
                         existence is only an existence signal; do not require implementation children, commits, tests,
                         PRs, or application code. Do not require not-yet-running PO/DEV roles to already be members
@@ -178,9 +177,9 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         """))
                 .to("tack:decide?id=director-foundation-ready")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Does at least one current-mission product parent/backlog item exist in Plane? Answer yes for any
-                        verified current product-parent work item regardless of lifecycle state. Answer no when no such
-                        product item exists or the evidence is missing. Do not require implementation children.
+                        Does at least one current-mission work:product parent exist In Progress in Plane? Answer yes only
+                        for that verified lifecycle state. This is PM's delivery claim and Developer staffing-demand
+                        signal. Do not require an implementation Todo child.
                         """))
                 .to("tack:decide?id=director-product-backlog-exists")
                 .setHeader(TackHeaders.PROMPT, simple("""
@@ -190,16 +189,15 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                     Use the authoritative current active AgentRun coverage/capacity captured by
                     director-staffing-read in the active thought. FOUNDATION READY:
                     ${exchangeProperty.decision.director-foundation-ready.result}
-                    PRODUCT BACKLOG EXISTS: ${exchangeProperty.decision.director-product-backlog-exists.result}
+                    PRODUCT DELIVERY CLAIM EXISTS: ${exchangeProperty.decision.director-product-backlog-exists.result}
                     The mission roster is the
                     only source of truth for active AgentRun coverage. Only accepted/scheduled/running main-routine
                     AgentRuns count. Phase policy for an unfinished mission:
                     - PM is always required. If foundation is no, required active coverage is PM only.
-                    - If foundation is yes and product backlog does not yet exist, required active coverage is PM +
-                      PO. PO must be started even with zero work items because PO populates the product backlog.
-                    - If foundation is yes and product backlog exists, required active coverage is PM + PO + DEV.
-                      Developer should be started once product backlog exists; do not wait for implementation
-                      children. Never duplicate an already-active required role. Create one run per missing required
+                    - If foundation is yes and no product parent is In Progress, required active coverage is PM + PO.
+                      PO populates the product backlog and PM may claim ready product work.
+                    - If foundation is yes and a product parent is In Progress, required active coverage is PM + PO +
+                      DEV. The PM claim is sufficient demand; do not wait for implementation Todo children. Never duplicate an already-active required role. Create one run per missing required
                       role subject to remaining capacity. Return {"agentRuns":[]} when none is
                       missing or capacity prevents another start.
                     """))
@@ -263,6 +261,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                             .choice()
                                 .when(exchangeProperty("act.director-integration-merge.durableProgress").isEqualTo(true))
                                     .setProperty("directorMadeProgress", constant(true))
+                                    .to("direct:director-guidance-focus")
                             .endChoice()
                     .end()
                 .end();
