@@ -32,7 +32,6 @@ import us.nusun.llmshare.framework.model.ToolProfile;
 import us.nusun.llmshare.framework.projection.AgentRunProjectionManager;
 import us.nusun.llmshare.framework.routine.ThoughtStackSupport;
 import us.nusun.llmshare.framework.state.AgentRun;
-import us.nusun.llmshare.framework.state.AgentRunStore;
 import us.nusun.llmshare.framework.state.ThoughtStack;
 
 import java.io.InputStream;
@@ -369,7 +368,9 @@ public class PrimitiveExecutor {
             case "tool" -> """
 
                     Tool access:
-                    - You have access to only one tool profile during this pass.
+                    - You have access to only one external tool profile during this pass.
+                    - Framework-local tools such as mission_roster may also be available; use them only when the act
+                      requires current mission-team state.
 
                     Bounded execution:
                     - Work only on the highlighted ACT PROMPT.
