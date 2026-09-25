@@ -363,7 +363,8 @@ public class LlmAgentFactory {
                 List<Object> customTools = new ArrayList<>();
                 String missionId = metadata(job, "missionId");
                 if (missionRoster != null && !blank(missionId)) {
-                    customTools.add(new MissionRosterTool(missionRoster, missionId));
+                    Integer capacityMaximum = integerProperty(exchange, "agentRunCapacityMaximum");
+                    customTools.add(new MissionRosterTool(missionRoster, missionId, capacityMaximum));
                 }
                 if (sandboxes != null && profile.allowsTool(SANDBOX_TOOL_SERVER, SANDBOX_EXEC_TOOL)) {
                     String sandboxName = exchange.getProperty(PersonaSandboxManager.WORKING_STATE_SANDBOX_NAME, String.class);
@@ -492,6 +493,24 @@ public class LlmAgentFactory {
             }
             LlmJobEnvelope job = job(exchange);
             return job == null || job.passType() == null ? LlmPassType.SYNTHESIS : job.passType();
+        }
+
+        private static Integer integerProperty(Exchange exchange, String key) {
+            if (exchange == null || blank(key)) {
+                return null;
+            }
+            Object value = exchange.getProperty(key);
+            if (value == null) {
+                value = exchange.getIn().getHeader(key);
+            }
+            if (value == null) {
+                return null;
+            }
+            if (value instanceof Number number) {
+                return number.intValue();
+            }
+            String text = String.valueOf(value);
+            return text.isBlank() ? null : Integer.parseInt(text.trim());
         }
 
         private static String metadata(LlmJobEnvelope job, String key) {
