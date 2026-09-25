@@ -47,12 +47,13 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             - implementation: one assigned work:implementation In Progress child has actionable
                               implementation/recovery work, or no current source-delivery child has an open unmerged PR and
                               one assigned work:implementation Todo child is ready to start. Todo + Developer assignment is
-                              the complete PM -> DEV handoff. Developer owns Todo -> In Progress. Do not wait for PM chat
+                              the complete authoritative PM -> DEV handoff. Developer owns Todo -> In Progress. A useful
+                              PM awareness message may provide context but never gates work. Do not wait for chat
                               confirmation, PM to flip state, PM to seed main, or
                               speculative collaborator-grant confirmation.
-                            - coordination: there is a useful technical/blocker/PR notification or question to initiate, or
-                              a fresh technical conversation/direct question needs Developer
-                              participation outside the selected implementation flow.
+                            - coordination: a fresh inbound technical conversation/direct question needs Developer
+                              participation outside the selected implementation flow. Outbound PR/blocker/finding
+                              awareness belongs to implementation closeout and does not compete for focus.
                             - wait: current assigned source work has an open unmerged PR and no newer evidence requires
                               another source change, or no useful assigned work:implementation item is currently available.
                               Do not start a second source unit while one task PR remains open/unmerged. Keep unmerged
@@ -91,8 +92,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         from("direct:dev-focus-coordination")
                 .routeId("dev-focus-coordination")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused Developer coordination for one useful initiated
-                        technical/blocker/PR message or one fresh teammate exchange.
+                        Focused Developer coordination for one fresh inbound technical question or teammate exchange.
+                        Implementation closeout handles outbound PR/blocker/finding awareness.
                         """))
                 .to("tack:thought-enter?name=dev-coordination-focus&maxTokens=250")
                 .to("direct:dev-team-chat-sync")
@@ -112,8 +113,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                         Read the smallest fresh current-mission slice needed to rank Developer focus. Determine only:
                         whether shared basics are accessible; one assigned work:implementation In Progress child and
                         whether its linked PR is open/merged/absent; whether newer concrete feedback/evidence requires
-                        more implementation; whether an assigned work:implementation Todo child exists; one useful
-                        technical/blocker/PR message worth initiating or fresh exchange needing attention; and
+                        more implementation; whether an assigned work:implementation Todo child exists; one fresh
+                        inbound technical exchange needing attention; and
                         completion plausibility. An accessible empty source repo counts as usable. Do not treat missing
                         main/default branch or untested push permission as a blocker. Prefer verified
                         project/repo/work-item ids already in thought rather than broad listing. Plane is authoritative
