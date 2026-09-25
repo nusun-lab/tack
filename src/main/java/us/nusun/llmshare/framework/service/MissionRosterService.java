@@ -8,13 +8,17 @@ import jakarta.inject.Named;
 import org.apache.camel.Exchange;
 import us.nusun.llmshare.framework.inventory.PersonaCatalog;
 import us.nusun.llmshare.framework.inventory.RoutineCatalog;
+import us.nusun.llmshare.framework.model.ExternalIdentity;
 import us.nusun.llmshare.framework.model.Persona;
 import us.nusun.llmshare.framework.model.RoutineDefinition;
 import us.nusun.llmshare.framework.model.SubroutineDefinition;
 import us.nusun.llmshare.framework.state.AgentRun;
 import us.nusun.llmshare.framework.state.AgentRunStore;
 
+import java.util.LinkedHashSet;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @ApplicationScoped
@@ -32,7 +36,11 @@ public class MissionRosterService {
         this(agentRuns, personas, routines, new ObjectMapper());
     }
 
-    public MissionRosterService(AgentRunStore agentRuns, PersonaCatalog personas, RoutineCatalog routines, ObjectMapper objectMapper) {
+    public MissionRosterService(
+            AgentRunStore agentRuns,
+            PersonaCatalog personas,
+            RoutineCatalog routines,
+            ObjectMapper objectMapper) {
         this.agentRuns = agentRuns;
         this.personas = personas;
         this.routines = routines;
@@ -50,22 +58,81 @@ public class MissionRosterService {
     }
 
     public String missionRosterPrompt(String missionId) {
-        return rosterPrompt(missionId, false);
+        return legacyRosterPrompt(missionId, false);
     }
 
     public String activeMissionRosterPrompt(String missionId) {
-        return rosterPrompt(missionId, true);
+        return legacyRosterPrompt(missionId, true);
     }
 
-    private String rosterPrompt(String missionId, boolean activeOnly) {
+    public String rosterView(
+            String missionId,
+            String scope,
+            String view,
+            String personaId,
+            String routineId,
+            String platforms) {
+        String normalizedScope = normalizeScope(scope);
+        String normalizedView = normalizeView(view, normalizedScope);
+        Set<String> platformFilter = csvSet(platforms);
+
         String roster = agentRuns.runsByMission(missionId).stream()
-                .filter(run -> !activeOnly || AgentRunStore.isActiveStatus(run.status()))
-                .map(this::entry)
+                .filter(run -> !"active".equals(normalizedScope) || AgentRunStore.isActiveStatus(run.status()))
+                .filter(run -> blank(personaId) || personaId.strip().equals(run.personaId()))
+                .filter(run -> blank(routineId) || routineId.strip().equals(run.routineId()))
+                .map(run -> renderView(run, normalizedView, platformFilter))
                 .collect(Collectors.joining("\n"));
         return roster.isBlank() ? "(none)" : roster;
     }
 
-    private String entry(AgentRun run) {
+    private String legacyRosterPrompt(String missionId, boolean activeOnly) {
+        String roster = agentRuns.runsByMission(missionId).stream()
+                .filter(run -> !activeOnly || AgentRunStore.isActiveStatus(run.status()))
+                .map(this::fullEntry)
+                .collect(Collectors.joining("\n"));
+        return roster.isBlank() ? "(none)" : roster;
+    }
+
+    private String renderView(AgentRun run, String view, Set<String> platforms) {
+        return switch (view) {
+            case "coverage" -> coverageEntry(run);
+            case "contacts" -> contactsEntry(run, platforms);
+            case "runs" -> runsEntry(run, platforms);
+            case "full" -> fullEntry(run, platforms);
+            default -> throw new IllegalArgumentException("Unsupported roster view: " + view);
+        };
+    }
+
+    private String coverageEntry(AgentRun run) {
+        Persona persona = personas.getRequired(run.personaId());
+        return "- %s | personaId=%s | routineId=%s | target=%s | status=%s".formatted(
+                persona.name(),
+                run.personaId(),
+                run.routineId(),
+                target(run),
+                run.status());
+    }
+
+    private String contactsEntry(AgentRun run, Set<String> platforms) {
+        return coverageEntry(run) + " | handles: " + renderIdentities(personas.getRequired(run.personaId()), platforms);
+    }
+
+    private String runsEntry(AgentRun run, Set<String> platforms) {
+        String entry = coverageEntry(run)
+                + " | agentRunId=" + run.id()
+                + " | parentAgentRunId=" + value(run.parentAgentRunId())
+                + " | startedAt=" + run.startedAt();
+        if (!platforms.isEmpty()) {
+            entry += " | handles: " + renderIdentities(personas.getRequired(run.personaId()), platforms);
+        }
+        return entry;
+    }
+
+    private String fullEntry(AgentRun run) {
+        return fullEntry(run, Set.of());
+    }
+
+    private String fullEntry(AgentRun run, Set<String> platforms) {
         Persona persona = personas.getRequired(run.personaId());
         RoutineDefinition routine = routines.getRequired(run.routineId());
         SubroutineDefinition subroutine = run.subroutineId() == null ? null : routine.requireSubroutine(run.subroutineId());
@@ -80,6 +147,7 @@ public class MissionRosterService {
                   agentRunId: %s
                   parentAgentRunId: %s
                   status: %s
+                  startedAt: %s
                   input: %s
                   platform identities: %s
                 """.formatted(
@@ -91,10 +159,11 @@ public class MissionRosterService {
                 subroutine == null ? "(full routine)" : subroutine.description(),
                 subroutine == null ? "full routine" : "subroutine",
                 run.id(),
-                run.parentAgentRunId() == null ? "(none)" : run.parentAgentRunId(),
+                value(run.parentAgentRunId()),
                 run.status(),
+                run.startedAt(),
                 renderInput(run.input()),
-                renderIdentities(persona)).strip();
+                renderIdentities(persona, platforms)).strip();
     }
 
     private String renderInput(Object input) {
@@ -111,20 +180,83 @@ public class MissionRosterService {
         }
     }
 
-    private static String renderIdentities(Persona persona) {
+    private static String renderIdentities(Persona persona, Set<String> platforms) {
         String identities = persona.identities().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
-                .filter(entry -> entry.getValue() != null
-                        && entry.getValue().handle() != null
-                        && !entry.getValue().handle().isBlank())
+                .filter(entry -> hasHandle(entry.getValue()))
+                .filter(entry -> platforms.isEmpty() || matchesPlatform(platforms, entry))
                 .map(entry -> {
                     String platform = entry.getValue().platform();
-                    if (platform == null || platform.isBlank()) {
+                    if (blank(platform)) {
                         platform = entry.getKey();
                     }
-                    return platform + " " + entry.getValue().handle();
+                    return platform + "=" + entry.getValue().handle();
                 })
                 .collect(Collectors.joining(", "));
         return identities.isBlank() ? "(none)" : identities;
+    }
+
+    private static boolean matchesPlatform(Set<String> platforms, Map.Entry<String, ExternalIdentity> entry) {
+        String key = normalize(entry.getKey());
+        String platform = normalize(entry.getValue() == null ? null : entry.getValue().platform());
+        return platforms.contains(key) || platforms.contains(platform);
+    }
+
+    private static boolean hasHandle(ExternalIdentity identity) {
+        return identity != null && !blank(identity.handle());
+    }
+
+    private static String target(AgentRun run) {
+        return run.subroutineId() == null ? "main" : "subroutine:" + run.subroutineId();
+    }
+
+    private static String normalizeScope(String scope) {
+        if (blank(scope)) {
+            return "active";
+        }
+        return switch (normalize(scope)) {
+            case "active", "current" -> "active";
+            case "history", "all" -> "history";
+            default -> throw new IllegalArgumentException("scope must be active or history");
+        };
+    }
+
+    private static String normalizeView(String view, String scope) {
+        if (blank(view)) {
+            return "history".equals(scope) ? "runs" : "contacts";
+        }
+        return switch (normalize(view)) {
+            case "coverage" -> "coverage";
+            case "contacts", "contact", "handles", "identities" -> "contacts";
+            case "runs", "run" -> "runs";
+            case "full", "detail", "details" -> "full";
+            default -> throw new IllegalArgumentException("view must be coverage, contacts, runs, or full");
+        };
+    }
+
+    private static Set<String> csvSet(String value) {
+        if (blank(value)) {
+            return Set.of();
+        }
+        LinkedHashSet<String> result = new LinkedHashSet<>();
+        for (String item : value.split(",")) {
+            String normalized = normalize(item);
+            if (!normalized.isBlank()) {
+                result.add(normalized);
+            }
+        }
+        return Set.copyOf(result);
+    }
+
+    private static String normalize(String value) {
+        return value == null ? "" : value.strip().toLowerCase(Locale.ROOT);
+    }
+
+    private static String value(String value) {
+        return blank(value) ? "(none)" : value;
+    }
+
+    private static boolean blank(String value) {
+        return value == null || value.isBlank();
     }
 }
