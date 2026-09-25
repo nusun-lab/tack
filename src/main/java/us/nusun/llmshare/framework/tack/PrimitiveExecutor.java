@@ -62,7 +62,7 @@ public class PrimitiveExecutor {
     public record ActRequest(String id, String prompt, String toolProfile, String lane) {
     }
 
-    public record DecideRequest(String id, String prompt, String lane) {
+    public record DecideRequest(String id, String prompt, String choices, String lane) {
     }
 
     public record CreateRequest(
@@ -146,20 +146,29 @@ public class PrimitiveExecutor {
 
     public void decide(Exchange exchange, DecideRequest request, ProducerTemplate llm) throws Exception {
         String laneId = resolveLane(exchange, request.lane());
+        List<String> choices = decisionChoices(request.choices());
+        String schema = decisionSchema(choices);
         markCurrent(exchange, "decide", request.id());
         exchange.setProperty("decisionId", request.id());
         exchange.setProperty("decisionPrompt", request.prompt());
+        exchange.setProperty("decisionChoices", choices);
         projections.record(exchange, "DECIDE_STARTED");
         projections.record(exchange, "SYNTHESIS_PASS_QUEUED");
         LlmJobResult llmResult = callLlm(
                 exchange,
                 llm,
-                llmRequest(exchange, laneId, LlmPassType.SYNTHESIS, "decision", renderDecisionPrompt(exchange, request), "classpath:schemas/decision-result-schema.json"),
+                llmRequest(exchange, laneId, LlmPassType.SYNTHESIS, "decision",
+                        renderDecisionPrompt(exchange, request), schema),
                 "decision synthesis pass");
         projections.record(exchange, "SYNTHESIS_PASS_COMPLETED");
         DecisionResult result = parse(llmResult.content(), DecisionResult.class);
         if (result.decisionId() == null || !result.decisionId().equals(request.id())) {
-            throw new FrameworkPrimitiveException("Decision result id " + result.decisionId() + " does not match requested id " + request.id());
+            throw new FrameworkPrimitiveException("Decision result id " + result.decisionId()
+                    + " does not match requested id " + request.id());
+        }
+        if (result.result() == null || !choices.contains(result.result())) {
+            throw new FrameworkPrimitiveException("Decision result " + result.result()
+                    + " is not one of the allowed choices " + choices);
         }
         currentRun(exchange).apply(result);
         exchange.setProperty("decisions." + result.decisionId(), result);
@@ -544,12 +553,14 @@ public class PrimitiveExecutor {
     }
 
     private String renderDecisionPrompt(Exchange exchange, DecideRequest request) {
+        List<String> choices = decisionChoices(request.choices());
         return """
                 %s
 
                 ## Step-Level Context
                 - Primitive: decide
                 - Decision id: %s
+                - Allowed answers: %s
 
                 ### Active thoughts:
                 %s
@@ -559,8 +570,9 @@ public class PrimitiveExecutor {
 
                 ## Rules / Execution Guidance
                 - Answer only the highlighted decision question.
+                - Choose exactly one allowed answer.
                 - Do not invent missing evidence or perform work outside this decision.
-                - Prefer false when the supplied evidence is incomplete, stale, or blocked.
+                - If the answers are yes and no, prefer no when evidence is incomplete, stale, or blocked.
 
                 ## DECISION PROMPT - ANSWER THIS NOW
                 Question: %s
@@ -570,6 +582,7 @@ public class PrimitiveExecutor {
                 """.formatted(
                 missionLevelContext(exchange),
                 safeText(request.id()),
+                String.join(", ", choices),
                 renderThoughtFramesForModel(stack(exchange).frames()),
                 renderStepResultForModel(currentRun(exchange).latestStepResult()),
                 safeText(request.prompt()));
@@ -775,6 +788,41 @@ public class PrimitiveExecutor {
             throw new IllegalStateException("Cannot run " + operation + " because no active thought is present");
         }
         return leaf;
+    }
+
+    private List<String> decisionChoices(String rawChoices) {
+        if (rawChoices == null || rawChoices.isBlank()) {
+            return List.of("yes", "no");
+        }
+        List<String> choices = java.util.Arrays.stream(rawChoices.split(","))
+                .map(String::strip)
+                .filter(choice -> !choice.isBlank())
+                .distinct()
+                .toList();
+        if (choices.size() < 2) {
+            throw new IllegalArgumentException("tack:decide requires at least two distinct choices");
+        }
+        return choices;
+    }
+
+    private String decisionSchema(List<String> choices) throws Exception {
+        var root = mapper().createObjectNode();
+        root.put("type", "object");
+        var properties = root.putObject("properties");
+        properties.putObject("decisionId").put("type", "string");
+        var result = properties.putObject("result");
+        result.put("type", "string");
+        var allowed = result.putArray("enum");
+        choices.forEach(allowed::add);
+        properties.putObject("confidence").put("type", "number");
+        properties.putObject("reason").put("type", "string");
+        root.putArray("required")
+                .add("decisionId")
+                .add("result")
+                .add("confidence")
+                .add("reason");
+        root.put("additionalProperties", false);
+        return mapper().writeValueAsString(root);
     }
 
     private ResolvedSchema resolveCreateSchema(CreateRequest request) throws Exception {

@@ -2,7 +2,6 @@ package us.nusun.llmshare.example.routine;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import org.apache.camel.builder.RouteBuilder;
-import org.apache.camel.model.dataformat.JsonLibrary;
 import us.nusun.llmshare.example.tool.ProjectManagementToolProfile;
 import us.nusun.llmshare.example.tool.SourceControlWriteToolProfile;
 import us.nusun.llmshare.example.tool.TeamChatToolProfile;
@@ -42,7 +41,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         from("direct:example-software-team-product-owner")
                 .routeId("example-software-team-product-owner")
                 .to("direct:po-product-owner-root-enter")
-                .setProperty("decision.product-owner-mission-complete.result", constant(false))
+                .setProperty("decision.product-owner-mission-complete.result", constant("no"))
                 .loopDoWhile(exchangeProperty("decision.product-owner-mission-complete.result").isNotEqualTo(true))
                     .to("direct:po-orientation")
                     .setHeader(TackHeaders.PROMPT, constant("""
@@ -55,33 +54,31 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                             - closeout: a concrete product documentation/chat curation follow-up is useful after durable product work.
                             - completion: durable evidence makes mission completion plausible enough for the dedicated completion check.
                             - wait: none of the above is useful now. A shallow product backlog while safely definable mission scope remains is actionable product work, not a reason to wait.
-                            Plane real states are authoritative lifecycle state. work:product/work:implementation labels are classification only. Comments provide evidence/context only and must not become named workflow states or approval leases. Fresh orientation evidence outranks older HOLD/wait conclusions. Return only the focus object.
+                            Plane real states are authoritative lifecycle state. work:product/work:implementation labels are classification only. Comments provide evidence/context only and must not become named workflow states or approval leases. Fresh orientation evidence outranks older HOLD/wait conclusions. Choose exactly one allowed focus value.
                             """))
-                    .to("tack:create?id=po-priority-focus&schemaId=product-owner-priority-focus&schema=classpath:schemas/example/software-team/product-owner-priority-focus-schema.json")
-                    .unmarshal().json(JsonLibrary.Jackson, PriorityFocus.class)
-                    .process(exchange -> exchange.setProperty("poPriorityFocus", exchange.getMessage().getBody(PriorityFocus.class).focus()))
+                    .to("tack:decide?id=po-priority-focus&choices=missing-basics,product-work,acceptance,closeout,completion,wait")
                     .choice()
-                        .when(exchangeProperty("poPriorityFocus").isEqualTo("missing-basics"))
+                        .when(exchangeProperty("decision.po-priority-focus.result").isEqualTo("missing-basics"))
                             .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused missing-foundation response: communicate only when useful and do not begin product work."))
                             .to("tack:thought-enter?name=po-missing-basics-focus&maxTokens=250")
                             .to("direct:po-missing-basics-closeout")
                             .to("tack:thought-exit?name=po-missing-basics-focus")
-                        .when(exchangeProperty("poPriorityFocus").isEqualTo("product-work"))
+                        .when(exchangeProperty("decision.po-priority-focus.result").isEqualTo("product-work"))
                             .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused product work: resolve current product questions/acceptance, then create, define, and hand off one work:product slice per act until several delivery-ready product slices are queued or no additional safe product outcome remains."))
                             .to("tack:thought-enter?name=po-product-work-focus&maxTokens=400")
                             .to("direct:po-product-work-focus")
                             .to("tack:thought-exit?name=po-product-work-focus")
-                        .when(exchangeProperty("poPriorityFocus").isEqualTo("coordination"))
+                        .when(exchangeProperty("decision.po-priority-focus.result").isEqualTo("coordination"))
                             .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused Product Owner coordination for one useful initiated handoff/question or one fresh scope, acceptance, or product-judgment exchange."))
                             .to("tack:thought-enter?name=po-coordination-focus&maxTokens=250")
                             .to("direct:po-team-chat-sync")
                             .to("tack:thought-exit?name=po-coordination-focus")
-                        .when(exchangeProperty("poPriorityFocus").isEqualTo("closeout"))
+                        .when(exchangeProperty("decision.po-priority-focus.result").isEqualTo("closeout"))
                             .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused product closeout curation when a durable conversation or documentation improvement is concretely useful."))
                             .to("tack:thought-enter?name=po-closeout-focus&maxTokens=250")
                             .to("direct:po-cycle-closeout")
                             .to("tack:thought-exit?name=po-closeout-focus")
-                        .when(exchangeProperty("poPriorityFocus").isEqualTo("completion"))
+                        .when(exchangeProperty("decision.po-priority-focus.result").isEqualTo("completion"))
                             .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused Product Owner mission completion evaluation using minimal authoritative evidence."))
                             .to("tack:thought-enter?name=po-completion-focus&maxTokens=300")
                             .to("direct:po-completion-focus")
@@ -104,13 +101,13 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .routeId("po-product-work-focus")
                 .setProperty("poFocusedProductIterations", constant(0))
                 .setProperty("poFocusedProductContinue", constant(true))
-                .setProperty("decision.po-product-backlog-deep-enough.result", constant(false))
+                .setProperty("decision.po-product-backlog-deep-enough.result", constant("no"))
                 .loopDoWhile(simple("${exchangeProperty.poFocusedProductContinue} == true && ${exchangeProperty.poFocusedProductIterations} < 6"))
                     .setProperty("poFocusedProductIterations", simple("${exchangeProperty.poFocusedProductIterations++}"))
                     .setProperty("poFocusedProductContinue", constant(false))
                     .to("direct:po-select-product-work")
                     .choice()
-                        .when(exchangeProperty("decision.product-owner-has-work.result").isEqualTo(true))
+                        .when(exchangeProperty("decision.product-owner-has-work.result").isEqualTo("yes"))
                             .to("direct:po-acceptance-work")
                             .to("direct:po-plane-state-handoff")
                             .choice()
@@ -124,7 +121,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                     .end()
                     .to("direct:po-product-backlog-depth-check")
                     .choice()
-                        .when(exchangeProperty("decision.po-product-backlog-deep-enough.result").isEqualTo(true))
+                        .when(exchangeProperty("decision.po-product-backlog-deep-enough.result").isEqualTo("yes"))
                             .setProperty("poFocusedProductContinue", constant(false))
                         .otherwise()
                             .setProperty("poFocusedProductContinue", constant(true))
@@ -138,7 +135,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         """))
                 .to("tack:act?id=po-product-backlog-depth-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Is PO sufficiently ahead of Project Management? Return false whenever a current product question or completed acceptance candidate requires PO action. Otherwise normally require about 3-5 usable Todo work:product slices when enough safely definable mission scope remains. Return false when the queue is shallower and another distinct required user-facing outcome can be defined without speculation, even when existing product parents are already In Progress. Never count work:implementation items toward this depth. Return true with a shallower queue only when remaining mission size or missing product evidence makes further safe definition inappropriate.
+                        Is PO sufficiently ahead of Project Management? Answer no whenever a current product question or completed acceptance candidate requires PO action. Otherwise normally require about 3-5 usable Todo work:product slices when enough safely definable mission scope remains. Answer no when the queue is shallower and another distinct required user-facing outcome can be defined without speculation, even when existing product parents are already In Progress. Never count work:implementation items toward this depth. Answer yes with a shallower queue only when remaining mission size or missing product evidence makes further safe definition inappropriate.
                         """))
                 .to("tack:decide?id=po-product-backlog-deep-enough");
 
@@ -146,7 +143,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .routeId("po-completion-focus")
                 .setHeader(TackHeaders.PROMPT, constant("Review mission completion once using the smallest authoritative read and known ids. One verified unfinished work:product user-facing outcome or unresolved product question is enough to conclude not complete. Plane real state is authoritative; comments are evidence/context only. Do not mutate."))
                 .to("tack:act?id=po-mission-status-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
-                .setHeader(TackHeaders.PROMPT, constant("Is the entire mission complete from product ownership? Return true only when every required user-facing outcome is represented by work:product items and Done against its current intended acceptance criteria with no unresolved product question/decision or acceptance follow-up. Todo or In Progress product work means not complete."))
+                .setHeader(TackHeaders.PROMPT, constant("Is the entire mission complete from product ownership? Answer yes only when every required user-facing outcome is represented by work:product items and Done against its current intended acceptance criteria with no unresolved product question/decision or acceptance follow-up. Todo or In Progress product work means not complete."))
                 .to("tack:decide?id=product-owner-mission-complete");
 
         from("direct:example-software-team-product-owner-acceptance-refinement")
@@ -154,10 +151,10 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .to("direct:po-product-owner-root-enter")
                 .to("direct:po-project-basics-check")
                 .choice()
-                    .when(exchangeProperty("decision.product-owner-has-project-basics.result").isEqualTo(true))
+                    .when(exchangeProperty("decision.product-owner-has-project-basics.result").isEqualTo("yes"))
                         .to("direct:po-select-product-work")
                         .choice()
-                            .when(exchangeProperty("decision.product-owner-has-work.result").isEqualTo(true))
+                            .when(exchangeProperty("decision.product-owner-has-work.result").isEqualTo("yes"))
                                 .to("direct:po-acceptance-work")
                         .endChoice()
                         .to("direct:po-cycle-closeout")
@@ -171,10 +168,10 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .to("direct:po-product-owner-root-enter")
                 .to("direct:po-project-basics-check")
                 .choice()
-                    .when(exchangeProperty("decision.product-owner-has-project-basics.result").isEqualTo(true))
+                    .when(exchangeProperty("decision.product-owner-has-project-basics.result").isEqualTo("yes"))
                         .to("direct:po-select-product-work")
                         .choice()
-                            .when(exchangeProperty("decision.product-owner-has-work.result").isEqualTo(true))
+                            .when(exchangeProperty("decision.product-owner-has-work.result").isEqualTo("yes"))
                                 .to("direct:po-acceptance-work")
                                 .to("direct:po-plane-state-handoff")
                         .endChoice()
@@ -195,7 +192,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
 
         from("direct:po-project-basics-check")
                 .routeId("po-project-basics-check")
-                .setProperty("decision.product-owner-has-project-basics.result", constant(false))
+                .setProperty("decision.product-owner-has-project-basics.result", constant("no"))
                 .setHeader(TackHeaders.PROMPT, constant("Verify product project basics once without mutation. Product work requires usable Plane, docs/navigation, team chat, and an accessible source repository anchor. The source repository may be empty; lack of main/commits is not a Product Owner blocker. Prefer known verified ids from thought. One confirmed missing required basic is enough to stop. Do not repeatedly rediscover the workspace."))
                 .to("tack:act?id=po-workspace-basics-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("Are project basics present and linked enough to do product work? Treat an existing accessible empty source repository as sufficient."))
@@ -218,7 +215,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                     .to("tack:thought-enter?name=po-cycle&maxTokens=300")
                     .to("direct:po-select-product-work")
                     .choice()
-                        .when(exchangeProperty("decision.product-owner-has-work.result").isEqualTo(true))
+                        .when(exchangeProperty("decision.product-owner-has-work.result").isEqualTo("yes"))
                             .to("direct:po-acceptance-work")
                             .choice().when(exchangeProperty("act.po-canonical-acceptance-update.durableProgress").isEqualTo(true)).setProperty("poMadeProgress", constant(true)).endChoice()
                             .to("direct:po-plane-state-handoff")
@@ -237,7 +234,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
 
         from("direct:po-select-product-work")
                 .routeId("po-select-product-work")
-                .setProperty("decision.product-owner-has-work.result", constant(false))
+                .setProperty("decision.product-owner-has-work.result", constant("no"))
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Product selection: one work:product parent only, never a work:implementation child. Prefer unresolved product judgment, then completed acceptance candidate, then Backlog definition, then create one missing distinct required outcome when ready-buffer depth is shallow."))
                 .to("tack:thought-enter?name=po-selection&maxTokens=250")
                 .setHeader(TackHeaders.PROMPT, constant("""
@@ -252,10 +249,10 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         Never select, refine, promote, or accept an item carrying work:implementation as Product Owner work. If classification labels are missing from the read, retrieve labels instead of guessing from name/description. Product parents describe observable user value/acceptance, never code patches. Do not create implementation children or assign developers.
                         """))
                 .to("tack:act?id=po-backlog-review&toolProfile=" + ProjectManagementToolProfile.ID)
-                .setHeader(TackHeaders.PROMPT, constant("Is exactly one work:product parent selected for useful PO work now: unresolved product judgment, Backlog definition/handoff, completed In Progress acceptance candidate based on real child states/evidence, or a newly created missing product outcome? Return false for any work:implementation item."))
+                .setHeader(TackHeaders.PROMPT, constant("Is exactly one work:product parent selected for useful PO work now: unresolved product judgment, Backlog definition/handoff, completed In Progress acceptance candidate based on real child states/evidence, or a newly created missing product outcome? Answer no for any work:implementation item."))
                 .to("tack:decide?id=product-owner-has-work")
                 .choice()
-                    .when(exchangeProperty("decision.product-owner-has-work.result").isEqualTo(true))
+                    .when(exchangeProperty("decision.product-owner-has-work.result").isEqualTo("yes"))
                         .setHeader(TackHeaders.PROMPT, constant("Read only the selected work:product canonical product page, direct Plane parent/child states, current product-question context when relevant, and direct durable completion evidence needed for acceptance. Prefer known ids. Do not scan the whole documentation repository or depend on named workflow comments."))
                         .to("tack:act?id=po-product-context-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .end()

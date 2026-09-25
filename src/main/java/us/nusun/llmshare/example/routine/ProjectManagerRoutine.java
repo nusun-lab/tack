@@ -2,7 +2,6 @@ package us.nusun.llmshare.example.routine;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import org.apache.camel.builder.RouteBuilder;
-import org.apache.camel.model.dataformat.JsonLibrary;
 import us.nusun.llmshare.example.tool.ProjectManagementToolProfile;
 import us.nusun.llmshare.example.tool.SourceControlToolProfile;
 import us.nusun.llmshare.example.tool.SourceControlWriteToolProfile;
@@ -38,7 +37,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:example-software-team-project-manager")
                 .routeId("example-software-team-project-manager")
                 .to("direct:pm-project-manager-root-enter")
-                .setProperty("decision.project-manager-mission-complete.result", constant(false))
+                .setProperty("decision.project-manager-mission-complete.result", constant("no"))
                 .loopDoWhile(exchangeProperty("decision.project-manager-mission-complete.result").isNotEqualTo(true))
                     .to("direct:pm-orientation")
                     .setHeader(TackHeaders.PROMPT, constant("""
@@ -57,43 +56,41 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                             - completion: durable evidence makes mission completion plausible enough for the dedicated completion check.
                             - wait: no focus above is currently useful. A shallow Developer backlog while more work:product can be safely decomposed is actionable planning work, not a reason to wait.
 
-                            Fresh orientation evidence outranks older HOLD/wait conclusions. Plane Todo + Developer assignee is the complete PM -> DEV handoff; Developer owns Todo -> In Progress. Pick one focus only and return only the focus object.
+                            Fresh orientation evidence outranks older HOLD/wait conclusions. Plane Todo + Developer assignee is the complete PM -> DEV handoff; Developer owns Todo -> In Progress. Choose exactly one allowed focus value.
                             """))
-                    .to("tack:create?id=pm-priority-focus&schemaId=project-manager-priority-focus&schema=classpath:schemas/example/software-team/project-manager-priority-focus-schema.json")
-                    .unmarshal().json(JsonLibrary.Jackson, PriorityFocus.class)
-                    .process(exchange -> exchange.setProperty("pmPriorityFocus", exchange.getMessage().getBody(PriorityFocus.class).focus()))
+                    .to("tack:decide?id=pm-priority-focus&choices=bootstrap,active-delivery,planning,onboarding,coordination,documentation,completion,wait")
                     .choice()
-                        .when(exchangeProperty("pmPriorityFocus").isEqualTo("bootstrap"))
+                        .when(exchangeProperty("decision.pm-priority-focus.result").isEqualTo("bootstrap"))
                             .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused workspace bootstrap until shared collaboration basics are usable or no further bootstrap progress is possible."))
                             .to("tack:thought-enter?name=pm-bootstrap-focus&maxTokens=350")
                             .to("direct:pm-bootstrap-focus-dispatch")
                             .to("tack:thought-exit?name=pm-bootstrap-focus")
-                        .when(exchangeProperty("pmPriorityFocus").isEqualTo("onboarding"))
+                        .when(exchangeProperty("decision.pm-priority-focus.result").isEqualTo("onboarding"))
                             .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused roster-delta access alignment: reconcile newly active or actually drifted teammates into Plane project and mission chat, then remember the reconciled roster."))
                             .to("tack:thought-enter?name=pm-onboarding-focus&maxTokens=250")
                             .to("direct:pm-team-onboarding")
                             .to("tack:thought-exit?name=pm-onboarding-focus")
-                        .when(exchangeProperty("pmPriorityFocus").isEqualTo("active-delivery"))
+                        .when(exchangeProperty("decision.pm-priority-focus.result").isEqualTo("active-delivery"))
                             .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused delivery supervision: reconcile one current blocker, topology/dependency issue, merged/open-PR consequence, product return, or parent-delivery outcome while useful dispositions remain."))
                             .to("tack:thought-enter?name=pm-active-delivery-focus&maxTokens=400")
                             .to("direct:pm-active-delivery-focus")
                             .to("tack:thought-exit?name=pm-active-delivery-focus")
-                        .when(exchangeProperty("pmPriorityFocus").isEqualTo("planning"))
+                        .when(exchangeProperty("decision.pm-priority-focus.result").isEqualTo("planning"))
                             .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused delivery planning: create/refine one work:implementation child per act, repeating until the executable Developer Todo buffer is normally about 3-5 or safe planning genuinely cannot continue. Dependency-blocked future children belong in Backlog rather than being omitted."))
                             .to("tack:thought-enter?name=pm-planning-focus&maxTokens=400")
                             .to("direct:pm-planning-focus")
                             .to("tack:thought-exit?name=pm-planning-focus")
-                        .when(exchangeProperty("pmPriorityFocus").isEqualTo("coordination"))
+                        .when(exchangeProperty("decision.pm-priority-focus.result").isEqualTo("coordination"))
                             .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused Project Manager coordination for one useful initiated notification/question/handoff or one fresh actionable exchange."))
                             .to("tack:thought-enter?name=pm-coordination-focus&maxTokens=250")
                             .to("direct:pm-team-sync")
                             .to("tack:thought-exit?name=pm-coordination-focus")
-                        .when(exchangeProperty("pmPriorityFocus").isEqualTo("documentation"))
+                        .when(exchangeProperty("decision.pm-priority-focus.result").isEqualTo("documentation"))
                             .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused durable workspace/navigation curation; current work state remains in Plane."))
                             .to("tack:thought-enter?name=pm-documentation-focus&maxTokens=250")
                             .to("direct:pm-documentation-status-sync")
                             .to("tack:thought-exit?name=pm-documentation-focus")
-                        .when(exchangeProperty("pmPriorityFocus").isEqualTo("completion"))
+                        .when(exchangeProperty("decision.pm-priority-focus.result").isEqualTo("completion"))
                             .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Focused Project Manager mission completion evaluation using minimal authoritative evidence."))
                             .to("tack:thought-enter?name=pm-completion-focus&maxTokens=300")
                             .to("direct:pm-completion-focus")
@@ -140,13 +137,13 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .routeId("pm-planning-focus")
                 .setProperty("pmFocusedPlanningIterations", constant(0))
                 .setProperty("pmFocusedPlanningContinue", constant(true))
-                .setProperty("decision.pm-dev-backlog-deep-enough.result", constant(false))
+                .setProperty("decision.pm-dev-backlog-deep-enough.result", constant("no"))
                 .loopDoWhile(simple("${exchangeProperty.pmFocusedPlanningContinue} == true && ${exchangeProperty.pmFocusedPlanningIterations} < 5"))
                     .setProperty("pmFocusedPlanningIterations", simple("${exchangeProperty.pmFocusedPlanningIterations++}"))
                     .setProperty("pmFocusedPlanningContinue", constant(false))
                     .to("direct:pm-work-intake")
                     .choice()
-                        .when(exchangeProperty("decision.pm-has-product-for-delivery.result").isEqualTo(true))
+                        .when(exchangeProperty("decision.pm-has-product-for-delivery.result").isEqualTo("yes"))
                             .to("direct:pm-task-planning-loop")
                             .choice()
                                 .when(exchangeProperty("pmTaskPlanningMadeProgress").isEqualTo(true))
@@ -155,7 +152,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .end()
                     .to("direct:pm-dev-backlog-depth-check")
                     .choice()
-                        .when(exchangeProperty("decision.pm-dev-backlog-deep-enough.result").isEqualTo(true))
+                        .when(exchangeProperty("decision.pm-dev-backlog-deep-enough.result").isEqualTo("yes"))
                             .setProperty("pmFocusedPlanningContinue", constant(false))
                         .otherwise()
                             .setProperty("pmFocusedPlanningContinue", constant(true))
@@ -169,7 +166,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         """))
                 .to("tack:act?id=pm-dev-backlog-depth-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Is PM sufficiently ahead of Developer for now? Normally require about 3-5 assigned, dependency-satisfied actionable Todo work:implementation children when enough safe work:product exists. Return false when usable work:product can be decomposed but that executable queue is shallower, even if Developer already has active WIP or an open PR. Explicit dependency-blocked work:implementation in Backlog is healthy planning but does not count as executable Todo depth. Never count work:product items. Return true with a shallower queue only when product information, genuine dependency topology across all available product parents, or remaining mission size makes further safe executable planning inappropriate.
+                        Is PM sufficiently ahead of Developer for now? Normally require about 3-5 assigned, dependency-satisfied actionable Todo work:implementation children when enough safe work:product exists. Answer no when usable work:product can be decomposed but that executable queue is shallower, even if Developer already has active WIP or an open PR. Explicit dependency-blocked work:implementation in Backlog is healthy planning but does not count as executable Todo depth. Never count work:product items. Answer yes with a shallower queue only when product information, genuine dependency topology across all available product parents, or remaining mission size makes further safe executable planning inappropriate.
                         """))
                 .to("tack:decide?id=pm-dev-backlog-deep-enough");
 
@@ -177,7 +174,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .routeId("pm-completion-focus")
                 .setHeader(TackHeaders.PROMPT, constant("Review current mission completion once using minimal authoritative evidence. One unfinished work:product parent, work:implementation child, current unresolved blocker, merge, product question, topology finding, acceptance follow-up, or current-roster access gap means incomplete. Comments are evidence/context, never hidden workflow state. Do not mutate."))
                 .to("tack:act?id=pm-mission-status-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
-                .setHeader(TackHeaders.PROMPT, constant("Is the mission complete from Project Management's perspective? Return true only when all required work:product parents are Done, the current roster is reconciled to required project/channel access, and no current unresolved work:implementation delivery, blocker, PRODUCT QUESTION, integration, assignment, topology investigation/finding, or acceptance follow-up remains. Ignore historical comments superseded by newer durable state/evidence."))
+                .setHeader(TackHeaders.PROMPT, constant("Is the mission complete from Project Management's perspective? Answer yes only when all required work:product parents are Done, the current roster is reconciled to required project/channel access, and no current unresolved work:implementation delivery, blocker, PRODUCT QUESTION, integration, assignment, topology investigation/finding, or acceptance follow-up remains. Ignore historical comments superseded by newer durable state/evidence."))
                 .to("tack:decide?id=project-manager-mission-complete");
 
         from("direct:example-software-team-project-manager-bootstrap")
@@ -195,7 +192,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .to("direct:pm-project-manager-root-enter")
                 .to("direct:pm-project-basics-check")
                 .choice()
-                    .when(exchangeProperty("decision.collaboration-setup-complete.result").isEqualTo(true))
+                    .when(exchangeProperty("decision.collaboration-setup-complete.result").isEqualTo("yes"))
                         .to("direct:pm-team-onboarding")
                         .to("direct:pm-coordination-loop")
                 .end()
@@ -206,11 +203,11 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .to("direct:pm-project-manager-root-enter")
                 .to("direct:pm-project-basics-check")
                 .choice()
-                    .when(exchangeProperty("decision.collaboration-setup-complete.result").isEqualTo(true))
+                    .when(exchangeProperty("decision.collaboration-setup-complete.result").isEqualTo("yes"))
                         .to("direct:pm-team-onboarding")
                         .to("direct:pm-work-intake")
                         .choice()
-                            .when(exchangeProperty("decision.pm-has-product-for-delivery.result").isEqualTo(true))
+                            .when(exchangeProperty("decision.pm-has-product-for-delivery.result").isEqualTo("yes"))
                                 .to("direct:pm-task-planning-loop")
                         .end()
                 .end()
@@ -227,21 +224,21 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
 
         from("direct:pm-project-basics-check")
                 .routeId("pm-project-basics-check")
-                .setProperty("decision.collaboration-setup-complete.result", constant(false))
+                .setProperty("decision.collaboration-setup-complete.result", constant("no"))
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Verify only the shared foundation needed to enter coordination: exactly one current-mission Plane project, documentation repository/navigation, source repository under agent-workspace, and mission team-chat channel, all accessible to this Project Manager run. Prefer direct lookup by verified ids already in thought. An existing empty source repository is valid foundation; do not require main/default branch, commits, or application code.
 
                         Foundation existence and teammate onboarding are separate. During bootstrap, add every teammate already present in the CURRENT MISSION ROSTER. Future teammates are reconciled when they appear in the roster. Do not call someone onboarded merely because their workspace account exists. Do not mutate.
                         """))
                 .to("tack:act?id=pm-workspace-basics-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
-                .setHeader(TackHeaders.PROMPT, constant("Are Plane, source repo, docs/navigation, and mission chat verified and readable by this Project Manager run? Treat an existing empty source repo as valid. Return true based on foundation existence/readability only; roster access is handled separately."))
+                .setHeader(TackHeaders.PROMPT, constant("Are Plane, source repo, docs/navigation, and mission chat verified and readable by this Project Manager run? Treat an existing empty source repo as valid. Answer yes based on foundation existence/readability only; roster access is handled separately."))
                 .to("tack:decide?id=collaboration-setup-complete");
 
         from("direct:pm-project-bootstrap")
                 .routeId("pm-project-bootstrap")
                 .setProperty("collaborationSetupAttempt", constant(0))
                 .setProperty("pmBootstrapMadeProgress", constant(true))
-                .loopDoWhile(simple("${exchangeProperty.decision.collaboration-setup-complete.result} != true && ${exchangeProperty.pmBootstrapMadeProgress} == true && ${exchangeProperty.collaborationSetupAttempt} < 6"))
+                .loopDoWhile(simple("${exchangeProperty.decision.collaboration-setup-complete.result} != 'yes' && ${exchangeProperty.pmBootstrapMadeProgress} == true && ${exchangeProperty.collaborationSetupAttempt} < 6"))
                     .setProperty("collaborationSetupAttempt", simple("${exchangeProperty.collaborationSetupAttempt++}"))
                     .setProperty("pmBootstrapMadeProgress", constant(false))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Bootstrap only: Plane project, source/docs repositories, mission chat, navigation, immediate access for current-roster teammates, and one useful kickoff notification. Product work is not a bootstrap prerequisite."))
@@ -266,7 +263,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .to("tack:act?id=documentation-project-index&toolProfile=" + SourceControlWriteToolProfile.ID)
                     .choice().when(exchangeProperty("act.documentation-project-index.durableProgress").isEqualTo(true)).setProperty("pmBootstrapMadeProgress", constant(true)).end()
                     .to("direct:pm-project-basics-check")
-                    .choice().when(exchangeProperty("decision.collaboration-setup-complete.result").isEqualTo(true)).setProperty("pmBootstrapMadeProgress", constant(false)).end()
+                    .choice().when(exchangeProperty("decision.collaboration-setup-complete.result").isEqualTo("yes")).setProperty("pmBootstrapMadeProgress", constant(false)).end()
                     .to("tack:thought-exit?name=pm-bootstrap")
                 .end();
 
@@ -284,7 +281,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .choice().when(exchangeProperty("act.pm-active-delivery-update.durableProgress").isEqualTo(true)).setProperty("pmMadeProgress", constant(true)).end()
                     .to("direct:pm-work-intake")
                     .choice()
-                        .when(exchangeProperty("decision.pm-has-product-for-delivery.result").isEqualTo(true))
+                        .when(exchangeProperty("decision.pm-has-product-for-delivery.result").isEqualTo("yes"))
                             .to("direct:pm-task-planning-loop")
                             .choice().when(exchangeProperty("pmTaskPlanningMadeProgress").isEqualTo(true)).setProperty("pmMadeProgress", constant(true)).end()
                     .end()
@@ -323,12 +320,12 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
 
         from("direct:pm-work-intake")
                 .routeId("pm-work-intake")
-                .setProperty("decision.pm-has-product-for-delivery.result", constant(false))
+                .setProperty("decision.pm-has-product-for-delivery.result", constant("no"))
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("One work:product parent for delivery planning, topology recovery, product-question handling, or coverage/dependency repair."))
                 .to("tack:thought-enter?name=pm-intake&maxTokens=250")
                 .setHeader(TackHeaders.PROMPT, constant("Select at most one item carrying work:product, never work:implementation. Prefer Todo initial PO handoff and validate canonical acceptance. Otherwise select qualifying work:product In Progress parents needing additional decomposition, cancelled-coverage recovery, dependency repair, acceptance-feedback remediation, topology recovery, or reevaluation after clarified product context. An active implementation child/open PR does not make a parent ineligible for further safe planning. If labels are missing from the current projection, read classification rather than guessing from wording. Raise/refresh PRODUCT QUESTION only when product judgment or usable acceptance is genuinely missing. Never invent product scope or implement the parent."))
                 .to("tack:act?id=pm-intake-review&toolProfile=" + ProjectManagementToolProfile.ID)
-                .setHeader(TackHeaders.PROMPT, constant("Is one Todo or qualifying In Progress work:product parent selected with readable usable acceptance and a real decomposition/replanning/topology/coverage-recovery need? Return false for work:implementation or when a PRODUCT QUESTION remains unresolved."))
+                .setHeader(TackHeaders.PROMPT, constant("Is one Todo or qualifying In Progress work:product parent selected with readable usable acceptance and a real decomposition/replanning/topology/coverage-recovery need? Answer no for work:implementation or when a PRODUCT QUESTION remains unresolved."))
                 .to("tack:decide?id=pm-has-product-for-delivery")
                 .to("tack:thought-exit?name=pm-intake");
 
@@ -337,7 +334,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .setProperty("pmTaskPlanningCycle", constant(0))
                 .setProperty("pmTaskPlanningMadeProgress", constant(false))
                 .setProperty("pmTaskPlanningPassProgress", constant(true))
-                .setProperty("decision.pm-task-planning-done.result", constant(false))
+                .setProperty("decision.pm-task-planning-done.result", constant("no"))
                 .loopDoWhile(simple("${exchangeProperty.pmTaskPlanningPassProgress} == true && ${exchangeProperty.pmTaskPlanningCycle} < 10"))
                     .setProperty("pmTaskPlanningCycle", simple("${exchangeProperty.pmTaskPlanningCycle++}"))
                     .setProperty("pmTaskPlanningPassProgress", constant(false))
@@ -353,10 +350,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .to("tack:act?id=pm-actionable-dev-task&toolProfile=" + ProjectManagementToolProfile.ID)
                     .choice().when(exchangeProperty("act.pm-actionable-dev-task.durableProgress").isEqualTo(true)).setProperty("pmTaskPlanningMadeProgress", constant(true)).setProperty("pmTaskPlanningPassProgress", constant(true)).end()
                     .setHeader(TackHeaders.PROMPT, constant("""
-                        Is THIS work:product parent sufficiently decomposed for now? Return true when its required acceptance has non-cancelled work:implementation coverage, dependency graph is viable, dependency-satisfied children are assigned Todo, dependency-blocked future children are represented in Backlog with explicit edges, current feedback has remediation, no unresolved product question blocks intent, and topology findings are dispositioned. Do not return true merely because one child is currently active or has an open PR. Otherwise return false.
+                        Is THIS work:product parent sufficiently decomposed for now? Answer yes when its required acceptance has non-cancelled work:implementation coverage, dependency graph is viable, dependency-satisfied children are assigned Todo, dependency-blocked future children are represented in Backlog with explicit edges, current feedback has remediation, no unresolved product question blocks intent, and topology findings are dispositioned. Do not answer yes merely because one child is currently active or has an open PR. Otherwise answer no.
                         """))
                     .to("tack:decide?id=pm-task-planning-done")
-                    .choice().when(exchangeProperty("decision.pm-task-planning-done.result").isEqualTo(true)).setProperty("pmTaskPlanningPassProgress", constant(false)).end()
+                    .choice().when(exchangeProperty("decision.pm-task-planning-done.result").isEqualTo("yes")).setProperty("pmTaskPlanningPassProgress", constant(false)).end()
                     .to("tack:thought-exit?name=pm-planning")
                 .end();
 
