@@ -21,9 +21,9 @@ public class ForumAgentsChatRoutine extends RouteBuilder implements RoutineProvi
         return RoutineDefinition.builder(ID)
                 .name("Forum Agents Chat")
                 .description("""
-                        Chat-only continuous routine for the hard-coded forum-agents room.
-                        Use it to run multiple personas in the same conversation and exercise thought management.
-                        This routine is mostly for testing.
+                        Chat-only continuous routine for the hard-coded forum-agents room. Use it to run multiple
+                        personas in the same conversation and exercise thought
+                        management. This routine is mostly for testing.
                         """)
                 .routeUri("direct:example-forum-agents-chat")
                 .defaultLane("high-pass")
@@ -35,31 +35,25 @@ public class ForumAgentsChatRoutine extends RouteBuilder implements RoutineProvi
         from("direct:example-forum-agents-chat")
                 .routeId("example-forum-agents-chat")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Durable chat anchors: Mattermost room forum-agents,
-                        this persona's conversational stance, recent questions answered,
-                        points to revisit, and how the group conversation is evolving.
+                        Durable chat anchors: Mattermost room forum-agents, this persona's conversational stance, recent
+                        questions answered, points to revisit, and how the group conversation is evolving.
                         """))
                 .to("tack:thought-enter?name=forum-agents-chat-routine&maxTokens=500")
                 .loopDoWhile(constant(true))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                            Current chat turn: recent forum-agents messages,
-                            who spoke last, whether this persona should answer,
-                            ask one focused question, add a useful observation,
-                            or stay quiet for this turn.
+                            Current chat turn: recent forum-agents messages, who spoke last, whether this persona should
+                            answer, ask one focused question, add a useful observation, or stay quiet for this turn.
                             """))
                     .to("tack:thought-enter?name=forum-agents-chat-turn&maxTokens=250")
                     .setHeader(TackHeaders.PROMPT, constant("""
                             Use Mattermost room forum-agents only.
-
-                            Read only recent messages in forum-agents.
-                            Continue the conversation as this persona.
-                            If another persona asked this persona a direct question,
-                            answer it. Otherwise add at most one concise message
-                            that moves the discussion forward.
-
-                            Do not create channels, tasks, project state,
-                            or use any room other than forum-agents.
-                            If nothing useful should be said, stay quiet.
+                            
+                            Read only recent messages in forum-agents. Continue the conversation as this persona. If another
+                            persona asked this persona a direct question, answer it. Otherwise add at most one concise
+                            message that moves the discussion forward.
+                            
+                            Do not create channels, tasks, project state, or use any room other than forum-agents. If
+                            nothing useful should be said, stay quiet.
                             """))
                     .to("tack:act?id=forum-agents-chat&toolProfile=" + TeamChatToolProfile.ID)
                     .to("tack:thought-exit?name=forum-agents-chat-turn")
