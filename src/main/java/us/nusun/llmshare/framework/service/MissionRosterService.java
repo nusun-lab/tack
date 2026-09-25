@@ -74,7 +74,8 @@ public class MissionRosterService {
             String view,
             String personaId,
             String routineId,
-            String platforms) {
+            String platforms,
+            Integer capacityMaximum) {
         String normalizedScope = normalizeScope(scope);
         String normalizedView = normalizeView(view, normalizedScope);
         Set<String> platformFilter = csvSet(platforms);
@@ -93,6 +94,9 @@ public class MissionRosterService {
                 : runs.stream()
                         .map(run -> renderView(run, normalizedView, platformFilter))
                         .collect(Collectors.joining("\n"));
+        if ("coverage".equals(normalizedView)) {
+            roster = capacitySummary(missionId, capacityMaximum) + (roster.isBlank() ? "" : "\n" + roster);
+        }
         return roster.isBlank() ? "(none)" : roster;
     }
 
@@ -122,6 +126,15 @@ public class MissionRosterService {
         return byPersona.values().stream()
                 .map(personaRuns -> contactsEntry(personaRuns, platforms))
                 .collect(Collectors.joining("\n"));
+    }
+
+    private String capacitySummary(String missionId, Integer maximum) {
+        int active = agentRuns.activeRunCount(missionId);
+        if (maximum == null) {
+            return "capacity: active=%d maximum=(not configured) remaining=(not configured)".formatted(active);
+        }
+        int remaining = Math.max(0, maximum - active);
+        return "capacity: active=%d maximum=%d remaining=%d".formatted(active, maximum, remaining);
     }
 
     private String coverageEntry(AgentRun run) {
