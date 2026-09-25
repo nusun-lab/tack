@@ -119,8 +119,15 @@ class TackComponentContractTest {
     @Test
     void decideAndCreateEndpointsReturnTypedResultsFromPromptHeaders() throws Exception {
         ScriptedLlm llm = new ScriptedLlm(request -> {
-            if (request.responseSchema() != null && request.responseSchema().contains("decision-result")) {
-                return "{\"decisionId\":\"ready\",\"result\":true,\"confidence\":0.87,\"reason\":\"evidence is present\"}";
+            if (request.responseSchema() != null
+                    && request.responseSchema().contains("\"enum\":[\"yes\",\"no\"]")) {
+                return "{\"decisionId\":\"ready\",\"result\":\"yes\",\"confidence\":0.87,"
+                        + "\"reason\":\"evidence is present\"}";
+            }
+            if (request.responseSchema() != null
+                    && request.responseSchema().contains("\"enum\":[\"build\",\"wait\"]")) {
+                return "{\"decisionId\":\"focus\",\"result\":\"build\",\"confidence\":0.91,"
+                        + "\"reason\":\"work is ready\"}";
             }
             return "{\"value\":\"created\"}";
         });
@@ -133,6 +140,8 @@ class TackComponentContractTest {
                             .to("tack:thought-enter?name=root&maxTokens=100")
                             .setHeader(TackHeaders.PROMPT, constant("Is it ready?"))
                             .to("tack:decide?id=ready")
+                            .setHeader(TackHeaders.PROMPT, constant("What should happen next?"))
+                            .to("tack:decide?id=focus&choices=build,wait")
                             .setHeader(TackHeaders.PROMPT, constant("Create a value."))
                             .to("tack:create?id=create-value&schemaId=value-schema&schema={\"type\":\"object\",\"required\":[\"value\"]}");
                 }
@@ -141,11 +150,14 @@ class TackComponentContractTest {
 
             Exchange result = send(context, "direct:tack-decide-create");
 
-            assertEquals(true, result.getProperty("decision.ready.result"));
+            assertEquals("yes", result.getProperty("decision.ready.result"));
+            assertEquals("build", result.getProperty("decision.focus.result"));
             assertEquals("{\"value\":\"created\"}", result.getMessage().getBody(String.class));
-            assertEquals(2, llm.requests.size());
+            assertEquals(3, llm.requests.size());
             assertTrue(llm.requests.get(0).prompt().contains("Is it ready?"));
-            assertTrue(llm.requests.get(1).prompt().contains("Create a value."));
+            assertTrue(llm.requests.get(0).prompt().contains("Allowed answers: yes, no"));
+            assertTrue(llm.requests.get(1).prompt().contains("Allowed answers: build, wait"));
+            assertTrue(llm.requests.get(2).prompt().contains("Create a value."));
         }
     }
 

@@ -45,6 +45,7 @@ public class TackProducer extends DefaultProducer {
             case "decide" -> executor.decide(exchange, new PrimitiveExecutor.DecideRequest(
                     requiredParameter("id", endpoint.getId(), operation),
                     consumeRequiredHeader(exchange, TackHeaders.PROMPT, operation),
+                    endpoint.getChoices(),
                     endpoint.getLane()), producerTemplate);
             case "create" -> executor.create(exchange, new PrimitiveExecutor.CreateRequest(
                     requiredParameter("id", endpoint.getId(), operation),

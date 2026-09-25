@@ -31,6 +31,9 @@ public class TackEndpoint extends DefaultEndpoint {
     @UriParam(description = "Inference lane override")
     private String lane;
 
+    @UriParam(description = "Comma-separated allowed decision choices; defaults to yes,no")
+    private String choices;
+
     @UriParam(description = "Create result schema id")
     private String schemaId;
 
@@ -75,6 +78,8 @@ public class TackEndpoint extends DefaultEndpoint {
     public void setMaxTokens(Integer maxTokens) { this.maxTokens = maxTokens; }
     public String getLane() { return lane; }
     public void setLane(String lane) { this.lane = lane; }
+    public String getChoices() { return choices; }
+    public void setChoices(String choices) { this.choices = choices; }
     public String getSchemaId() { return schemaId; }
     public void setSchemaId(String schemaId) { this.schemaId = schemaId; }
     public String getSchema() { return schema; }

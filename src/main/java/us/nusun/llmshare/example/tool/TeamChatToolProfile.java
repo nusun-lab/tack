@@ -28,13 +28,15 @@ public class TeamChatToolProfile implements ToolProfileProvider {
         return List.of(ToolProfile.builder(ID)
                 .mcpServer(mattermost.definition())
                 .promptGuidance("""
-                        - read only recent relevant channel context before posting
-                        - Mattermost is for concise communication, questions, handoffs, and notifications
+                        - Mattermost is for concise communication, questions, handoffs, notifications, and useful team coordination
+                        - do not require an existing conversation before posting; initiate one concise message when a meaningful handoff, blocker, question, merge, workspace transition, or other event would help a current teammate act sooner
+                        - when responding, read only the recent relevant channel context needed for that exchange
                         - post at most one message or reply for the current step
                         - durable project state belongs in Plane
                         - durable implementation state belongs in Gitea
-                        - link to authoritative Plane work items, Gitea repositories, pull requests, releases, or canonical documentation pages
-                        - avoid generic spam
+                        - comments/messages provide evidence and context, not hidden workflow states
+                        - link to authoritative Plane work items, Gitea repositories, pull requests, releases, or canonical documentation pages when useful
+                        - avoid generic status chatter, ceremonial updates, and duplicate notifications
                         - do not recreate durable Plane or Gitea state in Mattermost
                         - do not read entire channels, stick to recent messages
                         """)
