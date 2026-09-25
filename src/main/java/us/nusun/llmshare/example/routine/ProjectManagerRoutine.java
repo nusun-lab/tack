@@ -78,69 +78,84 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                             Fresh orientation evidence outranks older HOLD/wait conclusions. Plane Todo + Developer assignee is the
                             complete PM -> DEV handoff; Developer owns Todo -> In Progress. Choose exactly one allowed focus value.
                             """))
-                    .to("tack:decide?id=pm-priority-focus&choices=bootstrap,active-delivery,planning,onboarding,coordination,documentation,completion,wait")
-                    .choice()
-                        .when(exchangeProperty("decision.pm-priority-focus.result").isEqualTo("bootstrap"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                                    Focused workspace bootstrap until shared collaboration basics are usable or no further bootstrap
-                                    progress is possible.
-                                    """))
-                            .to("tack:thought-enter?name=pm-bootstrap-focus&maxTokens=350")
-                            .to("direct:pm-bootstrap-focus-dispatch")
-                            .to("tack:thought-exit?name=pm-bootstrap-focus")
-                        .when(exchangeProperty("decision.pm-priority-focus.result").isEqualTo("onboarding"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                                    Focused roster-delta access alignment: reconcile newly active or actually drifted teammates into Plane
-                                    project and mission chat, then remember the reconciled roster.
-                                    """))
-                            .to("tack:thought-enter?name=pm-onboarding-focus&maxTokens=250")
-                            .to("direct:pm-team-onboarding")
-                            .to("tack:thought-exit?name=pm-onboarding-focus")
-                        .when(exchangeProperty("decision.pm-priority-focus.result").isEqualTo("active-delivery"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                                    Focused delivery supervision: reconcile one current blocker, topology/dependency issue, merged/open-PR
-                                    consequence, product return, or parent-delivery outcome while useful dispositions remain.
-                                    """))
-                            .to("tack:thought-enter?name=pm-active-delivery-focus&maxTokens=400")
-                            .to("direct:pm-active-delivery-focus")
-                            .to("tack:thought-exit?name=pm-active-delivery-focus")
-                        .when(exchangeProperty("decision.pm-priority-focus.result").isEqualTo("planning"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                                    Focused delivery planning: create/refine one work:implementation child per act, repeating until the
-                                    executable Developer Todo buffer is normally about 3-5 or safe planning genuinely cannot continue.
-                                    Dependency-blocked future children belong in Backlog rather than being omitted.
-                                    """))
-                            .to("tack:thought-enter?name=pm-planning-focus&maxTokens=400")
-                            .to("direct:pm-planning-focus")
-                            .to("tack:thought-exit?name=pm-planning-focus")
-                        .when(exchangeProperty("decision.pm-priority-focus.result").isEqualTo("coordination"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                                    Focused Project Manager coordination for one useful initiated notification/question/handoff or one
-                                    fresh actionable exchange.
-                                    """))
-                            .to("tack:thought-enter?name=pm-coordination-focus&maxTokens=250")
-                            .to("direct:pm-team-sync")
-                            .to("tack:thought-exit?name=pm-coordination-focus")
-                        .when(exchangeProperty("decision.pm-priority-focus.result").isEqualTo("documentation"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                                    Focused durable workspace/navigation curation; current work state remains in Plane.
-                                    """))
-                            .to("tack:thought-enter?name=pm-documentation-focus&maxTokens=250")
-                            .to("direct:pm-documentation-status-sync")
-                            .to("tack:thought-exit?name=pm-documentation-focus")
-                        .when(exchangeProperty("decision.pm-priority-focus.result").isEqualTo("completion"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                                    Focused Project Manager mission completion evaluation using minimal authoritative evidence.
-                                    """))
-                            .to("tack:thought-enter?name=pm-completion-focus&maxTokens=300")
-                            .to("direct:pm-completion-focus")
-                            .to("tack:thought-exit?name=pm-completion-focus")
-                        .otherwise()
-                            .delay(120000)
-                    .end()
+                    .to("tack:decide?id=pm-focus&choices=bootstrap,onboarding,active-delivery,planning,coordination,documentation,completion,wait")
+                    .toD("direct:pm-focus-${exchangeProperty.decision.pm-focus.result}")
                 .end()
                 .end()
                 .to("direct:pm-project-manager-root-exit");
+
+        from("direct:pm-focus-bootstrap")
+                .routeId("pm-focus-bootstrap")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Focused workspace bootstrap until shared collaboration basics are usable or no further bootstrap progress is
+                        possible.
+                        """))
+                .to("tack:thought-enter?name=pm-bootstrap-focus&maxTokens=350")
+                .to("direct:pm-bootstrap-focus-dispatch")
+                .to("tack:thought-exit?name=pm-bootstrap-focus");
+
+        from("direct:pm-focus-onboarding")
+                .routeId("pm-focus-onboarding")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Focused roster-delta access alignment: reconcile newly active or actually drifted teammates into the shared
+                        workspace, then remember the reconciled roster.
+                        """))
+                .to("tack:thought-enter?name=pm-onboarding-focus&maxTokens=250")
+                .to("direct:pm-team-onboarding")
+                .to("tack:thought-exit?name=pm-onboarding-focus");
+
+        from("direct:pm-focus-active-delivery")
+                .routeId("pm-focus-active-delivery")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Focused delivery supervision: reconcile one current blocker, topology/dependency issue, merged/open-PR
+                        consequence, product return, or parent-delivery outcome while useful dispositions remain.
+                        """))
+                .to("tack:thought-enter?name=pm-active-delivery-focus&maxTokens=400")
+                .to("direct:pm-active-delivery-focus")
+                .to("tack:thought-exit?name=pm-active-delivery-focus");
+
+        from("direct:pm-focus-planning")
+                .routeId("pm-focus-planning")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Focused delivery planning: create/refine one work:implementation child per act, repeating until the executable
+                        Developer Todo buffer is normally about 3-5 or safe planning genuinely cannot continue. Dependency-blocked future
+                        children belong in Backlog rather than being omitted.
+                        """))
+                .to("tack:thought-enter?name=pm-planning-focus&maxTokens=400")
+                .to("direct:pm-planning-focus")
+                .to("tack:thought-exit?name=pm-planning-focus");
+
+        from("direct:pm-focus-coordination")
+                .routeId("pm-focus-coordination")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Focused Project Manager coordination for one useful initiated notification/question/handoff or one fresh
+                        actionable exchange.
+                        """))
+                .to("tack:thought-enter?name=pm-coordination-focus&maxTokens=250")
+                .to("direct:pm-team-sync")
+                .to("tack:thought-exit?name=pm-coordination-focus");
+
+        from("direct:pm-focus-documentation")
+                .routeId("pm-focus-documentation")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Focused durable workspace/navigation curation; current work state remains in the work system.
+                        """))
+                .to("tack:thought-enter?name=pm-documentation-focus&maxTokens=250")
+                .to("direct:pm-documentation-status-sync")
+                .to("tack:thought-exit?name=pm-documentation-focus");
+
+        from("direct:pm-focus-completion")
+                .routeId("pm-focus-completion")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Focused Project Manager mission completion evaluation using minimal authoritative evidence.
+                        """))
+                .to("tack:thought-enter?name=pm-completion-focus&maxTokens=300")
+                .to("direct:pm-completion-focus")
+                .to("tack:thought-exit?name=pm-completion-focus");
+
+        from("direct:pm-focus-wait")
+                .routeId("pm-focus-wait")
+                .delay(120000);
 
         from("direct:pm-orientation")
                 .routeId("pm-orientation")

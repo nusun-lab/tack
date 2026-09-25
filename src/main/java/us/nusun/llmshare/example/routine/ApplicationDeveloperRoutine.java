@@ -63,45 +63,54 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             establishes a permission/authentication blocker. Fresh orientation evidence outranks older wait conclusions.
                             Choose exactly one allowed focus value.
                             """))
-                    .to("tack:decide?id=dev-priority-focus&choices=missing-basics,implementation,review-fix,completion,wait")
-                    .choice()
-                        .when(exchangeProperty("decision.dev-priority-focus.result").isEqualTo("missing-basics"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                                    Focused missing-foundation response: communicate only when a concrete access/basic is actually
-                                    unavailable; an empty source repo is still usable.
-                                    """))
-                            .to("tack:thought-enter?name=dev-missing-basics-focus&maxTokens=250")
-                            .to("direct:dev-missing-basics-closeout")
-                            .to("tack:thought-exit?name=dev-missing-basics-focus")
-                        .when(exchangeProperty("decision.dev-priority-focus.result").isEqualTo("implementation"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                                    Focused implementation unit: one assigned work:implementation child, task/product context, source or
-                                    topology work, validation, PR state, and concise durable evidence.
-                                    """))
-                            .to("tack:thought-enter?name=dev-implementation-focus&maxTokens=450")
-                            .to("direct:dev-implementation-focus")
-                            .to("tack:thought-exit?name=dev-implementation-focus")
-                        .when(exchangeProperty("decision.dev-priority-focus.result").isEqualTo("coordination"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                                    Focused Developer coordination for one useful initiated technical/blocker/PR message or one fresh
-                                    teammate exchange.
-                                    """))
-                            .to("tack:thought-enter?name=dev-coordination-focus&maxTokens=250")
-                            .to("direct:dev-team-chat-sync")
-                            .to("tack:thought-exit?name=dev-coordination-focus")
-                        .when(exchangeProperty("decision.dev-priority-focus.result").isEqualTo("completion"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                                    Focused Application Developer mission completion evaluation using minimal authoritative evidence.
-                                    """))
-                            .to("tack:thought-enter?name=dev-completion-focus&maxTokens=300")
-                            .to("direct:dev-completion-focus")
-                            .to("tack:thought-exit?name=dev-completion-focus")
-                        .otherwise()
-                            .delay(120000)
-                    .end()
+                    .to("tack:decide?id=dev-focus&choices=missing-basics,implementation,coordination,completion,wait")
+                    .toD("direct:dev-focus-${exchangeProperty.decision.dev-focus.result}")
                 .end()
                 .end()
                 .to("direct:dev-application-developer-root-exit");
+
+        from("direct:dev-focus-missing-basics")
+                .routeId("dev-focus-missing-basics")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Focused missing-foundation response: communicate only when a concrete access/basic is actually unavailable;
+                        an empty source repo is still usable.
+                        """))
+                .to("tack:thought-enter?name=dev-missing-basics-focus&maxTokens=250")
+                .to("direct:dev-missing-basics-closeout")
+                .to("tack:thought-exit?name=dev-missing-basics-focus");
+
+        from("direct:dev-focus-implementation")
+                .routeId("dev-focus-implementation")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Focused implementation unit: one assigned work:implementation child, task/product context, source or topology
+                        work, validation, PR state, and concise durable evidence.
+                        """))
+                .to("tack:thought-enter?name=dev-implementation-focus&maxTokens=450")
+                .to("direct:dev-implementation-focus")
+                .to("tack:thought-exit?name=dev-implementation-focus");
+
+        from("direct:dev-focus-coordination")
+                .routeId("dev-focus-coordination")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Focused Developer coordination for one useful initiated technical/blocker/PR message or one fresh teammate
+                        exchange.
+                        """))
+                .to("tack:thought-enter?name=dev-coordination-focus&maxTokens=250")
+                .to("direct:dev-team-chat-sync")
+                .to("tack:thought-exit?name=dev-coordination-focus");
+
+        from("direct:dev-focus-completion")
+                .routeId("dev-focus-completion")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Focused Application Developer mission completion evaluation using minimal authoritative evidence.
+                        """))
+                .to("tack:thought-enter?name=dev-completion-focus&maxTokens=300")
+                .to("direct:dev-completion-focus")
+                .to("tack:thought-exit?name=dev-completion-focus");
+
+        from("direct:dev-focus-wait")
+                .routeId("dev-focus-wait")
+                .delay(120000);
 
         from("direct:dev-orientation")
                 .routeId("dev-orientation")

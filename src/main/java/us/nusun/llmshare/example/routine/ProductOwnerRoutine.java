@@ -62,53 +62,63 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                             approval leases. Fresh orientation evidence outranks older HOLD/wait conclusions. Choose exactly one allowed
                             focus value.
                             """))
-                    .to("tack:decide?id=po-priority-focus&choices=missing-basics,product-work,acceptance,closeout,completion,wait")
-                    .choice()
-                        .when(exchangeProperty("decision.po-priority-focus.result").isEqualTo("missing-basics"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                                    Focused missing-foundation response: communicate only when useful and do not begin product work.
-                                    """))
-                            .to("tack:thought-enter?name=po-missing-basics-focus&maxTokens=250")
-                            .to("direct:po-missing-basics-closeout")
-                            .to("tack:thought-exit?name=po-missing-basics-focus")
-                        .when(exchangeProperty("decision.po-priority-focus.result").isEqualTo("product-work"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                                    Focused product work: resolve current product questions/acceptance, then create, define, and hand off
-                                    one work:product slice per act until several delivery-ready product slices are queued or no additional
-                                    safe product outcome remains.
-                                    """))
-                            .to("tack:thought-enter?name=po-product-work-focus&maxTokens=400")
-                            .to("direct:po-product-work-focus")
-                            .to("tack:thought-exit?name=po-product-work-focus")
-                        .when(exchangeProperty("decision.po-priority-focus.result").isEqualTo("coordination"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                                    Focused Product Owner coordination for one useful initiated handoff/question or one fresh scope,
-                                    acceptance, or product-judgment exchange.
-                                    """))
-                            .to("tack:thought-enter?name=po-coordination-focus&maxTokens=250")
-                            .to("direct:po-team-chat-sync")
-                            .to("tack:thought-exit?name=po-coordination-focus")
-                        .when(exchangeProperty("decision.po-priority-focus.result").isEqualTo("closeout"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                                    Focused product closeout curation when a durable conversation or documentation improvement is
-                                    concretely useful.
-                                    """))
-                            .to("tack:thought-enter?name=po-closeout-focus&maxTokens=250")
-                            .to("direct:po-cycle-closeout")
-                            .to("tack:thought-exit?name=po-closeout-focus")
-                        .when(exchangeProperty("decision.po-priority-focus.result").isEqualTo("completion"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                                    Focused Product Owner mission completion evaluation using minimal authoritative evidence.
-                                    """))
-                            .to("tack:thought-enter?name=po-completion-focus&maxTokens=300")
-                            .to("direct:po-completion-focus")
-                            .to("tack:thought-exit?name=po-completion-focus")
-                        .otherwise()
-                            .delay(120000)
-                    .end()
+                    .to("tack:decide?id=po-focus&choices=missing-basics,product-work,coordination,closeout,completion,wait")
+                    .toD("direct:po-focus-${exchangeProperty.decision.po-focus.result}")
                 .end()
                 .end()
                 .to("direct:po-product-owner-root-exit");
+
+        from("direct:po-focus-missing-basics")
+                .routeId("po-focus-missing-basics")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Focused missing-foundation response: communicate only when useful and do not begin product work.
+                        """))
+                .to("tack:thought-enter?name=po-missing-basics-focus&maxTokens=250")
+                .to("direct:po-missing-basics-closeout")
+                .to("tack:thought-exit?name=po-missing-basics-focus");
+
+        from("direct:po-focus-product-work")
+                .routeId("po-focus-product-work")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Focused product work: resolve current product questions/acceptance, then create, define, and hand off one
+                        work:product slice per act until several delivery-ready product slices are queued or no additional safe product
+                        outcome remains.
+                        """))
+                .to("tack:thought-enter?name=po-product-work-focus&maxTokens=400")
+                .to("direct:po-product-work-focus")
+                .to("tack:thought-exit?name=po-product-work-focus");
+
+        from("direct:po-focus-coordination")
+                .routeId("po-focus-coordination")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Focused Product Owner coordination for one useful initiated handoff/question or one fresh scope, acceptance, or
+                        product-judgment exchange.
+                        """))
+                .to("tack:thought-enter?name=po-coordination-focus&maxTokens=250")
+                .to("direct:po-team-chat-sync")
+                .to("tack:thought-exit?name=po-coordination-focus");
+
+        from("direct:po-focus-closeout")
+                .routeId("po-focus-closeout")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Focused product closeout curation when a durable conversation or documentation improvement is concretely useful.
+                        """))
+                .to("tack:thought-enter?name=po-closeout-focus&maxTokens=250")
+                .to("direct:po-cycle-closeout")
+                .to("tack:thought-exit?name=po-closeout-focus");
+
+        from("direct:po-focus-completion")
+                .routeId("po-focus-completion")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Focused Product Owner mission completion evaluation using minimal authoritative evidence.
+                        """))
+                .to("tack:thought-enter?name=po-completion-focus&maxTokens=300")
+                .to("direct:po-completion-focus")
+                .to("tack:thought-exit?name=po-completion-focus");
+
+        from("direct:po-focus-wait")
+                .routeId("po-focus-wait")
+                .delay(120000);
 
         from("direct:po-orientation")
                 .routeId("po-orientation")

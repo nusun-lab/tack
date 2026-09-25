@@ -92,45 +92,54 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                             that are not stated here. External artifacts never establish active AgentRun coverage; the mission roster is
                             authoritative. Choose exactly one allowed focus value.
                             """))
-                    .to("tack:decide?id=director-priority-focus&choices=integration,staffing,guidance,completion,wait")
-                    .choice()
-                        .when(exchangeProperty("decision.director-priority-focus.result").isEqualTo("integration"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                                    Focused integration work: one In Progress implementation child, its exact linked open PR, current
-                                    head/base, validation evidence, merge safety, and resulting integration outcome.
-                                    """))
-                            .to("tack:thought-enter?name=director-integration-focus&maxTokens=350")
-                            .to("direct:director-integration-loop")
-                            .to("tack:thought-exit?name=director-integration-focus")
-                        .when(exchangeProperty("decision.director-priority-focus.result").isEqualTo("staffing"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                                    Focused staffing work: shared-foundation readiness, product-backlog presence, authoritative active
-                                    roster coverage, phase-required roles, and remaining mission capacity.
-                                    """))
-                            .to("tack:thought-enter?name=director-staffing-focus&maxTokens=350")
-                            .to("direct:director-staffing-focus")
-                            .to("tack:thought-exit?name=director-staffing-focus")
-                        .when(exchangeProperty("decision.director-priority-focus.result").isEqualTo("guidance"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                                    Focused Director coordination: one useful message to initiate or one current conversation, blocker,
-                                    clarification, or unblock opportunity that merits Director participation.
-                                    """))
-                            .to("tack:thought-enter?name=director-guidance-focus&maxTokens=300")
-                            .to("direct:director-guidance-focus")
-                            .to("tack:thought-exit?name=director-guidance-focus")
-                        .when(exchangeProperty("decision.director-priority-focus.result").isEqualTo("completion"))
-                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                                    Focused mission completion evaluation using minimal authoritative current-mission evidence.
-                                    """))
-                            .to("tack:thought-enter?name=director-completion-focus&maxTokens=300")
-                            .to("direct:director-completion-focus")
-                            .to("tack:thought-exit?name=director-completion-focus")
-                        .otherwise()
-                            .delay(120000)
-                    .end()
+                    .to("tack:decide?id=director-focus&choices=integration,staffing,guidance,completion,wait")
+                    .toD("direct:director-focus-${exchangeProperty.decision.director-focus.result}")
                 .end()
                 .end()
                 .to("tack:thought-exit?name=orchestration-root");
+
+        from("direct:director-focus-integration")
+                .routeId("director-focus-integration")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Focused integration work: one In Progress implementation child, its exact linked open PR, current head/base,
+                        validation evidence, merge safety, and resulting integration outcome.
+                        """))
+                .to("tack:thought-enter?name=director-integration-focus&maxTokens=350")
+                .to("direct:director-integration-loop")
+                .to("tack:thought-exit?name=director-integration-focus");
+
+        from("direct:director-focus-staffing")
+                .routeId("director-focus-staffing")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Focused staffing work: shared-foundation readiness, product-backlog presence, authoritative active roster
+                        coverage, phase-required roles, and remaining mission capacity.
+                        """))
+                .to("tack:thought-enter?name=director-staffing-focus&maxTokens=350")
+                .to("direct:director-staffing-focus")
+                .to("tack:thought-exit?name=director-staffing-focus");
+
+        from("direct:director-focus-guidance")
+                .routeId("director-focus-guidance")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Focused Director coordination: one useful message to initiate or one current conversation, blocker,
+                        clarification, or unblock opportunity that merits Director participation.
+                        """))
+                .to("tack:thought-enter?name=director-guidance-focus&maxTokens=300")
+                .to("direct:director-guidance-focus")
+                .to("tack:thought-exit?name=director-guidance-focus");
+
+        from("direct:director-focus-completion")
+                .routeId("director-focus-completion")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Focused mission completion evaluation using minimal authoritative current-mission evidence.
+                        """))
+                .to("tack:thought-enter?name=director-completion-focus&maxTokens=300")
+                .to("direct:director-completion-focus")
+                .to("tack:thought-exit?name=director-completion-focus");
+
+        from("direct:director-focus-wait")
+                .routeId("director-focus-wait")
+                .delay(120000);
 
         from("direct:director-orientation")
                 .routeId("director-orientation")
