@@ -120,12 +120,12 @@ class TackComponentContractTest {
     void decideAndCreateEndpointsReturnTypedResultsFromPromptHeaders() throws Exception {
         ScriptedLlm llm = new ScriptedLlm(request -> {
             if (request.responseSchema() != null
-                    && request.responseSchema().contains("\\"enum\\":[\\"yes\\",\\"no\\"]")) {
+                    && request.responseSchema().contains("\"enum\":[\"yes\",\"no\"]")) {
                 return "{\"decisionId\":\"ready\",\"result\":\"yes\",\"confidence\":0.87,"
                         + "\"reason\":\"evidence is present\"}";
             }
             if (request.responseSchema() != null
-                    && request.responseSchema().contains("\\"enum\\":[\\"build\\",\\"wait\\"]")) {
+                    && request.responseSchema().contains("\"enum\":[\"build\",\"wait\"]")) {
                 return "{\"decisionId\":\"focus\",\"result\":\"build\",\"confidence\":0.91,"
                         + "\"reason\":\"work is ready\"}";
             }
