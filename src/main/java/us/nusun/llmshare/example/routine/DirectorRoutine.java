@@ -140,7 +140,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:director-orientation")
                 .routeId("director-orientation")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Call mission_roster first. Then read the smallest fresh current-mission slice needed to rank the
+                        Call mission_roster with view=coverage first. Then read the smallest fresh current-mission slice needed to rank the
                         Director's next focus. Capture only: the authoritative current active AgentRun roster; whether
                         an In Progress implementation child has a linked OPEN PR; whether the shared
                         Plane/source/docs/chat foundation appears usable; whether at least one current-mission product
@@ -168,7 +168,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:director-staffing-focus")
                 .routeId("director-staffing-focus")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Call mission_roster first and capture the exact authoritative current active AgentRun roster.
+                        Call mission_roster with view=coverage first and capture the authoritative current active AgentRun coverage.
                         Then freshly verify only the staffing phase signals for this mission: one current-mission Plane
                         project, one source repository under agent-workspace, one documentation repository with usable
                         navigation, one accessible current-mission team-chat channel, and whether at least one
