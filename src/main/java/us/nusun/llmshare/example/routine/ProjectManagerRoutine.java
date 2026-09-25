@@ -72,8 +72,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                               backlog is below a useful buffer, normally about 3-5 actionable children, or future
                               dependency-blocked work:implementation should be represented in Backlog. An active Developer
                               task or open PR is NOT a reason to stop planning.
-                            - coordination: there is a useful message to initiate, or a fresh team
-                              exchange needs Project Manager participation.
+                            - coordination: a fresh inbound team exchange, question, or blocker needs Project Manager
+                              participation. Outbound awareness caused by PM work stays in that productive flow.
                             - documentation: a concrete durable navigation/status curation need
                               exists; daily work state belongs in Plane.
                             - wait: no focus above is currently useful. A shallow Developer backlog while more work:product
@@ -123,9 +123,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-focus-planning")
                 .routeId("pm-focus-planning")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused delivery planning: create/refine one work:implementation child per act, repeating until
-                        the executable Developer Todo buffer is normally about 3-5 or safe planning genuinely cannot
-                        continue. Dependency-blocked future children belong in Backlog rather than being omitted.
+                        Focused delivery planning: take one work:product parent at a time and establish its complete
+                        reasonable work:implementation story/dependency set. Dependency-satisfied stories become
+                        assigned Todo; dependency-blocked future stories exist now in Backlog. Repeat across product
+                        parents only as needed to maintain useful forward inventory for Developer.
                         """))
                 .to("tack:thought-enter?name=pm-planning-focus&maxTokens=400")
                 .to("direct:pm-planning-focus")
@@ -134,8 +135,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-focus-coordination")
                 .routeId("pm-focus-coordination")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused Project Manager coordination for one useful initiated
-                        notification/question/handoff or one fresh actionable exchange.
+                        Focused Project Manager coordination for one fresh inbound actionable exchange, question, or
+                        blocker. Productive PM routes handle outbound awareness caused by their own changes.
                         """))
                 .to("tack:thought-enter?name=pm-coordination-focus&maxTokens=250")
                 .to("direct:pm-team-sync")
@@ -172,8 +173,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         
                         Also capture shared basics; one actionable
                         blocker/topology/dependency/merged-work/product-return signal; usable work:product; assigned
-                        executable work:implementation Todo depth; useful dependency-blocked work:implementation; one
-                        useful message worth initiating or fresh coordination signal; concrete docs/navigation drift.
+                        executable work:implementation Todo depth; useful dependency-blocked work:implementation; one fresh inbound coordination signal; concrete
+                        docs/navigation drift.
                         Count work by classification label, not wording. A sparse projection that omits labels/parent is
                         unknown, not negative evidence. If thought already
                         contains verified project/repo/channel ids, use direct lookups instead of listing whole
@@ -543,72 +544,52 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
 
         from("direct:pm-task-planning-loop")
                 .routeId("pm-task-planning-loop")
-                .setProperty("pmTaskPlanningCycle", constant(0))
                 .setProperty("pmTaskPlanningMadeProgress", constant(false))
-                .setProperty("pmTaskPlanningPassProgress", constant(true))
-                .setProperty("decision.pm-task-planning-done.result", constant("no"))
-                .loopDoWhile(simple("${exchangeProperty.pmTaskPlanningPassProgress} == true && ${exchangeProperty.pmTaskPlanningCycle} < 10"))
-                    .setProperty("pmTaskPlanningCycle", simple("${exchangeProperty.pmTaskPlanningCycle++}"))
-                    .setProperty("pmTaskPlanningPassProgress", constant(false))
-                    .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                            Second-stage decomposition: one selected work:product parent, current acceptance, existing
-                            work:implementation coverage, dependency-graph viability, assignees, and exactly one
-                            missing/remediation implementation outcome this pass. One-child-per-pass
-                            is mutation size, not total planning depth.
-                            """))
-                    .to("tack:thought-enter?name=pm-planning&maxTokens=300")
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                        Freshly read canonical acceptance for the selected work:product parent and existing
-                        work:implementation children. Build a coverage map and reachable dependency graph. Create or
-                        refine exactly ONE missing/remediation/replacement/oversized work:implementation child or
-                        dependency/topology repair per pass. Ensure the Plane label work:implementation exists and apply
-                        it to every implementation child you create. Never apply work:product to implementation
-                        children. This one-child limit controls mutation size only; it does NOT mean only one child may
-                        exist or that PM should wait for current Developer work to merge before planning more.
-                        
-                        Before assigning implementation work, verify an active current-mission Developer and use that
-                        teammate's authoritative Plane identity for the assignee.
-                        
-                        Every required behavior needs non-duplicative non-cancelled coverage. If a future implementation
-                        child depends on unfinished work, CREATE IT NOW in Backlog with the explicit dependency instead
-                        of omitting it. If dependencies are already satisfied, make it assigned Todo. Todo + Developer
-                        assignee is the authoritative handoff; do not require a Mattermost lease and do not move it In
-                        Progress yourself. A Developer may have one active/unmerged source unit while PM maintains
-                        several future children. If technical topology genuinely cannot be inferred, create exactly one
-                        dependency-free Todo work:implementation TOPOLOGY INVESTIGATION
-                        for the exact ambiguity rather than guessing.
-                        
-                        Each normal work:implementation child must link its work:product parent acceptance behavior, one
-                        Developer assignee, priority, repo, dependencies/independence, next step, and expected
-                        validation/review evidence. Move initial Todo work:product parent -> In Progress when taking
-                        delivery. Do not encode workflow state in comments.
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Second-stage decomposition for one selected work:product parent: current acceptance, existing
+                        work:implementation coverage, complete reasonable story set, dependency graph, states, and
+                        Developer assignments.
                         """))
-                    .to("tack:act?id=pm-actionable-dev-task&toolProfile=" + ProjectManagementToolProfile.ID)
-                    .choice().when(exchangeProperty("act.pm-actionable-dev-task.durableProgress").isEqualTo(true))
-                        .setProperty("pmTaskPlanningMadeProgress", constant(true)).setProperty("pmTaskPlanningPassProgress", constant(true)).end()
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                        Is THIS work:product parent sufficiently decomposed for now? Answer yes when its required
-                        acceptance has non-cancelled work:implementation coverage, dependency graph is viable,
-                        dependency-satisfied children are assigned Todo, dependency-blocked future children are
-                        represented in Backlog with explicit edges, current feedback has remediation, no unresolved
-                        product question blocks intent, and topology findings are dispositioned. Do not answer yes
-                        merely because one child is currently active or has an open PR. Otherwise answer no.
+                .to("tack:thought-enter?name=pm-planning&maxTokens=400")
+                .setHeader(TackHeaders.PROMPT, constant("""
+                        Freshly read canonical acceptance for the selected work:product parent and its existing
+                        work:implementation children. Build the coverage/dependency graph once, then create or refine the
+                        COMPLETE reasonable set of non-duplicative implementation stories for this product slice in this
+                        pass. This batching boundary is one product parent, not the whole mission.
+
+                        Use only Plane lifecycle states Backlog, Todo, In Progress, Done, Cancelled. State plus assignment
+                        is the workflow protocol; never invent ready/handoff/review states in comments. Ensure every
+                        implementation child is classified work:implementation and never work:product.
+
+                        Verify the active current-mission Developer and use that teammate's authoritative Plane identity.
+                        Dependency-satisfied executable children become Todo and are assigned to Developer. Future
+                        children blocked by unfinished dependencies must be created now in Backlog with explicit
+                        dependency edges. PM does not move implementation work to In Progress; Developer claims Todo ->
+                        In Progress. If technical topology genuinely cannot be inferred, create a dependency-free Todo
+                        work:implementation TOPOLOGY INVESTIGATION for the exact ambiguity rather than guessing.
+
+                        Each normal child must link the parent acceptance behavior, Developer assignee when executable,
+                        priority, repo, dependencies/independence, next step, and expected validation/review evidence.
+                        Move the initial Todo work:product parent -> In Progress when taking delivery. Do not encode
+                        workflow state in comments. Chat awareness may accompany this change but never gates it.
                         """))
-                    .to("tack:decide?id=pm-task-planning-done")
-                    .choice().when(exchangeProperty("decision.pm-task-planning-done.result").isEqualTo("yes"))
-                        .setProperty("pmTaskPlanningPassProgress", constant(false)).end()
-                    .to("tack:thought-exit?name=pm-planning")
-                .end();
+                .to("tack:act?id=pm-actionable-dev-task&toolProfile=" + ProjectManagementToolProfile.ID)
+                .choice()
+                    .when(exchangeProperty("act.pm-actionable-dev-task.durableProgress").isEqualTo(true))
+                        .setProperty("pmTaskPlanningMadeProgress", constant(true))
+                        .to("direct:pm-team-sync")
+                .end()
+                .to("tack:thought-exit?name=pm-planning");
 
         from("direct:pm-team-sync")
                 .routeId("pm-team-sync")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Read only recent project chat needed for one useful exchange. Do not require an existing
-                        conversation before posting. Initiate one concise message when new teammate onboarding,
-                        product-to-delivery handoff clarification, real dependency/blocker question, merged-work notice,
-                        or other meaningful event would help a current teammate act sooner. Do not repeat a Plane Todo +
-                        assignee handoff as a required chat lease. Avoid generic status. Plane remains authoritative for
-                        assignments/blockers/state and Gitea for implementation/PR state.
+                        Communicate one concise awareness update when the current PM flow materially created/replanned an
+                        implementation set, changed dependency availability, reconciled merged work, or uncovered a real
+                        blocker. Use current work context directly; read chat only as narrowly as needed to avoid
+                        duplication or answer a related fresh question. Plane states and assignments remain authoritative;
+                        Gitea remains authoritative for PR state. Chat is never a lifecycle flag, lease, or acknowledgment
+                        gate. Avoid generic status.
                         """))
                 .to("tack:act?id=pm-team-chat-sync&toolProfile=" + TeamChatToolProfile.ID);
 
