@@ -450,9 +450,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         result is the authorization boundary.
                         
                         Use the previous successful reconciled-roster memory only to detect a delta; use current
-                        Plane/Mattermost evidence for the actual mutation. For EACH teammate in the CURRENT MISSION
-                        ROSTER returned by mission_roster: resolve their Plane workspace identity, verify/add project membership, resolve their
-                        Mattermost identity, and verify/add mission-channel membership. Do not add personas
+                        Plane/Mattermost evidence for the actual mutation. For EACH teammate returned by mission_roster,
+                        resolve their Plane workspace identity, verify/add project membership, resolve their Mattermost
+                        identity, and verify/add mission-channel membership. Do not add personas
                         absent from the current roster. Remove nobody.
                         
                         Do not wait for a newly started teammate to announce an access blocker. If the roster changed,
@@ -461,8 +461,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         before declaring drift; an actual 401/403 from the teammate is immediate drift evidence.
                         
                         After successful reconciliation, report the exact current active AgentRun roster returned by
-                        mission_roster as the last
-                        successfully reconciled roster in durable thought so future passes can detect newly added
+                        mission_roster as the last successfully reconciled roster in durable thought so future passes
+                        can detect newly added
                         teammates cheaply. Send one concise onboarding notification only
                         when it helps the new teammate act sooner.
                         """))
