@@ -68,10 +68,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                               be acted on now. PM does not issue a magic approval lease before Director integration. Do not
                               manufacture a blocker from an empty repo, missing main branch, speculative Gitea permission,
                               or missing Mattermost handoff when Plane already has Todo + Developer assignee.
-                            - planning: usable work:product exists and the assigned executable work:implementation Todo
-                              backlog is below a useful buffer, normally about 3-5 actionable children, or future
-                              dependency-blocked work:implementation should be represented in Backlog. An active Developer
-                              task or open PR is NOT a reason to stop planning.
+                            - planning: usable work:product exists that has not been claimed/decomposed, Developer lacks
+                              forward executable work PM can safely prepare, or foreseeable dependency-blocked
+                              implementation work is not represented. Active Developer WIP/open PR does not by itself
+                              prevent planning independent future work.
                             - coordination: a fresh inbound team exchange, question, or blocker needs Project Manager
                               participation. Outbound awareness caused by PM work stays in that productive flow.
                             - documentation: a concrete durable navigation/status curation need
@@ -210,7 +210,6 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .routeId("pm-planning-focus")
                 .setProperty("pmFocusedPlanningIterations", constant(0))
                 .setProperty("pmFocusedPlanningContinue", constant(true))
-                .setProperty("decision.pm-dev-backlog-deep-enough.result", constant("no"))
                 .loopDoWhile(simple("${exchangeProperty.pmFocusedPlanningContinue} == true && ${exchangeProperty.pmFocusedPlanningIterations} < 5"))
                     .setProperty("pmFocusedPlanningIterations", simple("${exchangeProperty.pmFocusedPlanningIterations++}"))
                     .setProperty("pmFocusedPlanningContinue", constant(false))
@@ -223,38 +222,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     .setProperty("pmFocusedPlanningContinue", constant(true))
                             .end()
                     .end()
-                    .to("direct:pm-dev-backlog-depth-check")
-                    .choice()
-                        .when(exchangeProperty("decision.pm-dev-backlog-deep-enough.result").isEqualTo("yes"))
-                            .setProperty("pmFocusedPlanningContinue", constant(false))
-                        .otherwise()
-                            .setProperty("pmFocusedPlanningContinue", constant(true))
-                    .end()
                 .end();
-
-        from("direct:pm-dev-backlog-depth-check")
-                .routeId("pm-dev-backlog-depth-check")
-                .setHeader(TackHeaders.PROMPT, constant("""
-                        Read only current work:implementation queue depth in Plane. Count assigned,
-                        dependency-satisfied, actionable Todo children carrying work:implementation. Never count
-                        work:product. Also note useful planned work:implementation in Backlog whose only blocker is an
-                        explicit unfinished dependency, and whether more usable work:product parents can safely be
-                        decomposed. Developer active WIP/open PR does not reduce desired planning depth. If labels are
-                        absent, read classification instead of guessing from
-                        title/description. Do not mutate or inspect source.
-                        """))
-                .to("tack:act?id=pm-dev-backlog-depth-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
-                .setHeader(TackHeaders.PROMPT, constant("""
-                        Is PM sufficiently ahead of Developer for now? Normally require about 3-5 assigned,
-                        dependency-satisfied actionable Todo work:implementation children when enough safe work:product
-                        exists. Answer no when usable work:product can be decomposed but that executable queue is
-                        shallower, even if Developer already has active WIP or an open PR. Explicit dependency-blocked
-                        work:implementation in Backlog is healthy planning but does not count as executable Todo depth.
-                        Never count work:product items. Answer yes with a shallower queue only when product information,
-                        genuine dependency topology across all available product parents, or remaining mission size
-                        makes further safe executable planning inappropriate.
-                        """))
-                .to("tack:decide?id=pm-dev-backlog-deep-enough");
 
         from("direct:pm-completion-focus")
                 .routeId("pm-completion-focus")
@@ -487,8 +455,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         source evidence. Priority: (1) current topology finding needing PM disposition; (2)
                         work:implementation child whose linked PR has MERGED but Plane child is not yet Done; (3)
                         actionable blocker based on a real failed operation, malformed context, product question, or
-                        external condition PM can route/repair; (4) Backlog work:implementation whose explicit
-                        dependencies may now be satisfied or invalid; (5) Cancelled implementation coverage that remains
+                        external condition PM can route/repair; (4) Backlog work:implementation that can now be assigned
+                        to an active Developer or whose dependencies may now be satisfied/invalid; (5) Cancelled
+                        implementation coverage that remains
                         required; (6) In Progress work:product parent whose required implementation children may now be
                         terminally dispositioned; (7) an open-PR implementation child only when PM has a concrete
                         blocker/dependency/product-context issue to repair.
@@ -506,7 +475,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         never manufacture REVIEW READY, INTEGRATION READY, PRODUCT ACCEPTANCE READY, or similar hidden
                         workflow states. For a verified merged work:implementation PR, move that child In Progress ->
                         Done and retain concise merge/validation evidence. Promote dependency-satisfied Backlog
-                        work:implementation to Todo. Route/repair real blockers and PRODUCT QUESTION returns. Repair
+                        work:implementation to Todo only with an active Developer assignment. Route/repair real blockers
+                        and PRODUCT QUESTION returns. PM owns dependency corrections and replacement/cancellation
+                        propagation; preserve In Progress work when a later blocker is only signaling/context. Repair
                         required cancelled coverage/dependency edges. When an In Progress work:product parent's required
                         implementation children are Done and product acceptance can be evaluated, leave concise
                         evidence/context for Product Owner. Do not create activity for unchanged work already waiting on
@@ -525,7 +496,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .to("tack:thought-enter?name=pm-intake&maxTokens=250")
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Select at most one item carrying work:product, never work:implementation. Prefer Todo initial PO
-                        handoff and validate canonical acceptance. Otherwise select qualifying work:product In Progress
+                        handoff with usable canonical acceptance; claiming Todo -> In Progress establishes PM delivery
+                        ownership before implementation assignment. Otherwise select qualifying work:product In Progress
                         parents needing additional decomposition, cancelled-coverage recovery, dependency repair,
                         acceptance-feedback remediation, topology recovery, or reevaluation after clarified product
                         context. An active implementation child/open PR does not make a parent ineligible for further
@@ -561,17 +533,18 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         is the workflow protocol; never invent ready/handoff/review states in comments. Ensure every
                         implementation child is classified work:implementation and never work:product.
 
-                        Verify the active current-mission Developer and use that teammate's authoritative Plane identity.
-                        Dependency-satisfied executable children become Todo and are assigned to Developer. Future
-                        children blocked by unfinished dependencies must be created now in Backlog with explicit
-                        dependency edges. PM does not move implementation work to In Progress; Developer claims Todo ->
-                        In Progress. If technical topology genuinely cannot be inferred, create a dependency-free Todo
-                        work:implementation TOPOLOGY INVESTIGATION for the exact ambiguity rather than guessing.
+                        First claim an initial Todo work:product -> In Progress, then leave Plane coherent before
+                        returning. Build all required children and dependency edges before executable handoffs. With an
+                        active Developer, dependency-satisfied executable children become Todo and are assigned to that
+                        Developer. Without an active Developer, keep those children in Backlog unassigned; the In
+                        Progress product is the Director staffing-demand signal. Promote/assign them when Developer
+                        appears. Dependency-blocked children remain Backlog. Developer alone claims Todo -> In Progress.
+                        If topology cannot be inferred, represent the exact investigation need without guessing.
 
                         Each normal child must link the parent acceptance behavior, Developer assignee when executable,
                         priority, repo, dependencies/independence, next step, and expected validation/review evidence.
-                        Move the initial Todo work:product parent -> In Progress when taking delivery. Do not encode
-                        workflow state in comments. Chat awareness may accompany this change but never gates it.
+                        Parent claim is the PM ownership commit point, not chat. Never leave Todo implementation
+                        unassigned. Do not encode workflow state in comments; awareness never gates lifecycle progress.
                         """))
                 .to("tack:act?id=pm-actionable-dev-task&toolProfile=" + ProjectManagementToolProfile.ID)
                 .choice()
