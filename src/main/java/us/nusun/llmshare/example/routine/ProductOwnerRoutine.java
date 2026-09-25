@@ -222,10 +222,10 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         """))
                 .to("tack:act?id=po-mission-status-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Is the entire mission complete from product ownership? Answer yes only when every required
-                        user-facing outcome is represented by work:product items and Done against its current intended
-                        acceptance criteria with no unresolved product question/decision or acceptance follow-up. Todo
-                        or In Progress product work means not complete.
+                        Is Product Ownership quiescent because the mission's product outcomes are durably complete?
+                        Answer yes only when every required user-facing outcome is represented by Done work:product
+                        items with no unresolved product question or acceptance follow-up. Otherwise answer no and wait
+                        when PO has no current action; Director owns top-level mission completion.
                         """))
                 .to("tack:decide?id=product-owner-mission-complete");
 
@@ -358,9 +358,9 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         work:implementation child. Classification labels are
                         authoritative for role ownership; item wording is not.
                         
-                        First prefer a Todo/In Progress work:product parent with an unresolved product-owned question
-                        from delivery. Treat question content and later clarifying evidence as
-                        context; comments are not hidden workflow state.
+                        First prefer an In Progress work:product parent only when delivery has an explicit unresolved
+                        product-owned question. PO may clarify canonical acceptance without changing lifecycle state.
+                        Otherwise do not redefine an In Progress product while PM owns delivery.
                         
                         Otherwise prefer an In Progress work:product parent for acceptance when all required
                         implementation children are Done (or explicitly Cancelled as superseded/non-required with
@@ -425,8 +425,8 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         Progress, Done, Cancelled. Comments are concise evidence/context, never named workflow states.
                         Never mutate a work:implementation item in this Product Owner handoff.
                         
-                        For answered product questions on Todo/In Progress parents, keep current lifecycle state
-                        unchanged and add concise context linking the clarified canonical acceptance when useful. Do not
+                        For answered product questions on In Progress parents, keep current lifecycle state unchanged
+                        and add concise context linking the clarified canonical acceptance when useful. Do not
                         require PM to discover readiness from a magic comment.
                         
                         For a Backlog product slice whose user scope/Gherkin are usable, move Backlog -> Todo. That
