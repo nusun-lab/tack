@@ -87,8 +87,6 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                               coverage is missing or a required run may need replacement.
                             - guidance: there is a useful coordination message to initiate, or a fresh coordination
                               exchange/blocker would materially benefit from Director participation.
-                            - completion: durable evidence makes mission completion plausible
-                              enough for the dedicated completion check.
                             - wait: none is presently useful; avoid ceremonial polling or duplicate activity.
                             
                             Fresh orientation evidence outranks older thought conclusions. Use durable thought for anchors,
@@ -96,7 +94,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                             integration prerequisites that are not stated here. External artifacts never establish active
                             AgentRun coverage; the mission roster is authoritative. Choose exactly one allowed focus value.
                             """))
-                    .to("tack:decide?id=director-focus&choices=integration,staffing,guidance,completion,wait")
+                    .to("tack:decide?id=director-focus&choices=integration,staffing,guidance,wait")
                     .toD("direct:director-focus-${exchangeProperty.decision.director-focus.result}")
                 .end()
                 .end()
@@ -132,18 +130,13 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                 .to("direct:director-guidance-focus")
                 .to("tack:thought-exit?name=director-guidance-focus");
 
-        from("direct:director-focus-completion")
-                .routeId("director-focus-completion")
-                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused mission completion evaluation using minimal authoritative current-mission evidence.
-                        """))
-                .to("tack:thought-enter?name=director-completion-focus&maxTokens=300")
-                .to("direct:director-completion-focus")
-                .to("tack:thought-exit?name=director-completion-focus");
-
         from("direct:director-focus-wait")
                 .routeId("director-focus-wait")
-                .delay(120000);
+                .to("direct:director-completion-focus")
+                .choice()
+                    .when(exchangeProperty("decision.director-mission-complete.result").isNotEqualTo("yes"))
+                        .delay(120000)
+                .end();
 
         from("direct:director-orientation")
                 .routeId("director-orientation")
@@ -152,7 +145,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         only: whether an In Progress implementation child has a linked OPEN PR; whether the shared
                         Plane/source/docs/chat foundation appears usable; whether at least one current-mission product
                         parent/backlog item exists in Plane; one fresh coordination/blocker signal or useful message
-                        worth initiating; and whether durable state plausibly approaches completion. If the current
+                        worth initiating. If the current
                         thought already contains verified project/repo/channel ids, use direct lookups by those anchors
                         rather than listing whole workspaces. Report current observations only. Do not recommend a next
                         focus, invent sequencing policy, or preserve an older HOLD/wait conclusion when fresh evidence

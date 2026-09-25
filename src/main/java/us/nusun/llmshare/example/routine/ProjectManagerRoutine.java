@@ -75,8 +75,6 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                               exchange needs Project Manager participation.
                             - documentation: a concrete durable navigation/status curation need
                               exists; daily work state belongs in Plane.
-                            - completion: durable evidence makes mission completion plausible
-                              enough for the dedicated completion check.
                             - wait: no focus above is currently useful. A shallow Developer backlog while more work:product
                               can be safely decomposed is actionable planning work, not a reason to wait.
                             
@@ -84,7 +82,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                             is the complete PM -> DEV handoff; Developer owns Todo -> In
                             Progress. Choose exactly one allowed focus value.
                             """))
-                    .to("tack:decide?id=pm-focus&choices=bootstrap,onboarding,active-delivery,planning,coordination,documentation,completion,wait")
+                    .to("tack:decide?id=pm-focus&choices=bootstrap,onboarding,active-delivery,planning,coordination,documentation,wait")
                     .toD("direct:pm-focus-${exchangeProperty.decision.pm-focus.result}")
                 .end()
                 .end()
@@ -151,18 +149,13 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .to("direct:pm-documentation-status-sync")
                 .to("tack:thought-exit?name=pm-documentation-focus");
 
-        from("direct:pm-focus-completion")
-                .routeId("pm-focus-completion")
-                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused Project Manager mission completion evaluation using minimal authoritative evidence.
-                        """))
-                .to("tack:thought-enter?name=pm-completion-focus&maxTokens=300")
-                .to("direct:pm-completion-focus")
-                .to("tack:thought-exit?name=pm-completion-focus");
-
         from("direct:pm-focus-wait")
                 .routeId("pm-focus-wait")
-                .delay(120000);
+                .to("direct:pm-completion-focus")
+                .choice()
+                    .when(exchangeProperty("decision.project-manager-mission-complete.result").isNotEqualTo("yes"))
+                        .delay(120000)
+                .end();
 
         from("direct:pm-orientation")
                 .routeId("pm-orientation")
@@ -177,8 +170,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         Also capture shared basics; one actionable
                         blocker/topology/dependency/merged-work/product-return signal; usable work:product; assigned
                         executable work:implementation Todo depth; useful dependency-blocked work:implementation; one
-                        useful message worth initiating or fresh coordination signal; concrete docs/navigation drift;
-                        and completion plausibility. Count work by classification label, not wording. A sparse
+                        useful message worth initiating or fresh coordination signal; concrete docs/navigation drift. Count work by classification label, not wording. A sparse
                         projection that omits labels/parent is unknown, not negative evidence. If thought already
                         contains verified project/repo/channel ids, use direct lookups instead of listing whole
                         workspaces. Report current observations only. Do not recommend a next focus, invent sequencing

@@ -53,8 +53,6 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             - coordination: there is a useful technical/blocker/PR notification or question to initiate, or
                               a fresh technical conversation/direct question needs Developer
                               participation outside the selected implementation flow.
-                            - completion: durable evidence makes development-side mission completion plausible
-                              enough for the dedicated completion check.
                             - wait: current assigned source work has an open unmerged PR and no newer evidence requires
                               another source change, or no useful assigned work:implementation item is currently available.
                               Do not start a second source unit while one task PR remains open/unmerged. Keep unmerged
@@ -64,7 +62,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                               actual failed source operation establishes a permission/authentication blocker. Fresh
                               orientation evidence outranks older wait conclusions. Choose exactly one allowed focus value.
                             """))
-                    .to("tack:decide?id=dev-focus&choices=missing-basics,implementation,coordination,completion,wait")
+                    .to("tack:decide?id=dev-focus&choices=missing-basics,implementation,coordination,wait")
                     .toD("direct:dev-focus-${exchangeProperty.decision.dev-focus.result}")
                 .end()
                 .end()
@@ -100,19 +98,13 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .to("direct:dev-team-chat-sync")
                 .to("tack:thought-exit?name=dev-coordination-focus");
 
-        from("direct:dev-focus-completion")
-                .routeId("dev-focus-completion")
-                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused Application Developer mission completion
-                        evaluation using minimal authoritative evidence.
-                        """))
-                .to("tack:thought-enter?name=dev-completion-focus&maxTokens=300")
-                .to("direct:dev-completion-focus")
-                .to("tack:thought-exit?name=dev-completion-focus");
-
         from("direct:dev-focus-wait")
                 .routeId("dev-focus-wait")
-                .delay(120000);
+                .to("direct:dev-completion-focus")
+                .choice()
+                    .when(exchangeProperty("decision.application-developer-mission-complete.result").isNotEqualTo("yes"))
+                        .delay(120000)
+                .end();
 
         from("direct:dev-orientation")
                 .routeId("dev-orientation")

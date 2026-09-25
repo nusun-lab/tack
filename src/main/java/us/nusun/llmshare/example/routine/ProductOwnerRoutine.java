@@ -57,8 +57,6 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                               needs Product Owner judgment/clarification.
                             - closeout: a concrete product documentation/chat curation
                               follow-up is useful after durable product work.
-                            - completion: durable evidence makes mission completion plausible
-                              enough for the dedicated completion check.
                             - wait: none of the above is useful now. A shallow product backlog while safely definable
                               mission scope remains is actionable product work, not a reason to wait. Plane real states are
                               authoritative lifecycle state. work:product/work:implementation labels are classification
@@ -66,7 +64,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                               approval leases. Fresh orientation evidence outranks older HOLD/wait
                               conclusions. Choose exactly one allowed focus value.
                             """))
-                    .to("tack:decide?id=po-focus&choices=missing-basics,product-work,coordination,closeout,completion,wait")
+                    .to("tack:decide?id=po-focus&choices=missing-basics,product-work,coordination,closeout,wait")
                     .toD("direct:po-focus-${exchangeProperty.decision.po-focus.result}")
                 .end()
                 .end()
@@ -112,18 +110,13 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .to("direct:po-cycle-closeout")
                 .to("tack:thought-exit?name=po-closeout-focus");
 
-        from("direct:po-focus-completion")
-                .routeId("po-focus-completion")
-                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused Product Owner mission completion evaluation using minimal authoritative evidence.
-                        """))
-                .to("tack:thought-enter?name=po-completion-focus&maxTokens=300")
-                .to("direct:po-completion-focus")
-                .to("tack:thought-exit?name=po-completion-focus");
-
         from("direct:po-focus-wait")
                 .routeId("po-focus-wait")
-                .delay(120000);
+                .to("direct:po-completion-focus")
+                .choice()
+                    .when(exchangeProperty("decision.product-owner-mission-complete.result").isNotEqualTo("yes"))
+                        .delay(120000)
+                .end();
 
         from("direct:po-orientation")
                 .routeId("po-orientation")
@@ -134,7 +127,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         durable completion evidence; whether work:product Backlog slices need definition; whether
                         genuinely unrepresented user-facing outcomes remain; delivery-ready Todo work:product depth; one
                         useful message worth initiating or fresh team exchange needing product judgment; one concrete
-                        closeout need; and completion plausibility. Count only explicitly work:product-classified items
+                        closeout need. Count only explicitly work:product-classified items
                         as product backlog. A work:implementation item is never Product Owner backlog. If labels were
                         not returned, classification is unknown rather than inferred from wording. Prefer verified
                         project/docs ids already in thought rather than rediscovering workspaces. Report observations
