@@ -161,9 +161,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-orientation")
                 .routeId("pm-orientation")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Call mission_roster with view=contacts and platforms=plane,mattermost first. Read the smallest fresh
+                        Use current mission roster evidence. Read the smallest fresh
                         current-mission slice needed to rank PM's next
-                        focus. Compare the authoritative current active AgentRun roster returned by that tool to the last
+                        focus. Compare the authoritative current active AgentRun roster from current roster evidence to the last
                         successfully reconciled roster retained in thought. A newly
                         present teammate is a high-confidence onboarding signal by itself. If roster is unchanged and
                         recent access was verified, do not enumerate workspace/project/channel membership again unless
@@ -258,8 +258,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-completion-focus")
                 .routeId("pm-completion-focus")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Call mission_roster with view=coverage first, then review current mission completion once using
-                        minimal authoritative evidence. One unfinished work:product parent, work:implementation child, current unresolved blocker, merge, product
+                        Use current mission roster evidence. One unfinished work:product parent, work:implementation child, current unresolved blocker, merge, product
                         question, topology finding, acceptance follow-up, or current-roster access gap means incomplete.
                         Comments are evidence/context, never hidden workflow state. Do not mutate.
                         """))
@@ -327,9 +326,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .routeId("pm-project-basics-check")
                 .setProperty("decision.collaboration-setup-complete.result", constant("no"))
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Call mission_roster with view=contacts and platforms=plane,mattermost first and retain the authoritative
-                        current active AgentRun roster for
-                        bootstrap/onboarding. Then verify only the shared foundation needed to enter coordination:
+                        Use current mission roster evidence. Then verify only the shared foundation needed to enter coordination:
                         exactly one current-mission Plane project, documentation repository/navigation, source
                         repository under agent-workspace, and mission team-chat channel, all accessible to this Project
                         Manager run. Prefer direct lookup by
@@ -337,7 +334,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         require main/default branch, commits, or application code.
                         
                         Foundation existence and teammate onboarding are separate. During bootstrap, add every teammate
-                        in the current active AgentRun roster returned by mission_roster. Future teammates are reconciled when they appear
+                        in the current active AgentRun roster from current roster evidence. Future teammates are reconciled when they appear
                         in the roster. Do not call someone onboarded merely because
                         their workspace account exists. Do not mutate.
                         """))
@@ -366,7 +363,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                             """))
                     .to("tack:thought-enter?name=pm-bootstrap&maxTokens=300")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                            Call mission_roster with view=contacts and platforms=plane first. Create or confirm exactly one
+                            Use current mission roster evidence. Create or confirm exactly one
                             current-mission Plane project.
                             Preserve an existing useful project. Then reconcile project membership against that
                             authoritative current active AgentRun roster using actual Plane
@@ -394,7 +391,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .choice().when(exchangeProperty("act.source-repository-provisioning.durableProgress").isEqualTo(true))
                         .setProperty("pmBootstrapMadeProgress", constant(true)).end()
                     .setHeader(TackHeaders.PROMPT, constant("""
-                            Call mission_roster with view=contacts and platforms=mattermost first. Create or confirm one private
+                            Use current mission roster evidence. Create or confirm one private
                             current-mission team-chat channel
                             accessible to Project Management. Never create a duplicate channel. Reconcile that channel
                             against the authoritative current active AgentRun roster using actual current channel membership
@@ -451,8 +448,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-team-onboarding")
                 .routeId("pm-team-onboarding")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Call mission_roster with view=contacts and platforms=plane,mattermost first and reconcile that CURRENT
-                        ACTIVE AGENTRUN ROSTER access now. The tool
+                        Use current mission roster evidence. The tool
                         result is the authorization boundary.
                         
                         Use the previous successful reconciled-roster memory only to detect a delta; use current
@@ -466,8 +462,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         unexpectedly returns empty/contradictory results, repeat one narrow direct membership read
                         before declaring drift; an actual 401/403 from the teammate is immediate drift evidence.
                         
-                        After successful reconciliation, report the exact current active AgentRun roster returned by
-                        mission_roster as the last successfully reconciled roster in durable thought so future passes
+                        After successful reconciliation, report the exact current active AgentRun roster from current roster evidence as the last successfully reconciled roster in durable thought so future passes
                         can detect newly added
                         teammates cheaply. Send one concise onboarding notification only
                         when it helps the new teammate act sooner.
@@ -567,9 +562,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         children. This one-child limit controls mutation size only; it does NOT mean only one child may
                         exist or that PM should wait for current Developer work to merge before planning more.
                         
-                        Call mission_roster with view=contacts, routineId=software-team/application-developer, and
-                        platforms=plane before assigning work so the Developer assignee is an actually active
-                        current-mission AgentRun and its Plane identity comes from authoritative roster data.
+                        Use current mission roster evidence.
                         
                         Every required behavior needs non-duplicative non-cancelled coverage. If a future implementation
                         child depends on unfinished work, CREATE IT NOW in Backlog with the explicit dependency instead
