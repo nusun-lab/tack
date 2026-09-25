@@ -33,13 +33,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
     public RoutineDefinition routine() {
         return RoutineDefinition.builder(ID)
                 .name("Director")
-                .main(
-                        """
-                        Full Director routine: understand current mission progress, maintain useful team coverage, encourage
-                        collaboration, merge safe pull requests promptly, and keep the mission moving until durable evidence shows the
-                        entire mission is complete.
-                        """,
-                        "direct:example-software-team-director")
+                .main("Direct mission execution through completion.", "direct:example-software-team-director")
                 .defaultLane("high-pass")
                 .build();
     }

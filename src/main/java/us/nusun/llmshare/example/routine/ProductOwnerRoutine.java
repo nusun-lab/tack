@@ -22,28 +22,9 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
     public RoutineDefinition routine() {
         return RoutineDefinition.builder(ID)
                 .name("Product Owner")
-                .main("""
-                        Own product definition and acceptance for the whole mission through completion. Stay ahead of Project
-                        Management with a modest queue of prioritized, acceptance-ready user-facing product slices, answer explicit
-                        product questions returned by delivery, move delivery-ready product slices from Backlog to Todo, and accept
-                        completed In Progress product outcomes only when durable evidence satisfies their current acceptance contract.
-                        Product slices describe user outcomes; implementation decomposition belongs to the Project Manager. Plane
-                        work:product labels distinguish Product Owner outcomes from PM work:implementation children.
-                        """, "direct:example-software-team-product-owner")
-                .subroutine(
-                        "acceptance-refinement",
-                        """
-                        Refine one Backlog product slice or answer one returned product question with clear scope and testable Gherkin
-                        acceptance.
-                        """,
-                        "direct:example-software-team-product-owner-acceptance-refinement")
-                .subroutine(
-                        "priority-handoff",
-                        """
-                        Move one ready product slice Backlog -> Todo, answer one returned product question, or accept/reject one completed
-                        In Progress product outcome.
-                        """,
-                        "direct:example-software-team-product-owner-priority-handoff")
+                .main("Define, prioritize, and accept product outcomes.", "direct:example-software-team-product-owner")
+                .subroutine("acceptance-refinement", "Clarify one product outcome and its acceptance.", "direct:example-software-team-product-owner-acceptance-refinement")
+                .subroutine("priority-handoff", "Advance one product outcome to its next lifecycle step.", "direct:example-software-team-product-owner-priority-handoff")
                 .defaultLane("high-pass")
                 .build();
     }

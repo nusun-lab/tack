@@ -23,28 +23,9 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
     public RoutineDefinition routine() {
         return RoutineDefinition.builder(ID)
                 .name("Application Developer")
-                .main("""
-                        Own application development for the whole mission through completion. Consume assigned work:implementation
-                        children from Plane, continue active work before starting Todo work, make coherent source changes,
-                        investigate explicitly assigned technical-topology questions when needed, validate work, create or update
-                        reviewable pull requests, and leave concise evidence/context or blocker details for teammates. Plane real
-                        states and Gitea PR state are workflow state; comments are never hidden review/integration states. Todo plus
-                        Developer assignment is the authoritative PM -> DEV handoff; Developer claims it by moving Todo -> In Progress.
-                        """, "direct:example-software-team-application-developer")
-                .subroutine(
-                        "work-selection",
-                        """
-                        Find or start one assigned work:implementation child using Plane Todo/In Progress state without changing source
-                        files.
-                        """,
-                        "direct:example-software-team-application-developer-work-selection")
-                .subroutine(
-                        "implementation",
-                        """
-                        Advance one assigned work:implementation child through source changes or topology investigation, validation, PR
-                        creation/update, and concise evidence or blocker context.
-                        """,
-                        "direct:example-software-team-application-developer-implementation")
+                .main("Deliver assigned implementation work through completion.", "direct:example-software-team-application-developer")
+                .subroutine("work-selection", "Select the next assigned implementation task.", "direct:example-software-team-application-developer-work-selection")
+                .subroutine("implementation", "Implement and validate one assigned task.", "direct:example-software-team-application-developer-implementation")
                 .defaultLane("high-pass")
                 .build();
     }

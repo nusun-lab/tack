@@ -24,33 +24,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
     public RoutineDefinition routine() {
         return RoutineDefinition.builder(ID)
                 .name("Project Manager")
-                .main(
-                        """
-                        Own project management for the whole mission through completion: establish the shared workspace, keep
-                        current-roster access aligned, consume work:product handoffs, keep a useful work:implementation backlog ahead of
-                        development, coordinate blockers/dependencies, and return completed outcomes for product acceptance.
-                        """,
-                        "direct:example-software-team-project-manager")
-                .subroutine(
-                        "bootstrap",
-                        """
-                        Establish only the shared Plane, source-control, documentation, and team-chat foundation required for delivery.
-                        """,
-                        "direct:example-software-team-project-manager-bootstrap")
-                .subroutine(
-                        "coordination",
-                        """
-                        Operate an established delivery workspace through roster onboarding, decomposition, blockers, dependencies,
-                        merged-work reconciliation, and product acceptance.
-                        """,
-                        "direct:example-software-team-project-manager-coordination")
-                .subroutine(
-                        "task-planning",
-                        """
-                        Decompose one work:product Todo or active parent into work:implementation children while keeping useful work
-                        queued ahead of the Developer.
-                        """,
-                        "direct:example-software-team-project-manager-task-planning")
+                .main("Coordinate delivery from setup through completion.", "direct:example-software-team-project-manager")
+                .subroutine("bootstrap", "Establish the shared delivery workspace.", "direct:example-software-team-project-manager-bootstrap")
+                .subroutine("coordination", "Coordinate active delivery and team dependencies.", "direct:example-software-team-project-manager-coordination")
+                .subroutine("task-planning", "Decompose product outcomes into implementation work.", "direct:example-software-team-project-manager-task-planning")
                 .defaultLane("high-pass")
                 .build();
     }
