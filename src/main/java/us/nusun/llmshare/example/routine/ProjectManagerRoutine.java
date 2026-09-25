@@ -566,7 +566,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         children. This one-child limit controls mutation size only; it does NOT mean only one child may
                         exist or that PM should wait for current Developer work to merge before planning more.
                         
-                        Use current mission roster evidence.
+                        Before assigning implementation work, verify an active current-mission Developer and use that
+                        teammate's authoritative Plane identity for the assignee.
                         
                         Every required behavior needs non-duplicative non-cancelled coverage. If a future implementation
                         child depends on unfinished work, CREATE IT NOW in Backlog with the explicit dependency instead
