@@ -170,8 +170,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         Also capture shared basics; one actionable
                         blocker/topology/dependency/merged-work/product-return signal; usable work:product; assigned
                         executable work:implementation Todo depth; useful dependency-blocked work:implementation; one
-                        useful message worth initiating or fresh coordination signal; concrete docs/navigation drift. Count work by classification label, not wording. A sparse
-                        projection that omits labels/parent is unknown, not negative evidence. If thought already
+                        useful message worth initiating or fresh coordination signal; concrete docs/navigation drift.
+                        Count work by classification label, not wording. A sparse projection that omits labels/parent is
+                        unknown, not negative evidence. If thought already
                         contains verified project/repo/channel ids, use direct lookups instead of listing whole
                         workspaces. Report current observations only. Do not recommend a next focus, invent sequencing
                         policy, preserve an older HOLD conclusion against newer
