@@ -108,7 +108,7 @@ public class MissionRosterService {
         return switch (view) {
             case "coverage" -> coverageEntry(run);
             case "runs" -> runsEntry(run, platforms);
-            case "full" -> fullEntry(run, platforms);
+            case "full" -> fullViewEntry(run, platforms);
             default -> throw new IllegalArgumentException("Unsupported roster view: " + view);
         };
     }
@@ -167,10 +167,38 @@ public class MissionRosterService {
     }
 
     private String fullEntry(AgentRun run) {
-        return fullEntry(run, Set.of());
+        Persona persona = personas.getRequired(run.personaId());
+        RoutineDefinition routine = routines.getRequired(run.routineId());
+        SubroutineDefinition subroutine = run.subroutineId() == null ? null : routine.requireSubroutine(run.subroutineId());
+        return """
+                - name: %s
+                  personaId: %s
+                  routine: %s
+                  routineId: %s
+                  subroutineId: %s
+                  subroutine: %s
+                  target: %s
+                  agentRunId: %s
+                  parentAgentRunId: %s
+                  status: %s
+                  input: %s
+                  platform identities: %s
+                """.formatted(
+                persona.name(),
+                run.personaId(),
+                routine.name(),
+                run.routineId(),
+                subroutine == null ? "(full routine)" : subroutine.id(),
+                subroutine == null ? "(full routine)" : subroutine.description(),
+                subroutine == null ? "full routine" : "subroutine",
+                run.id(),
+                value(run.parentAgentRunId()),
+                run.status(),
+                renderInput(run.input()),
+                renderLegacyIdentities(persona)).strip();
     }
 
-    private String fullEntry(AgentRun run, Set<String> platforms) {
+    private String fullViewEntry(AgentRun run, Set<String> platforms) {
         Persona persona = personas.getRequired(run.personaId());
         RoutineDefinition routine = routines.getRequired(run.routineId());
         SubroutineDefinition subroutine = run.subroutineId() == null ? null : routine.requireSubroutine(run.subroutineId());
@@ -216,6 +244,21 @@ public class MissionRosterService {
         } catch (JsonProcessingException e) {
             return String.valueOf(input);
         }
+    }
+
+    private static String renderLegacyIdentities(Persona persona) {
+        String identities = persona.identities().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .filter(entry -> hasHandle(entry.getValue()))
+                .map(entry -> {
+                    String platform = entry.getValue().platform();
+                    if (blank(platform)) {
+                        platform = entry.getKey();
+                    }
+                    return platform + " " + entry.getValue().handle();
+                })
+                .collect(Collectors.joining(", "));
+        return identities.isBlank() ? "(none)" : identities;
     }
 
     private static String renderIdentities(Persona persona, Set<String> platforms) {
