@@ -11,7 +11,6 @@ import us.nusun.llmshare.framework.inventory.RoutineProvider;
 import us.nusun.llmshare.framework.model.MissionRequest;
 import us.nusun.llmshare.framework.model.RoutineDefinition;
 import us.nusun.llmshare.framework.service.AgentRunAdmissionService;
-import us.nusun.llmshare.framework.service.AgentRunCapacityService;
 import us.nusun.llmshare.framework.tack.TackHeaders;
 
 import java.util.List;
@@ -23,7 +22,6 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
     public static final String ID = "software-team/director";
     static final int MAX_ACTIVE_MISSION_RUNS = 5;
 
-    @Inject AgentRunCapacityService agentRunCapacityService;
 
     @Override
     public List<RoutineDefinition> routines() { return List.of(routine()); }
@@ -51,18 +49,12 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                 .setProperty(AgentRunAdmissionService.CAPACITY_MAXIMUM_PROPERTY, constant(MAX_ACTIVE_MISSION_RUNS))
                 .loopDoWhile(exchangeProperty("decision.director-mission-complete.result").isNotEqualTo("yes"))
                     .setProperty("directorCycle", simple("${exchangeProperty.directorCycle++}"))
-                    .setProperty("directorCapacity", method(agentRunCapacityService, "capacityForCurrentMission"))
-                    .setProperty("directorActiveRunCount", simple("${exchangeProperty.directorCapacity.active}"))
-                    .setProperty("directorRemainingRunCapacity", simple("${exchangeProperty.directorCapacity.remaining}"))
                     .to("direct:director-orientation")
                     .setHeader(TackHeaders.PROMPT, simple("""
                             Choose exactly one highest-priority Director focus for the next focused
                             pass. Mission: ${exchangeProperty.mission.goal}
-                            Use the fresh authoritative active AgentRun roster observed by director-orientation. Do not
-                            infer active coverage from Plane, Gitea, Mattermost, or older thought when that fresh roster
-                            evidence is available.
-                            Capacity: ${exchangeProperty.directorActiveRunCount}/${exchangeProperty.agentRunCapacityMaximum}
-                            active, ${exchangeProperty.directorRemainingRunCapacity} remaining.
+                            Use fresh authoritative active AgentRun coverage and capacity evidence. Do not infer active
+                            coverage from Plane, Gitea, Mattermost, or older thought when fresher roster evidence exists.
                             
                             Staffing policy is phase-based and must be applied when ranking focus:
                             - PM is required whenever the unfinished mission lacks an
@@ -140,8 +132,8 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:director-orientation")
                 .routeId("director-orientation")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Call mission_roster with view=coverage first. Then read the smallest fresh current-mission slice needed to rank the
-                        Director's next focus. Capture only: the authoritative current active AgentRun roster; whether
+                        Read the smallest fresh current-mission slice needed to rank the Director's next focus. Capture
+                        only: authoritative current active AgentRun coverage/capacity; whether
                         an In Progress implementation child has a linked OPEN PR; whether the shared
                         Plane/source/docs/chat foundation appears usable; whether at least one current-mission product
                         parent/backlog item exists in Plane; one fresh coordination/blocker signal or useful message
@@ -168,8 +160,8 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:director-staffing-focus")
                 .routeId("director-staffing-focus")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Call mission_roster with view=coverage first and capture the authoritative current active AgentRun coverage.
-                        Then freshly verify only the staffing phase signals for this mission: one current-mission Plane
+                        Freshly verify only the staffing phase signals for this mission: authoritative current active
+                        AgentRun coverage/capacity; one current-mission Plane
                         project, one source repository under agent-workspace, one documentation repository with usable
                         navigation, one accessible current-mission team-chat channel, and whether at least one
                         current-mission PRODUCT PARENT/backlog item exists in Plane. Prefer direct lookup using verified
@@ -196,11 +188,11 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                     Decide which AgentRuns are required now. Mission: ${exchangeProperty.mission.goal} Assignable
                     personas: ${bean:personaCatalog.agentRunStartAssignablePromptJson} Available
                     routines: ${bean:routineCatalog.startableJson}
-                    Use the authoritative current active AgentRun roster captured by director-staffing-read in the
-                    active thought. FOUNDATION READY: ${exchangeProperty.decision.director-foundation-ready.result}
+                    Use the authoritative current active AgentRun coverage/capacity captured by
+                    director-staffing-read in the active thought. FOUNDATION READY:
+                    ${exchangeProperty.decision.director-foundation-ready.result}
                     PRODUCT BACKLOG EXISTS: ${exchangeProperty.decision.director-product-backlog-exists.result}
-                    Capacity: ${exchangeProperty.directorActiveRunCount}/${exchangeProperty.agentRunCapacityMaximum}
-                    active, ${exchangeProperty.directorRemainingRunCapacity} remaining. The mission roster is the
+                    The mission roster is the
                     only source of truth for active AgentRun coverage. Only accepted/scheduled/running main-routine
                     AgentRuns count. Phase policy for an unfinished mission:
                     - PM is always required. If foundation is no, required active coverage is PM only.
