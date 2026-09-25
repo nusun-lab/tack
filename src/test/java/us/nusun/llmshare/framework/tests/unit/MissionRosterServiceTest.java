@@ -155,7 +155,7 @@ class MissionRosterServiceTest {
 
         assertEquals(2, entryCount(roster));
         assertTrue(roster.contains("Persona A"));
-        assertTrue(roster.contains("status=accepted"));
+        assertTrue(roster.contains("statuses=accepted"));
         assertTrue(roster.contains("handles: alpha-mcp=@persona-a"));
         assertFalse(roster.contains("agentRunId="));
         assertFalse(roster.contains("run-complete"));
@@ -199,6 +199,21 @@ class MissionRosterServiceTest {
         assertTrue(roster.contains("routineId=routine-a"));
         assertFalse(roster.contains("handles:"));
         assertFalse(roster.contains("agentRunId="));
+    }
+
+    @Test
+    void missionRosterContactsCollapseMultipleRunsForOnePersona() {
+        AgentRunStore store = storeWithRuns();
+        AgentRun second = new AgentRun("run-a-2", "mission-1", "persona-a", "routine-b", Map.of());
+        second.status(AgentRun.STATUS_RUNNING);
+        store.putRun(second);
+
+        String roster = new MissionRosterTool(service(store), "mission-1")
+                .mission_roster(null, "contacts", "persona-a", null, null);
+
+        assertEquals(1, entryCount(roster));
+        assertTrue(roster.contains("routineIds=routine-a,routine-b"));
+        assertTrue(roster.contains("statuses=accepted,running"));
     }
 
     private static long entryCount(String roster) {
