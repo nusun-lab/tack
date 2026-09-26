@@ -514,8 +514,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         acceptance-feedback remediation, topology recovery, or reevaluation after clarified product
                         context. An active implementation child/open PR does not make a parent ineligible for future safe planning,
                         but do not select another parent merely to expand coverage while an active Developer lacks a useful
-                        executable Todo buffer that existing planned work can replenish. If labels are missing from the current projection, read classification rather
-                        than guessing from wording. Raise/refresh PRODUCT QUESTION only when product judgment or usable
+                        executable Todo buffer that existing planned work can replenish. If labels are missing from the
+                        current projection, read classification rather than guessing from wording. Raise/refresh PRODUCT QUESTION only when product judgment or usable
                         acceptance is genuinely missing. Never invent product scope or implement the parent.
                         """))
                 .to("tack:act?id=pm-intake-review&toolProfile=" + ProjectManagementToolProfile.ID)
