@@ -484,8 +484,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         Update only the item already read. Use Plane real states and concise evidence/context comments;
                         never manufacture REVIEW READY, INTEGRATION READY, PRODUCT ACCEPTANCE READY, or similar hidden
                         workflow states. For a verified merged work:implementation PR, move that child In Progress ->
-                        Done and retain concise merge/validation evidence. When an active Developer has capacity, promote and assign a small forward buffer of
-                        dependency-satisfied Backlog work:implementation before expanding another product slice; never
+                        Done and retain concise merge/validation evidence. When an active Developer has capacity,
+                        promote and assign a small forward buffer of dependency-satisfied Backlog work:implementation
+                        before expanding another product slice; never
                         promote dependency-blocked work. Route/repair real blockers
                         and PRODUCT QUESTION returns. PM owns dependency corrections and replacement/cancellation
                         propagation; preserve In Progress work when a later blocker is only signaling/context. Repair
