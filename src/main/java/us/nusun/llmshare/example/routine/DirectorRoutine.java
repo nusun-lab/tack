@@ -40,7 +40,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                 .routeId("example-software-team-director")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
                         Durable orchestration anchors: mission goal, authoritative active roster coverage, verified
-                        current-mission project/repo/channel ids, product-backlog presence, open integration work,
+                        current-mission project/repo/channel ids, product-delivery claim, open integration work,
                         blockers, major handoffs, and last focused outcome.
                         """))
                 .to("tack:thought-enter?name=orchestration-root&maxTokens=500")
@@ -73,7 +73,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                               ready for safe merge. A PM approval comment or named comment state is NOT required. Route here
                               promptly so integration latency stays low.
                             - staffing: evaluate the explicit phase policy above against the authoritative mission roster,
-                              shared-foundation signal, and product-backlog signal; route here whenever required active
+                              shared-foundation signal, and product-delivery-claim signal; route here whenever required active
                               coverage is missing or a required run may need replacement.
                             - guidance: a fresh coordination exchange/blocker needs Director judgment, or a Director-owned
                               merge/staffing outcome requires concise awareness to unblock another role.
@@ -103,8 +103,9 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:director-focus-staffing")
                 .routeId("director-focus-staffing")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused staffing work: shared-foundation readiness, product-backlog presence, authoritative
-                        active roster coverage, phase-required roles, and remaining mission capacity.
+                        Focused staffing work: shared-foundation readiness, authoritative active roster coverage, and the
+                        lifecycle demand signal for Developer staffing. PM bootstraps the foundation, PO owns product
+                        scope, and an In Progress work:product slice means PM has claimed delivery and DEV is required.
                         """))
                 .to("tack:thought-enter?name=director-staffing-focus&maxTokens=350")
                 .to("direct:director-staffing-focus")
@@ -113,7 +114,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:director-focus-guidance")
                 .routeId("director-focus-guidance")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused Director coordination: one useful message to initiate or one current conversation,
+                        Focused Director coordination: one current conversation or one Director-owned staffing/integration transition to communicate,
                         blocker, clarification, or unblock opportunity that merits Director participation.
                         """))
                 .to("tack:thought-enter?name=director-guidance-focus&maxTokens=300")
@@ -162,9 +163,9 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         AgentRun coverage/capacity; one current-mission Plane
                         project, one source repository under agent-workspace, one documentation repository with usable
                         navigation, one accessible current-mission team-chat channel, and whether at least one
-                        current-mission work:product parent is In Progress in Plane. Prefer direct lookup using verified
-                        ids already present in current thought. An empty source repository is valid. Product backlog
-                        existence is only an existence signal; do not require implementation children, commits, tests,
+                        current-mission work:product slice is In Progress in Plane. Prefer direct lookup using verified
+                        ids already present in current thought. An empty source repository is valid. Product work is not part of foundation readiness; the In Progress slice is read only as the
+                        Developer-demand signal. Do not require implementation children, commits, tests,
                         PRs, or application code. Do not require not-yet-running PO/DEV roles to already be members
                         everywhere; PM owns membership alignment. Do not mutate.
                         """))
@@ -177,7 +178,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         """))
                 .to("tack:decide?id=director-foundation-ready")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Does at least one current-mission work:product parent exist In Progress in Plane? Answer yes only
+                        Does at least one current-mission work:product slice exist In Progress in Plane? Answer yes only
                         for that verified lifecycle state. This is PM's delivery claim and Developer staffing-demand
                         signal. Do not require an implementation Todo child.
                         """))
@@ -194,9 +195,9 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                     only source of truth for active AgentRun coverage. Only accepted/scheduled/running main-routine
                     AgentRuns count. Phase policy for an unfinished mission:
                     - PM is always required. If foundation is no, required active coverage is PM only.
-                    - If foundation is yes and no product parent is In Progress, required active coverage is PM + PO.
-                      PO populates the product backlog and PM may claim ready product work.
-                    - If foundation is yes and a product parent is In Progress, required active coverage is PM + PO +
+                    - If foundation is yes and no product slice is In Progress, required active coverage is PM + PO.
+                      PO maintains product slices and PM may claim ready product work.
+                    - If foundation is yes and a product slice is In Progress, required active coverage is PM + PO +
                       DEV. The PM claim is sufficient demand; do not wait for implementation Todo children. Never
                       duplicate an already-active required role. Create one run per missing required role subject to
                       remaining capacity. Return {"agentRuns":[]} when none is
