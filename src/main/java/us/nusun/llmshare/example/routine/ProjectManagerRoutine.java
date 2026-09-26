@@ -42,9 +42,11 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .to("direct:pm-orientation")
                     .setHeader(TackHeaders.PROMPT, constant("""
                             Choose exactly one highest-priority Project Manager focus for the next focused pass. Operating
-                            model: PO stays ahead of PM with several ready work:product slices; PM stays ahead of DEV with
-                            several work:implementation children; DEV normally carries only one active/unmerged source unit.
-                            Developer WIP=1 does NOT mean planning WIP=1.
+                            model: PO stays ahead of PM with several ready work:product slices; PM stays ahead of DEV with a
+                            small executable Todo buffer of assigned work:implementation while preserving dependency-blocked
+                            future work in Backlog. DEV normally carries only one active/unmerged source unit. Developer
+                            WIP=1 does NOT mean planning WIP=1. Replenishing executable DEV supply outranks expanding
+                            implementation coverage into another product slice.
                             
                             ACCESS/LIVENESS INVARIANT: use the fresh active AgentRun roster captured by pm-orientation as
                             authoritative for who is allowed and expected to participate now. Preserve the most recent
@@ -63,21 +65,25 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                               successfully reconciled roster, or concrete evidence shows a current teammate lost Plane
                               project/channel access. A new roster member is enough to route
                               here without waiting for them to fail first.
-                            - active-delivery: a merged/open-PR reconciliation, topology finding, real blocker, dependency
-                              promotion/repair, cancelled coverage, product-question return, or completed-parent handoff can
-                              be acted on now. PM does not issue a magic approval lease before Director integration. Do not
-                              manufacture a blocker from an empty repo, missing main branch, speculative Gitea permission,
-                              or missing Mattermost handoff when Plane already has Todo + Developer assignee.
-                            - planning: usable work:product exists that has not been claimed/decomposed, Developer lacks
-                              forward executable work PM can safely prepare, or foreseeable dependency-blocked
-                              implementation work is not represented. Active Developer WIP/open PR does not by itself
-                              prevent planning independent future work.
+                            - active-delivery: an active Developer has capacity and existing dependency-satisfied
+                              work:implementation can be promoted/assigned, or a merged/open-PR reconciliation, topology
+                              finding, real blocker, dependency promotion/repair, cancelled coverage, product-question
+                              return, or completed-parent handoff can be acted on now. Replenishing the Developer's
+                              executable Todo buffer from already-planned work outranks decomposing another product slice.
+                              PM does not issue a magic approval lease before Director integration. Do not manufacture a
+                              blocker from an empty repo, missing main branch, speculative Gitea permission, or missing
+                              Mattermost handoff when Plane already has Todo + Developer assignee.
+                            - planning: no higher-priority executable DEV-supply action exists, and usable work:product
+                              exists that has not been claimed/decomposed or foreseeable dependency-blocked implementation
+                              work is not represented. Active Developer WIP/open PR does not by itself prevent planning
+                              independent future work once a useful executable buffer is already available.
                             - coordination: a fresh inbound team exchange, question, or blocker needs Project Manager
                               participation. Outbound awareness caused by PM work stays in that productive flow.
                             - documentation: a concrete durable navigation/status curation need
                               exists; daily work state belongs in Plane.
-                            - wait: no focus above is currently useful. A shallow Developer backlog while more work:product
-                              can be safely decomposed is actionable planning work, not a reason to wait.
+                            - wait: no focus above is currently useful. A shallow executable Developer Todo buffer is
+                              actionable active-delivery when already-planned dependency-satisfied work can replenish it;
+                              otherwise safely decomposable product work is actionable planning.
                             
                             Fresh orientation evidence outranks older HOLD/wait conclusions. Plane Todo + Developer assignee
                             is the complete PM -> DEV handoff; Developer owns Todo -> In
@@ -123,10 +129,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-focus-planning")
                 .routeId("pm-focus-planning")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused delivery planning: take one work:product parent at a time and establish its complete
-                        reasonable work:implementation story/dependency set. With an active Developer, executable stories
-                        become assigned Todo; otherwise they remain Backlog until assignment is possible. Repeat only
-                        while another product parent has useful safe planning work.
+                        Focused delivery planning for one work:product slice: establish its complete reasonable
+                        work:implementation story/dependency set. With an active Developer, executable stories become
+                        assigned Todo; otherwise they remain Backlog until assignment is possible. Return to orientation
+                        after this slice so existing executable DEV supply can outrank expansion into another product slice.
                         """))
                 .to("tack:thought-enter?name=pm-planning-focus&maxTokens=400")
                 .to("direct:pm-planning-focus")
@@ -172,8 +178,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         verified membership, repeat one narrow direct read before declaring drift.
                         
                         Also capture shared basics; one actionable
-                        blocker/topology/dependency/merged-work/product-return signal; usable work:product; assigned
-                        executable work:implementation Todo depth; useful dependency-blocked work:implementation;
+                        blocker/topology/dependency/merged-work/product-return signal; usable work:product; assigned executable work:implementation Todo depth, active Developer capacity, and
+                        dependency-satisfied Backlog work:implementation that could replenish DEV immediately; useful
+                        dependency-blocked work:implementation;
                         one fresh inbound coordination signal; concrete docs/navigation drift.
                         Count work by classification label, not wording. A sparse projection that omits labels/parent is
                         unknown, not negative evidence. If thought already
@@ -210,7 +217,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .routeId("pm-planning-focus")
                 .setProperty("pmFocusedPlanningIterations", constant(0))
                 .setProperty("pmFocusedPlanningContinue", constant(true))
-                .loopDoWhile(simple("${exchangeProperty.pmFocusedPlanningContinue} == true && ${exchangeProperty.pmFocusedPlanningIterations} < 5"))
+                .loopDoWhile(simple("${exchangeProperty.pmFocusedPlanningContinue} == true && ${exchangeProperty.pmFocusedPlanningIterations} < 1"))
                     .setProperty("pmFocusedPlanningIterations", simple("${exchangeProperty.pmFocusedPlanningIterations++}"))
                     .setProperty("pmFocusedPlanningContinue", constant(false))
                     .to("direct:pm-work-intake")
@@ -399,9 +406,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .setProperty("pmProductiveIterations", simple("${exchangeProperty.pmProductiveIterations++}"))
                     .setProperty("pmMadeProgress", constant(false))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                            Current delivery pass: one actionable real
-                            blocker/dependency/topology/merged-work/product-return item, then one work:product parent
-                            needing decomposition. PM planning should remain ahead of Developer execution.
+                            Current delivery pass: first replenish executable Developer supply from already-planned work when
+                            possible, then handle one actionable blocker/dependency/topology/merged-work/product-return
+                            item, and only then consider one work:product slice needing decomposition. PM should keep a
+                            small executable Todo buffer ahead of Developer execution.
                             """))
                     .to("tack:thought-enter?name=pm-cycle&maxTokens=300")
                     .to("direct:pm-active-delivery-check")
@@ -451,16 +459,17 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         """))
                 .to("tack:thought-enter?name=pm-active-delivery&maxTokens=300")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Read at most one highest-value ACTIONABLE current delivery item using fresh Plane and linked
-                        source evidence. Priority: (1) current topology finding needing PM disposition; (2)
-                        work:implementation child whose linked PR has MERGED but Plane child is not yet Done; (3)
-                        actionable blocker based on a real failed operation, malformed context, product question, or
-                        external condition PM can route/repair; (4) Backlog work:implementation that can now be assigned
-                        to an active Developer or whose dependencies may now be satisfied/invalid; (5) Cancelled
-                        implementation coverage that remains
+                        Read the smallest highest-value ACTIONABLE current delivery slice using fresh Plane and linked
+                        source evidence. Priority: (1) when an active Developer has capacity, dependency-satisfied Backlog
+                        work:implementation that can replenish its executable assigned Todo buffer, including a directly
+                        related dependency/topology repair needed to unlock that supply; (2) work:implementation child
+                        whose linked PR has MERGED but Plane child is not yet Done; (3) actionable blocker based on a real
+                        failed operation, malformed context, product question, or external condition PM can route/repair;
+                        (4) other current topology/dependency repair; (5) Cancelled implementation coverage that remains
                         required; (6) In Progress work:product parent whose required implementation children may now be
                         terminally dispositioned; (7) an open-PR implementation child only when PM has a concrete
-                        blocker/dependency/product-context issue to repair.
+                        blocker/dependency/product-context issue to repair. For DEV supply, read enough sibling state to
+                        identify a small safe dependency-satisfied buffer rather than only one arbitrary child.
                         Director owns normal safe PR integration directly.
                         
                         Do NOT treat these as blockers: an accessible empty source repo, absent main/default branch
@@ -474,8 +483,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         Update only the item already read. Use Plane real states and concise evidence/context comments;
                         never manufacture REVIEW READY, INTEGRATION READY, PRODUCT ACCEPTANCE READY, or similar hidden
                         workflow states. For a verified merged work:implementation PR, move that child In Progress ->
-                        Done and retain concise merge/validation evidence. Promote dependency-satisfied Backlog
-                        work:implementation to Todo only with an active Developer assignment. Route/repair real blockers
+                        Done and retain concise merge/validation evidence. When an active Developer has capacity, promote and assign a small forward buffer of
+                        dependency-satisfied Backlog work:implementation before expanding another product slice; never
+                        promote dependency-blocked work. Route/repair real blockers
                         and PRODUCT QUESTION returns. PM owns dependency corrections and replacement/cancellation
                         propagation; preserve In Progress work when a later blocker is only signaling/context. Repair
                         required cancelled coverage/dependency edges. When an In Progress work:product parent's required
@@ -500,8 +510,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         ownership before implementation assignment. Otherwise select qualifying work:product In Progress
                         parents needing additional decomposition, cancelled-coverage recovery, dependency repair,
                         acceptance-feedback remediation, topology recovery, or reevaluation after clarified product
-                        context. An active implementation child/open PR does not make a parent ineligible for further
-                        safe planning. If labels are missing from the current projection, read classification rather
+                        context. An active implementation child/open PR does not make a parent ineligible for future safe planning,
+                        but do not select another parent merely to expand coverage while an active Developer lacks a useful
+                        executable Todo buffer that existing planned work can replenish. If labels are missing from the current projection, read classification rather
                         than guessing from wording. Raise/refresh PRODUCT QUESTION only when product judgment or usable
                         acceptance is genuinely missing. Never invent product scope or implement the parent.
                         """))
