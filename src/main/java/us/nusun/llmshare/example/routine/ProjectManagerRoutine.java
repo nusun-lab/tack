@@ -178,8 +178,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         verified membership, repeat one narrow direct read before declaring drift.
                         
                         Also capture shared basics; one actionable
-                        blocker/topology/dependency/merged-work/product-return signal; usable work:product; assigned executable work:implementation Todo depth, active Developer capacity, and
-                        dependency-satisfied Backlog work:implementation that could replenish DEV immediately; useful
+                        blocker/topology/dependency/merged-work/product-return signal; usable work:product; assigned
+                        executable work:implementation Todo depth; active Developer capacity; dependency-satisfied Backlog
+                        work:implementation that could replenish DEV immediately; useful
                         dependency-blocked work:implementation;
                         one fresh inbound coordination signal; concrete docs/navigation drift.
                         Count work by classification label, not wording. A sparse projection that omits labels/parent is
