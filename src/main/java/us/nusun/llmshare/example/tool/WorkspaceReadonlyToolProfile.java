@@ -90,6 +90,21 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                         - CI/workflow execution is not enabled in this Gitea environment; do not inspect or rely on Actions/workflows or CI checks
                         - Mattermost provides conversational context
 
+
+                        SKILL: software-team-cooperation
+                        - Plane lifecycle uses only Backlog, Todo, In Progress, Done, Cancelled; never invent workflow states in labels, comments, or chat
+                        - Plane state expresses lifecycle, assignment expresses ownership, dependencies express ordering, and comments/chat express evidence or context
+                        - work:product is PO-owned product scope/acceptance; work:implementation is PM-owned decomposition/dependencies/assignment
+                        - PO owns product outcomes and acceptance; PM owns implementation topology and delivery reconciliation; Developer owns source execution and PR production; Director owns staffing and PR integration
+                        - evidence may invalidate another role's domain, but report it to that owner rather than silently restructuring their work
+                        - product Backlog/Todo is PO definition territory; product In Progress means PM has claimed delivery, except PO may answer an explicit product question or perform final acceptance
+                        - implementation Backlog is planned but not executable; Todo plus Developer assignment is executable handoff; Developer claims Todo -> In Progress
+                        - a claimed implementation that later blocks stays In Progress with blocker evidence; do not move lifecycle backward merely to signal another role
+                        - Director merge does not complete Plane implementation; PM reconciles verified merged implementation -> Done; PO alone accepts product In Progress -> Done
+                        - product cancellation does not implicitly cancel children; PM reconciles/cancels or replaces affected implementation work deliberately
+                        - implementation cancellation does not cancel its product parent; PM owns replacement coverage when the outcome remains required
+                        - chat never gates lifecycle progress; productive work may send one narrow awareness message or question when another role can act sooner
+
                         SKILL: mission-anchor-reuse
                         - once a mission project UUID, work-item UUID/identifier, Gitea owner/repo, branch/PR, Mattermost team id, or channel id is verified, reuse that exact locator for direct lookups
                         - never replace an exact locator with a shortened or reconstructed value; a human key such as RCY-2 is an identifier, not a UUID

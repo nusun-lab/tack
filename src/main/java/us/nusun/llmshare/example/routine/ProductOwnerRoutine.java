@@ -53,8 +53,9 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                               buffer. When the product buffer is shallow and distinct mission outcomes remain, prefer
                               creating/defining additional product outcomes over revisiting already-ready
                               work that needs no Product Owner judgment.
-                            - coordination: there is a useful product message to initiate, or a fresh team conversation
-                              needs Product Owner judgment/clarification.
+                            - coordination: a fresh inbound team conversation, question, or clarification needs Product
+                              Owner judgment. Outbound awareness after product work is part of that productive flow and
+                              does not compete for focus.
                             - closeout: a concrete product documentation/chat curation
                               follow-up is useful after durable product work.
                             - wait: none of the above is useful now. A shallow product backlog while safely definable
@@ -82,9 +83,10 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         from("direct:po-focus-product-work")
                 .routeId("po-focus-product-work")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused product work: resolve current product questions/acceptance, then create, define, and
-                        hand off one work:product slice per act until several delivery-ready product slices are queued
-                        or no additional safe product outcome remains.
+                        Focused product work: maintain a useful collection of work:product slices ahead of PM. Establish
+                        distinct foreseeable outcomes in Backlog together when the mission supports them, then refine
+                        the nearest slices to Todo as acceptance becomes usable. Plane lifecycle state is only Backlog,
+                        Todo, In Progress, Done, or Cancelled; do not invent readiness states.
                         """))
                 .to("tack:thought-enter?name=po-product-work-focus&maxTokens=400")
                 .to("direct:po-product-work-focus")
@@ -93,8 +95,8 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         from("direct:po-focus-coordination")
                 .routeId("po-focus-coordination")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused Product Owner coordination for one useful initiated handoff/question or one fresh
-                        scope, acceptance, or product-judgment exchange.
+                        Focused Product Owner coordination for one fresh inbound scope, acceptance, or product-judgment
+                        exchange. Product-work routes handle outbound awareness caused by their own changes.
                         """))
                 .to("tack:thought-enter?name=po-coordination-focus&maxTokens=250")
                 .to("direct:po-team-chat-sync")
@@ -125,8 +127,8 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         only: whether shared basics are usable; whether there is an unresolved PRODUCT QUESTION; whether
                         a work:product In Progress parent now has all required implementation children terminal with
                         durable completion evidence; whether work:product Backlog slices need definition; whether
-                        genuinely unrepresented user-facing outcomes remain; delivery-ready Todo work:product depth; one
-                        useful message worth initiating or fresh team exchange needing product judgment; one concrete
+                        genuinely unrepresented user-facing outcomes remain; Todo work:product depth; one fresh inbound
+                        team exchange needing product judgment; one concrete
                         closeout need. Count only explicitly work:product-classified items
                         as product backlog. A work:implementation item is never Product Owner backlog. If labels were
                         not returned, classification is unknown rather than inferred from wording. Prefer verified
@@ -140,6 +142,20 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .routeId("po-product-work-focus")
                 .setProperty("poFocusedProductIterations", constant(0))
                 .setProperty("poFocusedProductContinue", constant(true))
+                .setProperty("poFocusedProductMadeProgress", constant(false))
+                .setHeader(TackHeaders.PROMPT, constant("""
+                        Inspect the mission and current work:product coverage once. When distinct required user-facing
+                        outcomes are still unrepresented, create a coherent COLLECTION of product parents in Backlog now
+                        rather than discovering one per pass. Keep each slice independently valuable and bounded. Create
+                        only outcomes supported by mission intent; refinement can happen later. Do not create
+                        work:implementation children. Use only Plane states Backlog, Todo, In Progress, Done, Cancelled;
+                        do not encode readiness in comments or invented states. Existing slices must not be duplicated.
+                        """))
+                .to("tack:act?id=po-product-backlog-seed&toolProfile=" + ProjectManagementToolProfile.ID)
+                .choice()
+                    .when(exchangeProperty("act.po-product-backlog-seed.durableProgress").isEqualTo(true))
+                        .setProperty("poFocusedProductMadeProgress", constant(true))
+                .end()
                 .setProperty("decision.po-product-backlog-deep-enough.result", constant("no"))
                 .loopDoWhile(simple("${exchangeProperty.poFocusedProductContinue} == true && ${exchangeProperty.poFocusedProductIterations} < 6"))
                     .setProperty("poFocusedProductIterations", simple("${exchangeProperty.poFocusedProductIterations++}"))
@@ -152,19 +168,23 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                             .choice()
                                 .when(exchangeProperty("act.po-canonical-acceptance-update.durableProgress").isEqualTo(true))
                                     .setProperty("poFocusedProductContinue", constant(true))
+                                    .setProperty("poFocusedProductMadeProgress", constant(true))
                             .end()
                             .choice()
                                 .when(exchangeProperty("act.po-plane-handoff-update.durableProgress").isEqualTo(true))
                                     .setProperty("poFocusedProductContinue", constant(true))
+                                    .setProperty("poFocusedProductMadeProgress", constant(true))
                             .end()
                     .end()
-                    .to("direct:po-product-backlog-depth-check")
                     .choice()
-                        .when(exchangeProperty("decision.po-product-backlog-deep-enough.result").isEqualTo("yes"))
-                            .setProperty("poFocusedProductContinue", constant(false))
-                        .otherwise()
+                        .when(exchangeProperty("decision.product-owner-has-work.result").isEqualTo("yes"))
                             .setProperty("poFocusedProductContinue", constant(true))
                     .end()
+                .end()
+                .to("direct:po-product-backlog-depth-check")
+                .choice()
+                    .when(exchangeProperty("poFocusedProductMadeProgress").isEqualTo(true))
+                        .to("direct:po-team-chat-sync")
                 .end();
 
         from("direct:po-product-backlog-depth-check")
@@ -200,10 +220,10 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         """))
                 .to("tack:act?id=po-mission-status-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Is the entire mission complete from product ownership? Answer yes only when every required
-                        user-facing outcome is represented by work:product items and Done against its current intended
-                        acceptance criteria with no unresolved product question/decision or acceptance follow-up. Todo
-                        or In Progress product work means not complete.
+                        Is Product Ownership quiescent because the mission's product outcomes are durably complete?
+                        Answer yes only when every required user-facing outcome is represented by Done work:product
+                        items with no unresolved product question or acceptance follow-up. Otherwise answer no and wait
+                        when PO has no current action; Director owns top-level mission completion.
                         """))
                 .to("tack:decide?id=product-owner-mission-complete");
 
@@ -313,11 +333,12 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         from("direct:po-team-chat-sync")
                 .routeId("po-team-chat-sync")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Read only recent project chat needed for one useful product exchange. Do not require an existing
-                        conversation before posting. Initiate one concise message when a newly ready product slice,
-                        clarified product question, acceptance result, or named product decision would help PM/Developer
-                        act sooner; otherwise answer one fresh scope/acceptance question. Link the authoritative
-                        work:product parent/canonical acceptance when useful. Avoid generic status.
+                        Communicate one concise product-awareness update when the current product flow materially created
+                        or refined the product backlog, moved a slice to Todo, clarified product intent, or completed
+                        acceptance. Use current work context directly; read chat only as narrowly as needed to avoid
+                        duplication or answer a related fresh question. Plane state is authoritative and chat is never a
+                        lifecycle flag or acknowledgment gate. Link authoritative work:product/canonical acceptance when
+                        useful. Avoid generic status.
                         """))
                 .to("tack:act?id=po-team-chat-sync&toolProfile=" + TeamChatToolProfile.ID);
 
@@ -335,9 +356,9 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         work:implementation child. Classification labels are
                         authoritative for role ownership; item wording is not.
                         
-                        First prefer a Todo/In Progress work:product parent with an unresolved product-owned question
-                        from delivery. Treat question content and later clarifying evidence as
-                        context; comments are not hidden workflow state.
+                        First prefer an In Progress work:product parent only when delivery has an explicit unresolved
+                        product-owned question. PO may clarify canonical acceptance without changing lifecycle state.
+                        Otherwise do not redefine an In Progress product while PM owns delivery.
                         
                         Otherwise prefer an In Progress work:product parent for acceptance when all required
                         implementation children are Done (or explicitly Cancelled as superseded/non-required with
@@ -345,12 +366,9 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         completion/validation evidence exists for the acceptance criteria. Do not require
                         a magic PM PRODUCT ACCEPTANCE READY phrase.
                         
-                        Otherwise select one Backlog work:product slice needing definition. If no suitable work:product
-                        Backlog slice exists, the delivery-ready Todo work:product queue is below the normal useful
-                        buffer, and a distinct required mission user outcome is genuinely unrepresented, create exactly
-                        one Backlog product parent now. Ensure the Plane label work:product exists and apply it to the
-                        new parent. Existing In Progress product work does not block
-                        defining independent future product slices.
+                        Otherwise select one existing Backlog work:product slice needing definition. Collection creation
+                        belongs to the backlog-seeding step, not this selector. Existing In Progress product work does
+                        not block defining independent future product slices.
                         
                         Never select, refine, promote, or accept an item carrying work:implementation as Product Owner
                         work. If classification labels are missing from the read, retrieve labels instead of guessing
@@ -405,8 +423,8 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         Progress, Done, Cancelled. Comments are concise evidence/context, never named workflow states.
                         Never mutate a work:implementation item in this Product Owner handoff.
                         
-                        For answered product questions on Todo/In Progress parents, keep current lifecycle state
-                        unchanged and add concise context linking the clarified canonical acceptance when useful. Do not
+                        For answered product questions on In Progress parents, keep current lifecycle state unchanged
+                        and add concise context linking the clarified canonical acceptance when useful. Do not
                         require PM to discover readiness from a magic comment.
                         
                         For a Backlog product slice whose user scope/Gherkin are usable, move Backlog -> Todo. That

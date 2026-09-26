@@ -8,6 +8,8 @@ import org.apache.camel.component.langchain4j.agent.api.Agent;
 import org.apache.camel.component.langchain4j.agent.api.AgentFactory;
 import org.apache.camel.component.kafka.KafkaConstants;
 import org.apache.camel.impl.DefaultCamelContext;
+import org.jboss.logmanager.LogContext;
+import org.jboss.logmanager.Logger;
 import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.framework.llm.InFlightReplyManager;
 import us.nusun.llmshare.framework.llm.LlmDeadLetterFactory;
@@ -102,6 +104,10 @@ class LlmRouteFrameworkRouteTest {
             }
         });
 
+        Logger camelErrorHandler = LogContext.getLogContext()
+                .getLogger("org.apache.camel.processor.errorhandler.DefaultErrorHandler");
+        java.util.logging.Level previousLevel = camelErrorHandler.getLevel();
+        camelErrorHandler.setLevel(java.util.logging.Level.OFF);
         try (DefaultCamelContext context = context(replies, kafka)) {
             context.start();
 
@@ -125,6 +131,8 @@ class LlmRouteFrameworkRouteTest {
             assertTrue(!deadLetterJson.contains("runtime" + "Id"));
             assertTrue(deadLetterJson.contains("\"failureMessage\""));
             assertTrue(deadLetterExchange.getIn().getHeader(KafkaConstants.KEY) instanceof UUID);
+        } finally {
+            camelErrorHandler.setLevel(previousLevel);
         }
     }
 

@@ -159,7 +159,6 @@ public final class FrameworkFixtures {
         set(executor, "personas", personas);
         set(executor, "routines", routines);
         set(executor, "toolProfiles", toolProfileRegistry());
-        set(executor, "missionRoster", missionRosterService(agentRuns, personas, routines));
         set(executor, "lanes", inferenceLaneRegistry());
         set(executor, "projections", projections);
         return executor;

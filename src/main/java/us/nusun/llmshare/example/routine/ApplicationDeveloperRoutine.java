@@ -47,12 +47,13 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             - implementation: one assigned work:implementation In Progress child has actionable
                               implementation/recovery work, or no current source-delivery child has an open unmerged PR and
                               one assigned work:implementation Todo child is ready to start. Todo + Developer assignment is
-                              the complete PM -> DEV handoff. Developer owns Todo -> In Progress. Do not wait for PM chat
+                              the complete authoritative PM -> DEV handoff. Developer owns Todo -> In Progress. A useful
+                              PM awareness message may provide context but never gates work. Do not wait for chat
                               confirmation, PM to flip state, PM to seed main, or
                               speculative collaborator-grant confirmation.
-                            - coordination: there is a useful technical/blocker/PR notification or question to initiate, or
-                              a fresh technical conversation/direct question needs Developer
-                              participation outside the selected implementation flow.
+                            - coordination: a fresh inbound technical conversation/direct question needs Developer
+                              participation outside the selected implementation flow. Outbound PR/blocker/finding
+                              awareness belongs to implementation closeout and does not compete for focus.
                             - wait: current assigned source work has an open unmerged PR and no newer evidence requires
                               another source change, or no useful assigned work:implementation item is currently available.
                               Do not start a second source unit while one task PR remains open/unmerged. Keep unmerged
@@ -91,8 +92,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         from("direct:dev-focus-coordination")
                 .routeId("dev-focus-coordination")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused Developer coordination for one useful initiated
-                        technical/blocker/PR message or one fresh teammate exchange.
+                        Focused Developer coordination for one fresh inbound technical question or teammate exchange.
+                        Implementation closeout handles outbound PR/blocker/finding awareness.
                         """))
                 .to("tack:thought-enter?name=dev-coordination-focus&maxTokens=250")
                 .to("direct:dev-team-chat-sync")
@@ -112,8 +113,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                         Read the smallest fresh current-mission slice needed to rank Developer focus. Determine only:
                         whether shared basics are accessible; one assigned work:implementation In Progress child and
                         whether its linked PR is open/merged/absent; whether newer concrete feedback/evidence requires
-                        more implementation; whether an assigned work:implementation Todo child exists; one useful
-                        technical/blocker/PR message worth initiating or fresh exchange needing attention; and
+                        more implementation; whether an assigned work:implementation Todo child exists; one fresh
+                        inbound technical exchange needing attention; and
                         completion plausibility. An accessible empty source repo counts as usable. Do not treat missing
                         main/default branch or untested push permission as a blocker. Prefer verified
                         project/repo/work-item ids already in thought rather than broad listing. Plane is authoritative
@@ -146,9 +147,10 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                         """))
                 .to("tack:act?id=dev-mission-status-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Is the entire mission complete from application development? Answer yes only when durable
-                        current-mission evidence shows no further work:implementation, topology investigation,
-                        validation, open task PR, or implementation follow-up remains.
+                        Is Developer quiescent because no Developer action remains? Answer yes only when current evidence
+                        shows no assigned actionable implementation/topology work, validation, open task PR needing
+                        Developer changes, or implementation follow-up. This does not establish top-level mission
+                        completion; Director owns that decision.
                         """))
                 .to("tack:decide?id=application-developer-mission-complete");
 
@@ -343,7 +345,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             dependencies, expected validation evidence, and any newer concrete feedback/blocker context. For
                             topology investigation verify dependency-free exact technical question. A repository may be
                             empty; no branch/main is required in task context. Do not mutate. If required delivery context
-                            is malformed/missing, identify exact PM-owned gap and stop reading.
+                            is malformed/missing, identify the exact PM-owned gap and stop reading. Keep claimed work In
+                            Progress when a later blocker needs PM/PO action; evidence is the signal, not state rollback.
                             """))
                     .to("tack:act?id=dev-task-context-read&toolProfile=" + ProjectManagementToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
@@ -375,9 +378,9 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                     .setHeader(TackHeaders.PROMPT, constant("""
                                             Update only the selected topology-investigation child. Keep it In Progress and add/refresh one
                                             concise evidence comment containing affected work ids, observed source/contract facts,
-                                            evidence-backed dependency/sequencing recommendation, and residual product question if any. Do
-                                            not encode a named TECHNICAL FINDING workflow state; the comment is
-                                            evidence/context. Avoid duplicate equivalent evidence.
+                                            evidence-backed dependency/sequencing recommendation, and residual product question if any.
+                                            PM owns dependency/topology mutation, so do not restructure other work items yourself. Do not
+                                            encode a named TECHNICAL FINDING workflow state; avoid duplicate equivalent evidence.
                                             """))
                                     .to("tack:act?id=dev-topology-finding-update&toolProfile=" + ProjectManagementToolProfile.ID)
                                     .choice()

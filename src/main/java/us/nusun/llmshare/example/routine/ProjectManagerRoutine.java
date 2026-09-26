@@ -46,8 +46,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                             several work:implementation children; DEV normally carries only one active/unmerged source unit.
                             Developer WIP=1 does NOT mean planning WIP=1.
                             
-                            ACCESS/LIVENESS INVARIANT: the CURRENT MISSION ROSTER is authoritative for who is allowed and
-                            expected to participate now. Preserve the most recent successfully reconciled roster in thought.
+                            ACCESS/LIVENESS INVARIANT: use the fresh active AgentRun roster captured by pm-orientation as
+                            authoritative for who is allowed and expected to participate now. Preserve the most recent
+                            successfully reconciled roster in thought.
                             If the current roster contains a teammate not present in that last reconciled roster, onboarding
                             is immediately actionable and should outrank ordinary delivery/planning. Do not wait for the new
                             teammate to report a 403 or chat blocker. When the roster has not changed and recent
@@ -67,12 +68,12 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                               be acted on now. PM does not issue a magic approval lease before Director integration. Do not
                               manufacture a blocker from an empty repo, missing main branch, speculative Gitea permission,
                               or missing Mattermost handoff when Plane already has Todo + Developer assignee.
-                            - planning: usable work:product exists and the assigned executable work:implementation Todo
-                              backlog is below a useful buffer, normally about 3-5 actionable children, or future
-                              dependency-blocked work:implementation should be represented in Backlog. An active Developer
-                              task or open PR is NOT a reason to stop planning.
-                            - coordination: there is a useful message to initiate, or a fresh team
-                              exchange needs Project Manager participation.
+                            - planning: usable work:product exists that has not been claimed/decomposed, Developer lacks
+                              forward executable work PM can safely prepare, or foreseeable dependency-blocked
+                              implementation work is not represented. Active Developer WIP/open PR does not by itself
+                              prevent planning independent future work.
+                            - coordination: a fresh inbound team exchange, question, or blocker needs Project Manager
+                              participation. Outbound awareness caused by PM work stays in that productive flow.
                             - documentation: a concrete durable navigation/status curation need
                               exists; daily work state belongs in Plane.
                             - wait: no focus above is currently useful. A shallow Developer backlog while more work:product
@@ -122,9 +123,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-focus-planning")
                 .routeId("pm-focus-planning")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused delivery planning: create/refine one work:implementation child per act, repeating until
-                        the executable Developer Todo buffer is normally about 3-5 or safe planning genuinely cannot
-                        continue. Dependency-blocked future children belong in Backlog rather than being omitted.
+                        Focused delivery planning: take one work:product parent at a time and establish its complete
+                        reasonable work:implementation story/dependency set. With an active Developer, executable stories
+                        become assigned Todo; otherwise they remain Backlog until assignment is possible. Repeat only
+                        while another product parent has useful safe planning work.
                         """))
                 .to("tack:thought-enter?name=pm-planning-focus&maxTokens=400")
                 .to("direct:pm-planning-focus")
@@ -133,8 +135,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-focus-coordination")
                 .routeId("pm-focus-coordination")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused Project Manager coordination for one useful initiated
-                        notification/question/handoff or one fresh actionable exchange.
+                        Focused Project Manager coordination for one fresh inbound actionable exchange, question, or
+                        blocker. Productive PM routes handle outbound awareness caused by their own changes.
                         """))
                 .to("tack:thought-enter?name=pm-coordination-focus&maxTokens=250")
                 .to("direct:pm-team-sync")
@@ -160,8 +162,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-orientation")
                 .routeId("pm-orientation")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Read the smallest fresh current-mission slice needed to rank PM's next focus. Compare the
-                        CURRENT MISSION ROSTER to the last successfully reconciled roster retained in thought. A newly
+                        Read the smallest fresh current-mission slice needed to rank PM's next focus. Include authoritative
+                        current active AgentRun coverage and the Plane/Mattermost identities needed to detect onboarding
+                        changes. Compare that current roster to the last
+                        successfully reconciled roster retained in thought. A newly
                         present teammate is a high-confidence onboarding signal by itself. If roster is unchanged and
                         recent access was verified, do not enumerate workspace/project/channel membership again unless
                         there is actual access-drift evidence. If a membership read unexpectedly contradicts recent
@@ -169,8 +173,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         
                         Also capture shared basics; one actionable
                         blocker/topology/dependency/merged-work/product-return signal; usable work:product; assigned
-                        executable work:implementation Todo depth; useful dependency-blocked work:implementation; one
-                        useful message worth initiating or fresh coordination signal; concrete docs/navigation drift.
+                        executable work:implementation Todo depth; useful dependency-blocked work:implementation;
+                        one fresh inbound coordination signal; concrete docs/navigation drift.
                         Count work by classification label, not wording. A sparse projection that omits labels/parent is
                         unknown, not negative evidence. If thought already
                         contains verified project/repo/channel ids, use direct lookups instead of listing whole
@@ -206,7 +210,6 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .routeId("pm-planning-focus")
                 .setProperty("pmFocusedPlanningIterations", constant(0))
                 .setProperty("pmFocusedPlanningContinue", constant(true))
-                .setProperty("decision.pm-dev-backlog-deep-enough.result", constant("no"))
                 .loopDoWhile(simple("${exchangeProperty.pmFocusedPlanningContinue} == true && ${exchangeProperty.pmFocusedPlanningIterations} < 5"))
                     .setProperty("pmFocusedPlanningIterations", simple("${exchangeProperty.pmFocusedPlanningIterations++}"))
                     .setProperty("pmFocusedPlanningContinue", constant(false))
@@ -219,44 +222,14 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                                     .setProperty("pmFocusedPlanningContinue", constant(true))
                             .end()
                     .end()
-                    .to("direct:pm-dev-backlog-depth-check")
-                    .choice()
-                        .when(exchangeProperty("decision.pm-dev-backlog-deep-enough.result").isEqualTo("yes"))
-                            .setProperty("pmFocusedPlanningContinue", constant(false))
-                        .otherwise()
-                            .setProperty("pmFocusedPlanningContinue", constant(true))
-                    .end()
                 .end();
-
-        from("direct:pm-dev-backlog-depth-check")
-                .routeId("pm-dev-backlog-depth-check")
-                .setHeader(TackHeaders.PROMPT, constant("""
-                        Read only current work:implementation queue depth in Plane. Count assigned,
-                        dependency-satisfied, actionable Todo children carrying work:implementation. Never count
-                        work:product. Also note useful planned work:implementation in Backlog whose only blocker is an
-                        explicit unfinished dependency, and whether more usable work:product parents can safely be
-                        decomposed. Developer active WIP/open PR does not reduce desired planning depth. If labels are
-                        absent, read classification instead of guessing from
-                        title/description. Do not mutate or inspect source.
-                        """))
-                .to("tack:act?id=pm-dev-backlog-depth-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
-                .setHeader(TackHeaders.PROMPT, constant("""
-                        Is PM sufficiently ahead of Developer for now? Normally require about 3-5 assigned,
-                        dependency-satisfied actionable Todo work:implementation children when enough safe work:product
-                        exists. Answer no when usable work:product can be decomposed but that executable queue is
-                        shallower, even if Developer already has active WIP or an open PR. Explicit dependency-blocked
-                        work:implementation in Backlog is healthy planning but does not count as executable Todo depth.
-                        Never count work:product items. Answer yes with a shallower queue only when product information,
-                        genuine dependency topology across all available product parents, or remaining mission size
-                        makes further safe executable planning inappropriate.
-                        """))
-                .to("tack:decide?id=pm-dev-backlog-deep-enough");
 
         from("direct:pm-completion-focus")
                 .routeId("pm-completion-focus")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Review current mission completion once using minimal authoritative evidence. One unfinished
-                        work:product parent, work:implementation child, current unresolved blocker, merge, product
+                        Review current mission completion using authoritative active AgentRun coverage plus minimal delivery
+                        evidence. One unfinished work:product parent, work:implementation child, current unresolved blocker,
+                        merge, product
                         question, topology finding, acceptance follow-up, or current-roster access gap means incomplete.
                         Comments are evidence/context, never hidden workflow state. Do not mutate.
                         """))
@@ -324,14 +297,16 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .routeId("pm-project-basics-check")
                 .setProperty("decision.collaboration-setup-complete.result", constant("no"))
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Verify only the shared foundation needed to enter coordination: exactly one current-mission
-                        Plane project, documentation repository/navigation, source repository under agent-workspace, and
-                        mission team-chat channel, all accessible to this Project Manager run. Prefer direct lookup by
+                        Verify only the shared foundation needed to enter coordination, including authoritative current
+                        teammate Plane/Mattermost identities for bootstrap/onboarding:
+                        exactly one current-mission Plane project, documentation repository/navigation, source
+                        repository under agent-workspace, and mission team-chat channel, all accessible to this Project
+                        Manager run. Prefer direct lookup by
                         verified ids already in thought. An existing empty source repository is valid foundation; do not
                         require main/default branch, commits, or application code.
                         
                         Foundation existence and teammate onboarding are separate. During bootstrap, add every teammate
-                        already present in the CURRENT MISSION ROSTER. Future teammates are reconciled when they appear
+                        in the current active AgentRun roster. Future teammates are reconciled when they appear
                         in the roster. Do not call someone onboarded merely because
                         their workspace account exists. Do not mutate.
                         """))
@@ -360,8 +335,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                             """))
                     .to("tack:thought-enter?name=pm-bootstrap&maxTokens=300")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                            Create or confirm exactly one current-mission Plane project. Preserve an existing useful
-                            project. Then reconcile project membership against the CURRENT MISSION ROSTER using actual Plane
+                            Create or confirm exactly one current-mission Plane project. Use authoritative current teammate Plane
+                            identities when reconciling project membership.
+                            Preserve an existing useful project. Then reconcile project membership against that
+                            authoritative current active AgentRun roster using actual Plane
                             evidence: for each current-roster Plane identity, resolve the matching Plane workspace member,
                             compare it with the project's current member list, and add the resolved teammate when missing.
                             Keep mission roster, workspace membership, and project membership as separate sets. Report only
@@ -386,9 +363,11 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .choice().when(exchangeProperty("act.source-repository-provisioning.durableProgress").isEqualTo(true))
                         .setProperty("pmBootstrapMadeProgress", constant(true)).end()
                     .setHeader(TackHeaders.PROMPT, constant("""
-                            Create or confirm one private current-mission team-chat channel accessible to Project
-                            Management. Never create a duplicate channel. Reconcile that channel against the CURRENT MISSION
-                            ROSTER using actual current channel membership and add every current teammate who is missing
+                            Create or confirm one private current-mission team-chat channel using authoritative current teammate
+                            Mattermost identities
+                            accessible to Project Management. Never create a duplicate channel. Reconcile that channel
+                            against the authoritative current active AgentRun roster using actual current channel membership
+                            and add every current teammate who is missing
                             when supported. Do not infer channel membership from Plane membership or from an older roster.
                             Do not add hypothetical/future personas and remove nobody. After the channel is usable, initiate
                             one concise kickoff message linking the authoritative Plane project and source/docs repositories
@@ -441,12 +420,13 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-team-onboarding")
                 .routeId("pm-team-onboarding")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Reconcile CURRENT MISSION ROSTER access now. The roster is the authorization boundary.
+                        Reconcile current active AgentRun access now. The authoritative current roster and its Plane/Mattermost
+                        identities are the authorization boundary.
                         
                         Use the previous successful reconciled-roster memory only to detect a delta; use current
-                        Plane/Mattermost evidence for the actual mutation. For EACH teammate in the CURRENT MISSION
-                        ROSTER: resolve their Plane workspace identity, verify/add project membership, resolve their
-                        Mattermost identity, and verify/add mission-channel membership. Do not add personas
+                        Plane/Mattermost evidence for the actual mutation. For EACH teammate in the authoritative current roster,
+                        resolve their Plane workspace identity, verify/add project membership, resolve their Mattermost
+                        identity, and verify/add mission-channel membership. Do not add personas
                         absent from the current roster. Remove nobody.
                         
                         Do not wait for a newly started teammate to announce an access blocker. If the roster changed,
@@ -454,8 +434,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         unexpectedly returns empty/contradictory results, repeat one narrow direct membership read
                         before declaring drift; an actual 401/403 from the teammate is immediate drift evidence.
                         
-                        After successful reconciliation, report the exact CURRENT MISSION ROSTER as the last
-                        successfully reconciled roster in durable thought so future passes can detect newly added
+                        After successful reconciliation, report the exact current active AgentRun roster as the last successfully
+                        reconciled roster in durable thought so future passes
+                        can detect newly added
                         teammates cheaply. Send one concise onboarding notification only
                         when it helps the new teammate act sooner.
                         """))
@@ -474,8 +455,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         source evidence. Priority: (1) current topology finding needing PM disposition; (2)
                         work:implementation child whose linked PR has MERGED but Plane child is not yet Done; (3)
                         actionable blocker based on a real failed operation, malformed context, product question, or
-                        external condition PM can route/repair; (4) Backlog work:implementation whose explicit
-                        dependencies may now be satisfied or invalid; (5) Cancelled implementation coverage that remains
+                        external condition PM can route/repair; (4) Backlog work:implementation that can now be assigned
+                        to an active Developer or whose dependencies may now be satisfied/invalid; (5) Cancelled
+                        implementation coverage that remains
                         required; (6) In Progress work:product parent whose required implementation children may now be
                         terminally dispositioned; (7) an open-PR implementation child only when PM has a concrete
                         blocker/dependency/product-context issue to repair.
@@ -493,7 +475,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         never manufacture REVIEW READY, INTEGRATION READY, PRODUCT ACCEPTANCE READY, or similar hidden
                         workflow states. For a verified merged work:implementation PR, move that child In Progress ->
                         Done and retain concise merge/validation evidence. Promote dependency-satisfied Backlog
-                        work:implementation to Todo. Route/repair real blockers and PRODUCT QUESTION returns. Repair
+                        work:implementation to Todo only with an active Developer assignment. Route/repair real blockers
+                        and PRODUCT QUESTION returns. PM owns dependency corrections and replacement/cancellation
+                        propagation; preserve In Progress work when a later blocker is only signaling/context. Repair
                         required cancelled coverage/dependency edges. When an In Progress work:product parent's required
                         implementation children are Done and product acceptance can be evaluated, leave concise
                         evidence/context for Product Owner. Do not create activity for unchanged work already waiting on
@@ -512,7 +496,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .to("tack:thought-enter?name=pm-intake&maxTokens=250")
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Select at most one item carrying work:product, never work:implementation. Prefer Todo initial PO
-                        handoff and validate canonical acceptance. Otherwise select qualifying work:product In Progress
+                        handoff with usable canonical acceptance; claiming Todo -> In Progress establishes PM delivery
+                        ownership before implementation assignment. Otherwise select qualifying work:product In Progress
                         parents needing additional decomposition, cancelled-coverage recovery, dependency repair,
                         acceptance-feedback remediation, topology recovery, or reevaluation after clarified product
                         context. An active implementation child/open PR does not make a parent ineligible for further
@@ -531,69 +516,53 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
 
         from("direct:pm-task-planning-loop")
                 .routeId("pm-task-planning-loop")
-                .setProperty("pmTaskPlanningCycle", constant(0))
                 .setProperty("pmTaskPlanningMadeProgress", constant(false))
-                .setProperty("pmTaskPlanningPassProgress", constant(true))
-                .setProperty("decision.pm-task-planning-done.result", constant("no"))
-                .loopDoWhile(simple("${exchangeProperty.pmTaskPlanningPassProgress} == true && ${exchangeProperty.pmTaskPlanningCycle} < 10"))
-                    .setProperty("pmTaskPlanningCycle", simple("${exchangeProperty.pmTaskPlanningCycle++}"))
-                    .setProperty("pmTaskPlanningPassProgress", constant(false))
-                    .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                            Second-stage decomposition: one selected work:product parent, current acceptance, existing
-                            work:implementation coverage, dependency-graph viability, assignees, and exactly one
-                            missing/remediation implementation outcome this pass. One-child-per-pass
-                            is mutation size, not total planning depth.
-                            """))
-                    .to("tack:thought-enter?name=pm-planning&maxTokens=300")
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                        Freshly read canonical acceptance for the selected work:product parent and existing
-                        work:implementation children. Build a coverage map and reachable dependency graph. Create or
-                        refine exactly ONE missing/remediation/replacement/oversized work:implementation child or
-                        dependency/topology repair per pass. Ensure the Plane label work:implementation exists and apply
-                        it to every implementation child you create. Never apply work:product to implementation
-                        children. This one-child limit controls mutation size only; it does NOT mean only one child may
-                        exist or that PM should wait for current Developer work to merge before planning more.
-                        
-                        Every required behavior needs non-duplicative non-cancelled coverage. If a future implementation
-                        child depends on unfinished work, CREATE IT NOW in Backlog with the explicit dependency instead
-                        of omitting it. If dependencies are already satisfied, make it assigned Todo. Todo + Developer
-                        assignee is the authoritative handoff; do not require a Mattermost lease and do not move it In
-                        Progress yourself. A Developer may have one active/unmerged source unit while PM maintains
-                        several future children. If technical topology genuinely cannot be inferred, create exactly one
-                        dependency-free Todo work:implementation TOPOLOGY INVESTIGATION
-                        for the exact ambiguity rather than guessing.
-                        
-                        Each normal work:implementation child must link its work:product parent acceptance behavior, one
-                        Developer assignee, priority, repo, dependencies/independence, next step, and expected
-                        validation/review evidence. Move initial Todo work:product parent -> In Progress when taking
-                        delivery. Do not encode workflow state in comments.
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Second-stage decomposition for one selected work:product parent: current acceptance, existing
+                        work:implementation coverage, complete reasonable story set, dependency graph, states, and
+                        Developer assignments.
                         """))
-                    .to("tack:act?id=pm-actionable-dev-task&toolProfile=" + ProjectManagementToolProfile.ID)
-                    .choice().when(exchangeProperty("act.pm-actionable-dev-task.durableProgress").isEqualTo(true))
-                        .setProperty("pmTaskPlanningMadeProgress", constant(true)).setProperty("pmTaskPlanningPassProgress", constant(true)).end()
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                        Is THIS work:product parent sufficiently decomposed for now? Answer yes when its required
-                        acceptance has non-cancelled work:implementation coverage, dependency graph is viable,
-                        dependency-satisfied children are assigned Todo, dependency-blocked future children are
-                        represented in Backlog with explicit edges, current feedback has remediation, no unresolved
-                        product question blocks intent, and topology findings are dispositioned. Do not answer yes
-                        merely because one child is currently active or has an open PR. Otherwise answer no.
+                .to("tack:thought-enter?name=pm-planning&maxTokens=400")
+                .setHeader(TackHeaders.PROMPT, constant("""
+                        Freshly read canonical acceptance for the selected work:product parent and its existing
+                        work:implementation children. Build the coverage/dependency graph once, then create or refine the
+                        COMPLETE reasonable set of non-duplicative implementation stories for this product slice in this
+                        pass. This batching boundary is one product parent, not the whole mission.
+
+                        Use only Plane lifecycle states Backlog, Todo, In Progress, Done, Cancelled. State plus assignment
+                        is the workflow protocol; never invent ready/handoff/review states in comments. Ensure every
+                        implementation child is classified work:implementation and never work:product.
+
+                        First claim an initial Todo work:product -> In Progress, then leave Plane coherent before
+                        returning. Build all required children and dependency edges before executable handoffs. With an
+                        active Developer, dependency-satisfied executable children become Todo and are assigned to that
+                        Developer. Without an active Developer, keep those children in Backlog unassigned; the In
+                        Progress product is the Director staffing-demand signal. Promote/assign them when Developer
+                        appears. Dependency-blocked children remain Backlog. Developer alone claims Todo -> In Progress.
+                        If topology cannot be inferred, represent the exact investigation need without guessing.
+
+                        Each normal child must link the parent acceptance behavior, Developer assignee when executable,
+                        priority, repo, dependencies/independence, next step, and expected validation/review evidence.
+                        Parent claim is the PM ownership commit point, not chat. Never leave Todo implementation
+                        unassigned. Do not encode workflow state in comments; awareness never gates lifecycle progress.
                         """))
-                    .to("tack:decide?id=pm-task-planning-done")
-                    .choice().when(exchangeProperty("decision.pm-task-planning-done.result").isEqualTo("yes"))
-                        .setProperty("pmTaskPlanningPassProgress", constant(false)).end()
-                    .to("tack:thought-exit?name=pm-planning")
-                .end();
+                .to("tack:act?id=pm-actionable-dev-task&toolProfile=" + ProjectManagementToolProfile.ID)
+                .choice()
+                    .when(exchangeProperty("act.pm-actionable-dev-task.durableProgress").isEqualTo(true))
+                        .setProperty("pmTaskPlanningMadeProgress", constant(true))
+                        .to("direct:pm-team-sync")
+                .end()
+                .to("tack:thought-exit?name=pm-planning");
 
         from("direct:pm-team-sync")
                 .routeId("pm-team-sync")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Read only recent project chat needed for one useful exchange. Do not require an existing
-                        conversation before posting. Initiate one concise message when new teammate onboarding,
-                        product-to-delivery handoff clarification, real dependency/blocker question, merged-work notice,
-                        or other meaningful event would help a current teammate act sooner. Do not repeat a Plane Todo +
-                        assignee handoff as a required chat lease. Avoid generic status. Plane remains authoritative for
-                        assignments/blockers/state and Gitea for implementation/PR state.
+                        Communicate one concise awareness update when the current PM flow materially created/replanned an
+                        implementation set, changed dependency availability, reconciled merged work, or uncovered a real
+                        blocker. Use current work context directly; read chat only as narrowly as needed to avoid
+                        duplication or answer a related fresh question. Plane states and assignments remain authoritative;
+                        Gitea remains authoritative for PR state. Chat is never a lifecycle flag, lease, or acknowledgment
+                        gate. Avoid generic status.
                         """))
                 .to("tack:act?id=pm-team-chat-sync&toolProfile=" + TeamChatToolProfile.ID);
 

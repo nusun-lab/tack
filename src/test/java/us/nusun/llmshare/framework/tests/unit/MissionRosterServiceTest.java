@@ -10,6 +10,7 @@ import us.nusun.llmshare.framework.service.MissionRosterService;
 import us.nusun.llmshare.framework.state.AgentRun;
 import us.nusun.llmshare.framework.state.AgentRunStore;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
+import us.nusun.llmshare.framework.tool.MissionRosterTool;
 
 import java.time.Instant;
 import java.util.List;
@@ -140,6 +141,80 @@ class MissionRosterServiceTest {
 
         assertFalse(roster.contains("run-complete"));
         assertEquals(2, entryCount(roster));
+    }
+
+    @Test
+    void missionRosterToolDefaultsToActiveContacts() {
+        AgentRunStore store = storeWithRuns();
+        AgentRun complete = new AgentRun("run-complete", "mission-1", "persona-a", "routine-a", Map.of());
+        complete.status(AgentRun.STATUS_COMPLETE);
+        store.putRun(complete);
+
+        String roster = new MissionRosterTool(service(store), "mission-1", 5)
+                .mission_roster(null, null, null, null, null);
+
+        assertEquals(2, entryCount(roster));
+        assertTrue(roster.contains("Persona A"));
+        assertTrue(roster.contains("statuses=accepted"));
+        assertTrue(roster.contains("handles: alpha-mcp=@persona-a"));
+        assertFalse(roster.contains("agentRunId="));
+        assertFalse(roster.contains("run-complete"));
+        assertFalse(roster.contains("run-b-other-mission"));
+    }
+
+    @Test
+    void missionRosterToolHistoryDefaultsToRunHistory() {
+        AgentRunStore store = storeWithRuns();
+        AgentRun complete = new AgentRun("run-complete", "mission-1", "persona-a", "routine-a", Map.of());
+        complete.status(AgentRun.STATUS_COMPLETE);
+        store.putRun(complete);
+
+        String roster = new MissionRosterTool(service(store), "mission-1", 5)
+                .mission_roster("history", null, null, null, null);
+
+        assertEquals(3, entryCount(roster));
+        assertTrue(roster.contains("agentRunId=run-complete"));
+        assertTrue(roster.contains("startedAt="));
+        assertFalse(roster.contains("run-b-other-mission"));
+    }
+
+    @Test
+    void missionRosterToolCanReturnOnlyRequestedPlatformHandles() {
+        String roster = new MissionRosterTool(service(storeWithRuns()), "mission-1", 5)
+                .mission_roster(null, "contacts", "persona-a", null, "beta-mcp");
+
+        assertEquals(1, entryCount(roster));
+        assertTrue(roster.contains("beta-mcp=@persona-a"));
+        assertFalse(roster.contains("alpha-mcp=@persona-a"));
+        assertFalse(roster.contains("gamma-mcp=@persona-a"));
+        assertFalse(roster.contains("Persona C"));
+    }
+
+    @Test
+    void missionRosterToolCoverageIncludesCapacityButOmitsHandlesAndRunIds() {
+        String roster = new MissionRosterTool(service(storeWithRuns()), "mission-1", 5)
+                .mission_roster(null, "coverage", null, null, null);
+
+        assertEquals(2, entryCount(roster));
+        assertTrue(roster.contains("capacity: active=2 maximum=5 remaining=3"));
+        assertTrue(roster.contains("routineId=routine-a"));
+        assertFalse(roster.contains("handles:"));
+        assertFalse(roster.contains("agentRunId="));
+    }
+
+    @Test
+    void missionRosterContactsCollapseMultipleRunsForOnePersona() {
+        AgentRunStore store = storeWithRuns();
+        AgentRun second = new AgentRun("run-a-2", "mission-1", "persona-a", "routine-b", Map.of());
+        second.status(AgentRun.STATUS_RUNNING);
+        store.putRun(second);
+
+        String roster = new MissionRosterTool(service(store), "mission-1", 5)
+                .mission_roster(null, "contacts", "persona-a", null, null);
+
+        assertEquals(1, entryCount(roster));
+        assertTrue(roster.contains("routineIds=routine-a,routine-b"));
+        assertTrue(roster.contains("statuses=accepted,running"));
     }
 
     private static long entryCount(String roster) {
