@@ -114,7 +114,8 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:director-focus-guidance")
                 .routeId("director-focus-guidance")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused Director coordination: one current conversation or one Director-owned staffing/integration transition to communicate,
+                        Focused Director coordination: one current conversation or one Director-owned staffing/integration
+                        transition to communicate,
                         blocker, clarification, or unblock opportunity that merits Director participation.
                         """))
                 .to("tack:thought-enter?name=director-guidance-focus&maxTokens=300")
@@ -164,7 +165,8 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         project, one source repository under agent-workspace, one documentation repository with usable
                         navigation, one accessible current-mission team-chat channel, and whether at least one
                         current-mission work:product slice is In Progress in Plane. Prefer direct lookup using verified
-                        ids already present in current thought. An empty source repository is valid. Product work is not part of foundation readiness; the In Progress slice is read only as the
+                        ids already present in current thought. An empty source repository is valid. Product work is not
+                        part of foundation readiness; the In Progress slice is read only as the
                         Developer-demand signal. Do not require implementation children, commits, tests,
                         PRs, or application code. Do not require not-yet-running PO/DEV roles to already be members
                         everywhere; PM owns membership alignment. Do not mutate.
