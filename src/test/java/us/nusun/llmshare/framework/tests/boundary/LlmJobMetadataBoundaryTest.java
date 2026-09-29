@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.framework.llm.LlmAgentFactory;
 import us.nusun.llmshare.framework.llm.LlmJobFactory;
 import us.nusun.llmshare.framework.mcp.McpClientFactory;
-import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
+import us.nusun.llmshare.framework.tests.support.TestTokenCountEstimator;
 import us.nusun.llmshare.framework.model.ToolProfile;
 import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.LlmJobRequest;
@@ -75,7 +75,7 @@ class LlmJobMetadataBoundaryTest {
                 mcpFactory,
                 FrameworkFixtures.toolProfileRegistry(),
                 FrameworkFixtures.personaCatalog(),
-                new ApproximateTokenCountEstimator(),
+                new TestTokenCountEstimator(),
                 12000).createAgent(worker);
 
         assertEquals("persona-a", mcpFactory.persona.id());

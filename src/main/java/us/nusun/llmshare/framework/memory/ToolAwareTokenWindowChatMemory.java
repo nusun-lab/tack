@@ -27,6 +27,10 @@ import java.util.function.Function;
  */
 public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
     private static final String JOURNAL_MESSAGE_NAME = "execution-journal";
+    private static final String DEGRADATION_MESSAGE_NAME = "tack-runtime";
+    private static final String DEGRADATION_MESSAGE =
+            "Tool transcript history limit reached. Older messages are being replaced with lower-fidelity summaries. "
+                    + "Return a final answer as soon as possible.";
     private static final int JOURNAL_VALUE_PREVIEW_CHARS = 320;
 
     private final Object id;
@@ -42,6 +46,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
     private final List<JournalEntry> journal = new ArrayList<>();
     private int toolCalls;
     private boolean compacted;
+    private boolean degradationNoticeSent;
 
     private ToolAwareTokenWindowChatMemory(Builder builder) {
         this.id = ensureNotNull(builder.id, "id");
@@ -87,6 +92,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         this.journal.clear();
         this.toolCalls = 0;
         this.compacted = false;
+        this.degradationNoticeSent = false;
         iter.forEach(this::add);
     }
 
@@ -101,6 +107,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         this.journal.clear();
         this.toolCalls = 0;
         this.compacted = false;
+        this.degradationNoticeSent = false;
     }
 
     public static Builder builder() {
@@ -170,16 +177,10 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         }
         int rawTokens = tokenCountEstimator.estimateTokenCountInMessages(rawMessages);
         double historyPressure = ratio(rawTokens, maxTokens());
-        double toolPressure = maxToolCalls > 0 ? ratio(toolCalls, maxToolCalls) : 0.0;
-        int awareness = awarenessPercent(Math.max(historyPressure, toolPressure));
 
         if (!compacted && historyPressure < compactionThreshold) {
             List<ChatMessage> projected = new ArrayList<>(rawMessages);
-            applyBudgetWarning(projected, awareness);
-            int projectedTokens = tokenCountEstimator.estimateTokenCountInMessages(projected);
-            if (awareness > 0) {
-                notifyRuntimeWarning(projectedTokens, false);
-            }
+            notifyRuntimeBudget(rawTokens, rawTokens, false);
             return projected;
         }
 
@@ -187,7 +188,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         int rawStart = recentToolHistoryStart(rawMessages, recentToolInteractions);
         int journalCutoff = Math.max(0, journal.size() - recentToolInteractions);
         List<ChatMessage> projected = protectedPrefix(rawMessages);
-        applyBudgetWarning(projected, awareness);
+        addDegradationMessageIfNeeded(projected);
         addJournal(projected, journalCutoff);
         for (int i = rawStart; i < rawMessages.size(); i++) {
             ChatMessage message = rawMessages.get(i);
@@ -199,7 +200,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         int projectedTokens = tokenCountEstimator.estimateTokenCountInMessages(projected);
         if (projectedTokens > maxTokens()) {
             projected = protectedPrefix(rawMessages);
-            applyBudgetWarning(projected, awareness);
+            addDegradationMessageIfNeeded(projected);
             addJournal(projected, journal.size());
             projectedTokens = tokenCountEstimator.estimateTokenCountInMessages(projected);
         }
@@ -207,36 +208,15 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
             throw new IllegalStateException(
                     "Ephemeral tool-pass projection exceeded the safe token budget while only protected messages and deterministic journal remain");
         }
-        notifyRuntimeWarning(projectedTokens, true);
+        notifyRuntimeBudget(rawTokens, projectedTokens, true);
         return projected;
     }
 
-    private void applyBudgetWarning(List<ChatMessage> projected, int awareness) {
-        if (awareness <= 0) {
-            return;
+    private void addDegradationMessageIfNeeded(List<ChatMessage> projected) {
+        if (!degradationNoticeSent) {
+            projected.add(UserMessage.from(DEGRADATION_MESSAGE_NAME, DEGRADATION_MESSAGE));
+            degradationNoticeSent = true;
         }
-        String warning = budgetWarning(awareness);
-        for (int i = 0; i < projected.size(); i++) {
-            ChatMessage message = projected.get(i);
-            if (message instanceof SystemMessage systemMessage) {
-                projected.set(i, SystemMessage.from(systemMessage.text() + "\n\n" + warning));
-                return;
-            }
-        }
-        projected.add(0, SystemMessage.from(warning));
-    }
-
-    private static String budgetWarning(int awareness) {
-        if (awareness >= 90) {
-            return "Runtime budget warning: 90% threshold crossed.\nConclude the current task now.";
-        }
-        if (awareness >= 75) {
-            return "Runtime budget warning: 75% threshold crossed.\nStop exploring. Use the evidence already available and finish the current task.";
-        }
-        if (awareness >= 50) {
-            return "Runtime budget warning: 50% threshold crossed.\nConverge on the current task using evidence already gathered. Make additional calls only when necessary to complete it.";
-        }
-        return "Runtime budget warning: 25% threshold crossed.\nStay tightly focused on the current task. Avoid redundant exploration.";
     }
 
     private void addJournal(List<ChatMessage> projected, int entries) {
@@ -248,26 +228,19 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         projected.add(UserMessage.from(JOURNAL_MESSAGE_NAME, text.toString().strip()));
     }
 
-    private void notifyRuntimeWarning(int projectedTokens, boolean compacted) {
-        StringBuilder summary = new StringBuilder("tool-pass context: context=");
-        if (compacted) {
-            summary.append("100% memory=exhausted projected-context=")
-                    .append(percent(ratio(projectedTokens, maxTokens()))).append("% projected-tokens=")
-                    .append(projectedTokens).append('/').append(maxTokens());
-        } else {
-            summary.append(percent(ratio(projectedTokens, maxTokens()))).append("% tokens=")
-                    .append(projectedTokens).append('/').append(maxTokens());
-        }
-        summary.append(" tools=").append(toolCalls);
+    private void notifyRuntimeBudget(int rawTokens, int projectedTokens, boolean compacted) {
+        StringBuilder summary = new StringBuilder("TOKEN BUDGET transcript=")
+                .append(projectedTokens).append('/').append(maxTokens())
+                .append(" (").append(percent(ratio(projectedTokens, maxTokens()))).append("%)")
+                .append(" rawTranscript=").append(rawTokens)
+                .append(" compacted=").append(compacted)
+                .append(" calls=").append(toolCalls);
         if (maxToolCalls > 0) {
             summary.append('/').append(maxToolCalls);
         }
         int repeated = repeatedExecutions();
         if (repeated > 0) {
-            summary.append(" repeats=").append(repeated).append(" reassessment=required");
-        }
-        if (compacted) {
-            summary.append(" compacted=true");
+            summary.append(" repeats=").append(repeated);
         }
         runtimeWarningSink.accept(summary.toString());
     }
@@ -405,14 +378,6 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         Integer maxTokens = maxTokensProvider.apply(id);
         ensureGreaterThanZero(maxTokens, "maxTokens");
         return maxTokens;
-    }
-
-    private static int awarenessPercent(double pressure) {
-        if (pressure >= 0.90) return 90;
-        if (pressure >= 0.75) return 75;
-        if (pressure >= 0.50) return 50;
-        if (pressure >= 0.25) return 25;
-        return 0;
     }
 
     private static double ratio(int used, int max) {

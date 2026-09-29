@@ -23,7 +23,7 @@ import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.LlmJobRequest;
 import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.mcp.McpClientFactory;
-import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
+import us.nusun.llmshare.framework.tests.support.TestTokenCountEstimator;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 
 import java.util.ArrayList;
@@ -96,7 +96,7 @@ class ForcedToolChoiceTest {
                 new McpClientFactory(),
                 FrameworkFixtures.toolProfileRegistry(),
                 FrameworkFixtures.personaCatalog(),
-                new ApproximateTokenCountEstimator(),
+                new TestTokenCountEstimator(),
                 12000);
     }
 

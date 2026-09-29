@@ -29,7 +29,7 @@ import us.nusun.llmshare.framework.model.LlmJobResult;
 import us.nusun.llmshare.framework.model.LlmJobStatus;
 import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.mcp.McpClientFactory;
-import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
+import us.nusun.llmshare.framework.tests.support.TestTokenCountEstimator;
 import us.nusun.llmshare.framework.route.LlmRoute;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 import us.nusun.llmshare.framework.tests.support.StubKafkaComponent;
@@ -165,7 +165,7 @@ class HallucinatedToolNameRecoveryStrategyTest {
                 new McpClientFactory(),
                 FrameworkFixtures.toolProfileRegistry(),
                 FrameworkFixtures.personaCatalog(),
-                new ApproximateTokenCountEstimator(),
+                new TestTokenCountEstimator(),
                 12000);
     }
 

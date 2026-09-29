@@ -12,7 +12,6 @@ import dev.langchain4j.service.tool.ToolExecutionResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import us.nusun.llmshare.framework.logging.LogTokens;
-import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
 import us.nusun.llmshare.framework.model.Persona;
 import us.nusun.llmshare.framework.model.ToolProfile;
 
@@ -38,7 +37,7 @@ public class ProfiledMcpClient implements McpClient {
     }
 
     public ProfiledMcpClient(McpClient delegate, String server, ToolProfile profile, Persona persona, LogTokens logTokens, int globalMaxResultTokens) {
-        this(delegate, server, profile, persona, logTokens, globalMaxResultTokens, new ApproximateTokenCountEstimator());
+        this(delegate, server, profile, persona, logTokens, globalMaxResultTokens, null);
     }
 
     public ProfiledMcpClient(McpClient delegate, String server, ToolProfile profile, Persona persona, LogTokens logTokens, int globalMaxResultTokens, TokenCountEstimator tokenCountEstimator) {
@@ -52,7 +51,7 @@ public class ProfiledMcpClient implements McpClient {
         this.persona = persona;
         this.logTokens = logTokens;
         this.globalMaxResultTokens = globalMaxResultTokens;
-        this.tokenCountEstimator = tokenCountEstimator == null ? new ApproximateTokenCountEstimator() : tokenCountEstimator;
+        this.tokenCountEstimator = tokenCountEstimator;
         this.ownsDelegate = ownsDelegate;
     }
 

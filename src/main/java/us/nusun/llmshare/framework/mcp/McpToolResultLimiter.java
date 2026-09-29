@@ -2,13 +2,10 @@ package us.nusun.llmshare.framework.mcp;
 
 import dev.langchain4j.model.TokenCountEstimator;
 import dev.langchain4j.service.tool.ToolExecutionResult;
-import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
 
 final class McpToolResultLimiter {
     static final int DISABLED = 0;
     static final String TRUNCATION_MARKER_FORMAT = "...(truncated, original %d tokens)";
-
-    private static final TokenCountEstimator FALLBACK_ESTIMATOR = new ApproximateTokenCountEstimator();
 
     private McpToolResultLimiter() {
     }
@@ -19,8 +16,11 @@ final class McpToolResultLimiter {
 
     static ToolExecutionResult limit(ToolExecutionResult result, int maxTokens, TokenCountEstimator tokenCountEstimator) {
         String text = resultText(result);
+        if (maxTokens <= DISABLED || text == null) {
+            return result;
+        }
         TokenCountEstimator estimator = estimator(tokenCountEstimator);
-        if (maxTokens <= DISABLED || text == null || estimator.estimateTokenCountInText(text) <= maxTokens) {
+        if (estimator.estimateTokenCountInText(text) <= maxTokens) {
             return result;
         }
         return ToolExecutionResult.builder()
@@ -80,6 +80,9 @@ final class McpToolResultLimiter {
     }
 
     private static TokenCountEstimator estimator(TokenCountEstimator tokenCountEstimator) {
-        return tokenCountEstimator == null ? FALLBACK_ESTIMATOR : tokenCountEstimator;
+        if (tokenCountEstimator == null) {
+            throw new IllegalStateException("TokenCountEstimator is required when MCP tool-result token limiting is enabled");
+        }
+        return tokenCountEstimator;
     }
 }

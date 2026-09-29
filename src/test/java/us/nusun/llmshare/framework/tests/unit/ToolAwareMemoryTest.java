@@ -9,7 +9,6 @@ import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.model.TokenCountEstimator;
 import org.junit.jupiter.api.Test;
-import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
 import us.nusun.llmshare.framework.memory.EphemeralToolPassChatMemoryProvider;
 import us.nusun.llmshare.framework.memory.ToolAwareTokenWindowChatMemory;
 
@@ -19,20 +18,6 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ToolAwareMemoryTest {
-
-    @Test
-    void approximateEstimatorCountsCommonMessageTypes() {
-        ApproximateTokenCountEstimator estimator = new ApproximateTokenCountEstimator();
-        ToolExecutionRequest request = request("search-1", "search", "{\"query\":\"parking lot manager\"}");
-
-        assertEquals(0, estimator.estimateTokenCountInText(null));
-        assertEquals(0, estimator.estimateTokenCountInText("   "));
-        assertEquals(1, estimator.estimateTokenCountInText("abcd"));
-        assertTrue(estimator.estimateTokenCountInMessage(SystemMessage.from("system rules")) > 4);
-        assertTrue(estimator.estimateTokenCountInMessage(UserMessage.from("requester", "build app")) > 4);
-        assertTrue(estimator.estimateTokenCountInMessage(AiMessage.from(request)) > 12);
-        assertTrue(estimator.estimateTokenCountInMessage(new ToolExecutionResultMessage("search-1", "search", "result")) > 4);
-    }
 
     @Test
     void providerCreatesEphemeralMemoryForRequestedId() {
@@ -59,7 +44,7 @@ class ToolAwareMemoryTest {
     }
 
     @Test
-    void quarterBudgetAddsSystemWarningWithoutAdvertisingHeadroom() {
+    void belowCompactionThresholdDoesNotModifyModelContext() {
         List<String> warnings = new ArrayList<>();
         ToolAwareTokenWindowChatMemory memory = ToolAwareTokenWindowChatMemory.builder()
                 .id("agent-run-1")
@@ -78,9 +63,9 @@ class ToolAwareMemoryTest {
         String system = systemText(projected);
 
         assertEquals(1, warnings.size());
-        assertTrue(warnings.getFirst().contains("tool-pass context: context=22% tokens=22/100"));
-        assertTrue(warnings.getFirst().contains("tools=1/4"));
-        assertTrue(system.contains("Runtime budget warning: 25% threshold crossed."));
+        assertTrue(warnings.getFirst().contains("TOKEN BUDGET transcript=22/100 (22%)"));
+        assertTrue(warnings.getFirst().contains("calls=1/4"));
+        assertFalse(system.contains("Runtime budget warning"));
         assertFalse(system.contains("1/4"));
         assertFalse(system.contains("remaining"));
         assertFalse(system.toLowerCase().contains("healthy"));
@@ -102,15 +87,14 @@ class ToolAwareMemoryTest {
         assertTrue(journal.contains("Execution journal"));
         assertTrue(journal.contains("search({\"q\":\"seed\"})"));
         assertTrue(journal.contains("SUCCESS: []"));
-        assertTrue(systemText(projected).contains("Runtime budget warning:"));
-        assertFalse(projected.stream().anyMatch(ToolAwareMemoryTest::isLegacyRuntimeUserMessage));
+        assertTrue(projected.stream().anyMatch(ToolAwareMemoryTest::isDegradationMessage));
         assertFalse(projected.contains(AiMessage.from(request("1", "search", "{\"q\":\"seed\"}"))));
         assertTrue(projected.contains(AiMessage.from(request("2", "create_repo", "{\"readme\":\"long\"}"))));
         assertInstanceOf(ToolExecutionResultMessage.class, projected.getLast());
     }
 
     @Test
-    void compactedContextLogReportsExhaustedMemoryAndProjectedPromptSeparately() {
+    void compactedContextLogReportsRawAndProjectedTranscript() {
         List<String> warnings = new ArrayList<>();
         ToolAwareTokenWindowChatMemory memory = ToolAwareTokenWindowChatMemory.builder()
                 .id("agent-run-1")
@@ -130,9 +114,8 @@ class ToolAwareMemoryTest {
         int projectedTokens = new FixedTokenCountEstimator().estimateTokenCountInMessages(projected);
 
         assertEquals(1, warnings.size());
-        assertTrue(warnings.getFirst().contains("context=100% memory=exhausted"));
-        assertTrue(warnings.getFirst().contains("projected-context=" + Math.round((double) projectedTokens / 45.0 * 100.0) + "%"));
-        assertTrue(warnings.getFirst().contains("projected-tokens=" + projectedTokens + "/45"));
+        assertTrue(warnings.getFirst().contains("TOKEN BUDGET transcript=" + projectedTokens + "/45"));
+        assertTrue(warnings.getFirst().contains("rawTranscript="));
         assertTrue(warnings.getFirst().contains("compacted=true"));
     }
 
@@ -157,7 +140,7 @@ class ToolAwareMemoryTest {
         ToolExecutionResultMessage result = assertInstanceOf(ToolExecutionResultMessage.class, projected.getLast());
 
         assertEquals(1, warnings.size());
-        assertTrue(warnings.getFirst().contains("repeats=1 reassessment=required"));
+        assertTrue(warnings.getFirst().contains("repeats=1"));
         assertEquals("[]", result.text());
         assertFalse(projected.stream().anyMatch(ToolAwareMemoryTest::isLegacyRuntimeUserMessage));
     }
@@ -186,7 +169,7 @@ class ToolAwareMemoryTest {
         ToolExecutionResultMessage result = assertInstanceOf(ToolExecutionResultMessage.class, projected.getLast());
 
         assertEquals(1, warnings.size());
-        assertFalse(warnings.getFirst().contains("reassessment=required"));
+        assertFalse(warnings.getFirst().contains("repeats="));
         assertEquals("[]", result.text());
     }
 
@@ -212,8 +195,8 @@ class ToolAwareMemoryTest {
         String system = systemText(projected);
 
         assertEquals(1, warnings.size());
-        assertTrue(warnings.getFirst().contains("tools=2/4"));
-        assertTrue(system.contains("Runtime budget warning: 50% threshold crossed."));
+        assertTrue(warnings.getFirst().contains("calls=2/4"));
+        assertFalse(system.contains("Runtime budget warning"));
         assertFalse(system.contains("2/4"));
         assertFalse(projected.stream().anyMatch(ToolAwareMemoryTest::isLegacyRuntimeUserMessage));
         assertInstanceOf(AiMessage.class, projected.getLast());
@@ -270,6 +253,12 @@ class ToolAwareMemoryTest {
 
     private static boolean isLegacyRuntimeUserMessage(ChatMessage message) {
         return message instanceof UserMessage userMessage && "tack-runtime".equals(userMessage.name());
+    }
+
+    private static boolean isDegradationMessage(ChatMessage message) {
+        return message instanceof UserMessage userMessage
+                && "tack-runtime".equals(userMessage.name())
+                && userMessage.singleText().contains("Older messages are being replaced with lower-fidelity summaries");
     }
 
     private static String journalText(List<ChatMessage> messages) {
