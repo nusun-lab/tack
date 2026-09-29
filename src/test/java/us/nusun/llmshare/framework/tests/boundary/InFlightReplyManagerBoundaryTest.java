@@ -92,14 +92,14 @@ class InFlightReplyManagerBoundaryTest {
         return LlmJobEnvelope.queued(new LlmJobRequest(
                 jobId,
                 "low-pass",
-                LlmPassType.TOOL,
+                LlmPassType.ACTION,
                 "developer",
                 "developer",
                 0,
                 "prompt",
                 "system",
                 null,
-                Map.of("laneId", "low-pass", "passType", "TOOL"),
+                Map.of("laneId", "low-pass", "passType", "ACTION"),
                 Instant.now()));
     }
 }

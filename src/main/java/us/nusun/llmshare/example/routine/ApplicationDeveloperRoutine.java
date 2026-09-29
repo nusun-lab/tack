@@ -8,6 +8,7 @@ import us.nusun.llmshare.example.tool.SourceControlWriteToolProfile;
 import us.nusun.llmshare.example.tool.TeamChatToolProfile;
 import us.nusun.llmshare.example.tool.WorkspaceReadonlyToolProfile;
 import us.nusun.llmshare.framework.inventory.RoutineProvider;
+import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.model.RoutineDefinition;
 import us.nusun.llmshare.framework.tack.TackHeaders;
 
@@ -27,6 +28,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .subroutine("work-selection", "Select the next assigned implementation task.", "direct:example-software-team-application-developer-work-selection")
                 .subroutine("implementation", "Implement and validate one assigned task.", "direct:example-software-team-application-developer-implementation")
                 .defaultLane("high-pass")
+                .withLaneBinding(LlmPassType.SYNTHESIS, "low-pass")
+                .withLaneBinding(LlmPassType.CONSOLIDATION, "low-pass")
                 .build();
     }
 

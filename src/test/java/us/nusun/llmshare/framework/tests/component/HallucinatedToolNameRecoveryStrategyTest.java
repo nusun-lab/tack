@@ -99,7 +99,7 @@ class HallucinatedToolNameRecoveryStrategyTest {
             LlmJobEnvelope job = LlmJobEnvelope.queued(new LlmJobRequest(
                     UUID.randomUUID(),
                     "low-pass",
-                    LlmPassType.TOOL,
+                    LlmPassType.ACTION,
                     "test",
                     "test",
                     0,
@@ -110,7 +110,7 @@ class HallucinatedToolNameRecoveryStrategyTest {
                             "personaId", FrameworkFixtures.PERSONA_A,
                             "toolProfile", "none",
                             "laneId", "low-pass",
-                            "passType", "TOOL"),
+                            "passType", "ACTION"),
                     null).normalized());
             String json = TestJson.write(job);
 
@@ -172,7 +172,7 @@ class HallucinatedToolNameRecoveryStrategyTest {
     private static Exchange exchange(String laneId) {
         Exchange exchange = new DefaultExchange(new DefaultCamelContext());
         exchange.setProperty("laneId", laneId);
-        exchange.setProperty("passType", LlmPassType.TOOL);
+        exchange.setProperty("passType", LlmPassType.ACTION);
         exchange.setProperty("personaId", FrameworkFixtures.PERSONA_A);
         exchange.setProperty("toolProfile", "none");
         return exchange;

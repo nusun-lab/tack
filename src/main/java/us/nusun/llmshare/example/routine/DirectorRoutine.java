@@ -8,6 +8,7 @@ import us.nusun.llmshare.example.tool.IntegrationToolProfile;
 import us.nusun.llmshare.example.tool.TeamChatToolProfile;
 import us.nusun.llmshare.example.tool.WorkspaceReadonlyToolProfile;
 import us.nusun.llmshare.framework.inventory.RoutineProvider;
+import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.model.MissionRequest;
 import us.nusun.llmshare.framework.model.RoutineDefinition;
 import us.nusun.llmshare.framework.service.AgentRunAdmissionService;
@@ -31,6 +32,8 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                 .name("Director")
                 .main("Direct mission execution through completion.", "direct:example-software-team-director")
                 .defaultLane("high-pass")
+                .withLaneBinding(LlmPassType.SYNTHESIS, "low-pass")
+                .withLaneBinding(LlmPassType.CONSOLIDATION, "low-pass")
                 .build();
     }
 

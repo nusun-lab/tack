@@ -362,7 +362,7 @@ public class LlmAgentFactory {
             }
             LlmPassType passType = passType(exchange);
             AgentConfiguration configuration = new AgentConfiguration().withChatModel(model);
-            if (passType == LlmPassType.TOOL) {
+            if (passType == LlmPassType.ACTION) {
                 configuration.withChatMemoryProvider(new EphemeralToolPassChatMemoryProvider(
                         laneMemoryMaxTokens,
                         tokenCountEstimator,

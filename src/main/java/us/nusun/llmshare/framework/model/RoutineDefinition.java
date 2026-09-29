@@ -11,9 +11,20 @@ public record RoutineDefinition(
         String description,
         String routeUri,
         String defaultLane,
+        Map<LlmPassType, String> laneBindings,
         List<SubroutineDefinition> subroutines
 ) {
     public static final String FRAMEWORK_DEFAULT_LANE = "low-pass";
+
+    public RoutineDefinition(
+            String id,
+            String name,
+            String description,
+            String routeUri,
+            String defaultLane,
+            List<SubroutineDefinition> subroutines) {
+        this(id, name, description, routeUri, defaultLane, Map.of(), subroutines);
+    }
 
     public RoutineDefinition {
         id = requireText(id, "Routine missing id");
@@ -21,12 +32,18 @@ public record RoutineDefinition(
         description = requireText(description, "Routine " + id + " missing description");
         routeUri = requireText(routeUri, "Routine " + id + " missing routeUri");
         defaultLane = defaultLane == null || defaultLane.isBlank() ? FRAMEWORK_DEFAULT_LANE : defaultLane.trim();
+        laneBindings = normalizeLaneBindings(laneBindings);
         subroutines = subroutines == null ? List.of() : List.copyOf(subroutines);
         validateUniqueSubroutineIds(subroutines);
     }
 
     public static Builder builder(String id) {
         return new Builder(id);
+    }
+
+    public String laneFor(LlmPassType passType) {
+        String boundLane = passType == null ? null : laneBindings.get(passType);
+        return boundLane == null ? defaultLane : boundLane;
     }
 
     public SubroutineDefinition requireSubroutine(String subroutineId) {
@@ -47,6 +64,20 @@ public record RoutineDefinition(
 
     public static String normalizeSubroutineId(String subroutineId) {
         return subroutineId == null || subroutineId.isBlank() ? null : subroutineId.trim();
+    }
+
+    private static Map<LlmPassType, String> normalizeLaneBindings(Map<LlmPassType, String> laneBindings) {
+        if (laneBindings == null || laneBindings.isEmpty()) {
+            return Map.of();
+        }
+        LinkedHashMap<LlmPassType, String> normalized = new LinkedHashMap<>();
+        laneBindings.forEach((passType, lane) -> {
+            if (passType == null) {
+                throw new IllegalArgumentException("Routine lane binding missing pass type");
+            }
+            normalized.put(passType, requireText(lane, "Routine lane binding for " + passType + " missing lane"));
+        });
+        return Map.copyOf(normalized);
     }
 
     private static void validateUniqueSubroutineIds(List<SubroutineDefinition> subroutines) {
@@ -71,6 +102,7 @@ public record RoutineDefinition(
         private String description;
         private String routeUri;
         private String defaultLane = FRAMEWORK_DEFAULT_LANE;
+        private final LinkedHashMap<LlmPassType, String> laneBindings = new LinkedHashMap<>();
         private final ArrayList<SubroutineDefinition> subroutines = new ArrayList<>();
 
         private Builder(String id) {
@@ -89,6 +121,14 @@ public record RoutineDefinition(
 
         public Builder defaultLane(String defaultLane) { this.defaultLane = defaultLane; return this; }
 
+        public Builder withLaneBinding(LlmPassType passType, String lane) {
+            if (passType == null) {
+                throw new IllegalArgumentException("Routine lane binding missing pass type");
+            }
+            laneBindings.put(passType, requireText(lane, "Routine lane binding for " + passType + " missing lane"));
+            return this;
+        }
+
         public Builder subroutine(String id, String description, String routeUri) {
             return subroutine(new SubroutineDefinition(id, description, routeUri));
         }
@@ -102,7 +142,7 @@ public record RoutineDefinition(
         }
 
         public RoutineDefinition build() {
-            return new RoutineDefinition(id, name, description, routeUri, defaultLane, subroutines);
+            return new RoutineDefinition(id, name, description, routeUri, defaultLane, laneBindings, subroutines);
         }
     }
 }

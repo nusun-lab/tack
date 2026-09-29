@@ -100,7 +100,7 @@ class CompactedSystemMessageOrderingTest {
     private static Exchange exchange() {
         Exchange exchange = new DefaultExchange(new DefaultCamelContext());
         exchange.setProperty("laneId", "low-pass");
-        exchange.setProperty("passType", LlmPassType.TOOL);
+        exchange.setProperty("passType", LlmPassType.ACTION);
         exchange.setProperty("personaId", FrameworkFixtures.PERSONA_A);
         exchange.setProperty("toolProfile", "none");
         return exchange;

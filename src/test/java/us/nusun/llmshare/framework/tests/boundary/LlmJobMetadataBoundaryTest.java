@@ -31,7 +31,7 @@ class LlmJobMetadataBoundaryTest {
         LlmJobRequest request = new LlmJobRequest(
                 null,
                 "low-pass",
-                LlmPassType.TOOL,
+                LlmPassType.ACTION,
                 "act:assignment-review",
                 "Persona A",
                 0,
@@ -46,7 +46,7 @@ class LlmJobMetadataBoundaryTest {
                         "primitive", "act",
                         "primitiveId", "assignment-review",
                         "laneId", "low-pass",
-                        "passType", "TOOL"),
+                        "passType", "ACTION"),
                 null).normalized();
         LlmJobEnvelope envelope = LlmJobEnvelope.queued(request);
         String json = TestJson.write(envelope);
@@ -62,11 +62,11 @@ class LlmJobMetadataBoundaryTest {
         assertEquals("act", worker.getProperty("primitive"));
         assertEquals("assignment-review", worker.getProperty("primitiveId"));
         assertEquals("low-pass", worker.getProperty("laneId"));
-        assertEquals(LlmPassType.TOOL, worker.getProperty("passType"));
+        assertEquals(LlmPassType.ACTION, worker.getProperty("passType"));
         assertEquals("persona-a", restoredEnvelope.metadata().get("personaId"));
         assertEquals(FrameworkFixtures.PROFILE_GAMMA, restoredEnvelope.metadata().get("toolProfile"));
         assertEquals("low-pass", restoredEnvelope.laneId());
-        assertEquals(LlmPassType.TOOL, restoredEnvelope.passType());
+        assertEquals(LlmPassType.ACTION, restoredEnvelope.passType());
 
         CapturingMcpClientFactory mcpFactory = new CapturingMcpClientFactory();
         new LlmAgentFactory.DynamicAgentFactory(

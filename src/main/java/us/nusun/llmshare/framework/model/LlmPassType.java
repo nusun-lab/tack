@@ -1,6 +1,9 @@
 package us.nusun.llmshare.framework.model;
 
 public enum LlmPassType {
-    TOOL,
-    SYNTHESIS
+    ACTION,
+    SYNTHESIS,
+    DECISION,
+    CREATION,
+    CONSOLIDATION
 }

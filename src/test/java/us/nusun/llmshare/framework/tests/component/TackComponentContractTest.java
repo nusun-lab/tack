@@ -39,7 +39,7 @@ class TackComponentContractTest {
     void tackActReadsEndpointParametersConsumesPromptHeaderAndCompletesBeforeNextRouteStep() throws Exception {
         ProjectionStore store = FrameworkFixtures.projectionStore();
         ScriptedLlm llm = new ScriptedLlm(request -> {
-            if (request.passType() == LlmPassType.TOOL) {
+            if (request.passType() == LlmPassType.ACTION) {
                 return "verified evidence for " + request.metadata().get("primitiveId") + " using " + request.metadata().get("toolProfile");
             }
             return "{\"content\":\"leaf memory after " + request.metadata().get("primitiveId") + "\"}";
@@ -66,7 +66,7 @@ class TackComponentContractTest {
             assertEquals("leaf memory after contract-act", result.getProperty("afterActContent"));
             assertNull(result.getProperty("promptAfterAct"));
             assertEquals(2, llm.requests.size());
-            assertEquals(LlmPassType.TOOL, llm.requests.get(0).passType());
+            assertEquals(LlmPassType.ACTION, llm.requests.get(0).passType());
             assertEquals(FrameworkFixtures.PROFILE_GAMMA, llm.requests.get(0).metadata().get("toolProfile"));
             assertTrue(llm.requests.get(0).prompt().contains("Inspect contract state."));
             assertEquals(LlmPassType.SYNTHESIS, llm.requests.get(1).passType());
@@ -77,7 +77,7 @@ class TackComponentContractTest {
 
     @Test
     void validationFailuresAreClearAndDynamicEndpointParametersWork() throws Exception {
-        ScriptedLlm llm = new ScriptedLlm(request -> request.passType() == LlmPassType.TOOL
+        ScriptedLlm llm = new ScriptedLlm(request -> request.passType() == LlmPassType.ACTION
                 ? "dynamic evidence"
                 : "{\"content\":\"dynamic memory\"}");
         try (DefaultCamelContext context = context(FrameworkFixtures.projectionStore(), llm)) {
@@ -170,7 +170,7 @@ class TackComponentContractTest {
 
             @Override
             public String apply(LlmJobRequest request) {
-                if (request.passType() == LlmPassType.TOOL) {
+                if (request.passType() == LlmPassType.ACTION) {
                     return "tool evidence turn " + (act + 1);
                 }
                 if ("act".equals(request.metadata().get("primitive"))) {
@@ -207,7 +207,7 @@ class TackComponentContractTest {
             assertEquals("root", stack.leaf().name());
             assertEquals("root memory after turn 2", stack.leaf().content());
             assertEquals(6, llm.requests.size());
-            assertEquals(2, llm.requests.stream().filter(r -> r.passType() == LlmPassType.TOOL).count());
+            assertEquals(2, llm.requests.stream().filter(r -> r.passType() == LlmPassType.ACTION).count());
             assertEquals(2, llm.requests.stream().filter(r -> "act".equals(r.metadata().get("primitive")) && r.passType() == LlmPassType.SYNTHESIS).count());
             assertEquals(2, llm.requests.stream().filter(r -> "thought-exit".equals(r.metadata().get("primitive"))).count());
             assertTrue(llm.requests.stream().noneMatch(r -> r.prompt().contains("t_")));

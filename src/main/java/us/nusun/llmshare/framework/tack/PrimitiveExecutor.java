@@ -87,7 +87,6 @@ public class PrimitiveExecutor {
         ThoughtStack stack = stack(exchange);
         ThoughtFrame leaf = requireLeaf(stack, "tack:act");
         AgentRun run = currentRun(exchange);
-        String laneId = resolveLane(exchange, request.lane());
         String toolProfileId = firstNonBlank(request.toolProfile(), ToolProfileRegistry.NONE_ID);
         ToolProfile profile = toolProfiles().getRequired(toolProfileId);
         markCurrent(exchange, "act", request.id());
@@ -99,10 +98,11 @@ public class PrimitiveExecutor {
         projections.record(exchange, "ACT_STARTED");
 
         projections.record(exchange, "TOOL_PASS_QUEUED");
+        String actionLaneId = resolveLane(exchange, request.lane(), LlmPassType.ACTION);
         LlmJobResult toolResult = callLlm(
                 exchange,
                 llm,
-                llmRequest(exchange, laneId, LlmPassType.TOOL, "tool", renderToolPassPrompt(exchange, request, profile), null),
+                llmRequest(exchange, actionLaneId, LlmPassType.ACTION, "tool", renderToolPassPrompt(exchange, request, profile), null),
                 "tool/action pass");
         Instant observedAt = Instant.now();
         exchange.setProperty("toolPassObservedAt", observedAt);
@@ -110,10 +110,11 @@ public class PrimitiveExecutor {
         projections.record(exchange, "TOOL_PASS_COMPLETED");
 
         projections.record(exchange, "SYNTHESIS_PASS_QUEUED");
+        String synthesisLaneId = resolveLane(exchange, request.lane(), LlmPassType.SYNTHESIS);
         LlmJobResult synthesisResult = callLlm(
                 exchange,
                 llm,
-                llmRequest(exchange, laneId, LlmPassType.SYNTHESIS, "synthesis", renderActSynthesisPrompt(exchange, request, leaf, toolResult, observedAt), ACT_SYNTHESIS_SCHEMA),
+                llmRequest(exchange, synthesisLaneId, LlmPassType.SYNTHESIS, "synthesis", renderActSynthesisPrompt(exchange, request, leaf, toolResult, observedAt), ACT_SYNTHESIS_SCHEMA),
                 "act thought synthesis pass");
         projections.record(exchange, "SYNTHESIS_PASS_COMPLETED");
         ActSynthesisResult synthesis = parse(synthesisResult.content(), ActSynthesisResult.class);
@@ -142,7 +143,7 @@ public class PrimitiveExecutor {
     }
 
     public void decide(Exchange exchange, DecideRequest request, ProducerTemplate llm) throws Exception {
-        String laneId = resolveLane(exchange, request.lane());
+        String laneId = resolveLane(exchange, request.lane(), LlmPassType.DECISION);
         List<String> choices = decisionChoices(request.choices());
         String schema = decisionSchema(choices);
         markCurrent(exchange, "decide", request.id());
@@ -154,7 +155,7 @@ public class PrimitiveExecutor {
         LlmJobResult llmResult = callLlm(
                 exchange,
                 llm,
-                llmRequest(exchange, laneId, LlmPassType.SYNTHESIS, "decision",
+                llmRequest(exchange, laneId, LlmPassType.DECISION, "decision",
                         renderDecisionPrompt(exchange, request), schema),
                 "decision synthesis pass");
         projections.record(exchange, "SYNTHESIS_PASS_COMPLETED");
@@ -175,7 +176,7 @@ public class PrimitiveExecutor {
     }
 
     public void create(Exchange exchange, CreateRequest request, ProducerTemplate llm) throws Exception {
-        String laneId = resolveLane(exchange, request.lane());
+        String laneId = resolveLane(exchange, request.lane(), LlmPassType.CREATION);
         ResolvedSchema schema = resolveCreateSchema(request);
         markCurrent(exchange, "create", request.id());
         exchange.setProperty("createId", request.id());
@@ -189,7 +190,7 @@ public class PrimitiveExecutor {
         LlmJobResult llmResult = callLlm(
                 exchange,
                 llm,
-                llmRequest(exchange, laneId, LlmPassType.SYNTHESIS, "create", renderCreatePrompt(exchange, request, schema), schema.uri()),
+                llmRequest(exchange, laneId, LlmPassType.CREATION, "create", renderCreatePrompt(exchange, request, schema), schema.uri()),
                 "create synthesis pass");
         projections.record(exchange, "SYNTHESIS_PASS_COMPLETED");
         JsonNode object = mapper().readTree(llmResult.content());
@@ -232,12 +233,12 @@ public class PrimitiveExecutor {
             return;
         }
 
-        String laneId = resolveLane(exchange, request.lane());
+        String laneId = resolveLane(exchange, request.lane(), LlmPassType.CONSOLIDATION);
         projections.record(exchange, "THOUGHT_CONSOLIDATION_STARTED", consolidationDetails(child, parent, null));
         LlmJobResult llmResult = callLlm(
                 exchange,
                 llm,
-                llmRequest(exchange, laneId, LlmPassType.SYNTHESIS, "thought-consolidation", renderConsolidationPrompt(exchange, parent, child), THOUGHT_CONTENT_SCHEMA),
+                llmRequest(exchange, laneId, LlmPassType.CONSOLIDATION, "thought-consolidation", renderConsolidationPrompt(exchange, parent, child), THOUGHT_CONTENT_SCHEMA),
                 "thought consolidation pass");
         ThoughtContentResult consolidated = parse(llmResult.content(), ThoughtContentResult.class);
         if (consolidated.content() == null || consolidated.content().isBlank()) {
@@ -336,9 +337,9 @@ public class PrimitiveExecutor {
         return firstNonBlank(run.currentPrimitive() + ":" + run.currentId(), "framework");
     }
 
-    private String resolveLane(Exchange exchange, String requestedLane) {
+    private String resolveLane(Exchange exchange, String requestedLane, LlmPassType passType) {
         RoutineDefinition routine = currentRoutine(exchange);
-        String laneId = firstNonBlank(requestedLane, routine.defaultLane(), RoutineDefinition.FRAMEWORK_DEFAULT_LANE);
+        String laneId = firstNonBlank(requestedLane, routine.laneFor(passType), RoutineDefinition.FRAMEWORK_DEFAULT_LANE);
         lanes().getRequired(laneId);
         exchange.setProperty("resolvedLane", laneId);
         exchange.setProperty("laneId", laneId);

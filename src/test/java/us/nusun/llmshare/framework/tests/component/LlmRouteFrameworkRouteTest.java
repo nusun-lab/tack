@@ -43,7 +43,7 @@ class LlmRouteFrameworkRouteTest {
         InFlightReplyManager replies = new InFlightReplyManager();
         StubKafkaComponent kafka = new StubKafkaComponent((topic, exchange) -> {
             LlmJobEnvelope queued = exchange.getProperty("llmJob", LlmJobEnvelope.class);
-            if (queued != null && "high-pass".equals(queued.laneId()) && queued.passType() == LlmPassType.TOOL) {
+            if (queued != null && "high-pass".equals(queued.laneId()) && queued.passType() == LlmPassType.ACTION) {
                 replies.complete(LlmJobResult.succeeded(queued, "test-model", "{\"result\":\"ok\"}", "{\"result\":\"ok\"}", Instant.now()));
             }
         });
@@ -56,7 +56,7 @@ class LlmRouteFrameworkRouteTest {
                 exchange.setProperty("agentRunId", "run:/high?partition=stable");
                 exchange.setProperty("toolProfile", FrameworkFixtures.PROFILE_GAMMA);
                 exchange.getIn().setHeader("lane", "high-pass");
-                exchange.getIn().setHeader("passType", LlmPassType.TOOL);
+                exchange.getIn().setHeader("passType", LlmPassType.ACTION);
                 exchange.getIn().setHeader("responseSchema", "classpath:schemas/framework/text-result-schema.json");
                 exchange.getIn().setBody("Return a JSON result.");
             });
@@ -64,7 +64,7 @@ class LlmRouteFrameworkRouteTest {
             LlmJobResult body = result.getMessage().getBody(LlmJobResult.class);
             assertEquals(LlmJobStatus.SUCCEEDED, body.status());
             assertEquals("high-pass", body.laneId());
-            assertEquals(LlmPassType.TOOL, body.passType());
+            assertEquals(LlmPassType.ACTION, body.passType());
             assertEquals("{\"result\":\"ok\"}", body.content());
             assertEquals(List.of("llm.requests.high"), kafka.sentTopics());
             assertEquals("run:/high?partition=stable", kafka.sentTo("llm.requests.high").getFirst().getIn().getHeader(KafkaConstants.KEY));
@@ -184,7 +184,7 @@ class LlmRouteFrameworkRouteTest {
         try (DefaultCamelContext context = context(replies, kafka)) {
             context.start();
             LlmJobEnvelope queued = LlmJobEnvelope.queued(new us.nusun.llmshare.framework.model.LlmJobRequest(
-                    null, "low-pass", LlmPassType.TOOL, "test", "Persona A", 0, "prompt", "system", null, Map.of(), null).normalized());
+                    null, "low-pass", LlmPassType.ACTION, "test", "Persona A", 0, "prompt", "system", null, Map.of(), null).normalized());
             replies.register(queued);
             LlmJobResult result = LlmJobResult.succeeded(queued, "test-model", "ok", "ok", Instant.now());
 

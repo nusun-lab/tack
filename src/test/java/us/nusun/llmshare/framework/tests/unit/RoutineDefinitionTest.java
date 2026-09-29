@@ -2,6 +2,7 @@ package us.nusun.llmshare.framework.tests.unit;
 
 import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.framework.inventory.RoutineCatalog;
+import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.model.RoutineDefinition;
 
 import java.util.List;
@@ -90,6 +91,24 @@ class RoutineDefinitionTest {
                 .build();
         IllegalArgumentException failure = assertThrows(IllegalArgumentException.class, () -> routine.requireSubroutine("phase-a"));
         assertTrue(failure.getMessage().contains("Unknown subroutine phase-a for routine test/routine"));
+    }
+
+    @Test
+    void passSpecificLaneBindingsOverrideRoutineDefault() {
+        RoutineDefinition routine = RoutineDefinition.builder("test/routine")
+                .name("Test")
+                .description("Test")
+                .routeUri("direct:test")
+                .defaultLane("high-pass")
+                .withLaneBinding(LlmPassType.SYNTHESIS, "low-pass")
+                .withLaneBinding(LlmPassType.CONSOLIDATION, "low-pass")
+                .build();
+
+        assertEquals("high-pass", routine.laneFor(LlmPassType.ACTION));
+        assertEquals("high-pass", routine.laneFor(LlmPassType.CREATION));
+        assertEquals("low-pass", routine.laneFor(LlmPassType.SYNTHESIS));
+        assertEquals("high-pass", routine.laneFor(LlmPassType.DECISION));
+        assertEquals("low-pass", routine.laneFor(LlmPassType.CONSOLIDATION));
     }
 
     @Test
