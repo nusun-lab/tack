@@ -14,7 +14,7 @@ import us.nusun.llmshare.framework.llm.LlmAgentFactory;
 import us.nusun.llmshare.framework.llm.LlmDeadLetterFactory;
 import us.nusun.llmshare.framework.llm.LlmRouteSupport;
 import us.nusun.llmshare.framework.llm.ProviderStructuredOutputSupport;
-import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
+import us.nusun.llmshare.framework.tests.support.TestTokenCountEstimator;
 import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.LlmJobRequest;
 import us.nusun.llmshare.framework.model.LlmPassType;
@@ -192,7 +192,7 @@ class ProviderStructuredOutputSupportTest {
                 null,
                 null,
                 null,
-                new ApproximateTokenCountEstimator(),
+                new TestTokenCountEstimator(),
                 12000);
         factory.setCamelContext(context);
         return factory;

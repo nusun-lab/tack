@@ -23,7 +23,7 @@ import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.LlmJobRequest;
 import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.mcp.McpClientFactory;
-import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
+import us.nusun.llmshare.framework.tests.support.TestTokenCountEstimator;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 
 import java.util.ArrayList;
@@ -52,7 +52,7 @@ class ForcedToolChoiceTest {
     @Test
     void toolEnabledAgentRequiresToolChoiceUntilFirstToolResultThenReturnsAuto() {
         RecordingChatModel model = new RecordingChatModel(true);
-        Agent agent = factory("low-pass", model).createAgent(exchange("low-pass", LlmPassType.TOOL));
+        Agent agent = factory("low-pass", model).createAgent(exchange("low-pass", LlmPassType.ACTION));
 
         agent.chat(new AiAgentBody<>("Inspect current external state.", "You are a tester.", "memory-1"), probeToolProvider());
 
@@ -65,8 +65,8 @@ class ForcedToolChoiceTest {
     @Test
     void toolEnabledAgentPreservesProviderResponseFormat() {
         RecordingChatModel model = new RecordingChatModel(false);
-        Exchange exchange = exchange("low-pass", LlmPassType.TOOL, context(true));
-        exchange.setProperty("llmJob", job("low-pass", LlmPassType.TOOL, SCHEMA));
+        Exchange exchange = exchange("low-pass", LlmPassType.ACTION, context(true));
+        exchange.setProperty("llmJob", job("low-pass", LlmPassType.ACTION, SCHEMA));
         Agent agent = factory("low-pass", model).createAgent(exchange);
 
         agent.chat(new AiAgentBody<>("Inspect current external state.", "You are a tester.", "memory-2"), probeToolProvider());
@@ -96,7 +96,7 @@ class ForcedToolChoiceTest {
                 new McpClientFactory(),
                 FrameworkFixtures.toolProfileRegistry(),
                 FrameworkFixtures.personaCatalog(),
-                new ApproximateTokenCountEstimator(),
+                new TestTokenCountEstimator(),
                 12000);
     }
 

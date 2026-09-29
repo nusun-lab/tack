@@ -7,6 +7,7 @@ import us.nusun.llmshare.example.tool.SourceControlWriteToolProfile;
 import us.nusun.llmshare.example.tool.TeamChatToolProfile;
 import us.nusun.llmshare.example.tool.WorkspaceReadonlyToolProfile;
 import us.nusun.llmshare.framework.inventory.RoutineProvider;
+import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.model.RoutineDefinition;
 import us.nusun.llmshare.framework.tack.TackHeaders;
 
@@ -26,6 +27,8 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .subroutine("acceptance-refinement", "Clarify one product outcome and its acceptance.", "direct:example-software-team-product-owner-acceptance-refinement")
                 .subroutine("priority-handoff", "Advance one product outcome to its next lifecycle step.", "direct:example-software-team-product-owner-priority-handoff")
                 .defaultLane("high-pass")
+                .withLaneBinding(LlmPassType.SYNTHESIS, "low-pass")
+                .withLaneBinding(LlmPassType.CONSOLIDATION, "low-pass")
                 .build();
     }
 

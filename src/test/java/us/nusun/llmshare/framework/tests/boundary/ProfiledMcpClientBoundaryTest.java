@@ -11,9 +11,10 @@ import dev.langchain4j.mcp.client.McpResource;
 import dev.langchain4j.mcp.client.McpResourceTemplate;
 import dev.langchain4j.mcp.client.McpRoot;
 import dev.langchain4j.service.tool.ToolExecutionResult;
+import dev.langchain4j.model.TokenCountEstimator;
+import dev.langchain4j.data.message.ChatMessage;
 import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.framework.mcp.ProfiledMcpClient;
-import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
 import us.nusun.llmshare.framework.model.ToolProfile;
 
 import java.util.List;
@@ -37,7 +38,7 @@ class ProfiledMcpClientBoundaryTest {
                 null,
                 null,
                 1000,
-                new ApproximateTokenCountEstimator(),
+                new FixedTokenCountEstimator(),
                 false);
 
         client.close();
@@ -57,6 +58,12 @@ class ProfiledMcpClientBoundaryTest {
         client.close();
 
         assertEquals(1, closes.get());
+    }
+
+    private static final class FixedTokenCountEstimator implements TokenCountEstimator {
+        @Override public int estimateTokenCountInText(String text) { return text == null ? 0 : text.length(); }
+        @Override public int estimateTokenCountInMessage(ChatMessage message) { return 0; }
+        @Override public int estimateTokenCountInMessages(Iterable<ChatMessage> messages) { return 0; }
     }
 
     private static final class CountingMcpClient implements McpClient {

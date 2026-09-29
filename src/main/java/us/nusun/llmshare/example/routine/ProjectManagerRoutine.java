@@ -9,6 +9,7 @@ import us.nusun.llmshare.example.tool.TeamChatToolProfile;
 import us.nusun.llmshare.example.tool.WorkspaceCoordinationToolProfile;
 import us.nusun.llmshare.example.tool.WorkspaceReadonlyToolProfile;
 import us.nusun.llmshare.framework.inventory.RoutineProvider;
+import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.model.RoutineDefinition;
 import us.nusun.llmshare.framework.tack.TackHeaders;
 
@@ -29,6 +30,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .subroutine("coordination", "Coordinate active delivery and team dependencies.", "direct:example-software-team-project-manager-coordination")
                 .subroutine("task-planning", "Decompose product outcomes into implementation work.", "direct:example-software-team-project-manager-task-planning")
                 .defaultLane("high-pass")
+                .withLaneBinding(LlmPassType.SYNTHESIS, "low-pass")
+                .withLaneBinding(LlmPassType.CONSOLIDATION, "low-pass")
                 .build();
     }
 

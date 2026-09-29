@@ -2,7 +2,12 @@ package us.nusun.llmshare.framework.llm;
 
 import static us.nusun.llmshare.framework.model.FrameworkText.firstNonBlank;
 
+import dev.langchain4j.agent.tool.ToolSpecification;
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.http.client.jdk.JdkHttpClient;
 import dev.langchain4j.http.client.jdk.JdkHttpClientBuilder;
 import dev.langchain4j.mcp.client.McpClient;
@@ -12,8 +17,9 @@ import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.ResponseFormat;
 import dev.langchain4j.model.chat.request.ToolChoice;
 import dev.langchain4j.model.openai.OpenAiChatModel;
-import dev.langchain4j.model.openai.OpenAiTokenCountEstimator;
+import dev.langchain4j.model.openai.OpenAiTokenUsage;
 import dev.langchain4j.service.AiServices;
+import dev.langchain4j.service.Result;
 import dev.langchain4j.service.tool.ToolProvider;
 import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Named;
@@ -36,7 +42,7 @@ import us.nusun.llmshare.framework.inventory.PersonaCatalog;
 import us.nusun.llmshare.framework.inventory.ToolProfileRegistry;
 import us.nusun.llmshare.framework.logging.LogTokens;
 import us.nusun.llmshare.framework.mcp.McpClientFactory;
-import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
+import us.nusun.llmshare.framework.memory.QwenTokenCountEstimator;
 import us.nusun.llmshare.framework.memory.EphemeralToolPassChatMemoryProvider;
 import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
 import us.nusun.llmshare.framework.model.LlmJobEnvelope;
@@ -67,13 +73,8 @@ public class LlmAgentFactory {
 
     @Produces
     @Singleton
-    TokenCountEstimator toolPassTokenCountEstimator(@ConfigProperty(name = "llm.model-default.openai.model") String model) {
-        try {
-            return new OpenAiTokenCountEstimator(model);
-        } catch (IllegalArgumentException e) {
-            LOG.warn("Falling back to approximate token estimation for unknown OpenAI-compatible model '{}'", model);
-            return new ApproximateTokenCountEstimator();
-        }
+    TokenCountEstimator toolPassTokenCountEstimator() {
+        return new QwenTokenCountEstimator();
     }
 
     @Produces
@@ -149,10 +150,11 @@ public class LlmAgentFactory {
             int laneTopK = laneInt(configPrefix, "top-k", topK);
             double laneMinP = laneDouble(configPrefix, "min-p", minP);
             double laneRepetitionPenalty = laneDouble(configPrefix, "repetition-penalty", repetitionPenalty);
+            int laneMaxTokens = laneInt(configPrefix, "max-tokens", maxTokens);
             String laneReasoningEffort = laneString(configPrefix, "reasoning-effort", reasoningEffort);
             String model = selectedModel(lane, defaultModel);
-            LOG.info("Configured inference lane {} model={} reasoningEffort={} sampling temperature={} topP={} presencePenalty={} topK={} minP={} repetitionPenalty={}",
-                    lane.id(), model, blank(laneReasoningEffort) ? "provider-default" : laneReasoningEffort,
+            LOG.info("Configured inference lane {} model={} reasoningEffort={} maxOutputTokens={} sampling temperature={} topP={} presencePenalty={} topK={} minP={} repetitionPenalty={}",
+                    lane.id(), model, blank(laneReasoningEffort) ? "provider-default" : laneReasoningEffort, laneMaxTokens,
                     laneTemperature, laneTopP, lanePresencePenalty, laneTopK, laneMinP, laneRepetitionPenalty);
             models.put(lane.id(), chatModel(
                     firstNonBlank(lane.endpoint(), defaultBaseUrl),
@@ -164,7 +166,7 @@ public class LlmAgentFactory {
                     laneTopK,
                     laneMinP,
                     laneRepetitionPenalty,
-                    maxTokens,
+                    laneMaxTokens,
                     timeoutMs,
                     thinkingOffEnabled,
                     laneReasoningEffort,
@@ -200,6 +202,8 @@ public class LlmAgentFactory {
                 .topP(topP)
                 .presencePenalty(presencePenalty)
                 .maxTokens(maxTokens)
+                .returnThinking(true)
+                .sendThinking(true, "reasoning")
                 .strictJsonSchema(strictJsonSchema)
                 .timeout(Duration.ofMillis(timeoutMs))
                 .httpClientBuilder(http11ClientBuilder());
@@ -340,19 +344,33 @@ public class LlmAgentFactory {
                 throw new IllegalArgumentException("DynamicAgentFactory requires the active Camel exchange");
             }
             String laneId = firstNonBlank(exchange.getProperty("laneId", String.class), job(exchange) == null ? null : job(exchange).laneId(), RoutineDefinition.FRAMEWORK_DEFAULT_LANE);
-            lanes.getRequired(laneId);
+            InferenceLaneDefinition lane = lanes.getRequired(laneId);
+            String configPrefix = laneConfigPrefix(lane);
+            int laneMemoryMaxTokens = laneInt(configPrefix, "tool-memory.max-tokens", memoryMaxTokens);
+            int laneMaxToolCalls = laneInt(configPrefix, "max-tool-calling-round-trips", maxToolCallingRoundTrips);
+            double laneCompactionThreshold = laneDouble(configPrefix, "tool-memory.compaction-threshold",
+                    ConfigProvider.getConfig().getOptionalValue("llm.model-default.tool-memory.compaction-threshold", Double.class).orElse(0.50));
+            int laneRecentToolInteractions = laneInt(configPrefix, "tool-memory.recent-tool-interactions",
+                    ConfigProvider.getConfig().getOptionalValue("llm.model-default.tool-memory.recent-tool-interactions", Integer.class).orElse(3));
+            int laneContextWindow = laneInt(configPrefix, "context-window",
+                    ConfigProvider.getConfig().getOptionalValue("llm.model-default.openai.context-window", Integer.class).orElse(69632));
+            int laneMaxOutputTokens = laneInt(configPrefix, "max-tokens",
+                    ConfigProvider.getConfig().getOptionalValue("llm.model-default.openai.max-tokens", Integer.class).orElse(4092));
             ChatModel model = laneModels.get(laneId);
             if (model == null) {
                 throw new IllegalStateException("No chat model configured for inference lane " + laneId);
             }
             LlmPassType passType = passType(exchange);
             AgentConfiguration configuration = new AgentConfiguration().withChatModel(model);
-            if (passType == LlmPassType.TOOL) {
+            if (passType == LlmPassType.ACTION) {
                 configuration.withChatMemoryProvider(new EphemeralToolPassChatMemoryProvider(
-                        memoryMaxTokens,
+                        laneMemoryMaxTokens,
                         tokenCountEstimator,
                         true,
-                        warning -> logRuntimeWarning(exchange, warning)));
+                        laneMaxToolCalls,
+                        laneCompactionThreshold,
+                        laneRecentToolInteractions,
+                        ignored -> { }));
                 String profileId = exchange.getProperty("toolProfile", "none", String.class);
                 ToolProfile profile = toolProfiles.getRequired(profileId);
                 List<McpClient> clients = mcpClients(exchange);
@@ -384,7 +402,9 @@ public class LlmAgentFactory {
                     configuration.withCustomTools(customTools);
                 }
             }
-            Agent agent = configuration.getChatMemoryProvider() == null ? new AgentWithoutMemory(configuration) : new TackToolAgent(configuration, maxToolCallingRoundTrips);
+            Agent agent = configuration.getChatMemoryProvider() == null ? new AgentWithoutMemory(configuration)
+                    : new TackToolAgent(configuration, laneMaxToolCalls, laneContextWindow, laneMaxOutputTokens,
+                            laneMemoryMaxTokens, tokenCountEstimator, exchange);
             applyProviderSchemaIfRequired(exchange, laneId, passType, agent);
             return agent;
         }
@@ -406,10 +426,74 @@ public class LlmAgentFactory {
 
         private static final class TackToolAgent extends AgentWithMemory {
             private final int maxToolCallingRoundTrips;
+            private final int contextWindow;
+            private final int maxOutputTokens;
+            private final int transcriptMaxTokens;
+            private final TokenCountEstimator tokenCountEstimator;
+            private final Exchange exchange;
+            private long cumulativeEstimatedInputTokens;
 
-            private TackToolAgent(AgentConfiguration configuration, int maxToolCallingRoundTrips) {
+            private TackToolAgent(
+                    AgentConfiguration configuration,
+                    int maxToolCallingRoundTrips,
+                    int contextWindow,
+                    int maxOutputTokens,
+                    int transcriptMaxTokens,
+                    TokenCountEstimator tokenCountEstimator,
+                    Exchange exchange) {
                 super(configuration);
                 this.maxToolCallingRoundTrips = maxToolCallingRoundTrips;
+                this.contextWindow = contextWindow;
+                this.maxOutputTokens = maxOutputTokens;
+                this.transcriptMaxTokens = transcriptMaxTokens;
+                this.tokenCountEstimator = tokenCountEstimator;
+                this.exchange = exchange;
+            }
+
+            @Override
+            public Result<String> chat(org.apache.camel.component.langchain4j.agent.api.AiAgentBody<?> aiAgentBody,
+                    ToolProvider toolProvider) {
+                Result<String> result = super.chat(aiAgentBody, toolProvider);
+                captureDiagnostics(result);
+                return result;
+            }
+
+            private void captureDiagnostics(Result<String> result) {
+                var finalResponse = result == null ? null : result.finalResponse();
+                var aiMessage = finalResponse == null ? null : finalResponse.aiMessage();
+                String text = aiMessage == null ? null : aiMessage.text();
+                String thinking = aiMessage == null ? null : aiMessage.thinking();
+
+                exchange.setProperty("llmFinalTextChars", text == null ? 0 : text.length());
+                exchange.setProperty("llmFinalThinkingChars", thinking == null ? 0 : thinking.length());
+                exchange.setProperty("llmIntermediateResponses",
+                        result == null || result.intermediateResponses() == null ? 0 : result.intermediateResponses().size());
+                exchange.setProperty("llmToolExecutions",
+                        result == null || result.toolExecutions() == null ? 0 : result.toolExecutions().size());
+
+                if (finalResponse != null && finalResponse.tokenUsage() != null) {
+                    exchange.setProperty("llmFinalInputTokens", finalResponse.tokenUsage().inputTokenCount());
+                    exchange.setProperty("llmFinalOutputTokens", finalResponse.tokenUsage().outputTokenCount());
+                    exchange.setProperty("llmFinalTotalTokens", finalResponse.tokenUsage().totalTokenCount());
+                    if (finalResponse.tokenUsage() instanceof OpenAiTokenUsage openAiTokenUsage
+                            && openAiTokenUsage.outputTokensDetails() != null) {
+                        exchange.setProperty("llmFinalReasoningTokens",
+                                openAiTokenUsage.outputTokensDetails().reasoningTokens());
+                    }
+                }
+
+                LOG.info("LLM final response diagnostics: lane={} passType={} textChars={} thinkingChars={} "
+                                + "finalInputTokens={} finalOutputTokens={} finalReasoningTokens={} "
+                                + "intermediateResponses={} toolExecutions={}",
+                        exchange.getProperty("laneId"),
+                        exchange.getProperty("passType"),
+                        exchange.getProperty("llmFinalTextChars"),
+                        exchange.getProperty("llmFinalThinkingChars"),
+                        exchange.getProperty("llmFinalInputTokens"),
+                        exchange.getProperty("llmFinalOutputTokens"),
+                        exchange.getProperty("llmFinalReasoningTokens"),
+                        exchange.getProperty("llmIntermediateResponses"),
+                        exchange.getProperty("llmToolExecutions"));
             }
 
             @Override
@@ -422,17 +506,81 @@ public class LlmAgentFactory {
                     builder.maxToolCallingRoundTrips(maxToolCallingRoundTrips + 1);
                 }
                 ResponseFormat responseFormat = getResponseFormat();
-                builder.chatRequestTransformer(request -> forceInitialToolChoice(request, responseFormat));
+                builder.chatRequestTransformer(request -> {
+                    ChatRequest transformed = forceInitialToolChoice(request, responseFormat);
+                    logTokenBudget(transformed);
+                    return transformed;
+                });
             }
-        }
 
-        private void logRuntimeWarning(Exchange exchange, String warning) {
-            String label = firstNonBlank(exchange.getProperty("agentLabel", String.class), "LLM");
-            String color = exchange.getProperty("agentLogColor", String.class);
-            if (logTokens != null) {
-                logTokens.print(logTokens.wrap(label, color, "RUNTIME WARNING " + warning));
-            } else {
-                LOG.warn("[{}] RUNTIME WARNING {}", label, warning);
+            private void logTokenBudget(ChatRequest request) {
+                int promptTokens = 0;
+                int messageTokens = 0;
+                int thinkingTokens = 0;
+                int toolCallTokens = 0;
+                int toolResultTokens = 0;
+                boolean firstUser = true;
+
+                for (ChatMessage message : request.messages()) {
+                    if (message instanceof SystemMessage || (firstUser && message instanceof UserMessage)) {
+                        promptTokens += tokenCountEstimator.estimateTokenCountInMessage(message);
+                        if (message instanceof UserMessage) firstUser = false;
+                    } else if (message instanceof UserMessage) {
+                        firstUser = false;
+                        messageTokens += tokenCountEstimator.estimateTokenCountInMessage(message);
+                    } else if (message instanceof AiMessage ai) {
+                        messageTokens += tokenCountEstimator.estimateTokenCountInText(ai.text());
+                        thinkingTokens += tokenCountEstimator.estimateTokenCountInText(ai.thinking());
+                        if (ai.hasToolExecutionRequests()) {
+                            for (var call : ai.toolExecutionRequests()) {
+                                toolCallTokens += tokenCountEstimator.estimateTokenCountInText(call.name());
+                                toolCallTokens += tokenCountEstimator.estimateTokenCountInText(call.arguments());
+                            }
+                        }
+                    } else if (message instanceof ToolExecutionResultMessage) {
+                        toolResultTokens += tokenCountEstimator.estimateTokenCountInMessage(message);
+                    }
+                }
+
+                int toolSchemaTokens = request.toolSpecifications().stream()
+                        .map(ToolSpecification::toJson)
+                        .mapToInt(tokenCountEstimator::estimateTokenCountInText)
+                        .sum();
+                int responseTokens = request.responseFormat() == null
+                        ? 0 : tokenCountEstimator.estimateTokenCountInText(String.valueOf(request.responseFormat()));
+                int transcriptTokens = messageTokens + thinkingTokens + toolCallTokens + toolResultTokens;
+                int inputTokens = promptTokens + toolSchemaTokens + responseTokens + transcriptTokens;
+                boolean compacted = request.messages().stream()
+                        .filter(UserMessage.class::isInstance)
+                        .map(UserMessage.class::cast)
+                        .anyMatch(message -> "tack-runtime".equals(message.name()));
+                int inputCeiling = Math.max(0, contextWindow - maxOutputTokens);
+                cumulativeEstimatedInputTokens += inputTokens;
+
+                String label = firstNonBlank(exchange.getProperty("agentLabel", String.class), "LLM");
+                LOG.info("[{}] TOKEN BUDGET lane={} input={}/{} ({}%) | prompt={} tools={} response={} transcript={}/{} ({}%) "
+                                + "| transcriptParts messages={} thinking={} toolCalls={} toolResults={} | compacted={} cumulativeInput={}",
+                        label,
+                        exchange.getProperty("laneId"),
+                        inputTokens,
+                        inputCeiling,
+                        percent(inputTokens, inputCeiling),
+                        promptTokens,
+                        toolSchemaTokens,
+                        responseTokens,
+                        transcriptTokens,
+                        transcriptMaxTokens,
+                        percent(transcriptTokens, transcriptMaxTokens),
+                        messageTokens,
+                        thinkingTokens,
+                        toolCallTokens,
+                        toolResultTokens,
+                        compacted,
+                        cumulativeEstimatedInputTokens);
+            }
+
+            private static int percent(long used, long max) {
+                return max <= 0 ? 0 : (int) Math.round((double) used / (double) max * 100.0);
             }
         }
 

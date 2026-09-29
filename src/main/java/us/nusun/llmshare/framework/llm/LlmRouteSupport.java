@@ -2,6 +2,7 @@ package us.nusun.llmshare.framework.llm;
 
 import static us.nusun.llmshare.framework.model.FrameworkText.firstNonBlank;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.networknt.schema.Error;
@@ -35,6 +36,11 @@ public class LlmRouteSupport {
     public static final class LlmAvailabilityException extends RuntimeException {
         public LlmAvailabilityException(String message) { super(message); }
         public LlmAvailabilityException(String message, Throwable cause) { super(message, cause); }
+    }
+
+    public static final class LlmResponseException extends RuntimeException {
+        public LlmResponseException(String message) { super(message); }
+        public LlmResponseException(String message, Throwable cause) { super(message, cause); }
     }
 
     @Inject CamelContext camelContext;
@@ -101,6 +107,12 @@ public class LlmRouteSupport {
         logTokens().print(logTokens().wrap(agentLabel(exchange), agentLogColor(exchange), "RESPONSE " + content));
     }
 
+    public void requireAgentResponse(@Body String rawResponse, Exchange exchange) {
+        if (rawResponse == null || rawResponse.isBlank()) {
+            throw new LlmResponseException("LLM response failure: reason=empty-final-content " + agentResponseContext(exchange));
+        }
+    }
+
     public void validateResponseSchema(@Body LlmJobResult result, @ExchangeProperty("llmJob") LlmJobEnvelope job,
             Exchange exchange) throws Exception {
         if (result == null || result.content() == null || result.content().isBlank()
@@ -115,7 +127,17 @@ public class LlmRouteSupport {
         }
         ObjectMapper mapper = new ObjectMapper();
         JsonNode schema = mapper.readTree(schemaText);
-        JsonNode response = mapper.readTree(result.content());
+        JsonNode response;
+        try {
+            response = mapper.readTree(result.content());
+        } catch (JsonProcessingException e) {
+            throw new LlmResponseException(
+                    "LLM response failure: reason=malformed-structured-output "
+                            + agentResponseContext(exchange)
+                            + " responseChars=" + result.content().length()
+                            + " responseTail=" + responseTail(result.content()),
+                    e);
+        }
         List<Error> errors = SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
                 .getSchema(schema)
                 .validate(response);
@@ -159,6 +181,42 @@ public class LlmRouteSupport {
 
     private boolean localWorkerRouteVerificationEnabled(Exchange exchange) {
         return Boolean.parseBoolean(exchange.getContext().resolvePropertyPlaceholders("{{llm.local-worker-route-verification.enabled:true}}"));
+    }
+
+    private static String agentResponseContext(Exchange exchange) {
+        return "lane=" + firstNonBlank(exchange.getProperty("laneId", String.class), "unknown")
+                + " passType=" + String.valueOf(exchange.getProperty("passType"))
+                + " finishReason=" + header(exchange, "CamelLangChain4jAgentFinishReason")
+                + " inputTokens=" + header(exchange, "CamelLangChain4jAgentInputTokenCount")
+                + " outputTokens=" + header(exchange, "CamelLangChain4jAgentOutputTokenCount")
+                + " totalTokens=" + header(exchange, "CamelLangChain4jAgentTotalTokenCount")
+                + " finalTextChars=" + property(exchange, "llmFinalTextChars")
+                + " finalThinkingChars=" + property(exchange, "llmFinalThinkingChars")
+                + " finalInputTokens=" + property(exchange, "llmFinalInputTokens")
+                + " finalOutputTokens=" + property(exchange, "llmFinalOutputTokens")
+                + " finalReasoningTokens=" + property(exchange, "llmFinalReasoningTokens")
+                + " intermediateResponses=" + property(exchange, "llmIntermediateResponses")
+                + " toolExecutions=" + property(exchange, "llmToolExecutions");
+    }
+
+    private static String property(Exchange exchange, String name) {
+        Object value = exchange.getProperty(name);
+        return value == null ? "unknown" : String.valueOf(value);
+    }
+
+    private static String header(Exchange exchange, String name) {
+        Object value = exchange.getMessage().getHeader(name);
+        return value == null ? "unknown" : String.valueOf(value);
+    }
+
+    private static String responseTail(String content) {
+        if (content == null) {
+            return "<null>";
+        }
+        String compact = content.replaceAll("\\s+", " ").strip();
+        int max = 240;
+        String tail = compact.length() <= max ? compact : "..." + compact.substring(compact.length() - max);
+        return "'" + tail.replace("'", "\\'") + "'";
     }
 
     private LogTokens logTokens() {

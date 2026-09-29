@@ -29,7 +29,7 @@ import us.nusun.llmshare.framework.model.LlmJobResult;
 import us.nusun.llmshare.framework.model.LlmJobStatus;
 import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.mcp.McpClientFactory;
-import us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator;
+import us.nusun.llmshare.framework.tests.support.TestTokenCountEstimator;
 import us.nusun.llmshare.framework.route.LlmRoute;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
 import us.nusun.llmshare.framework.tests.support.StubKafkaComponent;
@@ -99,7 +99,7 @@ class HallucinatedToolNameRecoveryStrategyTest {
             LlmJobEnvelope job = LlmJobEnvelope.queued(new LlmJobRequest(
                     UUID.randomUUID(),
                     "low-pass",
-                    LlmPassType.TOOL,
+                    LlmPassType.ACTION,
                     "test",
                     "test",
                     0,
@@ -110,7 +110,7 @@ class HallucinatedToolNameRecoveryStrategyTest {
                             "personaId", FrameworkFixtures.PERSONA_A,
                             "toolProfile", "none",
                             "laneId", "low-pass",
-                            "passType", "TOOL"),
+                            "passType", "ACTION"),
                     null).normalized());
             String json = TestJson.write(job);
 
@@ -165,14 +165,14 @@ class HallucinatedToolNameRecoveryStrategyTest {
                 new McpClientFactory(),
                 FrameworkFixtures.toolProfileRegistry(),
                 FrameworkFixtures.personaCatalog(),
-                new ApproximateTokenCountEstimator(),
+                new TestTokenCountEstimator(),
                 12000);
     }
 
     private static Exchange exchange(String laneId) {
         Exchange exchange = new DefaultExchange(new DefaultCamelContext());
         exchange.setProperty("laneId", laneId);
-        exchange.setProperty("passType", LlmPassType.TOOL);
+        exchange.setProperty("passType", LlmPassType.ACTION);
         exchange.setProperty("personaId", FrameworkFixtures.PERSONA_A);
         exchange.setProperty("toolProfile", "none");
         return exchange;

@@ -4,6 +4,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import org.apache.camel.builder.RouteBuilder;
 import us.nusun.llmshare.example.tool.TeamChatToolProfile;
 import us.nusun.llmshare.framework.inventory.RoutineProvider;
+import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.model.RoutineDefinition;
 import us.nusun.llmshare.framework.tack.TackHeaders;
 
@@ -27,6 +28,8 @@ public class ForumAgentsChatRoutine extends RouteBuilder implements RoutineProvi
                         """)
                 .routeUri("direct:example-forum-agents-chat")
                 .defaultLane("high-pass")
+                .withLaneBinding(LlmPassType.SYNTHESIS, "low-pass")
+                .withLaneBinding(LlmPassType.CONSOLIDATION, "low-pass")
                 .build();
     }
 

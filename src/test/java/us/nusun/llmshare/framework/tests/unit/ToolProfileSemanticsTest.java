@@ -15,6 +15,7 @@ import us.nusun.llmshare.framework.model.McpServerDefinition;
 import us.nusun.llmshare.framework.model.Persona;
 import us.nusun.llmshare.framework.model.ToolProfile;
 import us.nusun.llmshare.framework.tests.support.FrameworkFixtures;
+import us.nusun.llmshare.framework.tests.support.TestTokenCountEstimator;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -24,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ToolProfileSemanticsTest {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-    private static final us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator TOKEN_ESTIMATOR = new us.nusun.llmshare.framework.memory.ApproximateTokenCountEstimator();
+    private static final TestTokenCountEstimator TOKEN_ESTIMATOR = new TestTokenCountEstimator();
 
     @Test
     void promptGuidanceIsAvailableFromBuilderAndSyntheticProfiles() {
@@ -291,7 +292,7 @@ class ToolProfileSemanticsTest {
                 .allowTool(FrameworkFixtures.SERVER_GAMMA, "gamma_get_pull_request")
                 .maxResultTokens(10)
                 .build();
-        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient("x".repeat(100)), FrameworkFixtures.SERVER_GAMMA, profile);
+        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient("x".repeat(100)), FrameworkFixtures.SERVER_GAMMA, profile, null, null, 0, TOKEN_ESTIMATOR);
 
         ToolExecutionResult result = client.executeTool(ToolExecutionRequest.builder().id("1").name("gamma_get_pull_request").arguments("{}").build());
 
@@ -305,7 +306,7 @@ class ToolProfileSemanticsTest {
                 .server(FrameworkFixtures.SERVER_GAMMA)
                 .allowTool(FrameworkFixtures.SERVER_GAMMA, "gamma_get_pull_request")
                 .build();
-        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient("x".repeat(100)), FrameworkFixtures.SERVER_GAMMA, profile, null, null, 10);
+        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient("x".repeat(100)), FrameworkFixtures.SERVER_GAMMA, profile, null, null, 10, TOKEN_ESTIMATOR);
 
         ToolExecutionResult result = client.executeTool(ToolExecutionRequest.builder().id("1").name("gamma_get_pull_request").arguments("{}").build());
 
@@ -321,7 +322,7 @@ class ToolProfileSemanticsTest {
                 .allowTool(FrameworkFixtures.SERVER_GAMMA, "gamma_get_pull_request")
                 .maxResultTokens(5000)
                 .build();
-        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient(longResult), FrameworkFixtures.SERVER_GAMMA, profile, null, null, 100);
+        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient(longResult), FrameworkFixtures.SERVER_GAMMA, profile, null, null, 100, TOKEN_ESTIMATOR);
 
         ToolExecutionResult result = client.executeTool(ToolExecutionRequest.builder().id("1").name("gamma_get_pull_request").arguments("{}").build());
 
@@ -351,7 +352,7 @@ class ToolProfileSemanticsTest {
                 .build();
         CapturingLogTokens logs = new CapturingLogTokens();
         Persona persona = FrameworkFixtures.personaCatalog().getRequired(FrameworkFixtures.PERSONA_A);
-        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient(hugeResult), FrameworkFixtures.SERVER_GAMMA, profile, persona, logs, 10);
+        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient(hugeResult), FrameworkFixtures.SERVER_GAMMA, profile, persona, logs, 10, TOKEN_ESTIMATOR);
 
         ToolExecutionResult result = client.executeTool(ToolExecutionRequest.builder().id("1").name("gamma_get_pull_request").arguments("{}").build());
 
