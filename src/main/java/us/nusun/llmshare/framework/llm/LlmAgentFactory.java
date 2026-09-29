@@ -12,8 +12,10 @@ import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.ResponseFormat;
 import dev.langchain4j.model.chat.request.ToolChoice;
 import dev.langchain4j.model.openai.OpenAiChatModel;
+import dev.langchain4j.model.openai.OpenAiTokenUsage;
 import dev.langchain4j.model.openai.OpenAiTokenCountEstimator;
 import dev.langchain4j.service.AiServices;
+import dev.langchain4j.service.Result;
 import dev.langchain4j.service.tool.ToolProvider;
 import jakarta.enterprise.inject.Produces;
 import jakarta.inject.Named;
@@ -200,6 +202,8 @@ public class LlmAgentFactory {
                 .topP(topP)
                 .presencePenalty(presencePenalty)
                 .maxTokens(maxTokens)
+                .returnThinking(true)
+                .sendThinking(true, "reasoning")
                 .strictJsonSchema(strictJsonSchema)
                 .timeout(Duration.ofMillis(timeoutMs))
                 .httpClientBuilder(http11ClientBuilder());
@@ -384,7 +388,7 @@ public class LlmAgentFactory {
                     configuration.withCustomTools(customTools);
                 }
             }
-            Agent agent = configuration.getChatMemoryProvider() == null ? new AgentWithoutMemory(configuration) : new TackToolAgent(configuration, maxToolCallingRoundTrips);
+            Agent agent = configuration.getChatMemoryProvider() == null ? new AgentWithoutMemory(configuration) : new TackToolAgent(configuration, maxToolCallingRoundTrips, exchange);
             applyProviderSchemaIfRequired(exchange, laneId, passType, agent);
             return agent;
         }
@@ -406,10 +410,58 @@ public class LlmAgentFactory {
 
         private static final class TackToolAgent extends AgentWithMemory {
             private final int maxToolCallingRoundTrips;
+            private final Exchange exchange;
 
-            private TackToolAgent(AgentConfiguration configuration, int maxToolCallingRoundTrips) {
+            private TackToolAgent(AgentConfiguration configuration, int maxToolCallingRoundTrips, Exchange exchange) {
                 super(configuration);
                 this.maxToolCallingRoundTrips = maxToolCallingRoundTrips;
+                this.exchange = exchange;
+            }
+
+            @Override
+            public Result<String> chat(org.apache.camel.component.langchain4j.agent.api.AiAgentBody<?> aiAgentBody,
+                    ToolProvider toolProvider) {
+                Result<String> result = super.chat(aiAgentBody, toolProvider);
+                captureDiagnostics(result);
+                return result;
+            }
+
+            private void captureDiagnostics(Result<String> result) {
+                var finalResponse = result == null ? null : result.finalResponse();
+                var aiMessage = finalResponse == null ? null : finalResponse.aiMessage();
+                String text = aiMessage == null ? null : aiMessage.text();
+                String thinking = aiMessage == null ? null : aiMessage.thinking();
+
+                exchange.setProperty("llmFinalTextChars", text == null ? 0 : text.length());
+                exchange.setProperty("llmFinalThinkingChars", thinking == null ? 0 : thinking.length());
+                exchange.setProperty("llmIntermediateResponses",
+                        result == null || result.intermediateResponses() == null ? 0 : result.intermediateResponses().size());
+                exchange.setProperty("llmToolExecutions",
+                        result == null || result.toolExecutions() == null ? 0 : result.toolExecutions().size());
+
+                if (finalResponse != null && finalResponse.tokenUsage() != null) {
+                    exchange.setProperty("llmFinalInputTokens", finalResponse.tokenUsage().inputTokenCount());
+                    exchange.setProperty("llmFinalOutputTokens", finalResponse.tokenUsage().outputTokenCount());
+                    exchange.setProperty("llmFinalTotalTokens", finalResponse.tokenUsage().totalTokenCount());
+                    if (finalResponse.tokenUsage() instanceof OpenAiTokenUsage openAiTokenUsage
+                            && openAiTokenUsage.outputTokensDetails() != null) {
+                        exchange.setProperty("llmFinalReasoningTokens",
+                                openAiTokenUsage.outputTokensDetails().reasoningTokens());
+                    }
+                }
+
+                LOG.info("LLM final response diagnostics: lane={} passType={} textChars={} thinkingChars={} "
+                                + "finalInputTokens={} finalOutputTokens={} finalReasoningTokens={} "
+                                + "intermediateResponses={} toolExecutions={}",
+                        exchange.getProperty("laneId"),
+                        exchange.getProperty("passType"),
+                        exchange.getProperty("llmFinalTextChars"),
+                        exchange.getProperty("llmFinalThinkingChars"),
+                        exchange.getProperty("llmFinalInputTokens"),
+                        exchange.getProperty("llmFinalOutputTokens"),
+                        exchange.getProperty("llmFinalReasoningTokens"),
+                        exchange.getProperty("llmIntermediateResponses"),
+                        exchange.getProperty("llmToolExecutions"));
             }
 
             @Override

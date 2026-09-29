@@ -16,6 +16,7 @@ import java.util.Map;
  * Hard stop for pathological tool loops and tool-pass budget exhaustion.
  */
 public final class ToolLoopGuardChatMemory implements ChatMemory {
+    private static final System.Logger LOG = System.getLogger(ToolLoopGuardChatMemory.class.getName());
     private static final int MAX_CYCLE_LENGTH = 5;
 
     private final ChatMemory delegate;
@@ -23,6 +24,7 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
     private final Map<String, RequestSignature> pending = new HashMap<>();
     private final List<ExecutionSignature> completedExecutions = new ArrayList<>();
     private int acceptedToolCalls;
+    private int assistantRounds;
 
     public ToolLoopGuardChatMemory(ChatMemory delegate) {
         this(delegate, 0);
@@ -40,8 +42,22 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
 
     @Override
     public synchronized void add(ChatMessage message) {
-        if (message instanceof AiMessage aiMessage && aiMessage.hasToolExecutionRequests()) {
+        if (message instanceof AiMessage aiMessage) {
+            assistantRounds++;
             List<ToolExecutionRequest> requests = aiMessage.toolExecutionRequests();
+            LOG.log(System.Logger.Level.INFO,
+                    "LLM tool-loop assistant round={0} thinkingChars={1} textChars={2} toolCalls={3} acceptedToolCalls={4}/{5}",
+                    assistantRounds,
+                    textLength(aiMessage.thinking()),
+                    textLength(aiMessage.text()),
+                    requests.size(),
+                    acceptedToolCalls,
+                    maxToolCalls);
+
+            if (!aiMessage.hasToolExecutionRequests()) {
+                delegate.add(message);
+                return;
+            }
             if (maxToolCalls > 0 && acceptedToolCalls + requests.size() > maxToolCalls) {
                 throw new ToolCallBudgetExceededException(maxToolCalls, acceptedToolCalls, requests.size());
             }
@@ -90,6 +106,7 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
         pending.clear();
         completedExecutions.clear();
         acceptedToolCalls = 0;
+        assistantRounds = 0;
     }
 
     private int repeatedCycleLength(RequestSignature nextRequest) {
@@ -121,6 +138,10 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
         } catch (Exception ignored) {
             return String.valueOf(result.contents());
         }
+    }
+
+    private static int textLength(String value) {
+        return value == null ? 0 : value.length();
     }
 
     private static String normalize(String value) {

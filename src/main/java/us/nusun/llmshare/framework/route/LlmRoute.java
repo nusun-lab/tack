@@ -39,6 +39,12 @@ public class LlmRoute extends RouteBuilder {
                 .logExhausted(false)
                 .log(LoggingLevel.WARN, "${exception.message}");
 
+        onException(LlmRouteSupport.LlmResponseException.class)
+                .handled(false)
+                .logStackTrace(false)
+                .logExhausted(false)
+                .log(LoggingLevel.WARN, "${exception.message}");
+
         onCompletion()
                 .onWhen(exchangeProperty("llmQueueFailureHandling").isEqualTo(true))
                 .onFailureOnly()
@@ -99,7 +105,7 @@ public class LlmRoute extends RouteBuilder {
                                 + "outputTokens=${header.CamelLangChain4jAgentOutputTokenCount} "
                                 + "totalTokens=${header.CamelLangChain4jAgentTotalTokenCount}"
                 )
-                .validate(body().isNotNull())
+                .bean(routeSupport, "requireAgentResponse")
                 .setBody(method(routeSupport, "succeededResult"));
 
     }

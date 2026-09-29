@@ -137,6 +137,46 @@ class LlmRouteFrameworkRouteTest {
     }
 
     @Test
+    void directLlmRouteReportsMalformedStructuredOutputWithBoundedResponseContext() throws Exception {
+        InFlightReplyManager replies = new InFlightReplyManager();
+        StubKafkaComponent kafka = new StubKafkaComponent((topic, exchange) -> {
+            LlmJobEnvelope queued = exchange.getProperty("llmJob", LlmJobEnvelope.class);
+            if (queued != null && "low-pass".equals(queued.laneId()) && queued.passType() == LlmPassType.SYNTHESIS) {
+                String truncated = "{\"result\":\"cut off";
+                replies.complete(LlmJobResult.succeeded(queued, "test-model", truncated, truncated, Instant.now()));
+            }
+        });
+
+        Logger camelErrorHandler = LogContext.getLogContext()
+                .getLogger("org.apache.camel.processor.errorhandler.DefaultErrorHandler");
+        java.util.logging.Level previousLevel = camelErrorHandler.getLevel();
+        camelErrorHandler.setLevel(java.util.logging.Level.OFF);
+        try (DefaultCamelContext context = context(replies, kafka)) {
+            context.start();
+
+            assertThrows(
+                    CamelExecutionException.class,
+                    () -> context.createProducerTemplate().requestBodyAndHeaders(
+                            "direct:llm",
+                            "Return truncated JSON.",
+                            Map.of(
+                                    "lane", "low-pass",
+                                    "passType", LlmPassType.SYNTHESIS,
+                                    "responseSchema", "classpath:schemas/framework/text-result-schema.json")));
+
+            await(() -> kafka.sentTopics().contains("llm.dead-letter"));
+            String deadLetterJson = kafka.sentTo("llm.dead-letter").getFirst().getIn().getBody(String.class);
+            assertTrue(deadLetterJson.contains("reason=malformed-structured-output"));
+            assertTrue(deadLetterJson.contains("lane=low-pass"));
+            assertTrue(deadLetterJson.contains("passType=SYNTHESIS"));
+            assertTrue(deadLetterJson.contains("responseChars=18"));
+            assertTrue(deadLetterJson.contains("responseTail"));
+        } finally {
+            camelErrorHandler.setLevel(previousLevel);
+        }
+    }
+
+    @Test
     void handleResponseRouteCompletesRegisteredInFlightReply() throws Exception {
         InFlightReplyManager replies = new InFlightReplyManager();
         StubKafkaComponent kafka = new StubKafkaComponent();
@@ -213,14 +253,14 @@ class LlmRouteFrameworkRouteTest {
             String replyJson = kafka.sentTo("llm.replies.low").getFirst().getIn().getBody(String.class);
             assertTrue(replyJson.contains("\"jobId\":\"" + queued.jobId() + "\""));
             assertTrue(replyJson.contains("\"status\":\"FAILED\""));
-            assertTrue(replyJson.contains("Validation failed for Predicate[body is not null]"));
+            assertTrue(replyJson.contains("LLM response failure: reason=empty-final-content"));
 
             Exchange deadLetterExchange = kafka.sentTo("llm.dead-letter").getFirst();
             String deadLetterJson = deadLetterExchange.getIn().getBody(String.class);
             assertTrue(deadLetterJson.contains("\"jobId\":\"" + queued.jobId() + "\""));
             assertTrue(deadLetterJson.contains("\"laneId\":\"low-pass\""));
             assertTrue(deadLetterJson.contains("\"passType\":\"SYNTHESIS\""));
-            assertTrue(deadLetterJson.contains("Validation failed for Predicate[body is not null]"));
+            assertTrue(deadLetterJson.contains("LLM response failure: reason=empty-final-content"));
             assertTrue(deadLetterExchange.getIn().getHeader(KafkaConstants.KEY) instanceof UUID);
         }
     }
