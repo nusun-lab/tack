@@ -130,7 +130,6 @@ A `ToolProfile` defines the capabilities available during an act. Profiles can:
 - allow or deny MCP tools;
 - allow framework-provided tools such as `sandbox_exec`;
 - add default tool arguments;
-- restrict allowed values for sensitive tool arguments;
 - provide prompt guidance;
 - cap tool-result tokens.
 
@@ -307,19 +306,13 @@ public class SourceControlToolProfile implements ToolProfileProvider {
         return List.of(ToolProfile.builder("source-control")
                 .mcpServer(repository.definition())
                 .allowTools("repository", "pull_request_read", "pull_request_write")
-                .allowArgumentValues(
-                        "repository",
-                        "pull_request_write",
-                        "method",
-                        "create",
-                        "update")
                 .maxResultTokens(6000)
                 .build());
     }
 }
 ```
 
-A server without an allow list exposes its tools except those explicitly denied. Cross-system profiles should generally use explicit allow lists. `allowArgumentValues(...)` can further constrain a multi-action tool after it is allowed, such as exposing pull-request creation/update while rejecting merge. Framework-provided tools follow the same profile boundary; for example, `.allowTool("sandbox", "sandbox_exec")` opts a profile into sandbox execution.
+A server without an allow list exposes its tools except those explicitly denied. Cross-system profiles should generally use explicit allow lists. Framework-provided tools follow the same profile boundary; for example, `.allowTool("sandbox", "sandbox_exec")` opts a profile into sandbox execution.
 
 ## The `tack:` component
 
