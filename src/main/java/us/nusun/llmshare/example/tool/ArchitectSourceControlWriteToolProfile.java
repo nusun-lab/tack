@@ -52,8 +52,14 @@ public class ArchitectSourceControlWriteToolProfile implements ToolProfileProvid
                         - own exactly one system repository plus component repositories justified by architecture
                         - system repository owns gitops/, docs/, and tests/system/
                         - component repositories contain independently deployable application components
+                        - prefer <anchor>-service for a deployable component that implements/exposes APIs
+                        - reserve <anchor>-api for API specification/contract repositories such as OpenAPI or AsyncAPI
                         - use the persistent persona sandbox under /sandbox/repos for content changes and conflict recovery
-                        - initialize new repositories with a minimal durable baseline that states their responsibility
+                        - for an existing repository checkout, resolve it with search_repos when needed and use the returned agent-workspace clone_url exactly; never probe alternate/internal Gitea hosts
+                        - initialize every new repository with a small meaningful baseline commit on main before creating
+                          any feature branch or pull request; the baseline may be a README or required scaffold
+                        - verify main exists as the intended default branch before feature work begins; never allow a
+                          feature branch to become the first/only branch because Gitea may make that branch the default
                         - reuse existing branches/PRs and resolve conflicts in place rather than manufacturing replacements
                         - use the canonical Gitea base https://gitea.apps.cluster.lab.nusun.us
                         - use pull_request_write here for Architect PR create/update/update-branch work; final

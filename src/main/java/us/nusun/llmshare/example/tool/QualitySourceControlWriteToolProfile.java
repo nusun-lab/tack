@@ -33,6 +33,7 @@ public class QualitySourceControlWriteToolProfile implements ToolProfileProvider
                 .allowTool(SANDBOX_SERVER, SANDBOX_EXEC)
                 .allowTools(GiteaMcpServer.ID,
                         "get_me",
+                        "search_repos",
                         "get_repository_tree",
                         "get_dir_contents",
                         "get_file_contents",
@@ -47,10 +48,12 @@ public class QualitySourceControlWriteToolProfile implements ToolProfileProvider
                         - QA source changes belong under system behavior-test/supporting evidence scope; do not edit
                           component implementation to make tests pass
                         - the system repository baseline must already exist and own tests/system/, docs/, and gitops/
+                        - all software-team mission repositories live under Gitea owner agent-workspace
                         - use the persistent persona sandbox under /sandbox/repos for repository content changes
                         - use ordinary git/filesystem/build/test commands for edits, validation, commits, and pushes
                         - reuse an existing checkout/branch/PR whenever possible; clone only when absent
-                        - use the canonical Gitea base https://gitea.apps.cluster.lab.nusun.us
+                        - when a checkout is absent and clone_url is not already verified, resolve the system repository with search_repos and use the matching agent-workspace result's clone_url exactly
+                        - never probe alternate/internal Gitea hosts or reconstruct a remote after a clone failure; the canonical external Gitea host is https://gitea.apps.cluster.lab.nusun.us
                         - do not provision repositories or initialize missing repository architecture; report that to ARCH
                         - do not preflight hypothetical permission blockers; only an actual auth/write failure proves one
                         - Gitea is for repository/branch/commit/PR metadata; Plane owns QA work lifecycle/evidence

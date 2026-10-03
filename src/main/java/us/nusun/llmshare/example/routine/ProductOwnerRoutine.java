@@ -24,7 +24,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
     public RoutineDefinition routine() {
         return RoutineDefinition.builder(ID)
                 .name("Product Owner")
-                .main("Own product Epics from definition through evidence-based acceptance.",
+                .main("Own type:epic product outcomes from definition through evidence-based acceptance.",
                         "direct:example-software-team-product-owner")
                 .subroutine("epic-definition", "Define and prioritize product Epics.", "direct:po-epic-definition")
                 .subroutine("epic-acceptance", "Accept an Epic using current completion evidence.",
@@ -42,7 +42,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         from("direct:example-software-team-product-owner")
                 .routeId("example-software-team-product-owner")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Durable product anchors: mission value, Epic type id, prioritized Epics, active Epic,
+                        Durable product anchors: mission value, type:epic label, prioritized active/ready Epic sets,
                         acceptance intent, QA evidence, open defects, product questions, and viability findings.
                         """))
                 .to("tack:thought-enter?name=po-root&maxTokens=450")
@@ -53,17 +53,22 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                             Choose exactly one highest-value Product Owner focus.
                             - defect-triage: an open QA work:defect Bug needs Epic association, product priority,
                               acceptance clarification, or confirmation that it is not a product defect.
-                            - acceptance: the active Epic has implementation and QA evidence sufficient for a product
+                            - acceptance: one In Progress Epic has implementation and QA evidence sufficient for a product
                               acceptance decision.
-                            - epic-work: required outcomes are missing/weak, no Epic is active, or the ready Epic backlog
-                              is too shallow for foreseeable mission scope.
+                            - epic-work: a Todo/In Progress/Done/Cancelled Epic lacks PO ownership; required outcomes are
+                              missing/weak; a ready Epic lacks usable Given/When/Then acceptance; the ready Epic backlog is
+                              too shallow; or fewer than three Epics are In Progress and a Todo Epic has PM-prepared Story
+                              coverage plus current downstream capacity to begin delivery.
                             - qa-feedback: QA raised an acceptance ambiguity or evidence question requiring product judgment.
                             - viability: evidence suggests product scope/value or mission interpretation needs Director input.
                             - coordination: another fresh product question needs a concise response.
-                            - wait: none of the above is useful now.
-                            Normally keep exactly one Epic In Progress. Choose exactly one value.
+                            - complete: all required mission outcomes are represented by type:epic work items, every
+                              required Epic is accepted Done, and no unresolved product/defect/viability question remains.
+                            - wait: the mission is not complete and none of the other focuses is useful now.
+                            Keep the In Progress Epic set shallow, normally 2-3, while maintaining a deeper Todo runway of
+                            fully defined product-ready Epics. Choose exactly one value.
                             """))
-                    .to("tack:decide?id=po-focus&choices=defect-triage,acceptance,epic-work,qa-feedback,viability,coordination,wait")
+                    .to("tack:decide?id=po-focus&choices=defect-triage,acceptance,epic-work,qa-feedback,viability,coordination,complete,wait")
                     .toD("direct:po-focus-${exchangeProperty.decision.po-focus.result}")
                 .end()
                 .end()
@@ -72,10 +77,12 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         from("direct:po-orientation")
                 .routeId("po-orientation")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Read the smallest current-mission slice needed to rank Product Owner focus. Resolve/read the
-                        project Epic work-item type and identify typed Epics using the exact resolved type id.
-                        Capture: active In Progress Epic count; ready Todo Epic depth; missing mission outcomes; current
-                        active Epic acceptance intent; implementation/test child progress when relevant; open
+                        Read the smallest current-mission slice needed to rank Product Owner focus. Identify product
+                        outcomes only from the attached type:epic label; never infer an epic from title, hierarchy, state,
+                        or ownership. Capture: active In Progress Epic count; ready Todo Epic depth; missing mission
+                        outcomes; Given/When/Then acceptance for selected active/ready Epics; ownership of every
+                        non-Backlog Epic; whether each Todo Epic has usable Gherkin and implementation Story coverage;
+                        implementation/test child progress when relevant; open
                         work:defect Bugs; QA evidence/ambiguity; one fresh product exchange; one viability concern.
                         A sparse work-item list may omit parent; retrieve only a selected child when its Epic parent is
                         needed. Report observations only. Do not mutate.
@@ -84,22 +91,59 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
 
         from("direct:po-focus-epic-work")
                 .routeId("po-focus-epic-work")
-                .to("direct:po-epic-definition");
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Focused product work: maintain complete Epic coverage, usable Given/When/Then acceptance, a shallow
+                        2-3 Epic active set, and a deeper Todo runway that PM can pre-decompose without activating.
+                        """))
+                .to("tack:thought-enter?name=po-epic-work-focus&maxTokens=500")
+                .to("direct:po-epic-work-loop")
+                .to("tack:thought-exit?name=po-epic-work-focus")
+                .to("direct:po-product-awareness");
+
+        from("direct:po-epic-work-loop")
+                .routeId("po-epic-work-loop")
+                .setProperty("poEpicWorkIterations", constant(0))
+                .setProperty("poEpicWorkContinue", constant(true))
+                .loopDoWhile(simple("${exchangeProperty.poEpicWorkContinue} == true && ${exchangeProperty.poEpicWorkIterations} < 6"))
+                    .setProperty("poEpicWorkIterations", simple("${exchangeProperty.poEpicWorkIterations++}"))
+                    .setProperty("poEpicWorkContinue", constant(false))
+                    .to("direct:po-epic-definition")
+                    .choice()
+                        .when(exchangeProperty("act.po-epic-work.durableProgress").isEqualTo(true))
+                            .setProperty("poEpicWorkContinue", constant(true))
+                    .end()
+                .end();
 
         from("direct:po-epic-definition")
                 .routeId("po-epic-definition")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Make one coherent Epic lifecycle advance. Resolve the Epic work-item type for the mission project.
-                        Product outcomes are work items of that exact type. Create/refine only independently valuable
-                        outcomes supported by the mission, with observable acceptance behavior and useful product priority.
-                        Keep future outcomes Backlog until sufficiently defined; use Todo for ready product work.
-                        Normally keep exactly one Epic In Progress. If none is active, promote the highest-value ready
-                        Todo Epic to In Progress. Start a second Epic only when the current one is externally blocked and
-                        parallel product work is explicitly justified in evidence. Maintain a small ready backlog without
-                        expanding active WIP. Do not create Story implementation work, Task test work, or repair ownership.
+                        Make one coherent Epic lifecycle advance. Ensure the type:epic label exists. Product outcomes are
+                        top-level Plane work items carrying that label. Create/refine only independently valuable outcomes
+                        supported by the mission, with useful product priority.
+
+                        Epic lifecycle semantics are strict:
+                        - Backlog: product outcome exists but is not yet sufficiently defined.
+                        - Todo: product-ready and delivery-ready for planning, with usable Given/When/Then acceptance.
+                        - In Progress: downstream delivery is actively consuming the Epic.
+                        - Done: Product Owner accepted the promised behavior.
+
+                        Every Epic must contain concrete externally observable Given/When/Then acceptance before Todo or
+                        In Progress. Prose may add context but never replaces Gherkin. Any Epic outside Backlog must be
+                        assigned to the active Product Owner. Backlog Epics may remain unassigned.
+
+                        Maintain a deeper Todo runway, but normally no more than three Epics In Progress. Promotion from
+                        Todo to In Progress requires fewer than three active Epics, reasonable implementation Story
+                        coverage already prepared by PM, and current downstream capacity that can consume the Epic.
+                        Product readiness alone never activates an Epic. If three Epics are already In Progress, continue
+                        refining/preparing Todo Epics without activating another. A defect-driven reopen of a previously
+                        Done Epic is an explicit exception and may temporarily exceed the normal active limit.
+
+                        Attach type:epic explicitly to every product outcome you create or classify.
+                        Define product behavior only; do not prescribe implementation mechanics in Gherkin. Do not create
+                        or sequence type:story implementation work, assign engineers, create type:task test work, or own
+                        repair routing. Delivery gaps may be surfaced to PM, but PM owns implementation topology.
                         """))
-                .to("tack:act?id=po-epic-work&toolProfile=" + ProductOwnershipToolProfile.ID)
-                .to("direct:po-product-awareness");
+                .to("tack:act?id=po-epic-work&toolProfile=" + ProductOwnershipToolProfile.ID);
 
         from("direct:po-focus-defect-triage")
                 .routeId("po-focus-defect-triage")
@@ -122,19 +166,26 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
 
         from("direct:po-focus-acceptance")
                 .routeId("po-focus-acceptance")
-                .to("direct:po-epic-acceptance");
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Focused acceptance for one active Epic: exact Gherkin, terminal delivery/test evidence, open
+                        defects, QA behavioral proof, product gaps, and the final Epic lifecycle decision.
+                        """))
+                .to("tack:thought-enter?name=po-acceptance-focus&maxTokens=500")
+                .to("direct:po-epic-acceptance")
+                .to("tack:thought-exit?name=po-acceptance-focus")
+                .to("direct:po-product-awareness");
 
         from("direct:po-epic-acceptance")
                 .routeId("po-epic-acceptance")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Decide acceptance for the one active Epic. Read the Epic plus only its child work/evidence needed
-                        for the decision. Move the Epic to Done only when its promised behavior is demonstrated by current
+                        Decide acceptance for one selected active Epic against its current PO-authored Given/When/Then
+                        scenarios. Read the Epic plus only its child work/evidence needed for the decision. Move the Epic
+                        to Done only when its promised behavior is demonstrated by current
                         QA evidence, required delivery/test children are terminal, and no relevant work:defect Bug remains
                         open. A merged PR alone is not acceptance. If evidence is insufficient, keep the Epic In Progress
                         and record the exact missing product/evidence condition without creating implementation work.
                         """))
-                .to("tack:act?id=po-epic-acceptance&toolProfile=" + ProductOwnershipToolProfile.ID)
-                .to("direct:po-product-awareness");
+                .to("tack:act?id=po-epic-acceptance&toolProfile=" + ProductOwnershipToolProfile.ID);
 
         from("direct:po-focus-qa-feedback")
                 .routeId("po-focus-qa-feedback")
@@ -163,23 +214,19 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         from("direct:po-product-awareness")
                 .routeId("po-product-awareness")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Send/reply once only when an Epic lifecycle change, defect triage, acceptance decision, product
-                        clarification, or viability question will help PM, QA, Architect, Developer, or Director act
-                        sooner. Avoid generic status.
+                        Use the current-mission shared channel. Send/reply once only when an Epic lifecycle change,
+                        defect triage, acceptance decision, product clarification, or viability question will help PM, QA,
+                        Architect, Developer, or Director act sooner. Missing channel access is onboarding work, not a
+                        reason to use a DM. Avoid generic status.
                         """))
                 .to("tack:act?id=po-product-awareness&toolProfile=" + TeamChatToolProfile.ID);
 
+        from("direct:po-focus-complete")
+                .routeId("po-focus-complete")
+                .setProperty("decision.product-owner-mission-complete.result", constant("yes"));
+
         from("direct:po-focus-wait")
                 .routeId("po-focus-wait")
-                .setHeader(TackHeaders.PROMPT, constant("""
-                        Is Product Owner work complete? Answer yes only when all required mission outcomes are represented
-                        by typed Epics, every required Epic is accepted Done, and no unresolved product/defect/viability
-                        question blocks mission completion.
-                        """))
-                .to("tack:decide?id=product-owner-mission-complete")
-                .choice()
-                    .when(exchangeProperty("decision.product-owner-mission-complete.result").isNotEqualTo("yes"))
-                        .delay(120000)
-                .end();
+                .delay(120000);
     }
 }

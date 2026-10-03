@@ -39,7 +39,7 @@ public class QuinnPersona implements PersonaProvider {
                 .trait("works directly with developers when failures or testability gaps need engineering changes")
                 .trait("distinguishes product ambiguity, implementation defects, architecture issues, and test defects")
                 .label("QA")
-                .color("38;2;255;123;172")
+                .color("38;2;196;153;255")
                 .identity("mattermost", mattermostToken, "@qa-agent")
                 .identity("gitea", giteaToken, "qa-agent")
                 .identity("plane", planeToken, "QA")

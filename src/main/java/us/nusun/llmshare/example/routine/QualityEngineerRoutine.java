@@ -44,8 +44,9 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
         from("direct:example-software-team-quality-engineer")
                 .routeId("example-software-team-quality-engineer")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Durable QA anchors: active Epic/acceptance intent, Task and Bug type ids, work:test Tasks,
-                        system repository/test paths, execution evidence, work:defect Bugs, ambiguities, and blockers.
+                        Durable QA anchors: active type:epic set/acceptance intent, type:task + work:test items,
+                        system repository/test paths, execution evidence, type:bug + work:defect items, ambiguities,
+                        and blockers.
                         """))
                 .to("tack:thought-enter?name=qa-root&maxTokens=450")
                 .setProperty("decision.qa-mission-complete.result", constant("no"))
@@ -57,15 +58,18 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
                             - defect-feedback: current test evidence demonstrates a new product behavior failure that is not
                               already represented by an open defect.
                             - test-engineering: assigned Todo/In Progress work:test has executable test engineering/evidence work.
-                            - test-planning: the active Epic lacks sufficient work:test coverage and QA has capacity for one
-                              additional test unit without expanding active WIP.
-                            - epic-evidence: active Epic implementation/test work is sufficiently settled to publish a current
-                              acceptance-evidence summary for PO.
+                            - test-planning: a non-Backlog work:test Task lacks QA ownership, or active Epics lack
+                              sufficient work:test coverage and QA has room to maintain roughly 2-3 active and 2-3 queued
+                              executable test units.
+                            - epic-evidence: one active Epic's implementation/test work is sufficiently settled to publish
+                              a current acceptance-evidence summary for PO.
                             - coordination: a fresh PO/DEV/ARCH/PM question needs QA participation.
-                            - wait: none of the above is useful now.
+                            - complete: every required product Epic is terminal, no QA test engineering/evidence remains,
+                              no repaired defect awaits retest, and no unresolved QA finding remains.
+                            - wait: the mission is not complete and none of the other focuses is useful now.
                             Prefer durable automated evidence over manual review. Choose exactly one value.
                             """))
-                    .to("tack:decide?id=qa-focus&choices=defect-retest,defect-feedback,test-engineering,test-planning,epic-evidence,coordination,wait")
+                    .to("tack:decide?id=qa-focus&choices=defect-retest,defect-feedback,test-engineering,test-planning,epic-evidence,coordination,complete,wait")
                     .toD("direct:qa-focus-${exchangeProperty.decision.qa-focus.result}")
                 .end()
                 .end()
@@ -74,8 +78,9 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
         from("direct:qa-orientation")
                 .routeId("qa-orientation")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Read the smallest current-mission slice needed to rank QA focus. Identify the typed Epic currently
-                        In Progress and its acceptance intent; existing Task children carrying work:test; assigned QA
+                        Read the smallest current-mission slice needed to rank QA focus. Identify the type:epic items
+                        currently In Progress and their PO-authored Given/When/Then acceptance; existing children carrying
+                        type:task + work:test; assigned QA
                         lifecycle; relevant implementation progress; system repository and behavior-test paths; newest
                         execution evidence; open work:defect Bugs; merged-fix evidence requiring retest; ambiguity or
                         testability blockers; one fresh QA-related exchange. Retrieve selected children when parent/context
@@ -87,27 +92,41 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
         from("direct:qa-focus-test-planning")
                 .routeId("qa-focus-test-planning")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Create/refine one missing QA test-engineering unit beneath the active Epic. Resolve the Task work-item
-                        type and ensure work:test exists. Use a Task child with parent=<Epic UUID>, exact Task type id, and
-                        work:test label. Describe the observable acceptance behavior/evidence it must prove without
-                        prescribing product implementation. Assign it to yourself. Maintain low QA WIP: normally
-                        one work:test Task In Progress and at most one executable Todo queued ahead. Use Todo only when
-                        that queue has capacity; otherwise keep additional foreseeable coverage Backlog with the concrete
-                        dependency. Avoid duplicate coverage and oversized test tasks.
+                        First repair any classification-verified non-Backlog type:task + work:test item that lacks QA
+                        ownership by assigning it to yourself without changing lifecycle. Otherwise create/refine one
+                        missing QA test-engineering unit beneath one selected In Progress Epic, derived directly from its
+                        PO-authored Given/When/Then acceptance. Ensure type:task and work:test labels exist. Use a child
+                        with parent=<Epic UUID> and both labels. Describe the observable scenario/evidence it must prove
+                        without prescribing product implementation. If acceptance is ambiguous or incomplete, return the
+                        exact product question to PO instead of inventing behavior. Assign it to yourself. Maintain a
+                        practical QA flow buffer: roughly 2-3 work:test Tasks In Progress and 2-3 executable Todo tasks
+                        queued ahead when enough independent evidence work exists. A Task waiting only on deployment,
+                        integration, or another role does not consume active QA execution capacity. These are flow targets,
+                        not hard ceilings. Keep truly dependency-blocked foreseeable coverage Backlog. Avoid duplicate
+                        coverage and oversized test tasks.
                         """))
                 .to("tack:act?id=qa-test-planning&toolProfile=" + QualityManagementToolProfile.ID)
                 .to("direct:qa-awareness");
 
         from("direct:qa-focus-test-engineering")
                 .routeId("qa-focus-test-engineering")
-                .to("direct:qa-test-engineering");
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        One QA test-engineering unit: exact Plane Task classification/owner, Epic Gherkin, system-repo
+                        locator, branch/PR, current test evidence, execution limits, and concrete blocker.
+                        """))
+                .to("tack:thought-enter?name=qa-test-engineering-focus&maxTokens=500")
+                .to("direct:qa-test-engineering")
+                .to("tack:thought-exit?name=qa-test-engineering-focus")
+                .to("direct:qa-awareness");
 
         from("direct:qa-test-engineering")
                 .routeId("qa-test-engineering")
                 .setProperty("decision.qa-has-test-work.result", constant("no"))
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Select exactly one work:test Task assigned to you under the active Epic. Prefer actionable In Progress;
-                        otherwise claim assigned Todo -> In Progress. Verify exact Task classification, Epic parent/acceptance,
+                        Select exactly one work:test Task assigned to you under an In Progress Epic. Before lifecycle mutation,
+                        verify current attached labels include type:task + work:test and that QA remains the assignee.
+                        Unknown classification means do not mutate. Prefer actionable In Progress; otherwise claim assigned
+                        Todo -> In Progress. Verify exact Task classification, Epic parent/acceptance,
                         system repository, test target, and dependencies. If no valid actionable Task exists, make no mutation.
                         """))
                 .to("tack:act?id=qa-test-work-select&toolProfile=" + QualityManagementToolProfile.ID)
@@ -121,8 +140,9 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
                         .setHeader(TackHeaders.PROMPT, constant("""
                                 Advance exactly one coherent QA engineering slice in the existing system repository.
                                 Add/improve durable automated system behavior tests when coverage is missing, or execute
-                                existing tests when implementation is ready. Use the selected Task's Epic acceptance as
-                                the behavioral target, not implementation details. Reuse the same QA branch/PR when
+                                existing tests when implementation is ready. Use the selected Task's Epic
+                                Given/When/Then acceptance as the behavioral target, not implementation details. Reuse the
+                                same QA branch/PR when
                                 continuing work. Validate what can actually run and preserve exact pass/fail/limitation
                                 evidence. Do not create repositories.
                                 """))
@@ -135,15 +155,14 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
                                 execution evidence are complete. Do not move the parent Epic.
                                 """))
                         .to("tack:act?id=qa-test-evidence-update&toolProfile=" + QualityManagementToolProfile.ID)
-                        .to("direct:qa-awareness")
                 .end();
 
         from("direct:qa-focus-defect-feedback")
                 .routeId("qa-focus-defect-feedback")
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Classify one current failed behavior using evidence. If it is a reproducible product behavior
-                        failure and no equivalent open defect exists, resolve the Bug work-item type, ensure work:defect
-                        exists, and create one unparented Bug in Backlog with work:defect. Include expected behavior,
+                        failure and no equivalent open defect exists, ensure type:bug and work:defect labels exist, and
+                        create one unparented Backlog work item carrying both labels. Include expected behavior,
                         actual behavior, reproduction/test evidence, relevant test Task/commit/PR, observed scope, and
                         the candidate Epic context as evidence only. Leave parent unset, product priority as none, and
                         repair unassigned so PO owns Epic classification/priority before PM routing.
@@ -155,7 +174,14 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
 
         from("direct:qa-focus-defect-retest")
                 .routeId("qa-focus-defect-retest")
-                .to("direct:qa-defect-retest");
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        One defect retest: exact Bug classification/owner, Epic acceptance, original failure evidence,
+                        merged fix PR/commit, regression test evidence, and current retest result.
+                        """))
+                .to("tack:thought-enter?name=qa-defect-retest-focus&maxTokens=500")
+                .to("direct:qa-defect-retest")
+                .to("tack:thought-exit?name=qa-defect-retest-focus")
+                .to("direct:qa-awareness");
 
         from("direct:qa-defect-retest")
                 .routeId("qa-defect-retest")
@@ -188,8 +214,7 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
                         If no, keep it In Progress and record the current failure/limitation or pending QA regression-test
                         PR for PM, Architect, and the assigned engineer.
                         """))
-                .to("tack:act?id=qa-defect-retest-update&toolProfile=" + QualityManagementToolProfile.ID)
-                .to("direct:qa-awareness");
+                .to("tack:act?id=qa-defect-retest-update&toolProfile=" + QualityManagementToolProfile.ID);
 
         from("direct:qa-focus-epic-evidence")
                 .routeId("qa-focus-epic-evidence")
@@ -198,7 +223,7 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
         from("direct:qa-epic-evidence")
                 .routeId("qa-epic-evidence")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Assess the active Epic against its explicit acceptance behavior using current integrated
+                        Assess the active Epic against its PO-authored Given/When/Then acceptance using current integrated
                         implementation plus work:test/system behavior evidence. Read only child work/evidence needed.
                         Add/update one concise evidence comment on the Epic: behaviors proven, tests/executions supporting
                         them, unresolved gaps, and open defects. Do not redefine acceptance and never move the Epic Done.
@@ -214,24 +239,20 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
         from("direct:qa-awareness")
                 .routeId("qa-awareness")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Send/reply once only when QA evidence, new defect, retest result, acceptance ambiguity, testability
-                        issue, or validation limitation will help PO, PM, Architect, or Developer act sooner.
-                        Avoid generic status.
+                        Use the current-mission shared channel for ordinary team coordination. Send/reply once only when QA
+                        evidence, new defect, retest result, acceptance ambiguity, testability issue, or validation
+                        limitation will help PO, PM, Architect, or Developer act sooner. QA reports evidence; it does not
+                        create merge-approval rituals or require a "green" chat phrase. Missing channel access is onboarding
+                        work, not a reason to use a DM. Avoid generic status.
                         """))
                 .to("tack:act?id=qa-awareness&toolProfile=" + TeamChatToolProfile.ID);
 
+        from("direct:qa-focus-complete")
+                .routeId("qa-focus-complete")
+                .setProperty("decision.qa-mission-complete.result", constant("yes"));
+
         from("direct:qa-focus-wait")
                 .routeId("qa-focus-wait")
-                .setHeader(TackHeaders.PROMPT, constant("""
-                        May the QA routine end for this mission? Answer yes only when every required product Epic is
-                        terminal, no QA test engineering/evidence remains, no repaired defect awaits retest, and no
-                        unresolved QA finding remains. Waiting for implementation while an Epic is nonterminal is idle
-                        time, not routine completion; remain active for early test work, retest, and acceptance evidence.
-                        """))
-                .to("tack:decide?id=qa-mission-complete")
-                .choice()
-                    .when(exchangeProperty("decision.qa-mission-complete.result").isNotEqualTo("yes"))
-                        .delay(120000)
-                .end();
+                .delay(120000);
     }
 }

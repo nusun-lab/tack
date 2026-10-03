@@ -33,6 +33,7 @@ public class SourceControlWriteToolProfile implements ToolProfileProvider {
                 .allowTool(SANDBOX_SERVER, SANDBOX_EXEC)
                 .allowTools(GiteaMcpServer.ID,
                         "get_me",
+                        "search_repos",
                         "get_repository_tree",
                         "get_dir_contents",
                         "get_file_contents",
@@ -45,16 +46,19 @@ public class SourceControlWriteToolProfile implements ToolProfileProvider {
                 .promptGuidance("""
                         - this profile is for Developer changes in an existing Architect-established assigned component
                           repository; it cannot provision or bootstrap repository architecture
+                        - all software-team mission repositories live under Gitea owner agent-workspace
                         - use the persistent persona sandbox under /sandbox/repos for repository content changes
                         - use ordinary git/filesystem/build/test commands for edits, validation, commits, and pushes
                         - reuse an existing checkout/branch/PR whenever possible; clone only when absent
-                        - use the canonical Gitea base https://gitea.apps.cluster.lab.nusun.us
+                        - when a checkout is absent and clone_url is not already verified, resolve the assigned repository with search_repos and use the matching agent-workspace result's clone_url exactly
+                        - never probe alternate/internal Gitea hosts or reconstruct a remote after a clone failure; the canonical external Gitea host is https://gitea.apps.cluster.lab.nusun.us
                         - the assigned component repository must already have the Architect-established baseline; this
                           profile must not initialize or provision an empty repository
                         - do not preflight hypothetical permission blockers; only an actual auth/write failure proves one
                         - Gitea is for repository/branch/commit/PR metadata; Plane owns delivery planning/lifecycle
-                        - use pull_request_write for Developer PR create/update work only; integration actions
-                          such as merge belong to Architect
+                        - use pull_request_write for Developer PR create/update work; Architect is the general integration
+                          owner, but DEV may reciprocally merge an Architect-authored PR when the Developer routine
+                          explicitly selects it for integration
                         - validate directly in the sandbox; Gitea Actions/CI are not enabled in this environment
                         - never claim source changes, validation, commits, or pushes without direct evidence
                         - do not use Gitea issues, labels, milestones, wiki, releases, packages, or time tracking

@@ -39,7 +39,7 @@ public class AveryPersona implements PersonaProvider {
                 .trait("keeps system boundaries and repository responsibilities explicit")
                 .trait("works closely with developers, owns assigned Story lifecycle, and contributes implementation when that advances flow")
                 .label("ARCH")
-                .color("38;2;196;153;255")
+                .color("38;2;255;123;172")
                 .identity("mattermost", mattermostToken, "@architect-agent")
                 .identity("gitea", giteaToken, "architect-agent")
                 .identity("plane", planeToken, "ARCH")

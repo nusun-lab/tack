@@ -58,14 +58,18 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
                               inconsistent with the current architecture.
                             - reconcile: an ARCH-assigned work:implementation Story remains In Progress after its linked
                               PR is verified merged; Architect owns its transition to Done.
-                            - integration: an open system/component PR can be merged, needs conflict recovery, or needs a
-                              small integration adjustment.
-                            - implementation: an assigned ARCH work:implementation Story or work:defect Bug is actionable.
+                            - integration: any current-mission open PR can be safely merged, needs conflict recovery, or
+                              needs a small integration adjustment. Architect owns and drains the whole integration queue,
+                              including Architect-authored PRs. Safe integration work outranks new ARCH implementation work.
+                            - implementation: an assigned, classification-verified ARCH work:implementation Story or
+                              work:defect Bug is actionable and no safe integration candidate is waiting.
                             - coordination: a fresh architecture/product/QA/developer question needs Architect judgment.
-                            - wait: none of the above is useful now.
+                            - complete: every required product Epic is terminal, the repository model is established, no
+                              ARCH-assigned engineering or integration remains, and no architecture blocker remains.
+                            - wait: the mission is not complete and none of the other focuses is useful now.
                             Prefer concrete implementation/integration over passive review. Choose exactly one value.
                             """))
-                    .to("tack:decide?id=architect-focus&choices=repository-architecture,reconcile,integration,implementation,coordination,wait")
+                    .to("tack:decide?id=architect-focus&choices=repository-architecture,reconcile,integration,implementation,coordination,complete,wait")
                     .toD("direct:architect-focus-${exchangeProperty.decision.architect-focus.result}")
                 .end()
                 .end()
@@ -74,12 +78,12 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:architect-orientation")
                 .routeId("architect-orientation")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Read the smallest current-mission slice needed to rank Architect focus. Identify exactly one
-                        system repository and the component repository set documented by current architecture; active
-                        Epic context; ARCH-assigned work:implementation/work:defect; open PRs from system/components;
-                        mergeability/conflicts when relevant; one cross-repo blocker; one fresh architecture exchange.
-                        The system repo owns GitOps, system docs, and system behavior tests. Component repos contain
-                        deployable application components. Report observations only. Do not mutate.
+                        Read only enough fresh current-mission state to rank Architect focus. Reuse the verified
+                        agent-workspace repository map already in thought. Check: whether repository architecture is
+                        still missing; any ARCH-assigned classification-verified source work needing reconciliation;
+                        current open PRs across the known mission repos regardless of author; and actionable ARCH-assigned
+                        Story/Bug work. Do not manufacture a blocker or reread chat/repository structure when existing
+                        anchors remain valid. Integration candidates outrank new implementation. Report only; do not mutate.
                         """))
                 .to("tack:act?id=architect-orientation&toolProfile=" + WorkspaceReadonlyToolProfile.ID);
 
@@ -90,13 +94,18 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:architect-repository-architecture")
                 .routeId("architect-repository-architecture")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Make one concrete repository-architecture advance. Reuse current mission repositories when their
+                        Make one concrete repository-architecture advance. All mission repositories belong under the
+                        agent-workspace Gitea organization; repositories in a persona's personal namespace are not valid
+                        mission repositories. Reuse current mission repositories under agent-workspace when their
                         responsibility is already clear. Otherwise provision only what the architecture requires:
                         exactly one system repository and the justified component repository set. Establish the system
                         repository baseline with README.md, gitops/README.md, docs/architecture.md, and
                         tests/system/README.md so GitOps, system documentation, and behavioral-test ownership are explicit.
                         Document the component repository map and boundaries in system docs. Initialize component repos
                         with a minimal README/buildable baseline appropriate to the architecture, not speculative features.
+                        Prefer <anchor>-service for deployable components that implement/expose APIs. Reserve <anchor>-api
+                        for repositories whose primary responsibility is an API specification/contract such as OpenAPI or
+                        AsyncAPI, so runtime services do not collide with future API-spec golden paths.
                         Do not create a separate docs or QA repository. Avoid duplicate/near-duplicate repositories.
                         """))
                 .to("tack:act?id=architect-repository-step&toolProfile="
@@ -116,16 +125,28 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
 
         from("direct:architect-focus-implementation")
                 .routeId("architect-focus-implementation")
-                .to("direct:architect-implementation");
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        One architecture-owned engineering unit: exact Plane id/classification/owner, Epic acceptance,
+                        repository locator, branch/PR, dependency state, validation, and current blocker.
+                        """))
+                .to("tack:thought-enter?name=architect-implementation-focus&maxTokens=500")
+                .to("direct:architect-implementation")
+                .to("tack:thought-exit?name=architect-implementation-focus")
+                .to("direct:architect-awareness");
 
         from("direct:architect-implementation")
                 .routeId("architect-implementation")
                 .setProperty("decision.architect-has-work.result", constant("no"))
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Select exactly one ARCH-assigned actionable work:implementation Story or work:defect Bug.
-                        Prefer assigned In Progress; otherwise claim assigned Todo -> In Progress. Verify classification,
-                        Epic parent/acceptance, repository locator, dependencies, and expected validation. Never self-assign
-                        unowned backlog work. Ordinary component stories assigned to DEV remain DEV-owned.
+                        Select exactly one ARCH-assigned actionable engineering unit. Before any lifecycle mutation,
+                        verify attached labels in current evidence: type:story + work:implementation for delivery or
+                        type:bug + work:defect for repair. Unknown/missing classification means do not mutate. A type:epic
+                        or type:task is never claimable ARCH source work. Prefer assigned In Progress; otherwise claim a
+                        classification-verified assigned Todo -> In Progress. For a work:implementation Story, verify its
+                        parent Epic is In Progress before claiming it; Todo/Backlog Epic children are prepared future work.
+                        Verify Epic parent/acceptance, exact agent-workspace repository locator, dependencies, and expected
+                        validation. Never self-assign
+                        unowned Backlog work. Ordinary component Stories assigned to DEV remain DEV-owned.
                         """))
                 .to("tack:act?id=architect-work-select&toolProfile=" + EngineeringWorkToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
@@ -151,60 +172,74 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
                                 through merge; QA retest closes the Bug.
                                 """))
                         .to("tack:act?id=architect-work-evidence&toolProfile=" + EngineeringWorkToolProfile.ID)
-                        .to("direct:architect-awareness")
                 .end();
 
         from("direct:architect-focus-integration")
                 .routeId("architect-focus-integration")
-                .to("direct:architect-integration");
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
+                        Drain the current integration queue. Preserve exact selected Gitea owner/repo/PR, linked Plane
+                        work, head/base, mergeability, validation evidence, and any concrete blocker across selection,
+                        conflict recovery, and final merge. Exact locators are the most important memory in this scope.
+                        """))
+                .to("tack:thought-enter?name=architect-integration-focus&maxTokens=550")
+                .to("direct:architect-integration-focus")
+                .to("tack:thought-exit?name=architect-integration-focus")
+                .to("direct:architect-awareness");
+
+        from("direct:architect-integration-focus")
+                .routeId("architect-integration-focus")
+                .setProperty("architectIntegrationIterations", constant(0))
+                .setProperty("architectIntegrationContinue", constant(true))
+                .loopDoWhile(simple("${exchangeProperty.architectIntegrationContinue} == true && ${exchangeProperty.architectIntegrationIterations} < 4"))
+                    .setProperty("architectIntegrationIterations", simple("${exchangeProperty.architectIntegrationIterations++}"))
+                    .setProperty("architectIntegrationContinue", constant(false))
+                    .to("direct:architect-integration")
+                    .choice()
+                        .when(simple("${exchangeProperty.act.architect-integration-batch.durableProgress} == true || "
+                                + "${exchangeProperty.act.architect-conflict-recovery.durableProgress} == true"))
+                            .setProperty("architectIntegrationContinue", constant(true))
+                    .end()
+                .end();
 
         from("direct:architect-integration")
                 .routeId("architect-integration")
-                .setProperty("decision.architect-has-integration-candidate.result", constant("no"))
                 .setProperty("decision.architect-needs-conflict-recovery.result", constant("no"))
+                .setProperty("act.architect-integration-batch.durableProgress", constant(false))
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Select one current open PR tied to active mission work that is a useful integration candidate.
-                        Capture exact repo/PR, linked Story/Bug/work:test Task, Epic acceptance scope, head/base,
-                        validation evidence, mergeability/conflict state, and current blocker/review evidence. QA test-code
-                        PRs in the system repository are first-class integration candidates. Prefer oldest safe integration
-                        WIP before newer work. Do not require approval phrases or chat handoffs.
+                        Drain the current open integration queue across the known current-mission repositories in this act.
+                        Include DEV-, QA-, and Architect-authored PRs. Process oldest safe PRs first, but never let an unsafe,
+                        conflicted, stale, or ambiguous PR block independent safe PRs behind it.
+
+                        For each candidate, fresh-read the exact owner/repo/PR and linked Plane work needed to verify:
+                        intended base, current head/base, mergeability/conflicts, credible validation, acceptance scope,
+                        and absence of a current product/QA blocker. If safe, merge it immediately and continue to the next
+                        candidate in the same act. If another candidate targets the same repository after a merge, refresh
+                        its PR/base state before deciding. QA test-code PRs in the system repository are first-class.
+
+                        Skip unsafe candidates and record concise blocker evidence. If one remaining candidate needs a
+                        concrete source-level conflict recovery or small integration patch that does not require product
+                        judgment, preserve its exact owner/repo/PR locator for the follow-up recovery decision. Do not
+                        require Director approval, QA "green", review-ready phrases, or chat handoffs. Continue until no
+                        immediately safe candidate remains or the tool execution budget is reached.
                         """))
-                .to("tack:act?id=architect-integration-select&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
+                .to("tack:act?id=architect-integration-batch&toolProfile=" + IntegrationToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Is one exact open PR selected with enough linked work/acceptance context for integration handling?
-                        Answer yes or no.
+                        Did the batch leave a current PR with a concrete source-level conflict or small integration patch
+                        that Architect can safely repair without a product/QA judgment? Answer yes only when the batch
+                        preserved an exact owner/repo/PR locator and concrete recovery evidence.
                         """))
-                .to("tack:decide?id=architect-has-integration-candidate")
+                .to("tack:decide?id=architect-needs-conflict-recovery")
                 .choice()
-                    .when(exchangeProperty("decision.architect-has-integration-candidate.result").isEqualTo("yes"))
+                    .when(exchangeProperty("decision.architect-needs-conflict-recovery.result").isEqualTo("yes"))
                         .setHeader(TackHeaders.PROMPT, constant("""
-                                Does the selected PR require source-level conflict recovery or a small integration patch
-                                before it can receive a final merge check? Answer yes only for current concrete source
-                                evidence, not speculation.
+                                Recover only the exact preserved PR against its current intended base. Resolve the concrete
+                                conflict/integration incompatibility, preserve product behavior, rerun relevant validation,
+                                commit/push to the same branch, and reuse the same PR. If resolution requires product
+                                judgment, do not guess; stop with the exact question for PO. The next integration batch
+                                will fresh-read and merge it when safe.
                                 """))
-                        .to("tack:decide?id=architect-needs-conflict-recovery")
-                        .choice()
-                            .when(exchangeProperty("decision.architect-needs-conflict-recovery.result").isEqualTo("yes"))
-                                .setHeader(TackHeaders.PROMPT, constant("""
-                                        Recover the existing selected branch/PR against the current intended base.
-                                        Resolve only the concrete conflicts/integration incompatibility, preserve product
-                                        behavior, rerun relevant validation, commit/push to the same branch, and reuse the
-                                        same PR. If resolution requires a product decision, do not guess; stop with the
-                                        exact question for PO.
-                                        """))
-                                .to("tack:act?id=architect-conflict-recovery&toolProfile="
-                                        + ArchitectSourceControlWriteToolProfile.ID)
-                        .end()
-                        .setHeader(TackHeaders.PROMPT, constant("""
-                                Perform the final merge decision for the selected PR using fresh current evidence.
-                                Merge only when the PR is still open, targets the intended base, is mergeable/non-conflicted,
-                                validation is credible for linked work, acceptance scope is satisfied, and no current
-                                blocker/product ambiguity contradicts merge. For work:test, validate that the change belongs
-                                in the system repository and advances the linked Epic evidence without redefining product
-                                intent. Never require a magic PM/QA approval comment. If unsafe or ambiguous, do not merge.
-                                """))
-                        .to("tack:act?id=architect-final-integration&toolProfile=" + IntegrationToolProfile.ID)
-                        .to("direct:architect-awareness")
+                        .to("tack:act?id=architect-conflict-recovery&toolProfile="
+                                + ArchitectSourceControlWriteToolProfile.ID)
                 .end();
 
         from("direct:architect-focus-coordination")
@@ -214,24 +249,20 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:architect-awareness")
                 .routeId("architect-awareness")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Send/reply once only when repository architecture, integration result, conflict, product question,
-                        QA finding, or DEV unblock will help another routine act sooner. Avoid generic status.
+                        Use the current-mission shared channel for ordinary team coordination. Send/reply once only when
+                        repository architecture, integration result, conflict, product question, QA finding, or DEV unblock
+                        will help another routine act sooner. Chat is awareness only and never establishes merge authority
+                        or an approval gate. Missing channel access is onboarding work, not a reason
+                        to use a DM. Avoid generic status.
                         """))
                 .to("tack:act?id=architect-awareness&toolProfile=" + TeamChatToolProfile.ID);
 
+        from("direct:architect-focus-complete")
+                .routeId("architect-focus-complete")
+                .setProperty("decision.architect-mission-complete.result", constant("yes"));
+
         from("direct:architect-focus-wait")
                 .routeId("architect-focus-wait")
-                .setHeader(TackHeaders.PROMPT, constant("""
-                        May the Architect routine end for this mission? Answer yes only when every required product
-                        Epic is terminal, the system/component repository model is established, no ARCH-assigned
-                        engineering or integration remains, and no architecture blocker remains. Temporary absence of
-                        Architect work while any required Epic is nonterminal is idle time, not routine completion;
-                        remain active for integration, conflicts, and the next architecture-heavy slice.
-                        """))
-                .to("tack:decide?id=architect-mission-complete")
-                .choice()
-                    .when(exchangeProperty("decision.architect-mission-complete.result").isNotEqualTo("yes"))
-                        .delay(120000)
-                .end();
+                .delay(120000);
     }
 }

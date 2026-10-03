@@ -443,24 +443,27 @@ The `us.nusun.llmshare.example` package is a demonstration catalog, not part of 
 | Persona | Routine | Responsibility |
 | --- | --- | --- |
 | Noah | `software-team/director` | Maintains mission coverage and mission/product viability |
-| Ethan | `software-team/product-owner` | Owns typed product Epics through evidence-based acceptance |
-| Owen | `software-team/project-manager` | Owns delivery flow, Story topology, dependencies, WIP, and handoffs |
+| Ethan | `software-team/product-owner` | Owns `type:epic` product outcomes through evidence-based acceptance |
+| Owen | `software-team/project-manager` | Owns delivery flow, `type:story` topology, dependencies, WIP, and handoffs |
 | Avery | `software-team/architect` | Owns repository architecture, integration, conflicts, and architecture-heavy engineering |
-| Miles | `software-team/application-developer` | Owns assigned component Stories and prioritized defect repairs |
+| Miles | `software-team/application-developer` | Owns assigned component `type:story` work and prioritized defect repairs |
 | Quinn | `software-team/quality-engineer` | Owns test engineering, system behavior evidence, defect recording, and retest closure |
 
 ### Delivery model
 
-Plane work-item types and parent/child hierarchy carry the durable product/delivery model:
+Plane labels plus parent/child hierarchy carry the durable product/delivery model. Tack does not depend on native Plane work-item types for this example. Every classified work item carries exactly one `type:*` label:
 
-- **Epic:** PO-owned product lifecycle object. PO defines, prioritizes, activates, and accepts it.
-- **Story + `work:implementation`:** PM-planned delivery work beneath an Epic. DEV or ARCH owns assigned lifecycle through Done.
-- **Task + `work:test`:** QA-owned test-engineering work beneath an Epic.
-- **Bug + `work:defect`:** QA-recorded behavior failure created unparented in Backlog with candidate Epic evidence. PO classifies it into the correct Epic and sets product priority, reopening a previously Done Epic when the defect invalidates accepted behavior; PM routes repair, DEV/ARCH fixes, and QA retests/closes it.
+- **`type:epic`:** PO-owned product lifecycle object. PO defines, prioritizes, activates, and accepts it.
+- **`type:story` + `work:implementation`:** PM-planned delivery work beneath an epic. DEV or ARCH owns assigned lifecycle through Done.
+- **`type:task` + `work:test`:** QA-owned test-engineering work beneath an epic.
+- **`type:bug` + `work:defect`:** QA-recorded behavior failure created unparented in Backlog with candidate epic evidence. PO associates it to the correct epic and sets product priority, reopening a previously Done epic when the defect invalidates accepted behavior; PM routes repair, DEV/ARCH fixes, and QA retests/closes it.
+
+Plane state carries lifecycle, assignment carries ownership, parent/sub-work-item hierarchy carries decomposition, and relations carry blocking/order. Classification is never inferred from title, wording, state, hierarchy, or role.
 
 The team normally keeps one Epic In Progress. Ready Epics may queue in Todo. PM limits source-delivery WIP to one active unit per DEV/ARCH engineer with at most one executable Todo queued ahead, and QA follows the same pattern for test engineering: one active `work:test` Task with at most one executable Todo queued ahead. Additional foreseeable work remains Backlog until capacity opens.
 
-PM bootstrap establishes the Plane project and team channel. Onboarding is additive-only: PM grants missing current-roster access but does not evict project/channel members based on roster absence. Architect provisions and baselines source control after that foundation exists. DEV and QA are staffed once an Epic is active and that repository architecture is ready. QA test-code PRs use the same Architect integration path as implementation PRs, and a test Task stays In Progress until required test code is merged. The repository model is deliberately simple:
+PM bootstrap establishes the Plane project and shared team channel. Team onboarding is a first-class recurring PM responsibility. On every PM orientation, onboarding status is observed directly by comparing the authoritative active roster with current Plane project membership and current shared Mattermost channel membership. Any missing active identity makes onboarding the highest-priority PM focus. PM does not rely on prior memory to establish parity and does not evict members based on roster absence. Architect provisions and baselines source control after that foundation exists. Once the system repository exists, PM reads its documentation and maintains `docs/project-basics.md` as compact canonical navigation linking the mission, Plane project, shared channel, repository map, role responsibilities, and stable delivery conventions.
+ DEV and QA are staffed once an Epic is active and that repository architecture is ready. QA test-code PRs use the same Architect integration path as implementation PRs, and a test Task stays In Progress until required test code is merged. The repository model is deliberately simple:
 
 ```text
 system-repo/
@@ -472,6 +475,8 @@ system-repo/
 
 component-repo(s)/
 └── independently deployable application components
+    ├── <anchor>-service   # runtime service, including API implementations
+    └── <anchor>-api       # reserved for API specification/contract repositories
 ```
 
 The system repository is the single home for system GitOps, system documentation, architecture decisions, and cross-component system behavior tests. Separate docs or QA repositories are not part of the model. The example expects mission Git repositories under the `agent-workspace` organization.
@@ -486,10 +491,10 @@ The system repository is the single home for system GitOps, system documentation
 
 ### Tool ownership
 
-- **Plane:** projects, typed work items, hierarchy, assignments, lifecycle, dependencies, priorities, blockers, and evidence comments.
+- **Plane:** projects, label-classified work items, hierarchy, assignments, lifecycle, dependencies, priorities, blockers, and evidence comments.
 - **Gitea:** repositories, branches, commits, pull requests, releases, and integration evidence.
 - **OpenShell:** local repository contents, builds, tests, diffs, commits, conflict recovery, and pushes.
-- **Mattermost:** concise questions, handoffs, viability discussion, and awareness messages.
+- **Mattermost:** the shared current-mission channel for ordinary questions, handoffs, blockers, decisions, and awareness; DMs are reserved for genuinely private exchanges.
 
 Gitea issue tracking, labels, milestones, and time tracking are intentionally excluded so Plane remains the delivery source of truth.
 
@@ -499,13 +504,14 @@ Gitea issue tracking, labels, milestones, and time tracking are intentionally ex
 | --- | --- |
 | `workspace-readonly` | Read-only orientation across Plane, Gitea, and Mattermost |
 | `workspace-coordination` | PM-only project/channel bootstrap and access alignment |
-| `product-ownership` | PO-only Epic lifecycle, priority, acceptance, and defect triage |
-| `delivery-management` | PM-only Story planning, dependency/assignment flow, and defect routing |
-| `quality-management` | QA-only test Task, defect Bug, evidence, and retest lifecycle |
+| `product-ownership` | PO-only `type:epic` lifecycle, priority, acceptance, and defect triage |
+| `delivery-management` | PM-only `type:story` planning, dependency/assignment flow, and defect routing |
+| `quality-management` | QA-only `type:task` test work, `type:bug` defects, evidence, and retest lifecycle |
 | `engineering-work` | DEV/ARCH execution updates for already-assigned Story/Bug work |
 | `source-control` | Read-only Gitea source discovery and evidence |
 | `source-control-write` | DEV source writes in Architect-established component repositories |
 | `quality-source-control-write` | QA source writes in the Architect-established system repository |
+| `project-documentation` | PM documentation writes to `docs/project-basics.md` in the system repository |
 | `architect-source-control-write` | ARCH source writes plus repository provisioning/conflict recovery |
 | `integration` | ARCH final pull-request integration authority |
 | `team-chat` | Mattermost conversation and notifications |
