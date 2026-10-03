@@ -449,14 +449,14 @@ Plane labels plus parent/child hierarchy carry the durable product/delivery mode
 - **`type:epic`:** PO-owned product lifecycle object. PO defines, prioritizes, activates, and accepts it.
 - **`type:story`:** PM-planned engineering delivery beneath an Epic. DEV or ARCH owns assigned lifecycle through Done.
 - **`type:test`:** QE-owned test/evidence work beneath an Epic.
-- **`type:defect`:** QE-raised product-failure claim. QE creates it unparented in Backlog with evidence; PO validates or rejects it and assigns product priority; PM routes accepted Todo Defects; DEV/ARCH repairs; QE retests and closes.
+- **`type:defect`:** QE-raised product-failure claim. QE creates it unparented in Backlog with evidence; PO validates or rejects it, records whether it blocks Epic acceptance, and assigns product priority; PM routes accepted Todo Defects; DEV/ARCH repairs; QE retests and closes.
 
 Plane state carries lifecycle, assignment carries ownership, parent/sub-work-item hierarchy carries decomposition, and relations carry blocking/order. Classification is never inferred from title, wording, state, hierarchy, or role.
 
-The team normally keeps roughly 2-3 Epics In Progress with a deeper Todo runway when downstream capacity supports it. PM targets roughly 2-3 active engineering units plus 2-3 executable Todo Stories per delivery role when independent work exists; QE uses the same practical 2-3 active plus 2-3 queued target for Tests. These are flow targets, not hard ceilings.
+The team normally keeps roughly 2-3 Epics In Progress with a deeper Todo runway when downstream capacity supports it. Todo is the preparation boundary: PM may pre-decompose Backlog Stories, and once repository architecture is ready Director staffs DEV and QE without waiting for the Epic to become In Progress. PM targets roughly 2-3 active engineering units plus 2-3 executable Todo Stories per delivery role when independent work exists; QE uses the same practical 2-3 active plus 2-3 queued target for Tests. Story dependencies must remain acyclic. PM owns cancellation of obsolete Stories; QE owns Test promotion, clarified-retest resets, and cancellation of obsolete Tests. These are flow targets, not hard ceilings.
 
 PM bootstrap establishes the Plane project and shared team channel. Team onboarding is a first-class recurring PM responsibility. On every PM orientation, onboarding status is observed directly by comparing the authoritative active roster with current Plane project membership and current shared Mattermost channel membership. Any missing active identity makes onboarding the highest-priority PM focus. PM does not rely on prior memory to establish parity and does not evict members based on roster absence. Architect provisions and baselines source control after that foundation exists. Once the system repository exists, PM reads its documentation and maintains `docs/project-basics.md` as compact canonical navigation linking the mission, Plane project, shared channel, repository map, role responsibilities, and stable delivery conventions.
- DEV and QE are staffed once an Epic is active and that repository architecture is ready. QE test-code PRs use the same Architect integration path as implementation PRs, and a Test stays In Progress until required test code is merged. The repository model is deliberately simple:
+ DEV and QE are staffed once a PO-owned Epic is Todo or In Progress and repository architecture is ready. QE test-code PRs use the same Architect integration path as implementation PRs, and a Test stays In Progress until required test code is merged. The repository model is deliberately simple:
 
 ```text
 system-repo/
@@ -476,7 +476,7 @@ The system repository is the single home for system GitOps, system documentation
 
 ### Feedback loops
 
-- **PO ↔ QE:** PO defines acceptance intent; QE builds evidence and raises ambiguity/defects; PO accepts the Epic.
+- **PO ↔ QE:** PO defines acceptance intent and Defect acceptance impact; QE owns Test lifecycle, builds evidence, raises defects, and retests clarified or repaired behavior; PO accepts the Epic.
 - **PO ↔ DIR:** evidence-backed viability or mission-interpretation questions flow to Director without transferring backlog ownership.
 - **DEV ↔ QE:** QE exposes failed behavior/testability needs; DEV implements component fixes and useful test seams.
 - **ARCH ↔ DEV:** Architect integrates component work, resolves conflicts, and handles cross-cutting/system implementation.

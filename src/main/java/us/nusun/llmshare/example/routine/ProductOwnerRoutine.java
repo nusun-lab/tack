@@ -63,7 +63,8 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                             - viability: evidence suggests product scope/value or mission interpretation needs Director input.
                             - coordination: another fresh product question needs a concise response.
                             - complete: all required mission outcomes are represented by type:epic work items, every
-                              required Epic is accepted Done, and no unresolved product/defect/viability question remains.
+                              required Epic is accepted Done, and no unresolved product judgment, acceptance-blocking
+                              defect, or viability question remains.
                             - wait: the mission is not complete and none of the other focuses is useful now.
                             Keep the In Progress Epic set shallow, normally 2-3, while maintaining a deeper Todo runway of
                             fully defined product-ready Epics. Choose exactly one value.
@@ -82,8 +83,8 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         or ownership. Capture: active In Progress Epic count; ready Todo Epic depth; missing mission
                         outcomes; Given/When/Then acceptance for selected active/ready Epics; ownership of every
                         non-Backlog Epic; whether each Todo Epic has usable Gherkin and implementation Story coverage;
-                        implementation/test child progress when relevant; open
-                        type:defects; QA evidence/ambiguity; one fresh product exchange; one viability concern.
+                        implementation/test child progress when relevant; open type:defects plus any PO-recorded
+                        acceptance-impact disposition; QA evidence/ambiguity; one fresh product exchange; one viability concern.
                         A sparse work-item list may omit parent; retrieve only a selected child when its Epic parent is
                         needed. Report observations only. Do not mutate.
                         """))
@@ -155,16 +156,19 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         Validate one QA-created Backlog type:defect. Read its reproducible evidence, originating type:test,
                         candidate Epic context, and expected versus actual behavior.
 
-                        If it is a real product defect, set its parent to the affected Epic and assign product priority.
-                        Leave it Backlog when accepted but not selected for repair. Move it to Todo when product priority
-                        warrants engineering action now; leave it unassigned so PM can route it to DEV or ARCH. If the
-                        accepted Defect proves a previously Done Epic no longer satisfies its promised behavior, reopen that
-                        Epic to In Progress before making the Defect Todo.
+                        If it is a real product defect, set its parent to the affected Epic, assign product priority, and
+                        explicitly record whether it invalidates the Epic's current acceptance as
+                        acceptance-blocking=yes or acceptance-blocking=no. An acceptance-blocking Defect must move to Todo
+                        for repair; if the affected Epic was Done, reopen that Epic to In Progress first. A non-blocking
+                        Defect may remain Backlog when accepted but deferred, or move to Todo when product priority warrants
+                        engineering action now. Leave accepted Defects unassigned so PM can route Todo repair work.
 
                         If it is not a product defect because acceptance/test intent was wrong or ambiguous, Cancel the
-                        Defect with the product disposition, clarify the affected Epic acceptance when needed, and move the
-                        originating type:test to Todo for QE retest against the clarified intent. If it is a duplicate,
-                        Cancel it and reference the canonical finding. Do not create repair work or assign engineers here.
+                        Defect with the product disposition and clarify the affected Epic acceptance when needed. Record
+                        the clarified expected behavior on the originating type:test and explicitly request QE retest.
+                        Do not change the Test lifecycle; QE owns Test state and will return it to Todo. If it is a
+                        duplicate, Cancel it and reference the canonical finding. Do not create repair work or assign
+                        engineers here.
                         """))
                 .to("tack:act?id=po-defect-triage&toolProfile=" + ProductOwnershipToolProfile.ID)
                 .to("direct:po-product-awareness");
@@ -186,9 +190,11 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         Decide acceptance for one selected active Epic against its current PO-authored Given/When/Then
                         scenarios. Read the Epic plus only its child work/evidence needed for the decision. Move the Epic
                         to Done only when its promised behavior is demonstrated by current
-                        QA evidence, required Story/Test children are terminal, and no relevant accepted type:defect
-                        remains Backlog, Todo, or In Progress. A merged PR alone is not acceptance. If evidence is insufficient, keep the Epic In Progress
-                        and record the exact missing product/evidence condition without creating implementation work.
+                        QA evidence, required Story/Test children are terminal, and no relevant accepted type:defect whose
+                        PO disposition says acceptance-blocking=yes remains nonterminal. Accepted non-blocking Defects may
+                        remain Backlog without preventing Epic acceptance. A merged PR alone is not acceptance. If evidence
+                        is insufficient, keep the Epic In Progress and record the exact missing product/evidence condition
+                        without creating implementation work.
                         """))
                 .to("tack:act?id=po-epic-acceptance&toolProfile=" + ProductOwnershipToolProfile.ID);
 

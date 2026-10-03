@@ -65,8 +65,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                               Defect with a merged fix needs QA awareness for retest.
                             - active-flow: any verified non-Backlog work item lacks an appropriate owner; or an active
                               DEV/ARCH has queue capacity and a dependency-satisfied Backlog type:story is
-                              available; or dependency repair, stale assignment, engineer-owned Story completion awareness,
-                              blocker routing, QA handoff, or another active-Epic synchronization issue is actionable.
+                              available; or dependency repair, a cyclic Story dependency graph, obsolete Story cleanup,
+                              stale assignment, engineer-owned Story completion awareness, blocker routing, QA handoff, or
+                              another active-Epic synchronization issue is actionable.
                               Ownership repair outranks filling additional queue capacity. Capacity is per engineer:
                               ARCH work never
                               consumes DEV capacity, and DEV work never consumes ARCH capacity. Feeding existing executable
@@ -241,11 +242,15 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         must not track ephemeral runtime presence. Capacity is independent per engineer. A source unit
                         waiting only on PR integration or an external condition does not consume active coding capacity.
                         Do not leave executable Story work in Backlog merely because its intended engineer is not running.
-                        Never infer a dependency from Story sequence,
-                        concurrent execution, or a failed relation-tool payload. Otherwise repair a dependency/assignment;
-                        route product ambiguity to PO; route
-                        integration/repository issues to ARCH; route implementation/testability evidence to DEV/QA.
-                        Never mark type:defect Done after merge; QA retest closes defects. Never mutate type:test lifecycle.
+                        Never infer a dependency from Story sequence, concurrent execution, or a failed relation-tool
+                        payload. Story dependency relations must remain acyclic. If verified relations form a cycle that
+                        prevents forward progress, remove the least-justified relation(s) needed to restore an executable
+                        path; do not wait on a circular dependency. When current PO acceptance clearly makes a Story
+                        obsolete or duplicate, PM owns moving that Story to Cancelled. Never cancel work merely because of
+                        staffing, queue depth, or dependency delay. Otherwise repair a dependency/assignment; route product
+                        ambiguity to PO; route integration/repository issues to ARCH; route implementation/testability
+                        evidence to DEV/QA. Never mark type:defect Done after merge; QA retest closes defects. Never mutate
+                        type:test lifecycle.
                         Never move Todo, In Progress, Done, or Cancelled work backward because of staffing, queue depth,
                         capacity, or dependency bookkeeping. Preserve flow over serialization: continue feeding independent
                         executable work while other units wait
@@ -287,8 +292,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         source of truth for repository/component boundaries; do not invent a new topology.
 
                         For an In Progress Epic, create/refine its reasonable non-duplicative implementation Story set and
-                        dependency graph, then replenish each DEV/ARCH runway to roughly 2-3 assigned executable Todo
-                        Stories when legitimate dependency-satisfied work exists. Inspect enough candidates to restore the
+                        an acyclic dependency graph, then replenish each DEV/ARCH runway to roughly 2-3 assigned executable
+                        Todo Stories when legitimate dependency-satisfied work exists. Before adding a relation, verify it
+                        does not create a dependency cycle; repair any verified existing cycle instead of preserving it. Inspect enough candidates to restore the
                         buffer in this pass rather than stopping after one promotion.
 
                         For a Todo Epic, pre-decompose the same reasonable Story/dependency set but leave its implementation

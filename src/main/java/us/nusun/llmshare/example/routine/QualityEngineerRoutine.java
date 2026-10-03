@@ -57,8 +57,10 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
                             - defect-feedback: a type:test has reproducible product-failure evidence not already represented
                               by an open type:defect.
                             - test-engineering: assigned Todo/In Progress type:test has executable test engineering/evidence work.
-                            - test-planning: a non-Backlog type:test lacks QA ownership, or active Epics lack
-                              sufficient type:test coverage and QA has room to maintain roughly 2-3 active and 2-3 queued
+                            - test-planning: a non-Backlog type:test lacks QA ownership; a dependency-ready Backlog Test
+                              can enter the executable queue; a Test needs QE-owned reset to Todo after PO rejected its
+                              linked Defect and clarified intent; an obsolete Test should be Cancelled; or active Epics
+                              lack sufficient type:test coverage and QA has room for roughly 2-3 active and 2-3 queued
                               executable test units.
                             - epic-evidence: one active Epic's implementation/test work is sufficiently settled to publish
                               a current acceptance-evidence summary for PO.
@@ -81,8 +83,10 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
                         currently In Progress and their PO-authored Given/When/Then acceptance; existing children carrying
                         type:test; assigned QA
                         lifecycle; relevant implementation progress; system repository and behavior-test paths; newest
-                        execution evidence; open type:defects; merged-fix evidence requiring retest; ambiguity or
-                        testability blockers; one fresh QA-related exchange. Retrieve selected children when parent/context
+                        execution evidence; open type:defects; recently Cancelled Defects whose PO disposition clarifies an
+                        originating Test for retest; dependency-ready Backlog Tests; Tests made obsolete by current
+                        acceptance; merged-fix evidence requiring retest; ambiguity or testability blockers; one fresh
+                        QA-related exchange. Retrieve selected children when parent/context
                         is needed. The system repository is the canonical home for cross-component system behavior tests.
                         Report observations only. Do not mutate.
                         """))
@@ -91,18 +95,22 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
         from("direct:qa-focus-test-planning")
                 .routeId("qa-focus-test-planning")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        First repair any classification-verified non-Backlog type:test that lacks QA ownership by assigning
-                        it to yourself without changing lifecycle. Otherwise create/refine one missing QA test-engineering
-                        unit beneath one selected In Progress Epic, derived directly from its PO-authored Given/When/Then
-                        acceptance. Ensure the type:test label exists and attach it explicitly. Use a child with
-                        parent=<Epic UUID>. Describe the observable scenario/evidence it must prove
-                        without prescribing product implementation. If acceptance is ambiguous or incomplete, return the
-                        exact product question to PO instead of inventing behavior. Assign it to yourself. Maintain a
-                        practical QA flow buffer: roughly 2-3 type:test items In Progress and 2-3 executable Todo Tests
-                        queued ahead when enough independent evidence work exists. A Test waiting only on deployment,
-                        integration, or another role does not consume active QA execution capacity. These are flow targets,
-                        not hard ceilings. Keep truly dependency-blocked foreseeable coverage Backlog. Avoid duplicate
-                        coverage and oversized test tasks.
+                        Own Test lifecycle explicitly. First repair any classification-verified non-Backlog type:test that
+                        lacks QA ownership by assigning it to yourself without changing lifecycle. If a Test is In Progress
+                        only because it produced a Defect that PO has now Cancelled as not a product defect and PO recorded
+                        clarified expected behavior, move that Test to Todo for QE retest; this clarified-retest reset is
+                        the intentional exception to the normal no-backward-state rule. If current PO acceptance makes a
+                        Test obsolete or duplicate, QE owns moving that Test to Cancelled.
+
+                        Promote dependency-satisfied Backlog type:test work beneath In Progress Epics to assigned Todo as
+                        needed to maintain roughly 2-3 executable Todo Tests. Otherwise create/refine missing test-engineering
+                        units beneath selected In Progress Epics, derived directly from PO-authored Given/When/Then
+                        acceptance. Ensure the type:test label exists and attach it explicitly. Use parent=<Epic UUID>,
+                        describe the observable scenario/evidence without prescribing product implementation, and assign it
+                        to yourself. New foreseeable coverage may remain Backlog until dependency-ready. If acceptance is
+                        ambiguous or incomplete, return the exact product question to PO instead of inventing behavior.
+                        A Test waiting only on deployment, integration, or another role does not consume active QA execution
+                        capacity. Flow targets are not hard ceilings. Avoid duplicate coverage and oversized Tests.
                         """))
                 .to("tack:act?id=qa-test-planning&toolProfile=" + QualityManagementToolProfile.ID)
                 .to("direct:qa-awareness");
@@ -122,11 +130,13 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
                 .routeId("qa-test-engineering")
                 .setProperty("decision.qa-has-test-work.result", constant("no"))
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Select exactly one type:test assigned to you under an In Progress Epic. Before lifecycle mutation,
-                        verify its attached classification is type:test and that QA remains the assignee.
-                        Unknown classification means do not mutate. Prefer actionable In Progress; otherwise claim assigned
-                        Todo -> In Progress. Verify Epic parent/acceptance,
-                        system repository, test target, and dependencies. If no valid actionable Test exists, make no mutation.
+                        Select exactly one type:test assigned to you. Normally its parent Epic must be In Progress. A Todo
+                        Test beneath a Done Epic is executable only when PO rejected its linked Defect as not a product
+                        defect and explicitly clarified the Test intent for retest. Before lifecycle mutation, verify its
+                        attached classification is type:test and that QA remains the assignee. Unknown classification means
+                        do not mutate. Prefer actionable In Progress; otherwise claim an eligible assigned Todo -> In
+                        Progress. Verify Epic parent/acceptance, system repository, test target, and dependencies. If no
+                        valid actionable Test exists, make no mutation.
                         """))
                 .to("tack:act?id=qa-test-work-select&toolProfile=" + QualityManagementToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
@@ -147,9 +157,9 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
                                 """))
                         .to("tack:act?id=qa-test-engineering-step&toolProfile=" + QualitySourceControlWriteToolProfile.ID)
                         .setHeader(TackHeaders.PROMPT, constant("""
-                                Update only the selected type:test Task with current branch/PR when applicable, tests changed,
-                                execution performed, behavior proven, failures, limitations, and blockers. Keep the Task
-                                In Progress while a test-code PR is open or unmerged. Move the Task to Done only when any
+                                Update only the selected type:test with current branch/PR when applicable, tests changed,
+                                execution performed, behavior proven, failures, limitations, and blockers. Keep the Test
+                                In Progress while a test-code PR is open or unmerged. Move the Test to Done only when any
                                 required test-code PR is verified merged and the durable test engineering plus required
                                 execution evidence are complete. Do not move the parent Epic.
                                 """))

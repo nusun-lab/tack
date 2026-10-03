@@ -40,7 +40,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                 .routeId("example-software-team-director")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
                         Durable mission anchors: mission goal, authoritative active roster, shared coordination readiness,
-                        active type:epic product outcomes, major blockers, product-viability questions, and last focused outcome.
+                        ready/active type:epic product outcomes, major blockers, product-viability questions, and last focused outcome.
                         """))
                 .to("tack:thought-enter?name=director-root&maxTokens=450")
                 .setProperty(AgentRunAdmissionService.CAPACITY_MAXIMUM_PROPERTY, constant(MAX_ACTIVE_MISSION_RUNS))
@@ -91,8 +91,8 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         Verify staffing phase signals only: authoritative active AgentRun roster/capacity; coordination
                         foundation readiness (Plane project plus team channel); repository-architecture readiness
                         (exactly one mission system repository plus the component repository set documented by Architect);
-                        and whether at least one PO-owned type:epic work item is In Progress. Do not infer epic status
-                        from title or ownership alone. Do not require repositories before Architect
+                        and whether at least one PO-owned type:epic work item is Todo or In Progress. Do not infer epic
+                        status from title or ownership alone. Do not require repositories before Architect
                         is staffed. Do not infer active roles from assignments, commits, chat, or repository identities.
                         """))
                 .to("tack:act?id=director-staffing-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
@@ -105,8 +105,9 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         Phase policy for an unfinished mission:
                         - Project Manager is always required.
                         - Once Plane project and team channel are usable, Product Owner and Architect are required.
-                        - Once at least one PO-owned type:epic work item is In Progress AND Architect has established the system
-                          repository plus the required component repository set, Developer and Quality Engineer are required.
+                        - Once at least one PO-owned type:epic work item is Todo or In Progress AND Architect has established
+                          the system repository plus the required component repository set, Developer and Quality Engineer
+                          are required. Todo is the staffing/preparation boundary; do not wait for Epic activation.
                         - Keep already-required roles active through mission completion.
                         - Never duplicate an already-active role.
                         - Start one run per missing required role subject to remaining mission capacity.
