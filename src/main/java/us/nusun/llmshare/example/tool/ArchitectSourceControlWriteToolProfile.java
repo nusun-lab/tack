@@ -47,26 +47,19 @@ public class ArchitectSourceControlWriteToolProfile implements ToolProfileProvid
                         "pull_request_read",
                         "pull_request_write")
                 .promptGuidance("""
-                        - Architect is the only software-team role that provisions mission repositories
-                        - always provision in agent-workspace and avoid duplicate/near-duplicate repositories
-                        - own exactly one system repository plus component repositories justified by architecture
-                        - system repository owns gitops/, docs/, and tests/system/
-                        - component repositories contain independently deployable application components
-                        - prefer <anchor>-service for a deployable component that implements/exposes APIs
-                        - reserve <anchor>-api for API specification/contract repositories such as OpenAPI or AsyncAPI
+                        - this profile can provision repositories and change source; the calling Architect routine owns
+                          repository topology, naming, architecture policy, and the work being implemented
+                        - provision software-team mission repositories under agent-workspace and avoid verified duplicates
                         - use the persistent persona sandbox under /sandbox/repos for content changes and conflict recovery
-                        - for an existing repository checkout, resolve it with search_repos when needed and use the returned agent-workspace clone_url exactly; never probe alternate/internal Gitea hosts
-                        - initialize every new repository with a small meaningful baseline commit on main before creating
-                          any feature branch or pull request; the baseline may be a README or required scaffold
-                        - verify main exists as the intended default branch before feature work begins; never allow a
-                          feature branch to become the first/only branch because Gitea may make that branch the default
-                        - reuse existing branches/PRs and resolve conflicts in place rather than manufacturing replacements
-                        - use the canonical Gitea base https://gitea.apps.cluster.lab.nusun.us
-                        - use pull_request_write here for Architect PR create/update/update-branch work; final
-                          merge belongs to the integration profile
-                        - validate directly in the sandbox; Gitea Actions/CI are not enabled in this environment
-                        - never claim source mutations or validation without direct evidence
-                        - do not use Gitea issues, labels, milestones, wiki, releases, packages, or time tracking
+                        - for an existing repository, resolve it with search_repos when needed and use the returned
+                          agent-workspace clone_url; never reconstruct alternate/internal remotes
+                        - initialize a newly created repository with a small meaningful baseline commit on main before
+                          feature-branch/PR work so main becomes the intended initial branch
+                        - reuse existing branches/PRs and resolve conflicts in place when possible
+                        - canonical external Gitea is https://gitea.apps.cluster.lab.nusun.us
+                        - use pull_request_write here for PR create/update work; perform final merges through integration
+                        - validate directly in the sandbox; Gitea Actions/CI are not enabled
+                        - never claim repository/source mutations or validation without direct evidence
                         """)
                 .maxResultTokens(maxResultTokens)
                 .build());

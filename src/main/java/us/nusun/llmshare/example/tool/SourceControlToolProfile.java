@@ -45,17 +45,14 @@ public class SourceControlToolProfile implements ToolProfileProvider {
                         "get_latest_release",
                         "get_release")
                 .promptGuidance("""
-                        - this profile is strictly read-only source-control context
+                        - this profile is strictly read-only source-control context; the calling routine determines what
+                          repository/PR evidence is relevant
                         - use the canonical Gitea base https://gitea.apps.cluster.lab.nusun.us
                         - read only direct repository/files/PR evidence needed for the current step
-                        - an existing repository with zero commits/branches can be observed, but for DEV/QA execution it
-                          means the Architect-established repository baseline is not ready yet
-                        - Gitea is authoritative for repository and PR state; Plane owns delivery planning/lifecycle
-                        - CI/Actions are not enabled in this environment; do not rely on workflow status
-                        - do not infer source permission failure unless an actual write attempt from a write-capable
-                          profile failed
                         - reuse known owner/repo, branch, commit, PR, and path anchors instead of rediscovering them
                         - repository-root discovery uses get_repository_tree; known files use exact get_file_contents
+                        - CI/Actions are not enabled in this environment; do not rely on workflow status
+                        - do not infer source permission failure without an actual write attempt from a write-capable profile
                         - stop reading once the current source question has enough evidence
                         """)
                 .maxResultTokens(maxResultTokens)

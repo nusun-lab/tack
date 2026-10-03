@@ -45,37 +45,25 @@ public class EngineeringWorkToolProfile implements ToolProfileProvider {
                         "list_labels",
                         "list_states")
                 .promptGuidance("""
-                        - this profile is for execution of already-created engineering work, not backlog design
-                        - do not create work items, labels, projects, epics, test tasks, or defects
-                        - type:story + work:implementation is implementation delivery under a type:epic; DEV or ARCH may
-                          claim assigned Todo -> In Progress
-                        - type:bug + work:defect is repair work associated with a type:epic after PO triage; DEV or ARCH
-                          may claim it only after PM assigns it Todo
-                        - never infer classification from title or wording; required labels must actually be attached
-                        - never claim, reassign, or lifecycle-mutate work with unknown classification
-                        - DEV/ARCH may claim only work already assigned to them; type:epic and type:task are never
-                          engineer source work regardless of title, state, or surrounding context
-                        - never change product priority or epic lifecycle
-                        - work:implementation remains In Progress while its source PR is open; after verifying that PR merged,
-                          the assigned engineer owns the story transition to Done
-                        - an open PR waiting only on integration does not block claiming another independent assigned Todo
-                          source unit; maintain roughly 2-3 actively coded units when enough useful work exists
-                        - work:defect remains In Progress through fix merge; QA retests and closes the bug
-                        - comments contain evidence/blockers only and never act as hidden workflow states
+                        - this profile updates already-created engineering work; the calling routine owns selection,
+                          lifecycle policy, and completion criteria
+                        - before any lifecycle mutation, verify the selected item's attached labels and current assignees
+                        - never infer classification or ownership from title, wording, comments, or surrounding context
+                        - comments are evidence/context, not hidden lifecycle states
+                        - this profile cannot create work items, labels, projects, test tasks, or defects
+
                         SKILL: plane-query-recipes
-                        - Discovery recipe: list_work_items(project_id=<verified>, fields="id,name,sequence_id,state,priority,assignees").
-                          Use this sparse queue view for lifecycle, priority, and ownership. Do not add labels or parent.
-                        - Classification recipe: retrieve_work_item(project_id=<verified>, work_item_id=<selected UUID>,
-                          expand="labels", fields="id,name,sequence_id,state,labels"). Always include exactly these fields
-                          for classification. Never omit fields and never include assignees in this call.
-                        - Description recipe: retrieve_work_item(project_id=<verified>, work_item_id=<selected UUID>,
-                          fields="id,name,sequence_id,state,description_html"). Do not include labels or assignees.
-                        - Parent recipe: retrieve_work_item(project_id=<verified>, work_item_id=<selected UUID>,
-                          fields="id,name,sequence_id,state,parent"). Never expand parent.
-                        - Ownership and classification are deliberately separate calls. Never attempt to retrieve
-                          assignees and expanded labels in the same WorkItemDetail response.
-                        - If one exact recipe fails with a WorkItemDetail assignee/label/parent shape error, stop that
-                          retrieval strategy for the pass. Never repeat an equivalent failing shape on another item.
+                        - Discovery: list_work_items(project_id=<verified>,
+                          fields="id,name,sequence_id,state,priority,assignees")
+                        - Classification: retrieve_work_item(project_id=<verified>, work_item_id=<selected UUID>,
+                          expand="labels", fields="id,name,sequence_id,state,labels")
+                        - Description: retrieve_work_item(project_id=<verified>, work_item_id=<selected UUID>,
+                          fields="id,name,sequence_id,state,description_html")
+                        - Parent: retrieve_work_item(project_id=<verified>, work_item_id=<selected UUID>,
+                          fields="id,name,sequence_id,state,parent"); never expand parent
+                        - keep ownership and expanded-label classification in separate WorkItemDetail calls
+                        - a field omitted by a sparse projection is unknown, never negative evidence
+                        - after a WorkItemDetail response-shape failure, do not retry an equivalent failing shape
                         """)
                 .defaultArgument(PlaneMcpServer.ID, "list_projects", "fields", "id,name,identifier")
                 .defaultArgument(

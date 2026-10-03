@@ -44,20 +44,16 @@ public class ProjectDocumentationToolProfile implements ToolProfileProvider {
                         "pull_request_read",
                         "pull_request_write")
                 .promptGuidance("""
-                        - this profile is only for Project Manager documentation in the Architect-established system repository
-                        - read current system documentation before writing; docs/architecture.md remains Architect-owned
-                        - PM owns docs/project-basics.md as compact canonical mission navigation and stable operating basics
-                        - project basics may link the mission, Plane project, shared Mattermost channel, system/component
-                          repository map, role responsibilities, and stable delivery conventions
-                        - do not copy transient backlog/status/WIP into documentation; Plane remains authoritative for work state
-                        - do not edit component repositories, application source, GitOps, architecture decisions, or system tests
-                        - do not provision repositories or initialize missing repository architecture; report missing system repo to ARCH
-                        - all software-team mission repositories live under Gitea owner agent-workspace
-                        - use the persistent persona sandbox under /sandbox/repos for documentation changes; first reuse /sandbox/repos/<repo> when it is already a Git checkout
-                        - when a checkout is absent and the exact clone URL is not already verified, call search_repos with the mission/repository anchor, select the matching agent-workspace repository, and use its returned clone_url exactly
-                        - never guess gitea.local, Kubernetes service hosts, alternate domains, or reconstructed clone endpoints; the canonical external Gitea host is https://gitea.apps.cluster.lab.nusun.us
-                        - reuse an existing documentation branch/PR whenever possible and use pull_request_write only to create/update it
-                        - final integration belongs to Architect
+                        - this profile changes docs/project-basics.md in the existing system repository selected by the
+                          calling routine; it is not a general source/architecture editing profile
+                        - read the current file and directly relevant system documentation before writing
+                        - do not provision repositories or edit component source, GitOps, architecture decisions, or tests
+                        - software-team mission repositories live under Gitea owner agent-workspace
+                        - use the persistent persona sandbox under /sandbox/repos and reuse an existing checkout/branch/PR
+                        - when clone_url is unknown, resolve the exact system repository with search_repos and use the
+                          returned agent-workspace clone_url; never reconstruct alternate/internal remotes
+                        - canonical external Gitea is https://gitea.apps.cluster.lab.nusun.us
+                        - use pull_request_write for documentation PR create/update work only; merge through integration
                         - validate the resulting markdown/diff directly and never claim a write without evidence
                         """)
                 .maxResultTokens(maxResultTokens)

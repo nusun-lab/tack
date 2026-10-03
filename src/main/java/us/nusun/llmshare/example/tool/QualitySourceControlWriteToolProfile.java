@@ -44,25 +44,20 @@ public class QualitySourceControlWriteToolProfile implements ToolProfileProvider
                         "pull_request_read",
                         "pull_request_write")
                 .promptGuidance("""
-                        - this profile is for QA changes in the Architect-established mission system repository only
-                        - QA source changes belong under system behavior-test/supporting evidence scope; do not edit
-                          component implementation to make tests pass
-                        - the system repository baseline must already exist and own tests/system/, docs/, and gitops/
-                        - all software-team mission repositories live under Gitea owner agent-workspace
+                        - this profile changes QA-owned test/evidence source in the existing system repository selected by
+                          the calling routine; it cannot provision repositories
+                        - do not use this profile to modify component implementation
+                        - software-team mission repositories live under Gitea owner agent-workspace
                         - use the persistent persona sandbox under /sandbox/repos for repository content changes
                         - use ordinary git/filesystem/build/test commands for edits, validation, commits, and pushes
                         - reuse an existing checkout/branch/PR whenever possible; clone only when absent
-                        - when a checkout is absent and clone_url is not already verified, resolve the system repository with search_repos and use the matching agent-workspace result's clone_url exactly
-                        - never probe alternate/internal Gitea hosts or reconstruct a remote after a clone failure; the canonical external Gitea host is https://gitea.apps.cluster.lab.nusun.us
-                        - do not provision repositories or initialize missing repository architecture; report that to ARCH
-                        - do not preflight hypothetical permission blockers; only an actual auth/write failure proves one
-                        - Gitea is for repository/branch/commit/PR metadata; Plane owns QA work lifecycle/evidence
-                        - use pull_request_write for QA PR create/update work only; integration actions such as
-                          merge belong to Architect
-                        - validate directly in the sandbox; Gitea Actions/CI are not enabled in this environment
+                        - when clone_url is unknown, resolve the exact system repository with search_repos and use the
+                          returned agent-workspace clone_url; never reconstruct alternate/internal remotes
+                        - canonical external Gitea is https://gitea.apps.cluster.lab.nusun.us
+                        - use pull_request_write for PR create/update work only; perform merges through integration
+                        - only an actual auth/write failure establishes a write-permission blocker
+                        - validate directly in the sandbox; Gitea Actions/CI are not enabled
                         - never claim source changes, validation, commits, or pushes without direct evidence
-                        - do not use Gitea issues, labels, milestones, wiki, releases, packages, or time tracking
-                        - reuse exact owner/repo, branch, commit, PR, and file anchors
                         """)
                 .maxResultTokens(maxResultTokens)
                 .build());

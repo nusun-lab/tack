@@ -43,38 +43,27 @@ public class IntegrationToolProfile implements ToolProfileProvider {
                         "pull_request_write",
                         "get_commit")
                 .promptGuidance("""
-                        - Plane lifecycle state and task context identify the implementation unit; comments provide evidence/context, not hidden approval states
-                        - an In Progress work:implementation Story, work:defect Bug, or work:test Task with an OPEN pull request is eligible for a fresh integration check regardless of PR author; do not require REVIEW READY, INTEGRATION READY, or another magic approval phrase
-                        - Gitea is authoritative for current pull-request/source state; the canonical Gitea web/clone base is https://gitea.apps.cluster.lab.nusun.us
-                        - integration is batch work: list current open PRs in known mission repositories, process oldest safe candidates first, and merge every independently safe PR in the same act until no immediately safe candidate remains or the tool budget is reached
-                        - immediately before each merge, fresh-read only the exact work item/PR evidence needed for safety: repository, PR, intended base, current head/base, mergeability/conflicts, validation, acceptance scope, and any current blocker/review concern
-                        - after merging one PR, fresh-read any later candidate targeting that same repository because its base changed
-                        - a blocked, conflicted, stale, or ambiguous PR never blocks independent safe PRs behind it
+                        - this profile reads linked Plane context and performs Gitea pull-request merges; the calling
+                          routine owns candidate selection, ordering, batching, and workflow eligibility
+                        - reuse exact verified Plane work-item UUIDs and Gitea owner/repo/PR locators; never reconstruct them
+                        - Gitea is authoritative for current pull-request/source state
+                        - immediately before a merge, fresh-read the exact PR evidence needed to verify its current head,
+                          base, mergeability/conflict state, and validation evidence requested by the routine
                         - use pull_request_write only for merge operations in this profile
-                        - merge only when current PR evidence is safe and consistent with the source work unit's scope; work:test changes belong in the system repository and must preserve linked Epic acceptance intent; if ambiguous, stale, conflicted, failing validation, or product intent is unresolved, skip that PR and continue with independent candidates
-                        - do not manufacture an intermediate Plane comment state to authorize or reject integration
-
-                        SKILL: mission-anchor-reuse
-                        - reuse the exact verified Plane work-item UUID/identifier, Gitea owner/repo, PR number, head, and
-                          base; never shorten/reconstruct UUIDs or rediscover a known PR through broad lists
-                        - software-team mission repositories are under owner agent-workspace; if an exact stored locator
-                          unexpectedly fails or owner is genuinely absent from current thought, use search_repos once for
-                          the exact repository name and adopt only the returned canonical owner/repo; never guess owners
+                        - this profile does not mutate Plane lifecycle or manufacture comment-based approval states
 
                         SKILL: plane-query-recipes
-                        - For linked work classification, use retrieve_work_item(project_id=<verified>,
-                          work_item_id=<selected UUID>, expand="labels",
-                          fields="id,name,sequence_id,state,labels"). Never include assignees or omit fields.
-                        - For description/acceptance context, use a separate retrieve_work_item with
-                          fields="id,name,sequence_id,state,description_html". Never combine ownership and labels.
-                        - A WorkItemDetail response-shape error ends that Plane retrieval shape for the batch; do not retry
-                          it against the next PR's item.
-
-                        SKILL: bounded-platform-navigation
-                        - retrieve only the Plane items/comments and exact PR/commits required for the current batch; a safe batch may exceed normal 1-3-call guidance and should stop only when no immediately safe candidate remains or the execution budget is reached
+                        - Classification: retrieve_work_item(project_id=<verified>, work_item_id=<selected UUID>,
+                          expand="labels", fields="id,name,sequence_id,state,labels")
+                        - Description: retrieve_work_item(project_id=<verified>, work_item_id=<selected UUID>,
+                          fields="id,name,sequence_id,state,description_html")
+                        - keep expanded-label and other rich WorkItemDetail shapes separate
+                        - after a WorkItemDetail response-shape failure, do not retry an equivalent failing shape
 
                         SKILL: capability-aware-recovery
-                        - on 404, resolve the exact locator once; on schema/validation error, correct arguments once; if the PR is already closed/merged or the operation is unsupported, stop rather than retrying equivalent calls
+                        - on 404, resolve the exact locator once; on schema/validation error, correct arguments once
+                        - if a PR is already closed/merged or an operation is unsupported, stop rather than retrying an
+                          equivalent mutation
                         """)
                 .maxResultTokens(maxResultTokens)
                 .build());

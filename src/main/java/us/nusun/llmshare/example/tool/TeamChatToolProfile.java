@@ -42,26 +42,18 @@ public class TeamChatToolProfile implements ToolProfileProvider {
                         "get_user_by_username",
                         "search_users")
                 .promptGuidance("""
-                        - Mattermost is for concise communication, questions, handoffs, notifications, and useful team coordination
-                        - do not require an existing conversation before posting; initiate one concise message when a meaningful handoff, blocker, question, merge, workspace transition, or other event would help a current teammate act sooner
-                        - use the current-mission shared team channel for normal team questions, handoffs, blockers, decisions, and awareness
-                        - when the verified channel id is known, use it directly; when it is unknown, list_teams once and use the returned team id with get_channel_by_name for the mission channel name
-                        - use list_my_channels only when the mission channel name is genuinely unknown; do not start by guessing a team id or channel name
-                        - ids/names shown only in tool descriptions or examples are illustrative and must never be used as live Mattermost locators
-                        - missing shared-channel access is an onboarding defect only after the channel was resolved through current Mattermost evidence; report it for repair and do not fall back to a direct channel
-                        - direct-message history is not a substitute for current-mission channel context; use a DM only for genuinely private exchanges already anchored to the current mission
-                        - when responding, read only the recent relevant current-mission channel context needed for that exchange
-                        - post at most one message or reply for the current step
-                        - durable project state belongs in Plane
-                        - durable implementation state belongs in Gitea
-                        - comments/messages provide evidence and context, not hidden workflow states
-                        - chat phrases such as "green", "approved", "review ready", "integration ready", acknowledgments,
-                          and handoff confirmations never authorize or block Plane lifecycle or Gitea integration
-                        - merge authority comes from role policy and merge readiness from current Gitea/validation evidence
-                        - link to authoritative Plane work items, Gitea repositories, pull requests, releases, or canonical documentation pages when useful
-                        - avoid generic status chatter, ceremonial updates, and duplicate notifications
-                        - do not recreate durable Plane or Gitea state in Mattermost
-                        - do not read entire channels, stick to recent messages
+                        - this profile provides Mattermost conversation; the calling routine decides whether communication
+                          is useful and what role/workflow policy the message should express
+                        - when a verified channel id is known, use it directly
+                        - when the channel id is unknown but the mission channel name is known, list teams once and resolve
+                          it with get_channel_by_name; use list_my_channels only when the channel name is genuinely unknown
+                        - ids/names shown only in tool descriptions/examples are illustrative and are not live locators
+                        - read only the recent relevant context needed for the current exchange
+                        - shared-channel conversation is the default for ordinary team coordination; use direct messages
+                          only when the calling routine intentionally requires a private exchange
+                        - messages provide conversational evidence/context and are not authoritative Plane or Gitea state
+                        - link authoritative Plane/Gitea/documentation resources when useful instead of recreating them
+                        - avoid duplicate notifications, generic status chatter, and broad channel reads
                         """)
                 .maxResultTokens(maxResultTokens)
                 .build());
