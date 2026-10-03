@@ -444,19 +444,19 @@ The `us.nusun.llmshare.example` package is a demonstration catalog, not part of 
 
 ### Delivery model
 
-Plane labels plus parent/child hierarchy carry the durable product/delivery model. Tack does not depend on native Plane work-item types for this example. Every classified work item carries exactly one `type:*` label:
+Plane labels plus parent/child hierarchy carry the durable product/delivery model. Tack does not depend on native Plane work-item types for this example. Every classified work item carries exactly one `type:*` label from this closed set:
 
 - **`type:epic`:** PO-owned product lifecycle object. PO defines, prioritizes, activates, and accepts it.
-- **`type:story` + `work:implementation`:** PM-planned delivery work beneath an epic. DEV or ARCH owns assigned lifecycle through Done.
-- **`type:task` + `work:test`:** QA-owned test-engineering work beneath an epic.
-- **`type:bug` + `work:defect`:** QA-recorded behavior failure created unparented in Backlog with candidate epic evidence. PO associates it to the correct epic and sets product priority, reopening a previously Done epic when the defect invalidates accepted behavior; PM routes repair, DEV/ARCH fixes, and QA retests/closes it.
+- **`type:story`:** PM-planned engineering delivery beneath an Epic. DEV or ARCH owns assigned lifecycle through Done.
+- **`type:test`:** QE-owned test/evidence work beneath an Epic.
+- **`type:defect`:** QE-raised product-failure claim. QE creates it unparented in Backlog with evidence; PO validates or rejects it and assigns product priority; PM routes accepted Todo Defects; DEV/ARCH repairs; QE retests and closes.
 
 Plane state carries lifecycle, assignment carries ownership, parent/sub-work-item hierarchy carries decomposition, and relations carry blocking/order. Classification is never inferred from title, wording, state, hierarchy, or role.
 
-The team normally keeps one Epic In Progress. Ready Epics may queue in Todo. PM limits source-delivery WIP to one active unit per DEV/ARCH engineer with at most one executable Todo queued ahead, and QA follows the same pattern for test engineering: one active `work:test` Task with at most one executable Todo queued ahead. Additional foreseeable work remains Backlog until capacity opens.
+The team normally keeps roughly 2-3 Epics In Progress with a deeper Todo runway when downstream capacity supports it. PM targets roughly 2-3 active engineering units plus 2-3 executable Todo Stories per delivery role when independent work exists; QE uses the same practical 2-3 active plus 2-3 queued target for Tests. These are flow targets, not hard ceilings.
 
 PM bootstrap establishes the Plane project and shared team channel. Team onboarding is a first-class recurring PM responsibility. On every PM orientation, onboarding status is observed directly by comparing the authoritative active roster with current Plane project membership and current shared Mattermost channel membership. Any missing active identity makes onboarding the highest-priority PM focus. PM does not rely on prior memory to establish parity and does not evict members based on roster absence. Architect provisions and baselines source control after that foundation exists. Once the system repository exists, PM reads its documentation and maintains `docs/project-basics.md` as compact canonical navigation linking the mission, Plane project, shared channel, repository map, role responsibilities, and stable delivery conventions.
- DEV and QA are staffed once an Epic is active and that repository architecture is ready. QA test-code PRs use the same Architect integration path as implementation PRs, and a test Task stays In Progress until required test code is merged. The repository model is deliberately simple:
+ DEV and QE are staffed once an Epic is active and that repository architecture is ready. QE test-code PRs use the same Architect integration path as implementation PRs, and a Test stays In Progress until required test code is merged. The repository model is deliberately simple:
 
 ```text
 system-repo/
@@ -472,15 +472,15 @@ component-repo(s)/
     └── <anchor>-api       # reserved for API specification/contract repositories
 ```
 
-The system repository is the single home for system GitOps, system documentation, architecture decisions, and cross-component system behavior tests. Separate docs or QA repositories are not part of the model. The example expects mission Git repositories under the `agent-workspace` organization.
+The system repository is the single home for system GitOps, system documentation, architecture decisions, and cross-component system behavior tests. Separate docs or QE repositories are not part of the model. The example expects mission Git repositories under the `agent-workspace` organization.
 
 ### Feedback loops
 
-- **PO ↔ QA:** PO defines acceptance intent; QA builds evidence and raises ambiguity/defects; PO accepts the Epic.
+- **PO ↔ QE:** PO defines acceptance intent; QE builds evidence and raises ambiguity/defects; PO accepts the Epic.
 - **PO ↔ DIR:** evidence-backed viability or mission-interpretation questions flow to Director without transferring backlog ownership.
-- **DEV ↔ QA:** QA exposes failed behavior/testability needs; DEV implements component fixes and useful test seams.
+- **DEV ↔ QE:** QE exposes failed behavior/testability needs; DEV implements component fixes and useful test seams.
 - **ARCH ↔ DEV:** Architect integrates component work, resolves conflicts, and handles cross-cutting/system implementation.
-- **PM ↔ everyone:** PM maintains synchronization, dependencies, assignments, defect routing, flow reconciliation, and low WIP.
+- **PM ↔ everyone:** PM maintains synchronization, dependencies, assignments, accepted Defect routing, and flow reconciliation.
 
 ### Tool ownership
 
@@ -497,10 +497,10 @@ Gitea issue tracking, labels, milestones, and time tracking are intentionally ex
 | --- | --- |
 | `workspace-readonly` | Read-only orientation across Plane, Gitea, and Mattermost |
 | `workspace-coordination` | PM-only project/channel bootstrap and access alignment |
-| `product-ownership` | PO-only `type:epic` lifecycle, priority, acceptance, and defect triage |
-| `delivery-management` | PM-only `type:story` planning, dependency/assignment flow, and defect routing |
-| `quality-management` | QA-only `type:task` test work, `type:bug` defects, evidence, and retest lifecycle |
-| `engineering-work` | DEV/ARCH execution updates for already-assigned Story/Bug work |
+| `product-ownership` | PO Epic lifecycle/acceptance plus validation and prioritization of `type:defect` findings |
+| `delivery-management` | PM Story planning, dependency/assignment flow, and routing of accepted Todo Defects |
+| `quality-management` | QE `type:test` lifecycle, `type:defect` creation/retest evidence, and Epic evidence |
+| `engineering-work` | DEV/ARCH execution updates for already-assigned `type:story` or `type:defect` work |
 | `source-control` | Read-only Gitea source discovery and evidence |
 | `source-control-write` | DEV source writes in Architect-established component repositories |
 | `quality-source-control-write` | QA source writes in the Architect-established system repository |

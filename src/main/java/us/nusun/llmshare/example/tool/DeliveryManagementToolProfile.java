@@ -71,8 +71,8 @@ public class DeliveryManagementToolProfile implements ToolProfileProvider {
                           defines which delivery mutation is appropriate
                         - before mutating an existing work item, retrieve its attached labels and verify classification;
                           never infer classification from title, state, assignee, hierarchy, or wording
-                        - Tack work-item kinds are represented by exactly one attached type:* label; work:* labels are
-                          additional classification and never lifecycle state
+                        - Tack work-item kinds are represented by exactly one attached type:* label: type:epic, type:story,
+                          type:test, or type:defect; classification labels never represent lifecycle state
                         - use update_work_item with the complete assignees array for assignment changes
                         - Gitea access in this profile is read-only evidence; do not create repositories or mutate source
                         - a successful Plane relation read is authoritative for blockers; an error/validation payload is

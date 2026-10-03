@@ -61,10 +61,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                               shared mission channel, or either membership set cannot be verified against the active roster.
                               This is the highest-priority focus and takes precedence over bootstrap follow-up, delivery,
                               planning, documentation, defect flow, and coordination.
-                            - defect-flow: a PO-triaged open work:defect Bug needs repair assignment/promotion, or a repaired
-                              Bug needs QA awareness for retest.
+                            - defect-flow: a PO-validated Todo type:defect needs repair assignment, or an In Progress
+                              Defect with a merged fix needs QA awareness for retest.
                             - active-flow: any verified non-Backlog work item lacks an appropriate owner; or an active
-                              DEV/ARCH has queue capacity and a dependency-satisfied Backlog work:implementation Story is
+                              DEV/ARCH has queue capacity and a dependency-satisfied Backlog type:story is
                               available; or dependency repair, stale assignment, engineer-owned Story completion awareness,
                               blocker routing, QA handoff, or another active-Epic synchronization issue is actionable.
                               Ownership repair outranks filling additional queue capacity. Capacity is per engineer:
@@ -72,7 +72,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                               consumes DEV capacity, and DEV work never consumes ARCH capacity. Feeding existing executable
                               work outranks creating more Backlog.
                             - planning: repository architecture is established and any In Progress or Todo Epic lacks the
-                              reasonable work:implementation Story/dependency set needed to keep active delivery supplied
+                              reasonable type:story/dependency set needed to keep active delivery supplied
                               and ready product work pre-decomposed. Planning spans all active and ready Epics. If the
                               repository map is not established, route that architecture dependency instead of inventing
                               implementation topology.
@@ -113,15 +113,15 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         and Cancelled. Missing canonical states make bootstrap incomplete. Once onboarding is healthy,
                         treat Plane delivery health as the primary observation: repository/component readiness; current
                         docs/project-basics.md; all type:epic items currently In Progress plus the ready Todo Epic set and
-                        their PO-authored Given/When/Then acceptance; relevant type:story + work:implementation children;
-                        type:task + work:test children; type:bug + work:defect items; Story coverage, assignments,
+                        their PO-authored Given/When/Then acceptance; relevant type:story children;
+                        type:test children; type:defect items; Story coverage, assignments,
                         lifecycle, and dependencies. Explicitly report every Todo/In Progress/Done/Cancelled item with no
                         assignee or an assignee inconsistent with verified classification. For each DEV/ARCH delivery
                         identity, report assigned In Progress count, assigned Todo count, and up to three
                         dependency-satisfied Backlog Story candidates beneath In Progress Epics. Linked PR state only when
                         needed; one blocker/handoff;
                         and one fresh exchange from the shared mission channel. Do not use unrelated or long-lived DM
-                        history as mission evidence. PO owns epic lifecycle; QA owns work:test lifecycle. Report only.
+                        history as mission evidence. PO owns epic lifecycle; QA owns type:test lifecycle. Report only.
                         """))
                 .to("tack:act?id=pm-orientation&toolProfile=" + WorkspaceReadonlyToolProfile.ID);
 
@@ -184,12 +184,13 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-focus-defect-flow")
                 .routeId("pm-focus-defect-flow")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Advance one work:defect Bug without changing product judgment. For a PO-triaged Backlog Bug with
-                        valid Epic parent and non-none product priority, choose the appropriate active engineer from
-                        evidence: ordinary component behavior -> DEV; system integration/repository/GitOps/cross-cutting
-                        architecture -> ARCH. Assign it and move it to Todo. Do not create a repair Story.
-                        For an In Progress Bug whose fix PR is now merged, keep the Bug In Progress and surface concise
-                        evidence to QA for retest; QA owns the final Done transition. Do not route an untriaged defect.
+                        Route one PO-validated type:defect without changing product judgment. A validated Backlog Defect
+                        remains product backlog until PO moves it to Todo; do not assign or promote it. For a Todo Defect
+                        with a verified Epic parent and product priority, choose the appropriate engineer from evidence:
+                        ordinary component behavior -> DEV; system integration/repository/GitOps/cross-cutting architecture
+                        -> ARCH. Assign it and leave it Todo for the engineer to claim. Do not create a repair Story.
+                        For an In Progress Defect whose fix PR is verified merged, keep the Defect In Progress and surface
+                        concise evidence to QA for retest; QA owns the final Done transition.
                         """))
                 .to("tack:act?id=pm-defect-flow&toolProfile=" + DeliveryManagementToolProfile.ID)
                 .to("direct:pm-awareness");
@@ -224,10 +225,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Restore delivery across the current In Progress Epic set to a coherent executable state in this pass.
                         Before any assignment or lifecycle mutation, verify current attached labels establish the expected
-                        work kind. Unknown classification means do not mutate. Never treat type:epic or type:task as
+                        work kind. Unknown classification means do not mutate. Never treat type:epic or type:test as
                         engineer source work. Every non-Backlog work item must have an owner appropriate to its verified
-                        classification: type:epic -> PO; type:story + work:implementation -> DEV/ARCH; type:task +
-                        work:test -> QA; triaged type:bug + work:defect -> assigned repair engineer. Repair a verified
+                        classification: type:epic -> PO; type:story -> DEV/ARCH; type:test -> QA; type:defect -> repair engineer,
+                        except a newly PO-validated Todo Defect may remain briefly unassigned until PM routes it. Repair a verified
                         non-Backlog ownership gap only within the role that owns that work. Do not guess classification
                         merely to fill an ownership gap. Apply the obvious state/assignment/dependency promotions needed
                         for healthy flow instead of stopping after one observation. When an assigned Story PR is merged
@@ -244,7 +245,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         concurrent execution, or a failed relation-tool payload. Otherwise repair a dependency/assignment;
                         route product ambiguity to PO; route
                         integration/repository issues to ARCH; route implementation/testability evidence to DEV/QA.
-                        Never mark work:defect Done after merge; QA retest closes defects. Never mutate work:test lifecycle.
+                        Never mark type:defect Done after merge; QA retest closes defects. Never mutate type:test lifecycle.
                         Never move Todo, In Progress, Done, or Cancelled work backward because of staffing, queue depth,
                         capacity, or dependency bookkeeping. Preserve flow over serialization: continue feeding independent
                         executable work while other units wait
@@ -295,14 +296,14 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         active engineering consumption. Do not promote child Stories to Todo until their parent Epic is
                         In Progress.
 
-                        Ensure type:story and work:implementation labels exist and attach both explicitly. Normal component
+                        Ensure the type:story label exists and attach it explicitly. Normal component
                         work goes to DEV; system repository, integration, GitOps, cross-component, or architecture-heavy
                         work goes to ARCH. Before mutating an existing item, verify its classification from attached labels.
                         Todo Stories must have the intended engineer assigned, and they may remain staged even while that
                         engineer's AgentRun is temporarily absent. Never move existing Todo/In Progress/Done/Cancelled work
                         backward because an AgentRun is absent. Keep genuinely dependency-blocked future Stories Backlog.
                         Work owned by ARCH does not consume DEV capacity and vice versa. Do not create type:epic product
-                        outcomes, type:task + work:test QA work, or type:bug + work:defect defects.
+                        outcomes, type:test QA work, or type:defect findings.
                         """))
                 .to("tack:act?id=pm-planning&toolProfile=" + DeliveryManagementToolProfile.ID);
 

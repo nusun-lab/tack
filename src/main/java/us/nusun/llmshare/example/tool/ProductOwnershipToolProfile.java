@@ -50,7 +50,8 @@ public class ProductOwnershipToolProfile implements ToolProfileProvider {
                 .promptGuidance("""
                         - this profile creates and updates Plane product work; the calling routine owns product policy,
                           lifecycle decisions, acceptance criteria, prioritization decisions, and WIP policy
-                        - Tack work-item kinds are represented by exactly one attached type:* label, not native Plane types
+                        - Tack work-item kinds are represented by exactly one attached type:* label: type:epic, type:story,
+                          type:test, or type:defect, not native Plane types
                         - create a missing classification label only when the routine explicitly requires that kind, then
                           attach it explicitly with manage_work_item_label
                         - before mutating an existing item based on kind, verify its attached labels
