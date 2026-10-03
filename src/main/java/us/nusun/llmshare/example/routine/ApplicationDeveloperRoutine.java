@@ -2,7 +2,7 @@ package us.nusun.llmshare.example.routine;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import org.apache.camel.builder.RouteBuilder;
-import us.nusun.llmshare.example.tool.ProjectManagementToolProfile;
+import us.nusun.llmshare.example.tool.EngineeringWorkToolProfile;
 import us.nusun.llmshare.example.tool.SourceControlToolProfile;
 import us.nusun.llmshare.example.tool.SourceControlWriteToolProfile;
 import us.nusun.llmshare.example.tool.TeamChatToolProfile;
@@ -44,12 +44,15 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .setHeader(TackHeaders.PROMPT, constant("""
                             Choose exactly one highest-priority Application Developer focus for the next focused pass.
                             Allowed focus values, in priority order when genuinely actionable:
-                            - missing-basics: the Developer cannot access the current-mission Plane project, source
-                              repository, docs/navigation, or mission chat. An existing accessible source repository is
-                              usable even when empty and has no main/default branch yet.
-                            - implementation: one assigned work:implementation In Progress child has actionable
+                            - missing-basics: the Developer cannot access the current-mission Plane project, Architect-
+                              established component repository baseline, system docs/navigation, or mission chat. An
+                              empty/uninitialized repository means repository architecture is not ready for Developer work.
+                            - reconcile: an assigned work:implementation Story remains In Progress after its linked PR
+                              is verified merged; Developer owns its transition to Done.
+                            - implementation: one assigned work:defect Bug or work:implementation Story In Progress has actionable
                               implementation/recovery work, or no current source-delivery child has an open unmerged PR and
-                              one assigned work:implementation Todo child is ready to start. Todo + Developer assignment is
+                              one assigned work:defect Bug or work:implementation Story Todo unit is ready to start.
+                              Todo + Developer assignment is
                               the complete authoritative PM -> DEV handoff. Developer owns Todo -> In Progress. A useful
                               PM awareness message may provide context but never gates work. Do not wait for chat
                               confirmation, PM to flip state, PM to seed main, or
@@ -58,15 +61,16 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                               participation outside the selected implementation flow. Outbound PR/blocker/finding
                               awareness belongs to implementation closeout and does not compete for focus.
                             - wait: current assigned source work has an open unmerged PR and no newer evidence requires
-                              another source change, or no useful assigned work:implementation item is currently available.
+                              another source change, or no useful assigned work:defect/work:implementation item is currently available.
                               Do not start a second source unit while one task PR remains open/unmerged. Keep unmerged
                               source WIP to one integration unit. This constraint does NOT limit PO or PM backlog depth.
                               Comments are evidence/context only; do not wait for REVIEW READY, INTEGRATION READY, or
-                              another magic comment state. An empty repo is a starting condition, not a blocker. Only an
-                              actual failed source operation establishes a permission/authentication blocker. Fresh
+                              another magic comment state. An empty/uninitialized repo is an Architect/PM setup blocker,
+                              not a Developer bootstrap task. Only an actual failed source operation establishes a
+                              permission/authentication blocker. Fresh
                               orientation evidence outranks older wait conclusions. Choose exactly one allowed focus value.
                             """))
-                    .to("tack:decide?id=dev-focus&choices=missing-basics,implementation,coordination,wait")
+                    .to("tack:decide?id=dev-focus&choices=missing-basics,reconcile,implementation,coordination,wait")
                     .toD("direct:dev-focus-${exchangeProperty.decision.dev-focus.result}")
                 .end()
                 .end()
@@ -75,17 +79,29 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         from("direct:dev-focus-missing-basics")
                 .routeId("dev-focus-missing-basics")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused missing-foundation response: communicate only when a concrete access/basic is actually
-                        unavailable; an empty source repo is still usable.
+                        Focused missing-foundation response: communicate only when a concrete access/basic or Architect-
+                        established repository baseline is actually unavailable.
                         """))
                 .to("tack:thought-enter?name=dev-missing-basics-focus&maxTokens=250")
                 .to("direct:dev-missing-basics-closeout")
                 .to("tack:thought-exit?name=dev-missing-basics-focus");
 
+        from("direct:dev-focus-reconcile")
+                .routeId("dev-focus-reconcile")
+                .setHeader(TackHeaders.PROMPT, constant("""
+                        Reconcile exactly one assigned work:implementation Story whose linked PR is verified merged.
+                        Confirm the selected Story is still In Progress, the PR/commit is actually merged to the intended
+                        base, and no newer evidence requires source changes. Move that Story to Done and preserve concise
+                        merge/validation evidence. Never close work:defect here; repaired Bugs remain In Progress for QA
+                        retest and closure.
+                        """))
+                .to("tack:act?id=dev-story-reconcile&toolProfile=" + EngineeringWorkToolProfile.ID)
+                .to("direct:dev-work-closeout-no-source");
+
         from("direct:dev-focus-implementation")
                 .routeId("dev-focus-implementation")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused implementation unit: one assigned work:implementation child, task/product context,
+                        Focused implementation unit: one assigned work:defect Bug or work:implementation Story, task/product context,
                         source or topology work, validation, PR state, and concise durable evidence.
                         """))
                 .to("tack:thought-enter?name=dev-implementation-focus&maxTokens=450")
@@ -114,12 +130,13 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .routeId("dev-orientation")
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Read the smallest fresh current-mission slice needed to rank Developer focus. Determine only:
-                        whether shared basics are accessible; one assigned work:implementation In Progress child and
+                        whether shared basics are accessible; one assigned source work unit In Progress, preferring
+                        work:defect Bug over work:implementation Story, and
                         whether its linked PR is open/merged/absent; whether newer concrete feedback/evidence requires
-                        more implementation; whether an assigned work:implementation Todo child exists; one fresh
+                        more implementation; whether an assigned work:defect/work:implementation Todo unit exists; one fresh
                         inbound technical exchange needing attention; and
-                        completion plausibility. An accessible empty source repo counts as usable. Do not treat missing
-                        main/default branch or untested push permission as a blocker. Prefer verified
+                        completion plausibility. Require an Architect-established non-empty repository baseline for
+                        Developer work. Do not treat untested push permission as a blocker. Prefer verified
                         project/repo/work-item ids already in thought rather than broad listing. Plane is authoritative
                         for ownership/lifecycle/classification; Gitea is authoritative for PR state. Report observations
                         only. Do not recommend a next focus, preserve older HOLD/wait conclusions against newer
@@ -144,16 +161,18 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .routeId("dev-completion-focus")
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Review current mission completion once using smallest authoritative reads and known ids. One
-                        unfinished work:implementation child, topology investigation, open unmerged task PR, or product
-                        delivery outcome is enough to conclude not complete. Plane/Gitea real state is authoritative;
+                        unfinished assigned source work, a merged Story not yet reconciled Done, topology investigation,
+                        open unmerged task PR, or product delivery outcome is enough to conclude not complete.
+                        Plane/Gitea real state is authoritative;
                         comments are evidence only. Do not mutate.
                         """))
                 .to("tack:act?id=dev-mission-status-review&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Is Developer quiescent because no Developer action remains? Answer yes only when current evidence
-                        shows no assigned actionable implementation/topology work, validation, open task PR needing
-                        Developer changes, or implementation follow-up. This does not establish top-level mission
-                        completion; Director owns that decision.
+                        May the Developer routine end for this mission? Answer yes only when current evidence shows
+                        every required product Epic is terminal and no Developer-owned Story/Bug, merged Story awaiting
+                        Done, validation, open PR needing Developer changes, or implementation follow-up remains.
+                        Temporary lack of assigned work while any required Epic is nonterminal is idle time, not routine
+                        completion; remain active so PM can hand off the next slice without Director restaffing churn.
                         """))
                 .to("tack:decide?id=application-developer-mission-complete");
 
@@ -190,8 +209,9 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         from("direct:dev-application-developer-root-enter")
                 .routeId("dev-application-developer-root-enter")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Durable developer anchors: verified project/repo/chat ids, selected work:implementation
-                        child/Plane state, parent acceptance, topology question when present, branch/commit/PR,
+                        Durable developer anchors: verified project/repo/chat ids, selected source work
+                        (work:defect Bug or work:implementation Story)/Plane state, Epic acceptance,
+                        topology question when present, branch/commit/PR,
                         validation evidence, blockers/feedback, and current PR state.
                         """))
                 .to("tack:thought-enter?name=application-developer-routine&maxTokens=500");
@@ -213,9 +233,9 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                         """))
                 .to("tack:act?id=dev-workspace-basics-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Are shared project basics accessible enough to select development work? Treat an existing
-                        accessible empty source repository as valid. Do not require work/acceptance links, a default
-                        branch, commits, or pre-confirmed push permission.
+                        Are shared project basics accessible enough to select development work? Require access to the
+                        Architect-established component repository baseline and system documentation. Do not require
+                        pre-confirmed push permission.
                         """))
                 .to("tack:decide?id=developer-has-project-basics");
 
@@ -223,9 +243,9 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .routeId("dev-missing-basics-closeout")
                 .setHeader(TackHeaders.PROMPT, constant("""
                         A concrete project basic is actually inaccessible. Initiate or reply to one concise setup
-                        question only when it would help PM repair that concrete access/basic sooner. An empty
-                        repository, absent main branch, or untested push permission is NOT a missing-basic condition. Do
-                        not claim work only when a real required basic cannot be accessed.
+                        question only when it would help PM/ARCH repair that concrete access/basic sooner. An
+                        empty/uninitialized assigned repository IS a repository-architecture blocker; untested push
+                        permission is not. Do not claim work when a required baseline cannot be accessed.
                         """))
                 .to("tack:act?id=dev-missing-basics-closeout&toolProfile=" + TeamChatToolProfile.ID);
 
@@ -239,8 +259,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .setProperty("devMadeProgress", constant(false))
                     .setProperty("devSourceCloseoutAllowed", constant(false))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                            Current developer work unit: one selected work:implementation child, real Plane state, parent
-                            acceptance, topology question when applicable, source evidence, patch/PR,
+                            Current developer work unit: one selected work:defect Bug or work:implementation Story,
+                            real Plane state, Epic acceptance, topology question when applicable, source evidence, patch/PR,
                             validation, and current feedback/blocker evidence.
                             """))
                     .to("tack:thought-enter?name=dev-cycle&maxTokens=300")
@@ -272,7 +292,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                         Read only recent project chat needed for one useful technical exchange. Do not require an
                         existing conversation before posting. Initiate one concise message when a new/updated PR, an
                         ACTUAL implementation/access failure, technical finding, validation limitation, or named
-                        question would help PM/PO/Director act sooner; otherwise answer one fresh technical question. Do
+                        question would help PM/PO/ARCH/QA/Director act sooner; otherwise answer one fresh technical question. Do
                         not ask PM to re-announce an assignment already represented by Plane Todo + assignee. Link
                         authoritative Plane/Gitea evidence when useful. Do not volunteer
                         for unassigned work or repeat generic status.
@@ -282,45 +302,47 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         from("direct:dev-work-selection")
                 .routeId("dev-work-selection")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Task selection only: one assigned work:implementation child, never work:product. Prefer
+                        Task selection only: one assigned work:defect Bug or work:implementation Story, never Epics or work:test. Prefer
                         actionable In Progress work; otherwise assigned Todo when no current source-delivery child owns
                         an open unmerged PR. Todo + assignment is complete
                         handoff; Developer claims Todo -> In Progress.
                         """))
                 .to("tack:thought-enter?name=dev-selection&maxTokens=250")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Using fresh Plane evidence, inspect only items carrying work:implementation and assigned to you.
-                        Never select work:product. If labels were not returned, read
+                        Using fresh Plane evidence, inspect only items carrying work:defect or work:implementation and assigned to you.
+                        Never select product Epics or work:test. If labels were not returned, read
                         classification instead of guessing from wording.
                         
-                        First consider assigned In Progress work:implementation children. Continue one when
+                        First consider assigned In Progress source work. Prioritize work:defect Bugs over
+                        work:implementation Stories when both are actionable. Continue one when
                         implementation/topology investigation is underway or newer concrete teammate feedback/evidence
                         requires another pass. For normal source delivery, inspect the linked Gitea PR only as needed:
                         if the task's PR is OPEN and no newer evidence requires changes, the task is waiting for
-                        Director integration and is not actionable source work.
+                        Architect integration and is not actionable source work.
                         Comments do not create review/integration states.
                         
-                        If any assigned normal source-delivery child is In Progress with an OPEN unmerged PR, do not
-                        claim a different Todo source child. Keep unmerged source WIP to one integration unit. If its PR
-                        is merged, PM should reconcile the Plane child to Done; do not continue source
-                        changes merely because Plane has not caught up.
+                        If any assigned source-delivery unit is In Progress with an OPEN unmerged PR, do not
+                        claim a different Todo source child. Keep unmerged source WIP to one integration unit.
+                        A merged work:implementation Story belongs to reconcile focus, not source implementation.
+                        A merged work:defect Bug waits for QA retest/closure and is not actionable source work.
                         
                         If no actionable In Progress child exists and no assigned source child has an open unmerged PR,
-                        select one assigned Todo work:implementation child. Todo + assignment is the authoritative PM ->
+                        select one assigned Todo source unit, preferring work:defect before work:implementation.
+                        Todo + assignment is the authoritative PM ->
                         DEV handoff. Do NOT wait for PM to repeat the handoff in Mattermost or move it In Progress. Move
                         exactly that selected child Todo -> In Progress yourself. A topology investigation may be
                         selected when explicitly described as evidence-gathering
                         and dependency-free with an exact question.
                         
                         Ignore Backlog, Done, Cancelled, unassigned work, work
-                        assigned to others, and work:product parents.
+                        assigned to others, product Epics, and work:test items.
                         """))
-                .to("tack:act?id=dev-work-selection&toolProfile=" + ProjectManagementToolProfile.ID)
+                .to("tack:act?id=dev-work-selection&toolProfile=" + EngineeringWorkToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Is one assigned actionable work:implementation child now selected In Progress? Answer yes for
+                        Is one assigned actionable work:defect Bug or work:implementation Story now selected In Progress? Answer yes for
                         active normal implementation/recovery or explicit topology investigation. Answer no when the
                         only In Progress source child has an open unmerged PR with no newer change required, or no
-                        eligible assigned Todo work:implementation item exists.
+                        eligible assigned Todo source unit exists.
                         """))
                 .to("tack:decide?id=developer-has-work")
                 .to("tack:thought-exit?name=dev-selection");
@@ -337,24 +359,25 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .setProperty("decision.developer-has-valid-task-context.result", constant("no"))
                     .setProperty("decision.developer-is-topology-investigation.result", constant("no"))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                            Current implementation step: selected work:implementation child, task type, parent acceptance
+                            Current implementation step: selected source work unit, classification/type, Epic acceptance
                             behavior, source evidence, branch/PR, validation, current teammate feedback, blocker
                             evidence, and technical finding when applicable.
                             """))
                     .to("tack:thought-enter?name=dev-implementation&maxTokens=250")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                            Read only the selected In Progress work:implementation child. Verify Developer assignment,
-                            work:implementation classification, parent work:product acceptance reference, repo,
+                            Read only the selected In Progress source work unit. Verify Developer assignment, exact work:defect or
+                            work:implementation classification, associated Epic acceptance reference, repo,
                             dependencies, expected validation evidence, and any newer concrete feedback/blocker context. For
-                            topology investigation verify dependency-free exact technical question. A repository may be
-                            empty; no branch/main is required in task context. Do not mutate. If required delivery context
+                            topology investigation verify dependency-free exact technical question. The assigned
+                            repository must already contain the Architect-established baseline. Do not mutate. If required
+                            delivery context
                             is malformed/missing, identify the exact PM-owned gap and stop reading. Keep claimed work In
                             Progress when a later blocker needs PM/PO action; evidence is the signal, not state rollback.
                             """))
-                    .to("tack:act?id=dev-task-context-read&toolProfile=" + ProjectManagementToolProfile.ID)
+                    .to("tack:act?id=dev-task-context-read&toolProfile=" + EngineeringWorkToolProfile.ID)
                     .setHeader(TackHeaders.PROMPT, constant("""
-                            Is selected work:implementation context valid enough to perform assigned work? Normal delivery
-                            requires assignment, work:implementation classification, parent acceptance, repository locator,
+                            Is selected source-work context valid enough to perform assigned work? Normal delivery requires
+                            assignment, exact work:defect/work:implementation classification, Epic acceptance, repository locator,
                             dependency state, and expected validation evidence. It does NOT require an existing branch/main,
                             PM chat confirmation, or pre-confirmed push permission. Topology investigation requires
                             assignment, repository, dependency-free state, affected work ids, acceptance refs, exact
@@ -385,7 +408,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                             PM owns dependency/topology mutation, so do not restructure other work items yourself. Do not
                                             encode a named TECHNICAL FINDING workflow state; avoid duplicate equivalent evidence.
                                             """))
-                                    .to("tack:act?id=dev-topology-finding-update&toolProfile=" + ProjectManagementToolProfile.ID)
+                                    .to("tack:act?id=dev-topology-finding-update&toolProfile=" + EngineeringWorkToolProfile.ID)
                                     .choice()
                                         .when(exchangeProperty("act.dev-topology-finding-update.durableProgress").isEqualTo(true))
                                             .setProperty("devImplementationMadeProgress", constant(true))
@@ -395,19 +418,18 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                     .setProperty("devSourceCloseoutAllowed", constant(true))
                                     .setHeader(TackHeaders.PROMPT, constant("""
                                             Read only direct product-acceptance links and existing source needed for this child. Identify
-                                            one coherent next patch and validation target. An empty repository is valid: the first
-                                            implementation patch may establish the initial project structure. If newer concrete review
-                                            feedback requires source refresh, inspect the existing task branch/PR against origin/main
-                                            when those exist. Stop when patch is clear.
+                                            one coherent next patch and validation target. The Architect-established
+                                            repository baseline must already exist; do not initialize repository structure
+                                            here. If newer concrete review feedback requires source refresh, inspect the
+                                            existing task branch/PR against the current baseline. Stop when patch is clear.
                                             """))
                                     .to("tack:act?id=dev-source-context-plan&toolProfile=" + SourceControlToolProfile.ID)
                                     .setHeader(TackHeaders.PROMPT, constant("""
-                                        Apply exactly one coherent source-control patch for the selected implementation child. For an
-                                        empty repository, initialize the repository in the sandbox, establish the minimal
-                                        baseline/default branch needed for normal Git operation, then create/use the task branch and
-                                        continue the assigned implementation; do not wait for PM to seed main. For normal implementation
-                                        use/create the task branch, validate changed behavior when practical, commit, push, and
-                                        create/update one PR; avoid duplicate PRs. Do not preflight hypothetical collaborator
+                                        Apply exactly one coherent source-control patch for the selected implementation
+                                        child in the existing Architect-established repository. Use/create the task branch,
+                                        validate changed behavior when practical, commit, push, and create/update one PR;
+                                        avoid duplicate PRs. Do not initialize or provision repository architecture. Do not
+                                        preflight hypothetical collaborator
                                         permission. Attempt the ordinary push/PR workflow; only a real auth/authorization rejection is a
                                         blocker. For evidence-backed source-refresh feedback, recover the same task branch against
                                         current origin/main when present, rerun relevant validation, and reuse the same open PR when
@@ -428,16 +450,18 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                             """))
                                     .to("tack:act?id=dev-validation-step&toolProfile=" + SourceControlToolProfile.ID)
                                     .setHeader(TackHeaders.PROMPT, constant("""
-                                        Update only the selected work:implementation child in Plane. Keep it In Progress while its PR is
+                                        Update only the selected source work unit in Plane. Keep it In Progress while its PR is
                                         open/unmerged. Add or refresh one concise evidence/context comment only when useful, linking
-                                        current branch/head/PR, changed files, validation, parent item, acceptance ref, or exact
+                                        current branch/head/PR, changed files, validation, epic, acceptance ref, or exact
                                         blocker. Do NOT create REVIEW READY, INTEGRATION READY, or other named comment workflow states.
-                                        The open PR itself is the integration signal for Director. For blockers, name only a real
+                                        The open PR itself is the integration signal for Architect. For blockers, name only a real
                                         observed missing product judgment, malformed delivery context, failed source/auth operation,
                                         technical evidence, or external condition and who can resolve it. Avoid duplicate equivalent
-                                        comments. Do not move to Done; PM reconciles Done after verified merge.
+                                        comments. Do not move to Done here. After merge, Developer reconciles its assigned
+                                        work:implementation Story to Done; work:defect Bugs remain In Progress for QA
+                                        retest/closure.
                                         """))
-                                    .to("tack:act?id=dev-plane-status-evidence-update&toolProfile=" + ProjectManagementToolProfile.ID)
+                                    .to("tack:act?id=dev-plane-status-evidence-update&toolProfile=" + EngineeringWorkToolProfile.ID)
                                     .choice()
                                         .when(exchangeProperty("act.dev-plane-status-evidence-update.durableProgress").isEqualTo(true))
                                             .setProperty("devImplementationMadeProgress", constant(true))
@@ -452,7 +476,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                                     not use absent main/default branch, untested source permission, or missing Mattermost
                                     confirmation as blockers. Do not encode a named BLOCKED workflow state in comments.
                                     """))
-                            .to("tack:act?id=dev-invalid-context-blocked&toolProfile=" + ProjectManagementToolProfile.ID)
+                            .to("tack:act?id=dev-invalid-context-blocked&toolProfile=" + EngineeringWorkToolProfile.ID)
                             .choice()
                                 .when(exchangeProperty("act.dev-invalid-context-blocked.durableProgress").isEqualTo(true))
                                     .setProperty("devImplementationMadeProgress", constant(true))
@@ -496,7 +520,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         from("direct:dev-no-work-closeout")
                 .routeId("dev-no-work-closeout")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        If no assigned actionable work:implementation In Progress/Todo child exists, send one concise
+                        If no assigned actionable work:defect/work:implementation In Progress/Todo unit exists, send one concise
                         message only when PM would benefit from knowing the executable queue is empty or actual access
                         is blocking work. Do not ask PM to re-announce an assignment already represented in Plane. Do
                         not browse, shape, implement, or self-assign product backlog

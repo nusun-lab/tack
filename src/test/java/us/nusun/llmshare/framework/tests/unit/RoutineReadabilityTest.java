@@ -15,6 +15,8 @@ class RoutineReadabilityTest {
 
     private static final List<Path> ROUTINES = List.of(
             Path.of("src/main/java/us/nusun/llmshare/example/routine/ApplicationDeveloperRoutine.java"),
+            Path.of("src/main/java/us/nusun/llmshare/example/routine/ArchitectRoutine.java"),
+            Path.of("src/main/java/us/nusun/llmshare/example/routine/QualityEngineerRoutine.java"),
             Path.of("src/main/java/us/nusun/llmshare/example/routine/ProductOwnerRoutine.java"),
             Path.of("src/main/java/us/nusun/llmshare/example/routine/ProjectManagerRoutine.java"),
             Path.of("src/main/java/us/nusun/llmshare/example/routine/DirectorRoutine.java"));

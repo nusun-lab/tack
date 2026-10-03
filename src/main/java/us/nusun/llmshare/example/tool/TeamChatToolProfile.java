@@ -27,6 +27,20 @@ public class TeamChatToolProfile implements ToolProfileProvider {
     public List<ToolProfile> toolProfiles() {
         return List.of(ToolProfile.builder(ID)
                 .mcpServer(mattermost.definition())
+                .allowTools(MattermostMcpServer.ID,
+                        "get_me",
+                        "list_my_channels",
+                        "get_channel",
+                        "get_channel_by_name",
+                        "get_channel_messages",
+                        "get_thread",
+                        "search_messages",
+                        "create_direct_channel",
+                        "post_message",
+                        "update_message",
+                        "get_user",
+                        "get_user_by_username",
+                        "search_users")
                 .promptGuidance("""
                         - Mattermost is for concise communication, questions, handoffs, notifications, and useful team coordination
                         - do not require an existing conversation before posting; initiate one concise message when a meaningful handoff, blocker, question, merge, workspace transition, or other event would help a current teammate act sooner
@@ -40,22 +54,6 @@ public class TeamChatToolProfile implements ToolProfileProvider {
                         - do not recreate durable Plane or Gitea state in Mattermost
                         - do not read entire channels, stick to recent messages
                         """)
-                .denyTools(MattermostMcpServer.ID,
-                        "delete_channel",
-                        "delete_post",
-                        "delete_message",
-                        "leave_channel",
-                        "mark_channel_viewed",
-                        "add_reaction",
-                        "get_reactions",
-                        "remove_reaction",
-                        "pin_message",
-                        "unpin_message",
-                        "create_bookmark",
-                        "delete_bookmark",
-                        "list_bookmarks",
-                        "update_bookmark",
-                        "update_bookmark_sort_order")
                 .maxResultTokens(maxResultTokens)
                 .build());
     }

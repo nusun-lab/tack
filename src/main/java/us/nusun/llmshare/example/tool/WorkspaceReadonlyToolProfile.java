@@ -48,6 +48,8 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                         "list_work_item_activities",
                         "list_work_item_comments",
                         "retrieve_work_item_comment",
+                        "list_work_item_types",
+                        "retrieve_work_item_type",
                         "list_labels",
                         "list_states")
                 .allowTools(GiteaMcpServer.ID,
@@ -94,15 +96,20 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                         SKILL: software-team-cooperation
                         - Plane lifecycle uses only Backlog, Todo, In Progress, Done, Cancelled; never invent workflow states in labels, comments, or chat
                         - Plane state expresses lifecycle, assignment expresses ownership, dependencies express ordering, and comments/chat express evidence or context
-                        - work:product is PO-owned product scope/acceptance; work:implementation is PM-owned decomposition/dependencies/assignment
-                        - PO owns product outcomes and acceptance; PM owns implementation topology and delivery reconciliation; Developer owns source execution and PR production; Director owns staffing and PR integration
+                        - Plane work items typed Epic are PO-owned product outcomes and acceptance containers
+                        - Story + work:implementation is PM-coordinated delivery; Task + work:test is QA-owned test engineering
+                        - Bug + work:defect is QA-recorded product failure evidence; new Bugs begin unparented
+                        - PO classifies each defect into the correct Epic and owns product priority before PM routes repair
+                        - PO owns each Epic through acceptance; PM owns delivery flow, Story topology, and defect routing
+                        - Developer owns assigned component Story/Bug execution
+                        - Architect owns repository architecture, integration, conflicts, and architecture-heavy Story/Bug execution
+                        - QA owns system behavior tests, evidence, defect recording, and defect retest closure; PO alone accepts an Epic Done
                         - evidence may invalidate another role's domain, but report it to that owner rather than silently restructuring their work
-                        - product Backlog/Todo is PO definition territory; product In Progress means PM has claimed delivery, except PO may answer an explicit product question or perform final acceptance
                         - implementation Backlog is planned but not executable; Todo plus Developer assignment is executable handoff; Developer claims Todo -> In Progress
-                        - a claimed implementation that later blocks stays In Progress with blocker evidence; do not move lifecycle backward merely to signal another role
-                        - Director merge does not complete Plane implementation; PM reconciles verified merged implementation -> Done; PO alone accepts product In Progress -> Done
-                        - product cancellation does not implicitly cancel children; PM reconciles/cancels or replaces affected implementation work deliberately
-                        - implementation cancellation does not cancel its product parent; PM owns replacement coverage when the outcome remains required
+                        - test Backlog is planned QA work; Todo plus QA assignment is executable handoff; QA claims Todo -> In Progress
+                        - claimed work that later blocks stays In Progress with blocker evidence; do not move lifecycle backward merely to signal another role
+                        - Architect merge does not itself complete Plane lifecycle: the assigned engineer closes merged work:implementation, while QA closes repaired work:defect after retest
+                        - an Epic is not complete merely because implementation merged; PO requires QA evidence and no relevant open defect
                         - chat never gates lifecycle progress; productive work may send one narrow awareness message or question when another role can act sooner
 
                         SKILL: mission-anchor-reuse
@@ -118,11 +125,12 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                         - a field omitted by a sparse projection is UNKNOWN, not negative evidence; never infer no parent, no label, no assignee, or no dependency merely because that field was not returned
 
                         SKILL: plane-work-classification
-                        - use Plane labels as durable work classification, not lifecycle state: work:product = Product Owner top-level user outcome; work:implementation = Project Manager implementation child
-                        - lifecycle remains entirely in Plane states such as Backlog, Todo, In Progress, Done, and Cancelled; classification labels never substitute for lifecycle state
-                        - product queue depth counts only items carrying work:product; implementation queue depth counts only items carrying work:implementation
-                        - never count a work:implementation item as product backlog and never treat a work:product item as Developer implementation work
-                        - when labels were not returned by the current projection, classification is unknown until labels are read; do not guess from item wording
+                        - Product Owner outcomes are Plane work items whose work item type is Epic
+                        - use labels as durable work classification, not lifecycle state: work:implementation = delivery story; work:test = QA test-engineering work
+                        - lifecycle remains entirely in Plane states such as Backlog, Todo, In Progress, Done, and Cancelled
+                        - implementation queue depth counts only work:implementation; QA queue depth counts only work:test
+                        - work items should retain their epic association so delivery and evidence can be evaluated against product intent
+                        - when labels or epic association were not returned, classification/parentage is unknown until read; do not guess from wording
 
                         SKILL: plane-membership-model
                         - keep three sets distinct: the current mission roster (who is actively running), Plane workspace members (accounts available in Plane), and Plane project members (accounts granted access to this project)
@@ -145,7 +153,7 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                         - distinguish verified observations from assumptions
                         """)
                 .defaultArgument(PlaneMcpServer.ID, "list_projects", "fields", "id,name,identifier")
-                .defaultArgument(PlaneMcpServer.ID, "list_work_items", "fields", "id,name,sequence_id,state,priority,assignees,labels")
+                .defaultArgument(PlaneMcpServer.ID, "list_work_items", "fields", "id,name,sequence_id,state,priority,assignees,labels,type_id")
                 .defaultArgument(PlaneMcpServer.ID, "list_work_items", "per_page", 12)
                 .maxResultTokens(maxResultTokens)
                 .build());

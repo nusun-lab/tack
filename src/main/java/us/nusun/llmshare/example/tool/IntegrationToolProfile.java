@@ -42,10 +42,11 @@ public class IntegrationToolProfile implements ToolProfileProvider {
                         "get_commit")
                 .promptGuidance("""
                         - Plane lifecycle state and task context identify the implementation unit; comments provide evidence/context, not hidden approval states
-                        - an In Progress implementation child with an exact linked OPEN pull request is eligible for a fresh integration check; do not require REVIEW READY, INTEGRATION READY, or another magic approval phrase
+                        - an In Progress work:implementation Story, work:defect Bug, or work:test Task with an exact linked OPEN pull request is eligible for a fresh integration check; do not require REVIEW READY, INTEGRATION READY, or another magic approval phrase
                         - Gitea is authoritative for current pull-request/source state; the canonical Gitea web/clone base is https://gitea.apps.cluster.lab.nusun.us
                         - immediately before merge, verify only the exact selected work item/PR evidence needed for safety: repository, PR, intended base, current head/base, mergeability/conflicts, validation, acceptance scope, and any current blocker/review concern
-                        - merge only when the current PR evidence is safe and consistent with the selected implementation child's scope; if ambiguous, stale, conflicted, failing validation, or product intent is unresolved, make no source-control mutation
+                        - use pull_request_write only for the final merge operation in this profile
+                        - merge only when the current PR evidence is safe and consistent with the selected source work unit's scope; work:test changes belong in the system repository and must preserve linked Epic acceptance intent; if ambiguous, stale, conflicted, failing validation, or product intent is unresolved, make no source-control mutation
                         - do not manufacture an intermediate Plane comment state to authorize or reject integration
 
                         SKILL: mission-anchor-reuse

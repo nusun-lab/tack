@@ -130,6 +130,7 @@ A `ToolProfile` defines the capabilities available during an act. Profiles can:
 - allow or deny MCP tools;
 - allow framework-provided tools such as `sandbox_exec`;
 - add default tool arguments;
+- restrict allowed values for sensitive tool arguments;
 - provide prompt guidance;
 - cap tool-result tokens.
 
@@ -147,7 +148,7 @@ Each AgentRun owns scoped `ThoughtFrame` values. `thought-enter` pushes a child 
 
 Tack remains outside the sandbox. A persistent sandbox belongs to one **mission + persona** pair and is reused across that persona's AgentRuns for the mission. Different missions and personas receive different sandbox identities.
 
-`sandbox_exec` is injected only when the selected `ToolProfile` explicitly allows `sandbox/sandbox_exec`. The bundled `source-control-write` profile uses it for repository contents, builds, tests, diffs, commits, and pushes under `/sandbox/repos`. Gitea remains the remote source-control surface for repository discovery/provisioning, branch/commit/PR metadata, releases, and verification.
+`sandbox_exec` is injected only when the selected `ToolProfile` explicitly allows `sandbox/sandbox_exec`. The bundled `source-control-write` profile uses it for repository contents, builds, tests, diffs, commits, and pushes under `/sandbox/repos`. Gitea remains the remote source-control surface for repository and PR metadata; the bundled Architect profile alone exposes repository provisioning, and final merge is isolated to the integration profile.
 
 When the persona has a Gitea identity, Tack prepares an OpenShell provider and Git credentials for that sandbox. `POST /workspace/reset` discovers and deletes Tack-owned sandboxes as part of reset cleanup.
 
@@ -305,14 +306,20 @@ public class SourceControlToolProfile implements ToolProfileProvider {
     public List<ToolProfile> toolProfiles() {
         return List.of(ToolProfile.builder("source-control")
                 .mcpServer(repository.definition())
-                .denyTools("repository", "delete_repository", "delete_branch")
+                .allowTools("repository", "pull_request_read", "pull_request_write")
+                .allowArgumentValues(
+                        "repository",
+                        "pull_request_write",
+                        "method",
+                        "create",
+                        "update")
                 .maxResultTokens(6000)
                 .build());
     }
 }
 ```
 
-A server without an allow list exposes its tools except those explicitly denied. Cross-system profiles should generally use explicit allow lists. Framework-provided tools follow the same profile boundary; for example, `.allowTool("sandbox", "sandbox_exec")` opts a profile into sandbox execution.
+A server without an allow list exposes its tools except those explicitly denied. Cross-system profiles should generally use explicit allow lists. `allowArgumentValues(...)` can further constrain a multi-action tool after it is allowed, such as exposing pull-request creation/update while rejecting merge. Framework-provided tools follow the same profile boundary; for example, `.allowTool("sandbox", "sandbox_exec")` opts a profile into sandbox execution.
 
 ## The `tack:` component
 
@@ -435,36 +442,75 @@ The `us.nusun.llmshare.example` package is a demonstration catalog, not part of 
 
 | Persona | Routine | Responsibility |
 | --- | --- | --- |
-| Noah | `software-team/director` | Maintains mission-level PM/PO/DEV coverage and orchestration |
-| Owen | `software-team/project-manager` | Bootstraps shared delivery infrastructure and manages delivery |
-| Ethan | `software-team/product-owner` | Creates and accepts user-facing product slices |
-| Miles | `software-team/application-developer` | Implements assigned delivery work and returns review evidence |
+| Noah | `software-team/director` | Maintains mission coverage and mission/product viability |
+| Ethan | `software-team/product-owner` | Owns typed product Epics through evidence-based acceptance |
+| Owen | `software-team/project-manager` | Owns delivery flow, Story topology, dependencies, WIP, and handoffs |
+| Avery | `software-team/architect` | Owns repository architecture, integration, conflicts, and architecture-heavy engineering |
+| Miles | `software-team/application-developer` | Owns assigned component Stories and prioritized defect repairs |
+| Quinn | `software-team/quality-engineer` | Owns test engineering, system behavior evidence, defect recording, and retest closure |
 
-PM bootstrap establishes the shared Plane project, source/documentation repositories, team chat, access, and navigation that the other roles depend on. AgentRun execution remains asynchronous; sequencing guarantees belong in orchestration structure, not prompt wording.
+### Delivery model
 
-The example expects shared Git work under the `agent-workspace` organization.
+Plane work-item types and parent/child hierarchy carry the durable product/delivery model:
+
+- **Epic:** PO-owned product lifecycle object. PO defines, prioritizes, activates, and accepts it.
+- **Story + `work:implementation`:** PM-planned delivery work beneath an Epic. DEV or ARCH owns assigned lifecycle through Done.
+- **Task + `work:test`:** QA-owned test-engineering work beneath an Epic.
+- **Bug + `work:defect`:** QA-recorded behavior failure created unparented in Backlog with candidate Epic evidence. PO classifies it into the correct Epic and sets product priority, reopening a previously Done Epic when the defect invalidates accepted behavior; PM routes repair, DEV/ARCH fixes, and QA retests/closes it.
+
+The team normally keeps one Epic In Progress. Ready Epics may queue in Todo. PM limits source-delivery WIP to one active unit per DEV/ARCH engineer with at most one executable Todo queued ahead, and QA follows the same pattern for test engineering: one active `work:test` Task with at most one executable Todo queued ahead. Additional foreseeable work remains Backlog until capacity opens.
+
+PM bootstrap establishes the Plane project and team channel. Onboarding is additive-only: PM grants missing current-roster access but does not evict project/channel members based on roster absence. Architect provisions and baselines source control after that foundation exists. DEV and QA are staffed once an Epic is active and that repository architecture is ready. QA test-code PRs use the same Architect integration path as implementation PRs, and a test Task stays In Progress until required test code is merged. The repository model is deliberately simple:
+
+```text
+system-repo/
+├── README.md
+├── gitops/
+├── docs/
+└── tests/
+    └── system/
+
+component-repo(s)/
+└── independently deployable application components
+```
+
+The system repository is the single home for system GitOps, system documentation, architecture decisions, and cross-component system behavior tests. Separate docs or QA repositories are not part of the model. The example expects mission Git repositories under the `agent-workspace` organization.
+
+### Feedback loops
+
+- **PO ↔ QA:** PO defines acceptance intent; QA builds evidence and raises ambiguity/defects; PO accepts the Epic.
+- **PO ↔ DIR:** evidence-backed viability or mission-interpretation questions flow to Director without transferring backlog ownership.
+- **DEV ↔ QA:** QA exposes failed behavior/testability needs; DEV implements component fixes and useful test seams.
+- **ARCH ↔ DEV:** Architect integrates component work, resolves conflicts, and handles cross-cutting/system implementation.
+- **PM ↔ everyone:** PM maintains synchronization, dependencies, assignments, defect routing, flow reconciliation, and low WIP.
 
 ### Tool ownership
 
-- **Plane:** projects, work items, assignments, status, dependencies, priorities, blockers, and delivery planning.
-- **Gitea:** remote repositories, branches, commits, pull requests, releases, and verification.
-- **OpenShell:** local repository contents, filesystem work, builds, tests, diffs, commits, and pushes.
-- **Mattermost:** conversation, questions, handoffs, and concise notifications.
+- **Plane:** projects, typed work items, hierarchy, assignments, lifecycle, dependencies, priorities, blockers, and evidence comments.
+- **Gitea:** repositories, branches, commits, pull requests, releases, and integration evidence.
+- **OpenShell:** local repository contents, builds, tests, diffs, commits, conflict recovery, and pushes.
+- **Mattermost:** concise questions, handoffs, viability discussion, and awareness messages.
 
-Gitea issue tracking, labels, milestones, and time tracking are intentionally excluded so Plane remains the project-management source of truth.
+Gitea issue tracking, labels, milestones, and time tracking are intentionally excluded so Plane remains the delivery source of truth.
 
 ### Example tool profiles
 
 | Profile | Scope |
 | --- | --- |
 | `workspace-readonly` | Read-only orientation across Plane, Gitea, and Mattermost |
-| `workspace-coordination` | Bounded cross-system coordination |
-| `project-management` | Deep Plane planning and work management |
-| `source-control` | Gitea remote source-control discovery and evidence |
-| `source-control-write` | Gitea remote operations plus profile-gated `sandbox_exec` for repository content work |
-| `team-chat` | Mattermost conversation and channel operations |
+| `workspace-coordination` | PM-only project/channel bootstrap and access alignment |
+| `product-ownership` | PO-only Epic lifecycle, priority, acceptance, and defect triage |
+| `delivery-management` | PM-only Story planning, dependency/assignment flow, and defect routing |
+| `quality-management` | QA-only test Task, defect Bug, evidence, and retest lifecycle |
+| `engineering-work` | DEV/ARCH execution updates for already-assigned Story/Bug work |
+| `source-control` | Read-only Gitea source discovery and evidence |
+| `source-control-write` | DEV source writes in Architect-established component repositories |
+| `quality-source-control-write` | QA source writes in the Architect-established system repository |
+| `architect-source-control-write` | ARCH source writes plus repository provisioning/conflict recovery |
+| `integration` | ARCH final pull-request integration authority |
+| `team-chat` | Mattermost conversation and notifications |
 
-Routine authors should choose the narrowest profile that supports one coherent act.
+Routine authors should choose the narrowest profile that supports one coherent act. Ownership rules belong in tool surfaces and durable work semantics, not repeated ad hoc prompt conventions.
 
 ## Workspace API
 
