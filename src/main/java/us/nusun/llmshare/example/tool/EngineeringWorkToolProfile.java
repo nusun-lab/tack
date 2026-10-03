@@ -52,6 +52,11 @@ public class EngineeringWorkToolProfile implements ToolProfileProvider {
                         - comments are evidence/context, not hidden lifecycle states
                         - this profile cannot create work items, labels, projects, test tasks, or defects
 
+                        SKILL: plane-work-classification
+                        - Tack work classification is represented by attached labels epic, story, test, or defect
+                        - these labels are unrelated to Plane's native work-item type and type_id; never use type_id to
+                          determine Tack classification
+
                         SKILL: plane-query-recipes
                         - Discovery: list_work_items(project_id=<verified>,
                           fields="id,name,sequence_id,state,priority,assignees")

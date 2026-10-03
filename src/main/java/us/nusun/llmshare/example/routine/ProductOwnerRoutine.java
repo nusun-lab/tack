@@ -24,7 +24,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
     public RoutineDefinition routine() {
         return RoutineDefinition.builder(ID)
                 .name("Product Owner")
-                .main("Own type:epic product outcomes from definition through evidence-based acceptance.",
+                .main("Own epic product outcomes from definition through evidence-based acceptance.",
                         "direct:example-software-team-product-owner")
                 .subroutine("epic-definition", "Define and prioritize product Epics.", "direct:po-epic-definition")
                 .subroutine("epic-acceptance", "Accept an Epic using current completion evidence.",
@@ -42,7 +42,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         from("direct:example-software-team-product-owner")
                 .routeId("example-software-team-product-owner")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Durable product anchors: mission value, type:epic label, prioritized active/ready Epic sets,
+                        Durable product anchors: mission value, epic label, prioritized active/ready Epic sets,
                         acceptance intent, QA evidence, open defects, product questions, and viability findings.
                         """))
                 .to("tack:thought-enter?name=po-root&maxTokens=450")
@@ -51,7 +51,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                     .to("direct:po-orientation")
                     .setHeader(TackHeaders.PROMPT, constant("""
                             Choose exactly one highest-value Product Owner focus.
-                            - defect-triage: a QA-created Backlog type:defect needs product validation, Epic association,
+                            - defect-triage: a QA-created Backlog defect needs product validation, Epic association,
                               priority, or rejection with clarified test intent.
                             - acceptance: one In Progress Epic has implementation and QA evidence sufficient for a product
                               acceptance decision.
@@ -62,7 +62,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                             - qa-feedback: QA raised an acceptance ambiguity or evidence question requiring product judgment.
                             - viability: evidence suggests product scope/value or mission interpretation needs Director input.
                             - coordination: another fresh product question needs a concise response.
-                            - complete: all required mission outcomes are represented by type:epic work items, every
+                            - complete: all required mission outcomes are represented by epic work items, every
                               required Epic is accepted Done, and no unresolved product judgment, acceptance-blocking
                               defect, or viability question remains.
                             - wait: the mission is not complete and none of the other focuses is useful now.
@@ -79,11 +79,11 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .routeId("po-orientation")
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Read the smallest current-mission slice needed to rank Product Owner focus. Identify product
-                        outcomes only from the attached type:epic label; never infer an epic from title, hierarchy, state,
-                        or ownership. Capture: active In Progress Epic count; ready Todo Epic depth; missing mission
+                        outcomes only from the attached epic label; Plane type_id is unrelated to Tack classification.
+                        Never infer an Epic from title, hierarchy, state, or ownership. Capture: active In Progress Epic count; ready Todo Epic depth; missing mission
                         outcomes; Given/When/Then acceptance for selected active/ready Epics; ownership of every
                         non-Backlog Epic; whether each Todo Epic has usable Gherkin and implementation Story coverage;
-                        implementation/test child progress when relevant; open type:defects plus any PO-recorded
+                        implementation/test child progress when relevant; open defects plus any PO-recorded
                         acceptance-impact disposition; QA evidence/ambiguity; one fresh product exchange; one viability concern.
                         A sparse work-item list may omit parent; retrieve only a selected child when its Epic parent is
                         needed. Report observations only. Do not mutate.
@@ -118,7 +118,8 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         from("direct:po-epic-definition")
                 .routeId("po-epic-definition")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Make one coherent Epic lifecycle advance. Ensure the type:epic label exists. Product outcomes are
+                        Make one coherent Epic lifecycle advance. Ensure the attached epic classification label exists.
+                        Product outcomes are
                         top-level Plane work items carrying that label. Create/refine only independently valuable outcomes
                         supported by the mission, with useful product priority.
 
@@ -139,9 +140,9 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         refining/preparing Todo Epics without activating another. A defect-driven reopen of a previously
                         Done Epic is an explicit exception and may temporarily exceed the normal active limit.
 
-                        Attach type:epic explicitly to every product outcome you create or classify.
+                        Attach epic explicitly to every product outcome you create or classify.
                         Define product behavior only; do not prescribe implementation mechanics in Gherkin. Do not create
-                        or sequence type:story implementation work, assign engineers, create type:test work, or own
+                        or sequence story implementation work, assign engineers, create test work, or own
                         repair routing. Delivery gaps may be surfaced to PM, but PM owns implementation topology.
                         """))
                 .to("tack:act?id=po-epic-work&toolProfile=" + ProductOwnershipToolProfile.ID);
@@ -153,7 +154,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         from("direct:po-defect-triage")
                 .routeId("po-defect-triage")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Validate one QA-created Backlog type:defect. Read its reproducible evidence, originating type:test,
+                        Validate one QA-created Backlog defect. Read its reproducible evidence, originating test,
                         candidate Epic context, and expected versus actual behavior.
 
                         If it is a real product defect, set its parent to the affected Epic, assign product priority, and
@@ -165,7 +166,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
 
                         If it is not a product defect because acceptance/test intent was wrong or ambiguous, Cancel the
                         Defect with the product disposition and clarify the affected Epic acceptance when needed. Record
-                        the clarified expected behavior on the originating type:test and explicitly request QE retest.
+                        the clarified expected behavior on the originating test and explicitly request QE retest.
                         Do not change the Test lifecycle; QE owns Test state and will return it to Todo. If it is a
                         duplicate, Cancel it and reference the canonical finding. Do not create repair work or assign
                         engineers here.
@@ -190,7 +191,7 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         Decide acceptance for one selected active Epic against its current PO-authored Given/When/Then
                         scenarios. Read the Epic plus only its child work/evidence needed for the decision. Move the Epic
                         to Done only when its promised behavior is demonstrated by current
-                        QA evidence, required Story/Test children are terminal, and no relevant accepted type:defect whose
+                        QA evidence, required Story/Test children are terminal, and no relevant accepted defect whose
                         PO disposition says acceptance-blocking=yes remains nonterminal. Accepted non-blocking Defects may
                         remain Backlog without preventing Epic acceptance. A merged PR alone is not acceptance. If evidence
                         is insufficient, keep the Epic In Progress and record the exact missing product/evidence condition

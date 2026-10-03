@@ -7,7 +7,7 @@
     <property name="charset" value="UTF-8"/>
 
     <module name="RegexpMultiline">
-        <property name="format" value="work:(product|implementation|test|defect)|type:task|type:bug"/>
+        <property name="format" value="work:(product|implementation|test|defect)|type:(epic|story|test|defect|task|bug)"/>
         <property name="maximum" value="0"/>
         <property name="message" value="Retired software-team classification label vocabulary is not allowed."/>
     </module>

@@ -56,12 +56,12 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
                             Choose exactly one highest-value Architect focus.
                             - repository-architecture: system repo/component repo model is missing, incomplete, or
                               inconsistent with the current architecture.
-                            - reconcile: an ARCH-assigned type:story remains In Progress after its linked
+                            - reconcile: an ARCH-assigned story remains In Progress after its linked
                               PR is verified merged; Architect owns its transition to Done.
                             - integration: any current-mission open PR can be safely merged, needs conflict recovery, or
                               needs a small integration adjustment. Architect owns and drains the whole integration queue,
                               including Architect-authored PRs. Safe integration work outranks new ARCH implementation work.
-                            - implementation: an assigned, classification-verified ARCH type:story or type:defect is actionable
+                            - implementation: an assigned, classification-verified ARCH story or defect is actionable
                               and no safe integration candidate is waiting.
                             - coordination: a fresh architecture/product/QA/developer question needs Architect judgment.
                             - complete: every required product Epic is terminal, the repository model is established, no
@@ -115,10 +115,10 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:architect-focus-reconcile")
                 .routeId("architect-focus-reconcile")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Reconcile exactly one ARCH-assigned type:story whose linked PR is verified merged.
+                        Reconcile exactly one ARCH-assigned story whose linked PR is verified merged.
                         Confirm the Story is still In Progress, the PR/commit actually merged to the intended base, and no
                         newer evidence requires source changes. Move that Story to Done with concise merge/validation
-                        evidence. Never close type:defect here; repaired Defects remain In Progress for QA retest/closure.
+                        evidence. Never close defect here; repaired Defects remain In Progress for QA retest/closure.
                         """))
                 .to("tack:act?id=architect-story-reconcile&toolProfile=" + EngineeringWorkToolProfile.ID)
                 .to("direct:architect-awareness");
@@ -139,10 +139,10 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
                 .setProperty("decision.architect-has-work.result", constant("no"))
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Select exactly one ARCH-assigned actionable engineering unit. Before any lifecycle mutation,
-                        verify attached classification in current evidence: type:story for delivery or type:defect for repair.
-                        Unknown/missing classification means do not mutate. A type:epic
-                        or type:test is never claimable ARCH source work. Prefer assigned In Progress; otherwise claim a
-                        classification-verified assigned Todo -> In Progress. For a type:story, verify its
+                        verify attached classification in current evidence: story for delivery or defect for repair.
+                        Unknown/missing classification means do not mutate. A epic
+                        or test is never claimable ARCH source work. Prefer assigned In Progress; otherwise claim a
+                        classification-verified assigned Todo -> In Progress. For a story, verify its
                         parent Epic is In Progress before claiming it; Todo/Backlog Epic children are prepared future work.
                         Verify Epic parent/acceptance, exact agent-workspace repository locator, dependencies, and expected
                         validation. Never self-assign
@@ -167,8 +167,8 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
                                 + ArchitectSourceControlWriteToolProfile.ID)
                         .setHeader(TackHeaders.PROMPT, constant("""
                                 Update only the selected Plane work with branch/commit/PR, changed scope, validation, and
-                                concrete blockers. Keep type:story In Progress while its PR is open; Architect
-                                reconciles its assigned Story Done after verified merge. Keep type:defect In Progress
+                                concrete blockers. Keep story In Progress while its PR is open; Architect
+                                reconciles its assigned Story Done after verified merge. Keep defect In Progress
                                 through merge; QA retest closes the Defect.
                                 """))
                         .to("tack:act?id=architect-work-evidence&toolProfile=" + EngineeringWorkToolProfile.ID)

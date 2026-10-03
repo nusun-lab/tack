@@ -436,22 +436,22 @@ The `us.nusun.llmshare.example` package is a demonstration catalog, not part of 
 | Persona | Routine | Responsibility |
 | --- | --- | --- |
 | Noah | `software-team/director` | Maintains mission coverage and mission/product viability |
-| Ethan | `software-team/product-owner` | Owns `type:epic` product outcomes through evidence-based acceptance |
-| Owen | `software-team/project-manager` | Owns delivery flow, `type:story` topology, dependencies, WIP, and handoffs |
+| Ethan | `software-team/product-owner` | Owns `epic` product outcomes through evidence-based acceptance |
+| Owen | `software-team/project-manager` | Owns delivery flow, `story` topology, dependencies, WIP, and handoffs |
 | Avery | `software-team/architect` | Owns repository architecture, integration, conflicts, and architecture-heavy engineering |
-| Miles | `software-team/application-developer` | Owns assigned component `type:story` work and prioritized defect repairs |
+| Miles | `software-team/application-developer` | Owns assigned component `story` work and prioritized defect repairs |
 | Quinn | `software-team/quality-engineer` | Owns test engineering, system behavior evidence, defect recording, and retest closure |
 
 ### Delivery model
 
-Plane labels plus parent/child hierarchy carry the durable product/delivery model. Tack does not depend on native Plane work-item types for this example. Every classified work item carries exactly one `type:*` label from this closed set:
+Plane labels plus parent/child hierarchy carry the durable product/delivery model. Tack does not depend on native Plane work-item types for this example. Every classified work item carries exactly one attached classification label from this closed set. These labels are unrelated to Plane's native work-item type/type_id:
 
-- **`type:epic`:** PO-owned product lifecycle object. PO defines, prioritizes, activates, and accepts it.
-- **`type:story`:** PM-planned engineering delivery beneath an Epic. DEV or ARCH owns assigned lifecycle through Done.
-- **`type:test`:** QE-owned test/evidence work beneath an Epic.
-- **`type:defect`:** QE-raised product-failure claim. QE creates it unparented in Backlog with evidence; PO validates or rejects it, records whether it blocks Epic acceptance, and assigns product priority; PM routes accepted Todo Defects; DEV/ARCH repairs; QE retests and closes.
+- **`epic`:** PO-owned product lifecycle object. PO defines, prioritizes, activates, and accepts it.
+- **`story`:** PM-planned engineering delivery beneath an Epic. DEV or ARCH owns assigned lifecycle through Done.
+- **`test`:** QE-owned test/evidence work beneath an Epic.
+- **`defect`:** QE-raised product-failure claim. QE creates it unparented in Backlog with evidence; PO validates or rejects it, records whether it blocks Epic acceptance, and assigns product priority; PM routes accepted Todo Defects; DEV/ARCH repairs; QE retests and closes.
 
-Plane state carries lifecycle, assignment carries ownership, parent/sub-work-item hierarchy carries decomposition, and relations carry blocking/order. Classification is never inferred from title, wording, state, hierarchy, or role.
+Plane state carries lifecycle, assignment carries ownership, parent/sub-work-item hierarchy carries decomposition, and relations carry blocking/order. Plane native `type_id` is not used for Tack classification. Classification is never inferred from title, wording, state, hierarchy, or role.
 
 The team normally keeps roughly 2-3 Epics In Progress with a deeper Todo runway when downstream capacity supports it. Todo is the preparation boundary: PM may pre-decompose Backlog Stories, and once repository architecture is ready Director staffs DEV and QE without waiting for the Epic to become In Progress. PM targets roughly 2-3 active engineering units plus 2-3 executable Todo Stories per delivery role when independent work exists; QE uses the same practical 2-3 active plus 2-3 queued target for Tests. Story dependencies must remain acyclic. PM owns cancellation of obsolete Stories; QE owns Test promotion, clarified-retest resets, and cancellation of obsolete Tests. These are flow targets, not hard ceilings.
 
@@ -497,10 +497,10 @@ Gitea issue tracking, labels, milestones, and time tracking are intentionally ex
 | --- | --- |
 | `workspace-readonly` | Read-only orientation across Plane, Gitea, and Mattermost |
 | `workspace-coordination` | PM-only project/channel bootstrap and access alignment |
-| `product-ownership` | PO Epic lifecycle/acceptance plus validation and prioritization of `type:defect` findings |
+| `product-ownership` | PO Epic lifecycle/acceptance plus validation and prioritization of `defect` findings |
 | `delivery-management` | PM Story planning, dependency/assignment flow, and routing of accepted Todo Defects |
-| `quality-management` | QE `type:test` lifecycle, `type:defect` creation/retest evidence, and Epic evidence |
-| `engineering-work` | DEV/ARCH execution updates for already-assigned `type:story` or `type:defect` work |
+| `quality-management` | QE `test` lifecycle, `defect` creation/retest evidence, and Epic evidence |
+| `engineering-work` | DEV/ARCH execution updates for already-assigned `story` or `defect` work |
 | `source-control` | Read-only Gitea source discovery and evidence |
 | `source-control-write` | DEV source writes in Architect-established component repositories |
 | `quality-source-control-write` | QA source writes in the Architect-established system repository |

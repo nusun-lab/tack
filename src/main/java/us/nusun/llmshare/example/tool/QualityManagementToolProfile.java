@@ -50,8 +50,10 @@ public class QualityManagementToolProfile implements ToolProfileProvider {
                 .promptGuidance("""
                         - this profile creates and updates Plane QA work and defect evidence; the calling routine owns QA
                           lifecycle, test-planning, defect, retest, and completion policy
-                        - Tack work-item kinds are represented by exactly one attached type:* label: type:epic, type:story,
-                          type:test, or type:defect; classification labels never represent lifecycle state
+                        - Tack work classification is represented by exactly one attached Plane label: epic, story, test,
+                          or defect; classification labels never represent lifecycle state
+                        - these labels are unrelated to Plane's native work-item type and type_id; never use type_id to
+                          determine Tack classification
                         - create a missing classification label only when the routine explicitly requires that kind, then
                           attach it explicitly with manage_work_item_label
                         - before mutating an existing item based on kind, verify attached labels and current assignees

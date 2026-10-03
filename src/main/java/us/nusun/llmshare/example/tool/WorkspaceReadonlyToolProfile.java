@@ -86,6 +86,14 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                         - ids, names, URLs, and values shown only in tool descriptions/examples are illustrative, not live
                           resource locators
 
+                        SKILL: plane-work-classification
+                        - Tack work classification is represented only by attached Plane labels: epic, story, test, or defect
+                        - these classification labels are unrelated to Plane's native work-item type and type_id; never use
+                          type_id to determine Tack classification
+                        - verify classification from attached labels: epic means Epic, story means Story, test means Test,
+                          and defect means Defect
+                        - every classified work item carries exactly one of these four labels
+
                         SKILL: plane-query-recipes
                         - Discovery: list_work_items(project_id=<verified>,
                           fields="id,name,sequence_id,state,priority,assignees")

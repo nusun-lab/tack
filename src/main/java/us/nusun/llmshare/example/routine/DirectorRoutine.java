@@ -40,7 +40,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                 .routeId("example-software-team-director")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
                         Durable mission anchors: mission goal, authoritative active roster, shared coordination readiness,
-                        ready/active type:epic product outcomes, major blockers, product-viability questions, and last focused outcome.
+                        ready/active epic product outcomes, major blockers, product-viability questions, and last focused outcome.
                         """))
                 .to("tack:thought-enter?name=director-root&maxTokens=450")
                 .setProperty(AgentRunAdmissionService.CAPACITY_MAXIMUM_PROPERTY, constant(MAX_ACTIVE_MISSION_RUNS))
@@ -53,12 +53,12 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                               active AgentRun roster.
                             - guidance: a fresh cross-role blocker, mission interpretation, or PO product-viability
                               question needs Director judgment.
-                            - complete: all required type:epic product outcomes are accepted Done and no unresolved
+                            - complete: all required epic product outcomes are accepted Done and no unresolved
                               delivery, architecture, QA, product, or mission blocker remains.
                             - wait: the mission is not complete and neither staffing nor Director judgment is useful now.
                             Director does not arbitrate routine merge authority or integrate pull requests. Architect owns
                             the integration queue for all current-mission PRs regardless of author. Director does not own
-                            backlog decomposition; PO owns type:epic product outcomes and PM owns delivery flow.
+                            backlog decomposition; PO owns epic product outcomes and PM owns delivery flow.
                             Choose exactly one value.
                             """))
                     .to("tack:decide?id=director-focus&choices=staffing,guidance,complete,wait")
@@ -91,8 +91,8 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         Verify staffing phase signals only: authoritative active AgentRun roster/capacity; coordination
                         foundation readiness (Plane project plus team channel); repository-architecture readiness
                         (exactly one mission system repository plus the component repository set documented by Architect);
-                        and whether at least one PO-owned type:epic work item is Todo or In Progress. Do not infer epic
-                        status from title or ownership alone. Do not require repositories before Architect
+                        and whether at least one PO-owned work item carrying the epic label is Todo or In Progress.
+                        Verify Epic classification from attached labels, never from Plane type_id, title, or ownership. Do not require repositories before Architect
                         is staffed. Do not infer active roles from assignments, commits, chat, or repository identities.
                         """))
                 .to("tack:act?id=director-staffing-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
@@ -105,7 +105,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         Phase policy for an unfinished mission:
                         - Project Manager is always required.
                         - Once Plane project and team channel are usable, Product Owner and Architect are required.
-                        - Once at least one PO-owned type:epic work item is Todo or In Progress AND Architect has established
+                        - Once at least one PO-owned work item carrying the epic label is Todo or In Progress AND Architect has established
                           the system repository plus the required component repository set, Developer and Quality Engineer
                           are required. Todo is the staffing/preparation boundary; do not wait for Epic activation.
                         - Keep already-required roles active through mission completion.

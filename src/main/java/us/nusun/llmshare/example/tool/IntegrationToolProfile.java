@@ -52,6 +52,11 @@ public class IntegrationToolProfile implements ToolProfileProvider {
                         - use pull_request_write only for merge operations in this profile
                         - this profile does not mutate Plane lifecycle or manufacture comment-based approval states
 
+                        SKILL: plane-work-classification
+                        - Tack work classification is represented by attached labels epic, story, test, or defect
+                        - these labels are unrelated to Plane's native work-item type and type_id; never use type_id to
+                          determine Tack classification
+
                         SKILL: plane-query-recipes
                         - Classification: retrieve_work_item(project_id=<verified>, work_item_id=<selected UUID>,
                           expand="labels", fields="id,name,sequence_id,state,labels")
