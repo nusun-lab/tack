@@ -22,6 +22,7 @@ import us.nusun.llmshare.framework.logging.LogTokens;
 import us.nusun.llmshare.framework.model.InferenceLaneDefinition;
 import us.nusun.llmshare.framework.model.LlmJobEnvelope;
 import us.nusun.llmshare.framework.model.LlmJobResult;
+import us.nusun.llmshare.framework.projection.AgentRunProjectionManager;
 
 import java.io.InputStream;
 import java.time.Instant;
@@ -48,6 +49,7 @@ public class LlmRouteSupport {
     @Inject InFlightReplyManager inFlightReplyManager;
     @Inject LlmDeadLetterFactory deadLetterFactory;
     @Inject LogTokens logTokens;
+    @Inject AgentRunProjectionManager projections;
 
     public LlmRouteSupport() {
     }
@@ -96,6 +98,7 @@ public class LlmRouteSupport {
     }
 
     public void logPrompt(@ExchangeProperty("llmJob") LlmJobEnvelope job, Exchange exchange) {
+        if (projections != null) projections.recordLlmStarted(exchange);
         String systemPrompt = job == null ? null : job.systemPrompt();
         String prompt = job == null ? null : job.prompt();
         logTokens().print(logTokens().wrapDim(agentLabel(exchange), agentLogColor(exchange),
@@ -152,7 +155,13 @@ public class LlmRouteSupport {
             @ExchangeProperty("llmJob") LlmJobEnvelope job,
             @ExchangeProperty("llmStartedAt") Instant startedAt,
             Exchange exchange) {
-        return LlmJobResult.succeeded(job, deadLetterFactory.modelId(exchange), rawResponse, rawResponse, startedAt);
+        LlmJobResult result = LlmJobResult.succeeded(
+                job,
+                deadLetterFactory.modelId(exchange),
+                rawResponse,
+                rawResponse,
+                startedAt);
+        return result;
     }
 
     public void verifySelectedRoutesAvailable(@ExchangeProperty("inferenceLane") InferenceLaneDefinition lane, Exchange exchange) {

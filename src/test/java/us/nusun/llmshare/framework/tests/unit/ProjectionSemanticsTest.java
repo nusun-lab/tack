@@ -4,6 +4,9 @@ import org.apache.camel.Exchange;
 import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.framework.inventory.RoutineCatalog;
 import us.nusun.llmshare.framework.model.AgentRunProjection;
+import us.nusun.llmshare.framework.model.LlmJobEnvelope;
+import us.nusun.llmshare.framework.model.LlmJobRequest;
+import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.model.RoutineDefinition;
 import us.nusun.llmshare.framework.model.StepResult;
 import us.nusun.llmshare.framework.model.ThoughtFrame;
@@ -52,11 +55,9 @@ class ProjectionSemanticsTest {
         assertEquals("Test run input", ((Map<?, ?>) projection.input()).get("brief"));
         assertEquals(FrameworkFixtures.PERSONA_A, projection.persona().get("id"));
         assertEquals(FrameworkFixtures.ROUTINE_A, projection.routine().get("id"));
-        assertEquals("act", projection.current().get("primitive"));
-        assertEquals("work-item-review", projection.current().get("id"));
+        assertTrue(projection.current().isEmpty());
         assertEquals(FrameworkFixtures.PROFILE_BETA, projection.toolProfile());
         assertEquals("high-pass", projection.laneId());
-        assertEquals(fullPrompt, projection.current().get("promptSummary"));
         assertEquals("step", projection.latestResult().get("type"));
         assertEquals("Project membership is missing.", projection.latestResult().get("summary"));
         assertEquals("ACT_COMPLETED", projection.timeline().getFirst().get("type"));
@@ -65,6 +66,124 @@ class ProjectionSemanticsTest {
         assertEquals("pm-cycle", projection.thoughtStack().getFirst().get("displayId"));
     }
 
+
+    @Test
+    void llmStartProjectionAdvancesOnlyFromQueuedJobMetadataAtExecutionBoundary() {
+        ProjectionStore store = FrameworkFixtures.projectionStore();
+        AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
+        Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
+        AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
+        run.currentPrimitive("decide");
+        run.currentId("previous-step");
+        exchange.setProperty("decisionPrompt", "Previous prompt");
+        manager.record(exchange, "DECISION_COMPLETED");
+        run.currentPrimitive("act");
+        run.currentId("inspect-current-work");
+
+        LlmJobEnvelope job = LlmJobEnvelope.queued(new LlmJobRequest(
+                null,
+                "high-pass",
+                LlmPassType.ACTION,
+                "act:inspect-current-work",
+                "Persona A",
+                0,
+                "Rendered model prompt",
+                "System prompt",
+                null,
+                Map.of(
+                        "agentRunId", run.id(),
+                        "primitive", "act",
+                        "primitiveId", "inspect-current-work",
+                        "primitivePrompt", "Inspect the current work item.",
+                        "toolProfile", FrameworkFixtures.PROFILE_BETA),
+                null).normalized());
+        exchange.setProperty("agentRunId", run.id());
+        exchange.setProperty("llmJob", job);
+
+        manager.recordLlmStarted(exchange);
+
+        AgentRunProjection projection = store.get(run.id());
+        assertEquals("act", projection.current().get("primitive"));
+        assertEquals("inspect-current-work", projection.current().get("id"));
+        assertEquals(job.jobId().toString(), projection.current().get("jobId"));
+        assertEquals("Inspect the current work item.", projection.current().get("request"));
+        assertEquals("", projection.current().get("response"));
+        assertEquals("high-pass", projection.laneId());
+        assertEquals(FrameworkFixtures.PROFILE_BETA, projection.toolProfile());
+        assertEquals("ACT_STARTED", projection.timeline().getLast().get("type"));
+
+        run.currentPrimitive("thought-enter");
+        run.currentId("temporary-thought");
+        manager.record(exchange, "THOUGHT_ENTERED");
+        projection = store.get(run.id());
+        assertEquals("act", projection.current().get("primitive"));
+        assertEquals("inspect-current-work", projection.current().get("id"));
+        assertEquals("Inspect the current work item.", projection.current().get("request"));
+        assertEquals("", projection.current().get("response"));
+
+        manager.recordPrimitiveCompleted(exchange, "act", "inspect-current-work", "Current response");
+        projection = store.get(run.id());
+        assertEquals("Current response", projection.current().get("response"));
+
+        manager.record(exchange, "TOOL_PASS_COMPLETED");
+        projection = store.get(run.id());
+        assertTrue(projection.timeline().stream().anyMatch(event -> "ACT_STARTED".equals(event.get("type"))));
+        assertEquals("TOOL_PASS_COMPLETED", projection.timeline().getLast().get("type"));
+        assertEquals("Current response", projection.current().get("response"));
+    }
+
+    @Test
+    void internalSynthesisDoesNotBlankCompletedActProjection() {
+        ProjectionStore store = FrameworkFixtures.projectionStore();
+        AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
+        Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
+        AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
+        manager.record(exchange, "AGENT_RUN_STARTED");
+
+        LlmJobEnvelope action = LlmJobEnvelope.queued(new LlmJobRequest(
+                null,
+                "high-pass",
+                LlmPassType.ACTION,
+                "act:inspect",
+                "Persona A",
+                0,
+                "Rendered action prompt",
+                "System prompt",
+                null,
+                Map.of(
+                        "agentRunId", run.id(),
+                        "primitive", "act",
+                        "primitiveId", "inspect",
+                        "primitivePrompt", "Inspect current work."),
+                null).normalized());
+        exchange.setProperty("agentRunId", run.id());
+        exchange.setProperty("llmJob", action);
+        manager.recordLlmStarted(exchange);
+        manager.recordPrimitiveCompleted(exchange, "act", "inspect", "Inspection complete.");
+
+        LlmJobEnvelope synthesis = LlmJobEnvelope.queued(new LlmJobRequest(
+                null,
+                "low-pass",
+                LlmPassType.SYNTHESIS,
+                "act:inspect",
+                "Persona A",
+                0,
+                "Internal synthesis prompt",
+                "System prompt",
+                null,
+                Map.of(
+                        "agentRunId", run.id(),
+                        "primitive", "act",
+                        "primitiveId", "inspect",
+                        "primitivePrompt", "Inspect current work."),
+                null).normalized());
+        exchange.setProperty("llmJob", synthesis);
+        manager.recordLlmStarted(exchange);
+
+        AgentRunProjection projection = store.get(run.id());
+        assertEquals("Inspect current work.", projection.current().get("request"));
+        assertEquals("Inspection complete.", projection.current().get("response"));
+    }
 
     @Test
     void projectionIncludesSelectedSubroutineMetadata() {
