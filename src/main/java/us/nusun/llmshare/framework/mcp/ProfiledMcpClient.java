@@ -8,6 +8,7 @@ import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.invocation.InvocationContext;
 import dev.langchain4j.mcp.client.*;
 import dev.langchain4j.model.TokenCountEstimator;
+import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.service.tool.ToolExecutionResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,8 +16,10 @@ import us.nusun.llmshare.framework.logging.LogTokens;
 import us.nusun.llmshare.framework.model.Persona;
 import us.nusun.llmshare.framework.model.ToolProfile;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class ProfiledMcpClient implements McpClient {
     private static final Logger LOG = LoggerFactory.getLogger(ProfiledMcpClient.class);
@@ -96,10 +99,33 @@ public class ProfiledMcpClient implements McpClient {
     }
 
     private ToolSpecification exposeTool(ToolSpecification tool) {
+        ToolSpecification projected = hideArguments(tool);
         if (!qualifiesToolNames()) {
+            return projected;
+        }
+        return projected.toBuilder().name(exposedToolName(tool.name())).build();
+    }
+
+    private ToolSpecification hideArguments(ToolSpecification tool) {
+        Set<String> hidden = profile.hiddenArguments(server, tool.name());
+        if (hidden.isEmpty() || tool.parameters() == null) {
             return tool;
         }
-        return tool.toBuilder().name(exposedToolName(tool.name())).build();
+
+        var properties = new LinkedHashMap<>(tool.parameters().properties());
+        hidden.forEach(properties::remove);
+        List<String> required = tool.parameters().required() == null
+                ? null
+                : tool.parameters().required().stream().filter(name -> !hidden.contains(name)).toList();
+
+        JsonObjectSchema parameters = JsonObjectSchema.builder()
+                .description(tool.parameters().description())
+                .addProperties(properties)
+                .required(required)
+                .additionalProperties(tool.parameters().additionalProperties())
+                .definitions(tool.parameters().definitions())
+                .build();
+        return tool.toBuilder().parameters(parameters).build();
     }
 
     private void checkAllowed(String exposedToolName) {
@@ -107,6 +133,19 @@ public class ProfiledMcpClient implements McpClient {
         if (!profile.allowsTool(server, toolName)) {
             throw new IllegalArgumentException("Tool " + exposedToolName + " is not allowed by profile " + profile.id());
         }
+    }
+
+    private void checkHiddenArguments(ToolExecutionRequest request) {
+        String toolName = originalToolName(request.name());
+        Set<String> hidden = profile.hiddenArguments(server, toolName);
+        if (hidden.isEmpty()) {
+            return;
+        }
+        ObjectNode arguments = parseArgumentsObject(request.arguments());
+        hidden.stream().filter(arguments::has).findFirst().ifPresent(argument -> {
+            throw new IllegalArgumentException(
+                    "Argument " + argument + " is hidden by profile " + profile.id() + " for tool " + request.name());
+        });
     }
 
     public ToolExecutionRequest applyProfile(ToolExecutionRequest request) {
@@ -127,6 +166,7 @@ public class ProfiledMcpClient implements McpClient {
 
     private ToolExecutionResult executeToolInternal(ToolExecutionRequest request, InvocationContext invocationContext) {
         checkAllowed(request.name());
+        checkHiddenArguments(request);
         ToolExecutionRequest profiled = applyProfile(request);
         logDim("TOOL " + server + "." + profiled.name() + " REQUEST " + abbreviate(profiled.arguments()));
         try {

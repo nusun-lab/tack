@@ -6,6 +6,7 @@ import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.invocation.InvocationContext;
 import dev.langchain4j.mcp.client.*;
+import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.service.tool.ToolExecutionResult;
 import org.junit.jupiter.api.Test;
 import us.nusun.llmshare.framework.inventory.ToolProfileRegistry;
@@ -63,6 +64,59 @@ class ToolProfileSemanticsTest {
         JsonNode arguments = OBJECT_MAPPER.readTree(client.applyProfile(request).arguments());
 
         assertEquals("id,name,identifier", arguments.get("fields").asText());
+    }
+
+    @Test
+    void hiddenArgumentIsRemovedFromAdvertisedToolSchema() {
+        ToolProfile profile = ToolProfile.builder("hidden-argument")
+                .server(FrameworkFixtures.SERVER_ALPHA)
+                .allowTool(FrameworkFixtures.SERVER_ALPHA, "search")
+                .hideArgument(FrameworkFixtures.SERVER_ALPHA, "search", "pql")
+                .build();
+        ToolSpecification search = ToolSpecification.builder()
+                .name("search")
+                .description("Search")
+                .parameters(JsonObjectSchema.builder()
+                        .addStringProperty("query")
+                        .addStringProperty("pql")
+                        .required("query", "pql")
+                        .build())
+                .build();
+        ProfiledMcpClient client = new ProfiledMcpClient(
+                new FakeMcpClient(List.of(search)),
+                FrameworkFixtures.SERVER_ALPHA,
+                profile);
+
+        ToolSpecification exposed = client.listTools().getFirst();
+
+        assertTrue(exposed.parameters().properties().containsKey("query"));
+        assertFalse(exposed.parameters().properties().containsKey("pql"));
+        assertEquals(List.of("query"), exposed.parameters().required());
+    }
+
+    @Test
+    void hiddenArgumentIsRejectedAtExecution() {
+        ToolProfile profile = ToolProfile.builder("hidden-argument")
+                .server(FrameworkFixtures.SERVER_ALPHA)
+                .allowTool(FrameworkFixtures.SERVER_ALPHA, "search")
+                .hideArgument(FrameworkFixtures.SERVER_ALPHA, "search", "pql")
+                .build();
+        ProfiledMcpClient client = new ProfiledMcpClient(
+                new FakeMcpClient(List.of(ToolSpecification.builder().name("search").description("Search").build())),
+                FrameworkFixtures.SERVER_ALPHA,
+                profile);
+        ToolExecutionRequest request = ToolExecutionRequest.builder()
+                .id("1")
+                .name("search")
+                .arguments("{\"query\":\"open\",\"pql\":\"priority = high\"}")
+                .build();
+
+        IllegalArgumentException failure =
+                assertThrows(IllegalArgumentException.class, () -> client.executeTool(request));
+
+        assertEquals(
+                "Argument pql is hidden by profile hidden-argument for tool search",
+                failure.getMessage());
     }
 
     @Test
@@ -283,6 +337,7 @@ class ToolProfileSemanticsTest {
         assertTrue(json.contains("alpha_read"));
         assertTrue(json.contains("deniedTools"));
         assertTrue(json.contains("alpha_delete"));
+        assertTrue(json.contains("hiddenArguments"));
     }
 
     @Test
