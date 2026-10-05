@@ -59,21 +59,22 @@ public class WorkspaceCoordinationToolProfile implements ToolProfileProvider {
                         - this profile creates/reconciles the shared Plane project, lifecycle states, Mattermost channel,
                           and project/channel membership
                         - use only these Plane actions here: project=list/create/retrieve/update;
-                          member=me/list_workspace/list_project/list_roles/add_project; state=list/create
+                          member=me/list_workspace/list_project/add_project; state=list/create
                         - reuse verified project/team/channel/member ids instead of rediscovering them
                         - before creating a project or channel, resolve the direct expected name and avoid duplicates
                         - for Mattermost, reuse a verified channel id; otherwise list teams once and use the returned team id
                           with get_channel_by_name before creating anything
                         - keep active roster identity, Plane workspace membership, Plane project membership, and Mattermost
                           channel membership distinct; resolve the specific identity/member set requested by the routine
-                        - for Plane project membership, use member(action="list_workspace") to resolve the workspace user,
-                          member(action="list_roles", namespace="project") to resolve a project role slug, then
-                          member(action="add_project", project_id=<verified>, member_id=<workspace user UUID>, role=<slug>)
-                        - member_id is the workspace user UUID; membership_id is the project-membership row id returned by
-                          member(action="list_project", project_id=<verified>)
+                        - for Plane project membership, use member(action="list_workspace") to resolve the workspace user and
+                          member(action="list_project", project_id=<verified>) to verify whether that user already has access
+                        - when project access is missing, use member(action="add_project", project_id=<verified>,
+                          member_id=<workspace user UUID>, role="contributor"); member_id is the workspace user UUID
+                        - member(action="list_project") returns project-member users keyed by workspace user UUID; it does not
+                          expose the underlying membership row id
                         - after membership additions, re-read member(action="list_project", project_id=<verified>) to verify
-                          the mutation; this routine should not remove project/channel members even though the resource tool
-                          supports additional actions
+                          the mutation; this routine should not update/remove project or channel members even though the
+                          resource tool supports additional actions
                         - create Plane states only when the calling routine specifies the required state name/group and a
                           matching state is verified missing; use state(action="list", project_id=<verified>) and
                           state(action="create", project_id=<verified>, ...)
