@@ -37,25 +37,38 @@ public class IntegrationToolProfile implements ToolProfileProvider {
                         "list_work_item_comments",
                         "retrieve_work_item_comment")
                 .allowTools(GiteaMcpServer.ID,
+                        "search_repos",
+                        "list_pull_requests",
                         "pull_request_read",
                         "pull_request_write",
                         "get_commit")
                 .promptGuidance("""
-                        - Plane lifecycle state and task context identify the implementation unit; comments provide evidence/context, not hidden approval states
-                        - an In Progress implementation child with an exact linked OPEN pull request is eligible for a fresh integration check; do not require REVIEW READY, INTEGRATION READY, or another magic approval phrase
-                        - Gitea is authoritative for current pull-request/source state; the canonical Gitea web/clone base is https://gitea.apps.cluster.lab.nusun.us
-                        - immediately before merge, verify only the exact selected work item/PR evidence needed for safety: repository, PR, intended base, current head/base, mergeability/conflicts, validation, acceptance scope, and any current blocker/review concern
-                        - merge only when the current PR evidence is safe and consistent with the selected implementation child's scope; if ambiguous, stale, conflicted, failing validation, or product intent is unresolved, make no source-control mutation
-                        - do not manufacture an intermediate Plane comment state to authorize or reject integration
+                        - this profile reads linked Plane context and performs Gitea pull-request merges; the calling
+                          routine owns candidate selection, ordering, batching, and workflow eligibility
+                        - reuse exact verified Plane work-item UUIDs and Gitea owner/repo/PR locators; never reconstruct them
+                        - Gitea is authoritative for current pull-request/source state
+                        - immediately before a merge, fresh-read the exact PR evidence needed to verify its current head,
+                          base, mergeability/conflict state, and validation evidence requested by the routine
+                        - use pull_request_write only for merge operations in this profile
+                        - this profile does not mutate Plane lifecycle or manufacture comment-based approval states
 
-                        SKILL: mission-anchor-reuse
-                        - reuse the exact verified Plane work-item UUID/identifier, Gitea owner/repo, PR number, head, and base; never shorten/reconstruct UUIDs or rediscover a known PR through broad lists
+                        SKILL: plane-work-classification
+                        - Tack work classification is represented by attached labels epic, story, test, or defect
+                        - these labels are unrelated to Plane's native work-item type and type_id; never use type_id to
+                          determine Tack classification
 
-                        SKILL: bounded-platform-navigation
-                        - retrieve only the selected Plane item/comments and exact PR/commits required for the merge decision; stop when the decision has enough evidence
+                        SKILL: plane-query-recipes
+                        - Classification: retrieve_work_item(project_id=<verified>, work_item_id=<selected UUID>,
+                          expand="labels", fields="id,name,sequence_id,state,labels")
+                        - Description: retrieve_work_item(project_id=<verified>, work_item_id=<selected UUID>,
+                          fields="id,name,sequence_id,state,description_html")
+                        - keep expanded-label and other rich WorkItemDetail shapes separate
+                        - after a WorkItemDetail response-shape failure, do not retry an equivalent failing shape
 
                         SKILL: capability-aware-recovery
-                        - on 404, resolve the exact locator once; on schema/validation error, correct arguments once; if the PR is already closed/merged or the operation is unsupported, stop rather than retrying equivalent calls
+                        - on 404, resolve the exact locator once; on schema/validation error, correct arguments once
+                        - if a PR is already closed/merged or an operation is unsupported, stop rather than retrying an
+                          equivalent mutation
                         """)
                 .maxResultTokens(maxResultTokens)
                 .build());

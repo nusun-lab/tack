@@ -27,35 +27,34 @@ public class TeamChatToolProfile implements ToolProfileProvider {
     public List<ToolProfile> toolProfiles() {
         return List.of(ToolProfile.builder(ID)
                 .mcpServer(mattermost.definition())
+                .allowTools(MattermostMcpServer.ID,
+                        "get_me",
+                        "list_teams",
+                        "list_my_channels",
+                        "get_channel",
+                        "get_channel_by_name",
+                        "get_channel_messages",
+                        "get_thread",
+                        "search_messages",
+                        "post_message",
+                        "update_message",
+                        "get_user",
+                        "get_user_by_username",
+                        "search_users")
                 .promptGuidance("""
-                        - Mattermost is for concise communication, questions, handoffs, notifications, and useful team coordination
-                        - do not require an existing conversation before posting; initiate one concise message when a meaningful handoff, blocker, question, merge, workspace transition, or other event would help a current teammate act sooner
-                        - when responding, read only the recent relevant channel context needed for that exchange
-                        - post at most one message or reply for the current step
-                        - durable project state belongs in Plane
-                        - durable implementation state belongs in Gitea
-                        - comments/messages provide evidence and context, not hidden workflow states
-                        - link to authoritative Plane work items, Gitea repositories, pull requests, releases, or canonical documentation pages when useful
-                        - avoid generic status chatter, ceremonial updates, and duplicate notifications
-                        - do not recreate durable Plane or Gitea state in Mattermost
-                        - do not read entire channels, stick to recent messages
+                        - this profile provides Mattermost conversation; the calling routine decides whether communication
+                          is useful and what role/workflow policy the message should express
+                        - when a verified channel id is known, use it directly
+                        - when the channel id is unknown but the mission channel name is known, list teams once and resolve
+                          it with get_channel_by_name; use list_my_channels only when the channel name is genuinely unknown
+                        - ids/names shown only in tool descriptions/examples are illustrative and are not live locators
+                        - read only the recent relevant context needed for the current exchange
+                        - shared-channel conversation is the default for ordinary team coordination; use direct messages
+                          only when the calling routine intentionally requires a private exchange
+                        - messages provide conversational evidence/context and are not authoritative Plane or Gitea state
+                        - link authoritative Plane/Gitea/documentation resources when useful instead of recreating them
+                        - avoid duplicate notifications, generic status chatter, and broad channel reads
                         """)
-                .denyTools(MattermostMcpServer.ID,
-                        "delete_channel",
-                        "delete_post",
-                        "delete_message",
-                        "leave_channel",
-                        "mark_channel_viewed",
-                        "add_reaction",
-                        "get_reactions",
-                        "remove_reaction",
-                        "pin_message",
-                        "unpin_message",
-                        "create_bookmark",
-                        "delete_bookmark",
-                        "list_bookmarks",
-                        "update_bookmark",
-                        "update_bookmark_sort_order")
                 .maxResultTokens(maxResultTokens)
                 .build());
     }
