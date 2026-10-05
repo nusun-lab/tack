@@ -33,16 +33,9 @@ public class WorkspaceCoordinationToolProfile implements ToolProfileProvider {
                 .mcpServer(plane.definition())
                 .mcpServer(mattermost.definition())
                 .allowTools(PlaneMcpServer.ID,
-                        "get_me",
-                        "list_projects",
-                        "create_project",
-                        "retrieve_project",
-                        "update_project",
-                        "get_project_members",
-                        "add_project_members",
-                        "get_workspace_members",
-                        "list_states",
-                        "create_state")
+                        "project",
+                        "member",
+                        "state")
                 .allowTools(MattermostMcpServer.ID,
                         "get_me",
                         "list_teams",
@@ -64,21 +57,29 @@ public class WorkspaceCoordinationToolProfile implements ToolProfileProvider {
                         "search_users")
                 .promptGuidance("""
                         - this profile creates/reconciles the shared Plane project, lifecycle states, Mattermost channel,
-                          and project/channel membership; the calling routine defines when and what to reconcile
+                          and project/channel membership
+                        - use only these Plane actions here: project=list/create/retrieve/update;
+                          member=me/list_workspace/list_project/list_roles/add_project; state=list/create
                         - reuse verified project/team/channel/member ids instead of rediscovering them
                         - before creating a project or channel, resolve the direct expected name and avoid duplicates
                         - for Mattermost, reuse a verified channel id; otherwise list teams once and use the returned team id
                           with get_channel_by_name before creating anything
                         - keep active roster identity, Plane workspace membership, Plane project membership, and Mattermost
                           channel membership distinct; resolve the specific identity/member set requested by the routine
-                        - after membership additions, re-read the relevant membership set to verify the mutation
-                        - this profile cannot remove project/channel members; never imply removal occurred
+                        - for Plane project membership, use member(action="list_workspace") to resolve the workspace user,
+                          member(action="list_roles", namespace="project") to resolve a project role slug, then
+                          member(action="add_project", project_id=<verified>, member_id=<workspace user UUID>, role=<slug>)
+                        - member_id is the workspace user UUID; membership_id is the project-membership row id returned by
+                          member(action="list_project", project_id=<verified>)
+                        - after membership additions, re-read member(action="list_project", project_id=<verified>) to verify
+                          the mutation; this routine should not remove project/channel members even though the resource tool
+                          supports additional actions
                         - create Plane states only when the calling routine specifies the required state name/group and a
-                          matching state is verified missing
+                          matching state is verified missing; use state(action="list", project_id=<verified>) and
+                          state(action="create", project_id=<verified>, ...)
                         - do not infer active AgentRuns from external membership
                         - stop after the requested coordination mutation is verified
                         """)
-                .defaultArgument(PlaneMcpServer.ID, "list_projects", "fields", "id,name,identifier")
                 .maxResultTokens(maxResultTokens)
                 .build());
     }

@@ -29,28 +29,23 @@ public class EngineeringWorkToolProfile implements ToolProfileProvider {
         return List.of(ToolProfile.builder(ID)
                 .mcpServer(plane.definition())
                 .allowTools(PlaneMcpServer.ID,
-                        "get_me",
-                        "list_projects",
-                        "retrieve_project",
-                        "list_work_items",
-                        "retrieve_work_item",
-                        "retrieve_work_item_by_identifier",
-                        "search_work_items",
-                        "update_work_item",
-                        "list_work_item_activities",
-                        "list_work_item_comments",
-                        "retrieve_work_item_comment",
-                        "create_work_item_comment",
-                        "update_work_item_comment",
-                        "list_labels",
-                        "list_states")
+                        "project",
+                        "member",
+                        "workitem",
+                        "workitem_activity",
+                        "workitem_comment",
+                        "label",
+                        "state")
                 .promptGuidance("""
                         - this profile updates already-created engineering work; the calling routine owns selection,
                           lifecycle policy, and completion criteria
+                        - use only these Plane actions here: project=list/retrieve; member=me;
+                          workitem=list/retrieve/retrieve_by_identifier/search/update; workitem_activity=list;
+                          workitem_comment=list/retrieve/create/update; label=list; state=list
                         - before any lifecycle mutation, verify the selected item's attached labels and current assignees
                         - never infer classification or ownership from title, wording, comments, or surrounding context
                         - comments are evidence/context, not hidden lifecycle states
-                        - this profile cannot create work items, labels, projects, test tasks, or defects
+                        - do not create work items, labels, projects, test tasks, or defects in this profile
 
                         SKILL: plane-work-classification
                         - Tack work classification is represented by attached labels epic, story, test, or defect
@@ -58,26 +53,18 @@ public class EngineeringWorkToolProfile implements ToolProfileProvider {
                           determine Tack classification
 
                         SKILL: plane-query-recipes
-                        - Discovery: list_work_items(project_id=<verified>,
+                        - Discovery: workitem(action="list", project_id=<verified>, per_page=12,
                           fields="id,name,sequence_id,state,priority,assignees")
-                        - Classification: retrieve_work_item(project_id=<verified>, work_item_id=<selected UUID>,
-                          expand="labels", fields="id,name,sequence_id,state,labels")
-                        - Description: retrieve_work_item(project_id=<verified>, work_item_id=<selected UUID>,
-                          fields="id,name,sequence_id,state,description_html")
-                        - Parent: retrieve_work_item(project_id=<verified>, work_item_id=<selected UUID>,
-                          fields="id,name,sequence_id,state,parent"); never expand parent
-                        - keep ownership and expanded-label classification in separate WorkItemDetail calls
+                        - Classification: workitem(action="retrieve", project_id=<verified>,
+                          workitem_id=<selected UUID>, expand="labels",
+                          fields="id,name,sequence_id,state,labels")
+                        - Description: workitem(action="retrieve", project_id=<verified>,
+                          workitem_id=<selected UUID>, fields="id,name,sequence_id,state,description_html")
+                        - Parent: workitem(action="retrieve", project_id=<verified>,
+                          workitem_id=<selected UUID>, fields="id,name,sequence_id,state,parent"); never expand parent
                         - a field omitted by a sparse projection is unknown, never negative evidence
-                        - after a WorkItemDetail response-shape failure, do not retry an equivalent failing shape
                         """)
-                .defaultArgument(PlaneMcpServer.ID, "list_projects", "fields", "id,name,identifier")
-                .defaultArgument(
-                        PlaneMcpServer.ID,
-                        "list_work_items",
-                        "fields",
-                        "id,name,sequence_id,state,priority,assignees")
-                .defaultArgument(PlaneMcpServer.ID, "list_work_items", "per_page", 12)
-                .hideArgument(PlaneMcpServer.ID, "list_work_items", "pql")
+                .hideArgument(PlaneMcpServer.ID, "workitem", "pql")
                 .maxResultTokens(maxResultTokens)
                 .build());
     }
