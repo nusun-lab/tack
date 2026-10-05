@@ -16,6 +16,7 @@ public record ToolProfile(
         Set<String> allowAllToolServers,
         Map<String, McpServerDefinition> mcpServers,
         Map<String, Map<String, Map<String, JsonNode>>> defaultArguments,
+        Map<String, Map<String, Set<String>>> hiddenArguments,
         String promptGuidance,
         int maxResultTokens
 ) {
@@ -28,6 +29,7 @@ public record ToolProfile(
         allowAllToolServers = allowAllToolServers == null ? Set.of() : Set.copyOf(allowAllToolServers);
         mcpServers = mcpServers == null ? Map.of() : Map.copyOf(mcpServers);
         defaultArguments = copyDefaultArguments(defaultArguments);
+        hiddenArguments = copyHiddenArguments(hiddenArguments);
         promptGuidance = promptGuidance == null ? "" : promptGuidance.strip();
     }
 
@@ -61,6 +63,10 @@ public record ToolProfile(
         return defaultArguments.getOrDefault(server, Map.of()).getOrDefault(toolName, Map.of());
     }
 
+    public Set<String> hiddenArguments(String server, String toolName) {
+        return hiddenArguments.getOrDefault(server, Map.of()).getOrDefault(toolName, Set.of());
+    }
+
     public static final class Builder {
         private final String id;
         private final Set<String> servers = new LinkedHashSet<>();
@@ -69,6 +75,7 @@ public record ToolProfile(
         private final Set<String> allowAllToolServers = new LinkedHashSet<>();
         private final Map<String, McpServerDefinition> mcpServers = new LinkedHashMap<>();
         private final Map<String, Map<String, Map<String, JsonNode>>> defaultArguments = new LinkedHashMap<>();
+        private final Map<String, Map<String, Set<String>>> hiddenArguments = new LinkedHashMap<>();
         private String promptGuidance = "";
         private int maxResultTokens;
 
@@ -139,12 +146,33 @@ public record ToolProfile(
                     .put(argumentName, value == null ? OBJECT_MAPPER.nullNode() : value.deepCopy());
             return this;
         }
+        public Builder hideArgument(String server, String toolName, String argumentName) {
+            this.servers.add(server);
+            this.hiddenArguments
+                    .computeIfAbsent(server, ignored -> new LinkedHashMap<>())
+                    .computeIfAbsent(toolName, ignored -> new LinkedHashSet<>())
+                    .add(argumentName);
+            return this;
+        }
         public Builder maxResultTokens(int maxResultTokens) { this.maxResultTokens = maxResultTokens; return this; }
         public Builder promptGuidance(String promptGuidance) { this.promptGuidance = promptGuidance; return this; }
 
         public ToolProfile build() {
-            return new ToolProfile(id, servers, allowedTools, deniedTools, allowAllToolServers, mcpServers, defaultArguments, promptGuidance, maxResultTokens);
+            return new ToolProfile(id, servers, allowedTools, deniedTools, allowAllToolServers, mcpServers, defaultArguments, hiddenArguments, promptGuidance, maxResultTokens);
         }
+    }
+
+    private static Map<String, Map<String, Set<String>>> copyHiddenArguments(Map<String, Map<String, Set<String>>> value) {
+        if (value == null || value.isEmpty()) {
+            return Map.of();
+        }
+        LinkedHashMap<String, Map<String, Set<String>>> copy = new LinkedHashMap<>();
+        value.forEach((server, tools) -> {
+            LinkedHashMap<String, Set<String>> toolCopy = new LinkedHashMap<>();
+            tools.forEach((tool, arguments) -> toolCopy.put(tool, Set.copyOf(arguments)));
+            copy.put(server, Map.copyOf(toolCopy));
+        });
+        return Map.copyOf(copy);
     }
 
     private static Map<String, Map<String, Map<String, JsonNode>>> copyDefaultArguments(Map<String, Map<String, Map<String, JsonNode>>> value) {

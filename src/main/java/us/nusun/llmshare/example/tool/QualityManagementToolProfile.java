@@ -80,6 +80,7 @@ public class QualityManagementToolProfile implements ToolProfileProvider {
                         "fields",
                         "id,name,sequence_id,state,priority,assignees")
                 .defaultArgument(PlaneMcpServer.ID, "list_work_items", "per_page", 12)
+                .hideArgument(PlaneMcpServer.ID, "list_work_items", "pql")
                 .maxResultTokens(maxResultTokens)
                 .build());
     }
