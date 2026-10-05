@@ -13,9 +13,11 @@ import dev.langchain4j.http.client.jdk.JdkHttpClientBuilder;
 import dev.langchain4j.mcp.client.McpClient;
 import dev.langchain4j.model.TokenCountEstimator;
 import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.ChatRequestOptions;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.ResponseFormat;
 import dev.langchain4j.model.chat.request.ToolChoice;
+import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.openai.OpenAiTokenUsage;
 import dev.langchain4j.service.AiServices;
@@ -88,6 +90,7 @@ public class LlmAgentFactory {
             PersonaSandboxManager sandboxes,
             MissionRosterService missionRoster,
             LogTokens logTokens,
+            LlmRouteSupport routeSupport,
             TokenCountEstimator tokenCountEstimator,
             @ConfigProperty(name = "llm.model-default.openai.base-url") String defaultBaseUrl,
             @ConfigProperty(name = "llm.model-default.openai.api-key") String defaultApiKey,
@@ -122,7 +125,7 @@ public class LlmAgentFactory {
                 reasoningEffort.orElse(null),
                 strictJsonSchema);
         return new DynamicAgentFactory(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator,
-                memoryMaxTokens, maxToolCallingRoundTrips, sandboxes, logTokens, missionRoster);
+                memoryMaxTokens, maxToolCallingRoundTrips, sandboxes, logTokens, missionRoster, routeSupport);
     }
 
     private static Map<String, ChatModel> laneModels(
@@ -290,6 +293,7 @@ public class LlmAgentFactory {
         private final PersonaSandboxManager sandboxes;
         private final LogTokens logTokens;
         private final MissionRosterService missionRoster;
+        private final LlmRouteSupport routeSupport;
         private static final int DEFAULT_MAX_TOOL_CALLING_ROUND_TRIPS = 4;
 
         private final TokenCountEstimator tokenCountEstimator;
@@ -299,32 +303,32 @@ public class LlmAgentFactory {
 
         public DynamicAgentFactory(InferenceLaneRegistry lanes, Map<String, ChatModel> laneModels, McpClientFactory mcpClientFactory, ToolProfileRegistry toolProfiles, PersonaCatalog personas, TokenCountEstimator tokenCountEstimator, int memoryMaxTokens) {
             this(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator, memoryMaxTokens,
-                    DEFAULT_MAX_TOOL_CALLING_ROUND_TRIPS, null, null);
+                    DEFAULT_MAX_TOOL_CALLING_ROUND_TRIPS, null, null, null, null);
         }
 
         public DynamicAgentFactory(InferenceLaneRegistry lanes, Map<String, ChatModel> laneModels, McpClientFactory mcpClientFactory, ToolProfileRegistry toolProfiles, PersonaCatalog personas, TokenCountEstimator tokenCountEstimator, int memoryMaxTokens, int maxToolCallingRoundTrips) {
             this(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator, memoryMaxTokens,
-                    maxToolCallingRoundTrips, null, null);
+                    maxToolCallingRoundTrips, null, null, null, null);
         }
 
         public DynamicAgentFactory(InferenceLaneRegistry lanes, Map<String, ChatModel> laneModels, McpClientFactory mcpClientFactory,
                                    ToolProfileRegistry toolProfiles, PersonaCatalog personas, TokenCountEstimator tokenCountEstimator,
                                    int memoryMaxTokens, int maxToolCallingRoundTrips, PersonaSandboxManager sandboxes) {
             this(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator, memoryMaxTokens,
-                    maxToolCallingRoundTrips, sandboxes, null);
+                    maxToolCallingRoundTrips, sandboxes, null, null, null);
         }
 
         public DynamicAgentFactory(InferenceLaneRegistry lanes, Map<String, ChatModel> laneModels, McpClientFactory mcpClientFactory,
                                    ToolProfileRegistry toolProfiles, PersonaCatalog personas, TokenCountEstimator tokenCountEstimator,
                                    int memoryMaxTokens, int maxToolCallingRoundTrips, PersonaSandboxManager sandboxes, LogTokens logTokens) {
             this(lanes, laneModels, mcpClientFactory, toolProfiles, personas, tokenCountEstimator, memoryMaxTokens,
-                    maxToolCallingRoundTrips, sandboxes, logTokens, null);
+                    maxToolCallingRoundTrips, sandboxes, logTokens, null, null);
         }
 
         public DynamicAgentFactory(InferenceLaneRegistry lanes, Map<String, ChatModel> laneModels, McpClientFactory mcpClientFactory,
                                    ToolProfileRegistry toolProfiles, PersonaCatalog personas, TokenCountEstimator tokenCountEstimator,
                                    int memoryMaxTokens, int maxToolCallingRoundTrips, PersonaSandboxManager sandboxes, LogTokens logTokens,
-                                   MissionRosterService missionRoster) {
+                                   MissionRosterService missionRoster, LlmRouteSupport routeSupport) {
             this.lanes = lanes;
             this.laneModels = laneModels;
             this.mcpClientFactory = mcpClientFactory;
@@ -336,6 +340,7 @@ public class LlmAgentFactory {
             this.sandboxes = sandboxes;
             this.logTokens = logTokens;
             this.missionRoster = missionRoster;
+            this.routeSupport = routeSupport;
         }
 
         @Override
@@ -360,8 +365,9 @@ public class LlmAgentFactory {
             if (model == null) {
                 throw new IllegalStateException("No chat model configured for inference lane " + laneId);
             }
+            ChatModel dispatchObservedModel = new DispatchObservingChatModel(model, exchange, routeSupport);
             LlmPassType passType = passType(exchange);
-            AgentConfiguration configuration = new AgentConfiguration().withChatModel(model);
+            AgentConfiguration configuration = new AgentConfiguration().withChatModel(dispatchObservedModel);
             if (passType == LlmPassType.ACTION) {
                 configuration.withChatMemoryProvider(new EphemeralToolPassChatMemoryProvider(
                         laneMemoryMaxTokens,
@@ -402,7 +408,8 @@ public class LlmAgentFactory {
                     configuration.withCustomTools(customTools);
                 }
             }
-            Agent agent = configuration.getChatMemoryProvider() == null ? new AgentWithoutMemory(configuration)
+            Agent agent = configuration.getChatMemoryProvider() == null
+                    ? new AgentWithoutMemory(configuration)
                     : new TackToolAgent(configuration, laneMaxToolCalls, laneContextWindow, laneMaxOutputTokens,
                             laneMemoryMaxTokens, tokenCountEstimator, exchange);
             applyProviderSchemaIfRequired(exchange, laneId, passType, agent);
@@ -422,6 +429,32 @@ public class LlmAgentFactory {
                 builder.responseFormat(responseFormat);
             }
             return builder.build();
+        }
+
+        private static final class DispatchObservingChatModel implements ChatModel {
+            private final ChatModel delegate;
+            private final Exchange exchange;
+            private final LlmRouteSupport routeSupport;
+
+            private DispatchObservingChatModel(ChatModel delegate, Exchange exchange, LlmRouteSupport routeSupport) {
+                this.delegate = delegate;
+                this.exchange = exchange;
+                this.routeSupport = routeSupport;
+            }
+
+            @Override
+            public ChatResponse chat(ChatRequest request, ChatRequestOptions options) {
+                observeDispatch(exchange, routeSupport);
+                return delegate.chat(request, options);
+            }
+        }
+
+        private static void observeDispatch(Exchange exchange, LlmRouteSupport routeSupport) {
+            if (routeSupport == null || Boolean.TRUE.equals(exchange.getProperty("llmDispatchObserved", Boolean.class))) {
+                return;
+            }
+            routeSupport.logPrompt(job(exchange), exchange);
+            exchange.setProperty("llmDispatchObserved", true);
         }
 
         private static final class TackToolAgent extends AgentWithMemory {

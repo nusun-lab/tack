@@ -13,6 +13,7 @@ import us.nusun.llmshare.framework.model.LlmPassType;
 import us.nusun.llmshare.framework.model.Mission;
 import us.nusun.llmshare.framework.model.StepResult;
 import us.nusun.llmshare.framework.model.ThoughtFrame;
+import us.nusun.llmshare.framework.projection.AgentRunProjectionManager;
 import us.nusun.llmshare.framework.projection.ProjectionStore;
 import us.nusun.llmshare.framework.state.AgentRun;
 import us.nusun.llmshare.framework.routine.ThoughtStackSupport;
@@ -321,6 +322,7 @@ class TackComponentContractTest {
         context.setAutowiredEnabled(false);
         context.getShutdownStrategy().setTimeout(1);
         context.addComponent("tack", new TackComponent(FrameworkFixtures.primitiveExecutor(store)));
+        AgentRunProjectionManager projections = FrameworkFixtures.projectionManager(store);
         context.addRoutes(new RouteBuilder() {
             @Override
             public void configure() {
@@ -328,6 +330,13 @@ class TackComponentContractTest {
                     LlmJobRequest request = exchange.getMessage().getBody(LlmJobRequest.class);
                     llm.requests.add(request);
                     LlmJobEnvelope job = LlmJobEnvelope.queued(request.normalized());
+                    String agentRunId = String.valueOf(request.metadata().get("agentRunId"));
+                    exchange.setProperty("agentRunId", agentRunId);
+                    exchange.setProperty("llmJob", job);
+                    if (store.get(agentRunId) == null) {
+                        projections.record(exchange, "AGENT_RUN_STARTED");
+                    }
+                    projections.recordLlmStarted(exchange);
                     if (llm.failConsolidation && "thought-exit".equals(request.metadata().get("primitive"))) {
                         exchange.getMessage().setBody(LlmJobResult.failed(job, "test-model", "consolidation unavailable", "", Instant.now()));
                         return;

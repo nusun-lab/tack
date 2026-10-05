@@ -62,7 +62,6 @@ public class LlmRoute extends RouteBuilder {
                 .setProperty("llmQueueFailureHandling", constant(true))
                 .bean(jobFactory, "prepare")
                 .bean("inFlightReplyManager", "register")
-                .bean(routeSupport, "logPrompt")
                 .bean(routeSupport, "verifySelectedRoutesAvailable")
                 .marshal(llmJson(LlmJobEnvelope.class))
                 .setHeader(KafkaConstants.KEY, method(jobFactory, "requestKafkaKey"))

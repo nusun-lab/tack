@@ -61,7 +61,7 @@ class WorkspaceViewServiceBoundaryTest {
 
         assertEquals(2, projections.size());
         assertEquals("parent-run", childProjection.parentAgentRunId());
-        assertEquals("act", childProjection.current().get("primitive"));
+        assertTrue(childProjection.current().isEmpty());
         assertEquals("Child implementation context", childProjection.thoughtStack().getFirst().get("context"));
         assertEquals("(unnamed)", childProjection.thoughtStack().getFirst().get("name"));
         assertEquals("(unnamed)", childProjection.thoughtStack().getFirst().get("displayId"));

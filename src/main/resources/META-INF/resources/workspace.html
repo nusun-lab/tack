@@ -336,14 +336,13 @@
         <div class="agent-run-detail-layout">
           <div class="stack">
             <div class="step-panel">
-              <h4>Current step</h4>
+              <h4>Request</h4>
               <div class="row"><span class="pill subtle mono">${esc(current.primitive || '(none)')}</span><span class="pill subtle mono">${esc(current.id || '(no step id)')}</span></div>
-              <h4>Step prompt</h4>
-              ${current.promptSummary ? `<pre>${esc(current.promptSummary)}</pre>` : '<div class="empty">No current step prompt captured yet.</div>'}
+              ${current.request ? `<pre>${esc(current.request)}</pre>` : '<div class="empty">No LLM request has been dispatched yet.</div>'}
             </div>
             <div class="step-panel">
-              <h4>Latest result</h4>
-              ${renderLatestResult(obj(p.latestResult))}
+              <h4>Response</h4>
+              ${current.response ? `<pre>${esc(current.response)}</pre>` : '<pre></pre>'}
             </div>
             <div class="step-panel">
               <h4>Timeline <span class="muted">last ${timeline.length}${fullTimeline.length > timeline.length ? ` of ${fullTimeline.length}` : ''}</span></h4>

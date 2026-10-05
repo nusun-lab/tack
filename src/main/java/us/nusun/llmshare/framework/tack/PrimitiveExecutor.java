@@ -95,9 +95,7 @@ public class PrimitiveExecutor {
         exchange.setProperty("toolProfile", toolProfileId);
         exchange.setProperty("toolProfileId", profile.id());
         exchange.setProperty("toolProfileGuidance", profile.promptGuidance().isBlank() ? "(none)" : profile.promptGuidance());
-        projections.record(exchange, "ACT_STARTED");
 
-        projections.record(exchange, "TOOL_PASS_QUEUED");
         String actionLaneId = resolveLane(exchange, request.lane(), LlmPassType.ACTION);
         LlmJobResult toolResult = callLlm(
                 exchange,
@@ -109,7 +107,6 @@ public class PrimitiveExecutor {
         exchange.setProperty("toolPassResult", toolResult.content());
         projections.record(exchange, "TOOL_PASS_COMPLETED");
 
-        projections.record(exchange, "SYNTHESIS_PASS_QUEUED");
         String synthesisLaneId = resolveLane(exchange, request.lane(), LlmPassType.SYNTHESIS);
         LlmJobResult synthesisResult = callLlm(
                 exchange,
@@ -139,6 +136,7 @@ public class PrimitiveExecutor {
         exchange.setProperty("act." + request.id() + ".confidence", result.confidence());
         exchange.setProperty("act." + request.id() + ".summary", result.summary());
         exchange.getMessage().setBody(result);
+        projections.recordPrimitiveCompleted(exchange, "act", request.id(), result.summary());
         projections.record(exchange, "ACT_COMPLETED");
     }
 
@@ -150,8 +148,6 @@ public class PrimitiveExecutor {
         exchange.setProperty("decisionId", request.id());
         exchange.setProperty("decisionPrompt", request.prompt());
         exchange.setProperty("decisionChoices", choices);
-        projections.record(exchange, "DECIDE_STARTED");
-        projections.record(exchange, "SYNTHESIS_PASS_QUEUED");
         LlmJobResult llmResult = callLlm(
                 exchange,
                 llm,
@@ -172,6 +168,11 @@ public class PrimitiveExecutor {
         exchange.setProperty("decisions." + result.decisionId(), result);
         exchange.setProperty("decision." + result.decisionId() + ".result", result.result());
         exchange.getMessage().setBody(result);
+        projections.recordPrimitiveCompleted(
+                exchange,
+                "decide",
+                request.id(),
+                "result: " + result.result() + "\nreason: " + result.reason());
         projections.record(exchange, "DECISION_COMPLETED");
     }
 
@@ -185,8 +186,6 @@ public class PrimitiveExecutor {
         exchange.setProperty("createSchema", schema.raw());
         exchange.setProperty("createSchemaJson", schema.json());
         exchange.setProperty("createSchemaUri", schema.uri());
-        projections.record(exchange, "CREATE_STARTED");
-        projections.record(exchange, "SYNTHESIS_PASS_QUEUED");
         LlmJobResult llmResult = callLlm(
                 exchange,
                 llm,
@@ -200,6 +199,7 @@ public class PrimitiveExecutor {
         exchange.setProperty("creates." + result.createId(), result);
         exchange.setProperty("latestCreateResult", result);
         exchange.getMessage().setBody(object.toString());
+        projections.recordPrimitiveCompleted(exchange, "create", request.id(), object.toString());
         projections.record(exchange, "CREATE_COMPLETED");
     }
 
@@ -234,7 +234,6 @@ public class PrimitiveExecutor {
         }
 
         String laneId = resolveLane(exchange, request.lane(), LlmPassType.CONSOLIDATION);
-        projections.record(exchange, "THOUGHT_CONSOLIDATION_STARTED", consolidationDetails(child, parent, null));
         LlmJobResult llmResult = callLlm(
                 exchange,
                 llm,
@@ -325,8 +324,20 @@ public class PrimitiveExecutor {
             putIfNonBlank(metadata, "missionId", mission.id());
         }
         putIfNonBlank(metadata, "toolProfile", exchange.getProperty("toolProfile", String.class));
+        putIfNonBlank(metadata, "primitivePrompt", firstNonBlank(
+                exchange.getProperty("actPrompt", String.class),
+                exchange.getProperty("decisionPrompt", String.class),
+                exchange.getProperty("createPrompt", String.class)));
         putIfNonBlank(metadata, "laneId", laneId);
         putIfNonBlank(metadata, "passType", passType == null ? null : passType.name());
+        if (passType == LlmPassType.CONSOLIDATION) {
+            ThoughtStack stack = stack(exchange);
+            ThoughtFrame child = stack.leaf();
+            ThoughtFrame parent = stack.parentOfLeaf();
+            if (child != null && parent != null) {
+                metadata.put("thoughtConsolidationDetails", consolidationDetails(child, parent, null));
+            }
+        }
         if (schema != null && !schema.isBlank()) {
             metadata.put(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY, true);
         }
