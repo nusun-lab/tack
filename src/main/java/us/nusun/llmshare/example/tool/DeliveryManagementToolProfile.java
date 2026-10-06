@@ -58,7 +58,7 @@ public class DeliveryManagementToolProfile implements ToolProfileProvider {
                           member=me/list_workspace/list_project;
                           workitem=list/retrieve/retrieve_by_identifier/search/create/update/manage_label;
                           workitem_activity=list; workitem_comment=list/retrieve/create/update;
-                          workitem_relation=list/create/delete; label=list/create; state=list
+                          workitem_relation=list/create; label=list/create; state=list
                         - before mutating an existing work item, retrieve its attached labels and verify classification;
                           never infer classification from title, state, assignee, hierarchy, or wording
                         - Tack work classification is represented by exactly one attached Plane label: epic, story, test,
@@ -67,6 +67,13 @@ public class DeliveryManagementToolProfile implements ToolProfileProvider {
                           determine Tack classification
                         - use workitem(action="update", ...) with the complete assignees array for assignment changes
                         - Gitea access in this profile is read-only evidence; do not create repositories or mutate source
+                        - built-in dependency relations are direct: use workitem_relation(action="list", ...) to inspect
+                          them and workitem_relation(action="create", relation_type=<built-in>, ...) to create them; valid
+                          built-in types are blocking, blocked_by, start_before, start_after, finish_before, and finish_after
+                        - do not call list_definitions for built-in dependency relations; relation definitions are only for
+                          custom relationships
+                        - relation deletion is not available in the current Plane CE API; do not attempt
+                          workitem_relation(action="delete")
                         - a successful Plane relation read is authoritative for blockers; an error/validation payload is
                           not blocker evidence
                         - if relation reading fails, use only explicit blocker information on the selected item and report
