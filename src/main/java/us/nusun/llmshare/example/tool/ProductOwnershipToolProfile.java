@@ -29,58 +29,42 @@ public class ProductOwnershipToolProfile implements ToolProfileProvider {
         return List.of(ToolProfile.builder(ID)
                 .mcpServer(plane.definition())
                 .allowTools(PlaneMcpServer.ID,
-                        "get_me",
-                        "list_projects",
-                        "retrieve_project",
-                        "list_work_items",
-                        "retrieve_work_item",
-                        "retrieve_work_item_by_identifier",
-                        "search_work_items",
-                        "create_work_item",
-                        "update_work_item",
-                        "manage_work_item_label",
-                        "list_work_item_activities",
-                        "list_work_item_comments",
-                        "retrieve_work_item_comment",
-                        "create_work_item_comment",
-                        "update_work_item_comment",
-                        "list_labels",
-                        "create_label",
-                        "list_states")
+                        "project",
+                        "member",
+                        "workitem",
+                        "workitem_activity",
+                        "workitem_comment",
+                        "label",
+                        "state")
                 .promptGuidance("""
                         - this profile creates and updates Plane product work; the calling routine owns product policy,
                           lifecycle decisions, acceptance criteria, prioritization decisions, and WIP policy
+                        - use only these Plane actions here: project=list/retrieve; member=me;
+                          workitem=list/retrieve/retrieve_by_identifier/search/create/update/manage_label;
+                          workitem_activity=list; workitem_comment=list/retrieve/create/update; label=list/create; state=list
                         - Tack work classification is represented by exactly one attached Plane label: epic, story, test,
                           or defect
                         - these labels are unrelated to Plane's native work-item type and type_id; never use type_id to
                           determine Tack classification
                         - create a missing classification label only when the routine explicitly requires that kind, then
-                          attach it explicitly with manage_work_item_label
+                          attach it explicitly with workitem(action="manage_label")
                         - before mutating an existing item based on kind, verify its attached labels
-                        - use update_work_item with the complete assignees array for assignment changes
+                        - use workitem(action="update", ...) with the complete assignees array for assignment changes
                         - comments preserve evidence/context and are not lifecycle states
 
                         SKILL: plane-query-recipes
-                        - Discovery: list_work_items(project_id=<verified>,
+                        - Discovery: workitem(action="list", project_id=<verified>, per_page=12,
                           fields="id,name,sequence_id,state,priority,assignees")
-                        - Classification: retrieve_work_item(project_id=<verified>, work_item_id=<selected UUID>,
-                          expand="labels", fields="id,name,sequence_id,state,labels")
-                        - Description: retrieve_work_item(project_id=<verified>, work_item_id=<selected UUID>,
-                          fields="id,name,sequence_id,state,description_html")
-                        - Parent: retrieve_work_item(project_id=<verified>, work_item_id=<selected UUID>,
-                          fields="id,name,sequence_id,state,parent"); never expand parent
-                        - keep ownership and expanded-label classification in separate WorkItemDetail calls
+                        - Classification: workitem(action="retrieve", project_id=<verified>,
+                          workitem_id=<selected UUID>, expand="labels",
+                          fields="id,name,sequence_id,state,labels")
+                        - Description: workitem(action="retrieve", project_id=<verified>,
+                          workitem_id=<selected UUID>, fields="id,name,sequence_id,state,description_html")
+                        - Parent: workitem(action="retrieve", project_id=<verified>,
+                          workitem_id=<selected UUID>, fields="id,name,sequence_id,state,parent"); never expand parent
                         - a field omitted by a sparse projection is unknown, never negative evidence
-                        - after a WorkItemDetail response-shape failure, do not retry an equivalent failing shape
                         """)
-                .defaultArgument(PlaneMcpServer.ID, "list_projects", "fields", "id,name,identifier")
-                .defaultArgument(
-                        PlaneMcpServer.ID,
-                        "list_work_items",
-                        "fields",
-                        "id,name,sequence_id,state,priority,assignees")
-                .defaultArgument(PlaneMcpServer.ID, "list_work_items", "per_page", 12)
-                .hideArgument(PlaneMcpServer.ID, "list_work_items", "pql")
+                .hideArgument(PlaneMcpServer.ID, "workitem", "pql")
                 .maxResultTokens(maxResultTokens)
                 .build());
     }

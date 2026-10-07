@@ -294,8 +294,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         For an In Progress Epic, create/refine its reasonable non-duplicative implementation Story set and
                         an acyclic dependency graph, then replenish each DEV/ARCH runway to roughly 2-3 assigned executable
                         Todo Stories when legitimate dependency-satisfied work exists. Before adding a relation, verify it
-                        does not create a dependency cycle; repair any verified existing cycle instead of preserving it. Inspect enough candidates to restore the
-                        buffer in this pass rather than stopping after one promotion.
+                        does not create a dependency cycle. If a verified cycle already exists, do not attempt unsupported
+                        relation deletion; record the exact cycle, keep unrelated executable work flowing, and avoid adding
+                        relations that preserve or worsen it. Inspect enough candidates to restore the buffer in this pass
+                        rather than stopping after one promotion.
 
                         For a Todo Epic, pre-decompose the same reasonable Story/dependency set but leave its implementation
                         children Backlog. Todo at the Epic level means product/delivery ready for future activation, not

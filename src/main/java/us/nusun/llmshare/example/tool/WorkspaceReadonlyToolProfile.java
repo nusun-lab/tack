@@ -36,20 +36,13 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                 .mcpServer(gitea.definition())
                 .mcpServer(mattermost.definition())
                 .allowTools(PlaneMcpServer.ID,
-                        "get_me",
-                        "list_projects",
-                        "retrieve_project",
-                        "get_project_members",
-                        "get_workspace_members",
-                        "list_work_items",
-                        "retrieve_work_item",
-                        "retrieve_work_item_by_identifier",
-                        "search_work_items",
-                        "list_work_item_activities",
-                        "list_work_item_comments",
-                        "retrieve_work_item_comment",
-                        "list_labels",
-                        "list_states")
+                        "project",
+                        "member",
+                        "workitem",
+                        "workitem_activity",
+                        "workitem_comment",
+                        "label",
+                        "state")
                 .allowTools(GiteaMcpServer.ID,
                         "get_me",
                         "search_repos",
@@ -75,8 +68,11 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                         "get_user_by_username",
                         "search_users")
                 .promptGuidance("""
-                        - this profile is read-only; the calling routine determines which observations matter and what
-                          policy to apply to them
+                        - treat Plane access in this profile as read-only; use only these actions:
+                          project=list/retrieve; member=me/list_workspace/list_project;
+                          workitem=list/retrieve/retrieve_by_identifier/search; workitem_activity=list;
+                          workitem_comment=list/retrieve; label=list; state=list
+                        - the calling routine determines which observations matter and what policy to apply to them
                         - use only artifacts that can be verified as belonging to the current mission; unrelated resources
                           are not evidence
                         - Plane is authoritative for Plane work data, Gitea for repository/PR data, and Mattermost for
@@ -95,27 +91,26 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                         - every classified work item carries exactly one of these four labels
 
                         SKILL: plane-query-recipes
-                        - Discovery: list_work_items(project_id=<verified>,
+                        - Discovery: workitem(action="list", project_id=<verified>, per_page=12,
                           fields="id,name,sequence_id,state,priority,assignees")
-                        - Classification: retrieve_work_item(project_id=<verified>, work_item_id=<selected UUID>,
-                          expand="labels", fields="id,name,sequence_id,state,labels")
-                        - Description: retrieve_work_item(project_id=<verified>, work_item_id=<selected UUID>,
-                          fields="id,name,sequence_id,state,description_html")
-                        - Parent: retrieve_work_item(project_id=<verified>, work_item_id=<selected UUID>,
-                          fields="id,name,sequence_id,state,parent"); never expand parent
-                        - keep ownership and expanded-label classification in separate WorkItemDetail calls
+                        - Classification: workitem(action="retrieve", project_id=<verified>,
+                          workitem_id=<selected UUID>, expand="labels",
+                          fields="id,name,sequence_id,state,labels")
+                        - Description: workitem(action="retrieve", project_id=<verified>,
+                          workitem_id=<selected UUID>, fields="id,name,sequence_id,state,description_html")
+                        - Parent: workitem(action="retrieve", project_id=<verified>,
+                          workitem_id=<selected UUID>, fields="id,name,sequence_id,state,parent"); never expand parent
                         - a field omitted by a sparse projection is unknown, never negative evidence
-                        - after a WorkItemDetail response-shape failure, do not retry an equivalent failing shape
 
                         SKILL: membership-model
                         - keep active mission roster, Plane workspace membership, Plane project membership, and Mattermost
                           channel membership distinct; presence in one does not prove presence in another
-                        - use workspace/project/channel membership tools to establish the specific set requested by the
-                          routine and name that set explicitly in observations
+                        - use member(action="list_workspace") or member(action="list_project", project_id=<verified>)
+                          for the exact Plane membership set requested, and name that set explicitly in observations
 
                         SKILL: bounded-platform-navigation
                         - use the fewest direct lookups needed for the current observation, then stop
-                        - if the Plane project UUID is unknown, list projects once with sparse id/name/identifier fields
+                        - if the Plane project UUID is unknown, use project(action="list") once; its list response is already trimmed
                         - if a Gitea owner/repo is unknown, search once with the mission/repository anchor and use only the
                           returned canonical owner/repo
                         - for repository-root discovery use get_repository_tree; for known files read the exact path
@@ -129,10 +124,7 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                         - do not repeat an equivalent failed call without new evidence
                         - distinguish verified observations from assumptions
                         """)
-                .defaultArgument(PlaneMcpServer.ID, "list_projects", "fields", "id,name,identifier")
-                .defaultArgument(PlaneMcpServer.ID, "list_work_items", "fields", "id,name,sequence_id,state,priority,assignees")
-                .defaultArgument(PlaneMcpServer.ID, "list_work_items", "per_page", 12)
-                .hideArgument(PlaneMcpServer.ID, "list_work_items", "pql")
+                .hideArgument(PlaneMcpServer.ID, "workitem", "pql")
                 .maxResultTokens(maxResultTokens)
                 .build());
     }
