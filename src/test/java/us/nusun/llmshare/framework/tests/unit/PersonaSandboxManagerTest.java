@@ -64,7 +64,7 @@ class PersonaSandboxManagerTest {
         private int createCalls;
 
         private FakeOpenShellClient() {
-            super(true, 1, 1);
+            super(true, 1, 1, "test-sandbox-image");
         }
 
         @Override
