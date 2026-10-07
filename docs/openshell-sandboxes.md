@@ -32,6 +32,20 @@ The npm rule enables `allow_encoded_slash`, which is required for scoped package
 
 Package access is still policy-controlled. A package host outside this set is not implicitly reachable.
 
+## Filesystem policy
+
+Tack preserves OpenShell's restrictive filesystem baseline and adds `/home/tooling` as read-only so the Devfile UDI's Java, Maven, Gradle, and Node toolchains are usable without making the image toolchain writable.
+
+Repository work remains under `/sandbox`. Common writable state is redirected there as well:
+
+- Maven user home: `/sandbox/.m2`
+- Maven local repository: `/sandbox/.m2/repository`
+- Gradle user home: `/sandbox/.gradle`
+- npm cache: `/sandbox/.npm`
+- global Git config: `/sandbox/.gitconfig`
+
+This keeps the developer toolchain immutable while allowing dependency caches, repository state, and Git identity configuration to persist with the persona sandbox.
+
 ## Configuration
 
 | Environment variable | Default | Purpose |
@@ -41,11 +55,14 @@ Package access is still policy-controlled. A package host outside this set is no
 | `OPENSHELL_GATEWAY_ENDPOINT` | `http://openshell.tack.svc.cluster.local:8080` | OpenShell gRPC gateway |
 | `OPENSHELL_CONTROL_TIMEOUT_SECONDS` | `180` | Sandbox/provider control-operation timeout |
 | `OPENSHELL_EXEC_TIMEOUT_SECONDS` | `120` | Default `sandbox_exec` command timeout |
+| `OPENSHELL_SANDBOX_IMAGE` | `quay.io/devfile/universal-developer-image:ubi9-latest` | OCI image Tack requests for persona sandboxes |
 | `GITEA_URL` | empty | Optional Gitea endpoint fallback |
 
 The 120-second execution timeout matters for builds, package installation, and test suites. Raise `OPENSHELL_EXEC_TIMEOUT_SECONDS` when a legitimate command needs more time rather than assuming a timed-out command failed inside the sandbox.
 
 ## Lifecycle and reset
+
+Tack sends the configured sandbox image in the OpenShell create request rather than inheriting the gateway's default workload image.
 
 Persona sandboxes are persistent working environments, not AgentRun-scoped temporary processes. Tack discovers and reuses the mission/persona sandbox on later AgentRuns.
 
