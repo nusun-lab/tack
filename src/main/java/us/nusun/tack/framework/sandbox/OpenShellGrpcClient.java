@@ -11,11 +11,13 @@ import us.nusun.tack.framework.sandbox.grpc.CreateProviderRequest;
 import us.nusun.tack.framework.sandbox.grpc.CreateSandboxRequest;
 import us.nusun.tack.framework.sandbox.grpc.ExecSandboxEvent;
 import us.nusun.tack.framework.sandbox.grpc.ExecSandboxRequest;
+import us.nusun.tack.framework.sandbox.grpc.FilesystemPolicy;
 import us.nusun.tack.framework.sandbox.grpc.GetProviderProfileRequest;
 import us.nusun.tack.framework.sandbox.grpc.GetProviderRequest;
 import us.nusun.tack.framework.sandbox.grpc.GetSandboxPolicyStatusRequest;
 import us.nusun.tack.framework.sandbox.grpc.GetSandboxRequest;
 import us.nusun.tack.framework.sandbox.grpc.ImportProviderProfilesRequest;
+import us.nusun.tack.framework.sandbox.grpc.LandlockPolicy;
 import us.nusun.tack.framework.sandbox.grpc.NetworkBinary;
 import us.nusun.tack.framework.sandbox.grpc.NetworkEndpoint;
 import us.nusun.tack.framework.sandbox.grpc.NetworkPolicyRule;
@@ -31,7 +33,9 @@ import us.nusun.tack.framework.sandbox.grpc.ProviderProfileDiscovery;
 import us.nusun.tack.framework.sandbox.grpc.ProviderProfileImportItem;
 import us.nusun.tack.framework.sandbox.grpc.Sandbox;
 import us.nusun.tack.framework.sandbox.grpc.SandboxPhase;
+import us.nusun.tack.framework.sandbox.grpc.SandboxPolicy;
 import us.nusun.tack.framework.sandbox.grpc.SandboxSpec;
+import us.nusun.tack.framework.sandbox.grpc.SandboxTemplate;
 import us.nusun.tack.framework.sandbox.grpc.UpdateConfigRequest;
 import us.nusun.tack.framework.sandbox.grpc.UpdateProviderRequest;
 import us.nusun.tack.framework.sandbox.grpc.WatchSandboxRequest;
@@ -54,6 +58,24 @@ public class OpenShellGrpcClient {
             "registry.npmjs.org",
             "pypi.org",
             "files.pythonhosted.org");
+    private static final List<String> SANDBOX_READ_ONLY_PATHS = List.of(
+            "/bin",
+            "/usr",
+            "/lib",
+            "/proc",
+            "/dev/urandom",
+            "/etc",
+            "/var/log",
+            "/home/tooling");
+    private static final List<String> SANDBOX_READ_WRITE_PATHS = List.of(
+            "/tmp",
+            "/dev/null");
+    private static final Map<String, String> SANDBOX_ENVIRONMENT = Map.of(
+            "MAVEN_USER_HOME", "/sandbox/.m2",
+            "MAVEN_OPTS", "-Dmaven.repo.local=/sandbox/.m2/repository",
+            "GRADLE_USER_HOME", "/sandbox/.gradle",
+            "npm_config_cache", "/sandbox/.npm",
+            "GIT_CONFIG_GLOBAL", "/sandbox/.gitconfig");
 
     @GrpcClient("openshell")
     OpenShellGrpc.OpenShellBlockingStub stub;
@@ -61,14 +83,20 @@ public class OpenShellGrpcClient {
     private final boolean enabled;
     private final Duration controlTimeout;
     private final int execTimeoutSeconds;
+    private final String sandboxImage;
 
     public OpenShellGrpcClient(
             @ConfigProperty(name = "agent.sandbox.openshell.enabled", defaultValue = "false") boolean enabled,
             @ConfigProperty(name = "agent.sandbox.openshell.control-timeout-seconds", defaultValue = "180") long controlTimeoutSeconds,
-            @ConfigProperty(name = "agent.sandbox.openshell.exec-timeout-seconds", defaultValue = "120") int execTimeoutSeconds) {
+            @ConfigProperty(name = "agent.sandbox.openshell.exec-timeout-seconds", defaultValue = "120") int execTimeoutSeconds,
+            @ConfigProperty(name = "agent.sandbox.openshell.image") String sandboxImage) {
         this.enabled = enabled;
         this.controlTimeout = Duration.ofSeconds(controlTimeoutSeconds);
         this.execTimeoutSeconds = execTimeoutSeconds;
+        if (sandboxImage == null || sandboxImage.isBlank()) {
+            throw new IllegalArgumentException("OpenShell sandbox image must be configured");
+        }
+        this.sandboxImage = sandboxImage.strip();
     }
 
     public boolean enabled() {
@@ -90,7 +118,18 @@ public class OpenShellGrpcClient {
     }
 
     public Sandbox createSandboxReady(String name, List<String> providers, Map<String, String> labels) {
+        SandboxPolicy policy = SandboxPolicy.newBuilder()
+                .setFilesystem(FilesystemPolicy.newBuilder()
+                        .setIncludeWorkdir(true)
+                        .addAllReadOnly(SANDBOX_READ_ONLY_PATHS)
+                        .addAllReadWrite(SANDBOX_READ_WRITE_PATHS)
+                        .build())
+                .setLandlock(LandlockPolicy.newBuilder().setCompatibility("best_effort").build())
+                .build();
         SandboxSpec spec = SandboxSpec.newBuilder()
+                .putAllEnvironment(SANDBOX_ENVIRONMENT)
+                .setTemplate(SandboxTemplate.newBuilder().setImage(sandboxImage).build())
+                .setPolicy(policy)
                 .addAllProviders(providers == null ? List.of() : providers)
                 .build();
         Sandbox created;

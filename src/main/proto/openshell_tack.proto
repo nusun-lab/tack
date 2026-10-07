@@ -27,7 +27,29 @@ service OpenShell {
 
 message SandboxSpec {
   map<string, string> environment = 5;
+  SandboxTemplate template = 6;
+  SandboxPolicy policy = 7;
   repeated string providers = 8;
+}
+
+message SandboxTemplate {
+  string image = 1;
+}
+
+message SandboxPolicy {
+  uint32 version = 1;
+  FilesystemPolicy filesystem = 2;
+  LandlockPolicy landlock = 3;
+}
+
+message FilesystemPolicy {
+  bool include_workdir = 1;
+  repeated string read_only = 2;
+  repeated string read_write = 3;
+}
+
+message LandlockPolicy {
+  string compatibility = 1;
 }
 
 message ObjectMeta {
