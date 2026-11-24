@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>us.nusun</groupId>
-    <artifactId>llm-share-camel-kafka</artifactId>
+    <artifactId>tack</artifactId>
     <version>0.1.0-SNAPSHOT</version>
 
     <properties>
@@ -181,7 +181,7 @@
                 <configuration>
                     <configLocation>config/checkstyle/checkstyle.xml</configLocation>
                     <sourceDirectories>
-                        <sourceDirectory>${project.basedir}/src/main/java/us/nusun/llmshare/example/routine</sourceDirectory>
+                        <sourceDirectory>${project.basedir}/src/main/java/us/nusun/tack/example/routine</sourceDirectory>
                     </sourceDirectories>
                     <includeTestSourceDirectory>false</includeTestSourceDirectory>
                     <includeResources>false</includeResources>

@@ -1,20 +1,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: llm-share-camel-kafka
+  name: tack
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: llm-share-camel-kafka
+      app: tack
   template:
     metadata:
       labels:
-        app: llm-share-camel-kafka
+        app: tack
     spec:
       containers:
         - name: app
-          image: quay.io/REPLACE_ME/llm-share-camel-kafka:latest
+          image: quay.io/REPLACE_ME/tack:latest
           ports:
             - containerPort: 8080
           env:
@@ -40,10 +40,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: llm-share-camel-kafka
+  name: tack
 spec:
   selector:
-    app: llm-share-camel-kafka
+    app: tack
   ports:
     - name: http
       port: 8080
