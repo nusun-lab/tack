@@ -431,7 +431,7 @@ Reply correlation is currently in memory by `jobId`, so one active orchestrator 
 
 ## Bundled software-team example
 
-The `us.nusun.llmshare.example` package is a demonstration catalog, not part of Tack's generic contract.
+The `us.nusun.tack.example` package is a demonstration catalog, not part of Tack's generic contract.
 
 | Persona | Routine | Responsibility |
 | --- | --- | --- |
@@ -537,15 +537,15 @@ Tack is presently optimized for a local or single-orchestrator deployment.
 
 | Path | Purpose |
 | --- | --- |
-| `src/main/java/us/nusun/llmshare/framework/tack` | `tack:` component and primitive execution |
-| `src/main/java/us/nusun/llmshare/framework/route` | Mission, AgentRun, API, and LLM runtime routes |
-| `src/main/java/us/nusun/llmshare/framework/llm` | LLM jobs, workers, correlation, topic provisioning, and model setup |
-| `src/main/java/us/nusun/llmshare/framework/mcp` | MCP client construction, filtering, and result limits |
-| `src/main/java/us/nusun/llmshare/framework/sandbox` | OpenShell sandbox identity, lifecycle, providers, policy, and execution |
-| `src/main/java/us/nusun/llmshare/framework/state` | Mission/AgentRun working state and thought stack |
-| `src/main/java/us/nusun/llmshare/framework/projection` | Observable AgentRun projection history |
-| `src/main/java/us/nusun/llmshare/framework/inventory` | Persona, routine, tool-profile, and lane catalogs |
-| `src/main/java/us/nusun/llmshare/example` | Bundled software-team example |
+| `src/main/java/us/nusun/tack/framework/tack` | `tack:` component and primitive execution |
+| `src/main/java/us/nusun/tack/framework/route` | Mission, AgentRun, API, and LLM runtime routes |
+| `src/main/java/us/nusun/tack/framework/llm` | LLM jobs, workers, correlation, topic provisioning, and model setup |
+| `src/main/java/us/nusun/tack/framework/mcp` | MCP client construction, filtering, and result limits |
+| `src/main/java/us/nusun/tack/framework/sandbox` | OpenShell sandbox identity, lifecycle, providers, policy, and execution |
+| `src/main/java/us/nusun/tack/framework/state` | Mission/AgentRun working state and thought stack |
+| `src/main/java/us/nusun/tack/framework/projection` | Observable AgentRun projection history |
+| `src/main/java/us/nusun/tack/framework/inventory` | Persona, routine, tool-profile, and lane catalogs |
+| `src/main/java/us/nusun/tack/example` | Bundled software-team example |
 | `docs/architecture.md` | Additional architecture notes |
 | `docs/openshell-sandboxes.md` | OpenShell execution model and troubleshooting |
 
