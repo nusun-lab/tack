@@ -259,7 +259,7 @@ class LlmQueueLifecycleTest {
         UUID jobId = UUID.randomUUID();
         Exchange exchange = new DefaultExchange(context);
         exchange.setProperty("agentRun", new AgentRun("run-1", "mission-1", "persona-a", "routine-a", Map.of()));
-        exchange.setProperty("mission", new Mission("mission-1", "goal", List.of(), "active", Map.of(), Instant.now()));
+        exchange.setProperty("mission", new Mission("mission-1", "goal", List.of(), "active", Instant.now()));
         exchange.setProperty("llmJobId", jobId);
         exchange.getIn().setHeader("lane", "low-pass");
         exchange.getIn().setHeader("passType", LlmPassType.ACTION);
@@ -269,7 +269,7 @@ class LlmQueueLifecycleTest {
         assertEquals("run-1", exchange.getProperty("llmPartitionKey"));
 
         Exchange missionFallback = new DefaultExchange(context);
-        missionFallback.setProperty("mission", new Mission("mission-2", "goal", List.of(), "active", Map.of(), Instant.now()));
+        missionFallback.setProperty("mission", new Mission("mission-2", "goal", List.of(), "active", Instant.now()));
         missionFallback.setProperty("llmJobId", jobId);
         missionFallback.getIn().setHeader("lane", "low-pass");
         missionFallback.getIn().setHeader("passType", LlmPassType.ACTION);
@@ -293,7 +293,7 @@ class LlmQueueLifecycleTest {
         UUID jobId = UUID.randomUUID();
         Exchange exchange = new DefaultExchange(context);
         exchange.setProperty("agentRun", new AgentRun("run-1", "mission-1", "persona-a", "routine-a", Map.of()));
-        exchange.setProperty("mission", new Mission("mission-1", "goal", List.of(), "active", Map.of(), Instant.now()));
+        exchange.setProperty("mission", new Mission("mission-1", "goal", List.of(), "active", Instant.now()));
         exchange.setProperty("llmJobId", jobId);
         exchange.getIn().setHeader("lane", "low-pass");
         exchange.getIn().setHeader("passType", LlmPassType.ACTION);
@@ -327,7 +327,7 @@ class LlmQueueLifecycleTest {
         UUID jobId = UUID.randomUUID();
         Exchange exchange = new DefaultExchange(context);
         exchange.setProperty("agentRun", new AgentRun("run-1", "mission-1", "persona-a", "routine-a", Map.of()));
-        exchange.setProperty("mission", new Mission("mission-1", "goal", List.of(), "active", Map.of(), Instant.now()));
+        exchange.setProperty("mission", new Mission("mission-1", "goal", List.of(), "active", Instant.now()));
         exchange.setProperty("llmJobId", jobId);
         exchange.getIn().setHeader("lane", "low-pass");
         exchange.getIn().setHeader("passType", LlmPassType.ACTION);

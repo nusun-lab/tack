@@ -23,7 +23,7 @@ class ResetServiceBoundaryTest {
     void resetPurgesKafkaTopicsDestroysSandboxesAndClearsInMemoryState() throws Exception {
         ProjectionStore projections = new ProjectionStore();
         AgentRunStore agentRuns = new AgentRunStore();
-        agentRuns.putMission(new Mission("mission-1", "Build", List.of(), "active", Map.of(), Instant.now()));
+        agentRuns.putMission(new Mission("mission-1", "Build", List.of(), "active", Instant.now()));
         agentRuns.putRun(new AgentRun("run-1", "mission-1", FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A, Map.of()));
         projections.put(projection("run-1"));
         TestKafkaTopicProvisioner kafkaTopics = new TestKafkaTopicProvisioner(List.of("agent-runs.scheduled", "llm.requests.low"));

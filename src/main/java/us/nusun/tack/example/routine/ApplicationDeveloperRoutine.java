@@ -1,6 +1,7 @@
 package us.nusun.tack.example.routine;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import org.apache.camel.ExchangePropertyKey;
 import org.apache.camel.builder.RouteBuilder;
 import us.nusun.tack.example.tool.EngineeringWorkToolProfile;
 import us.nusun.tack.example.tool.IntegrationToolProfile;
@@ -264,7 +265,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .loopDoWhile(and(exchangeProperty("devProductiveIterations").isLessThan(6),
                         or(exchangeProperty("devProductiveIterations").isEqualTo(0),
                             exchangeProperty("devImplementationMadeProgress").isEqualTo(true))))
-                    .setProperty("devProductiveIterations", simple("${exchangeProperty.devProductiveIterations++}"))
+                    .process(exchange -> exchange.setProperty("devProductiveIterations",
+                            exchange.getProperty(ExchangePropertyKey.LOOP_INDEX, Integer.class) + 1))
                     .setProperty("devImplementationMadeProgress", constant(false))
                     .setProperty("devSourceCloseoutAllowed", constant(false))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
@@ -368,7 +370,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .setProperty("devImplementationStepProgress", constant(true))
                 .setProperty("decision.developer-implementation-complete.result", constant("no"))
                 .loopDoWhile(simple("${exchangeProperty.devImplementationStepProgress} == true && ${exchangeProperty.developerImplementationCycle} < 6"))
-                    .setProperty("developerImplementationCycle", simple("${exchangeProperty.developerImplementationCycle++}"))
+                    .process(exchange -> exchange.setProperty("developerImplementationCycle",
+                            exchange.getProperty(ExchangePropertyKey.LOOP_INDEX, Integer.class) + 1))
                     .setProperty("devImplementationStepProgress", constant(false))
                     .setProperty("decision.developer-has-valid-task-context.result", constant("no"))
                     .setProperty("decision.developer-is-topology-investigation.result", constant("no"))

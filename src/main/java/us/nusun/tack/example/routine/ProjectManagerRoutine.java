@@ -1,6 +1,7 @@
 package us.nusun.tack.example.routine;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import org.apache.camel.ExchangePropertyKey;
 import org.apache.camel.builder.RouteBuilder;
 import us.nusun.tack.example.tool.DeliveryManagementToolProfile;
 import us.nusun.tack.example.tool.ProjectDocumentationToolProfile;
@@ -216,7 +217,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .loopDoWhile(and(exchangeProperty("pmActiveFlowIterations").isLessThan(6),
                         or(exchangeProperty("pmActiveFlowIterations").isEqualTo(0),
                             exchangeProperty("act.pm-flow.durableProgress").isEqualTo(true))))
-                    .setProperty("pmActiveFlowIterations", simple("${exchangeProperty.pmActiveFlowIterations++}"))
+                    .process(exchange -> exchange.setProperty("pmActiveFlowIterations",
+                            exchange.getProperty(ExchangePropertyKey.LOOP_INDEX, Integer.class) + 1))
                     .to("direct:pm-flow")
                 .end();
 
@@ -275,7 +277,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .loopDoWhile(and(exchangeProperty("pmPlanningIterations").isLessThan(5),
                         or(exchangeProperty("pmPlanningIterations").isEqualTo(0),
                             exchangeProperty("act.pm-planning.durableProgress").isEqualTo(true))))
-                    .setProperty("pmPlanningIterations", simple("${exchangeProperty.pmPlanningIterations++}"))
+                    .process(exchange -> exchange.setProperty("pmPlanningIterations",
+                            exchange.getProperty(ExchangePropertyKey.LOOP_INDEX, Integer.class) + 1))
                     .to("direct:pm-planning")
                 .end();
 

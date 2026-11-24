@@ -4,6 +4,9 @@ import org.apache.camel.Exchange;
 import org.junit.jupiter.api.Test;
 import us.nusun.tack.framework.inventory.RoutineCatalog;
 import us.nusun.tack.framework.model.AgentRunProjection;
+import us.nusun.tack.framework.model.CreateResult;
+import us.nusun.tack.framework.model.DecisionResult;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import us.nusun.tack.framework.model.LlmJobEnvelope;
 import us.nusun.tack.framework.model.LlmPassType;
 import us.nusun.tack.framework.model.RoutineDefinition;
@@ -26,6 +29,54 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ProjectionSemanticsTest {
+    @Test
+    void projectsCompletedResultsInOrderAndPreservesLatestAct() {
+        ProjectionStore store = FrameworkFixtures.projectionStore();
+        AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
+        Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
+        AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
+
+        var act = new StepResult("inspect", "Current thought", "Inspected.", "SUCCEEDED", false, 1);
+        run.apply(act);
+        manager.record(exchange, "ACT_COMPLETED");
+        assertEquals("step", store.get(run.id()).latestResult().get("type"));
+
+        run.apply(new DecisionResult("ready", "yes", 1, "Evidence is sufficient"));
+        manager.record(exchange, "DECISION_COMPLETED");
+        assertEquals("decision", store.get(run.id()).latestResult().get("type"));
+
+        run.apply(new CreateResult("report", "report-schema", JsonNodeFactory.instance.objectNode()));
+        manager.record(exchange, "CREATE_COMPLETED");
+        assertEquals("create", store.get(run.id()).latestResult().get("type"));
+        assertEquals(act, run.latestStepResult());
+    }
+
+    @Test
+    void concurrentUpdatesRetainThoughtEventsAndBoundTheTimeline() throws Exception {
+        ProjectionStore store = FrameworkFixtures.projectionStore();
+        AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
+        Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
+        AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
+        manager.record(exchange, "AGENT_RUN_STARTED");
+
+        int events = 40;
+        try (var executor = java.util.concurrent.Executors.newFixedThreadPool(4)) {
+            var tasks = new java.util.ArrayList<java.util.concurrent.Future<?>>();
+            for (int index = 0; index < events; index++) {
+                Exchange copy = exchange.copy();
+                int sequence = index;
+                tasks.add(executor.submit(() -> manager.record(copy, "THOUGHT_REWRITTEN", Map.of("sequence", sequence))));
+            }
+            for (var task : tasks) {
+                task.get();
+            }
+        }
+
+        AgentRunProjection projection = store.get(run.id());
+        assertEquals(10, projection.timeline().size());
+        assertEquals(events, projection.thoughtHistory().stream().map(event -> event.get("sequence")).distinct().count());
+    }
+
     @Test
     void projectionBuildsDashboardSafeSnapshotFromLiveExchangeState() {
         ProjectionStore store = FrameworkFixtures.projectionStore();

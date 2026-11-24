@@ -53,7 +53,7 @@ class PersonaSandboxManagerTest {
     }
 
     private static Mission mission(String id) {
-        return new Mission(id, "Test mission", List.of(), "active", Map.of(), Instant.now());
+        return new Mission(id, "Test mission", List.of(), "active", Instant.now());
     }
 
     private static Persona persona(String id) {

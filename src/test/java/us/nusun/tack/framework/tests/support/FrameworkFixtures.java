@@ -167,20 +167,13 @@ public final class FrameworkFixtures {
         RoutineCatalog routines = routineCatalog();
         ThoughtStackSupport thoughts = new ThoughtStackSupport();
         set(thoughts, "projections", projections);
-        PrimitiveExecutor executor = new PrimitiveExecutor();
-        set(executor, "objectMapper", objectMapper);
-        set(executor, "thoughts", thoughts);
-        set(executor, "personas", personas);
-        set(executor, "routines", routines);
-        set(executor, "toolProfiles", toolProfileRegistry());
-        set(executor, "lanes", inferenceLaneRegistry());
-        set(executor, "projections", projections);
-        return executor;
+        return new PrimitiveExecutor(objectMapper, thoughts, personas, routines, toolProfileRegistry(),
+                inferenceLaneRegistry(), projections);
     }
 
     public static AgentRunStore defaultAgentRunStore() {
         AgentRunStore store = new AgentRunStore();
-        store.putMission(new Mission("mission-1", "Test mission", List.of(), "active", Map.of(), Instant.now()));
+        store.putMission(new Mission("mission-1", "Test mission", List.of(), "active", Instant.now()));
         store.putRun(new AgentRun("run-1", "mission-1", PERSONA_A, ROUTINE_A, Map.of("input", Map.of("brief", "Test run input"))));
         return store;
     }
@@ -209,7 +202,7 @@ public final class FrameworkFixtures {
 
     public static Exchange exchangeWithRun(String personaId, String routineId) {
         DefaultExchange exchange = new DefaultExchange(new DefaultCamelContext());
-        exchange.setProperty("mission", new Mission("mission-1", "Test mission", List.of(), "active", Map.of(), Instant.now()));
+        exchange.setProperty("mission", new Mission("mission-1", "Test mission", List.of(), "active", Instant.now()));
         exchange.setProperty("agentRun", new AgentRun("run-1", "mission-1", personaId, routineId, Map.of("input", Map.of("brief", "Test run input"))));
         return exchange;
     }

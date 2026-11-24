@@ -4,10 +4,6 @@ import static us.nusun.tack.framework.model.FrameworkText.firstNonBlankStripped;
 
 import java.time.Instant;
 import java.util.Map;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.UUID;
 
 public record LlmJobEnvelope(
@@ -28,7 +24,7 @@ public record LlmJobEnvelope(
     public static final LlmPassType DEFAULT_PASS_TYPE = LlmPassType.SYNTHESIS;
 
     public LlmJobEnvelope {
-        metadata = snapshot(metadata);
+        metadata = JsonValues.snapshot(metadata);
     }
 
     public LlmJobEnvelope(UUID jobId, String laneId, LlmPassType passType, String requester, String role, int priority,
@@ -96,34 +92,6 @@ public record LlmJobEnvelope(
         if (prompt == null || prompt.isBlank()) {
             throw new IllegalArgumentException("prompt is required");
         }
-    }
-
-    private static Map<String, Object> snapshot(Map<String, Object> metadata) {
-        if (metadata == null || metadata.isEmpty()) {
-            return Map.of();
-        }
-        Map<String, Object> copy = new LinkedHashMap<>();
-        metadata.forEach((key, value) -> copy.put(key, freeze(value)));
-        return Collections.unmodifiableMap(copy);
-    }
-
-    private static Object freeze(Object value) {
-        if (value instanceof Map<?, ?> map) {
-            Map<Object, Object> copy = new LinkedHashMap<>();
-            map.forEach((key, item) -> copy.put(key, freeze(item)));
-            return Collections.unmodifiableMap(copy);
-        }
-        if (value instanceof List<?> list) {
-            return list.stream().map(LlmJobEnvelope::freeze).toList();
-        }
-        if (value instanceof Object[] array) {
-            List<Object> copy = new ArrayList<>(array.length);
-            for (Object item : array) {
-                copy.add(freeze(item));
-            }
-            return Collections.unmodifiableList(copy);
-        }
-        return value;
     }
 
     private static String blankToDefault(String value, String defaultValue) {

@@ -92,7 +92,7 @@ public final class McpToolPolicy {
     private ToolSpecification projectArguments(ToolSpecification tool) {
         ToolProfile.Arguments policy = profile.arguments(server, tool.name());
         Set<String> hidden = policy.hidden();
-        if (hidden.isEmpty() && policy.permittedValues().isEmpty()) {
+        if (policy.permittedValues().isEmpty() && (hidden.isEmpty() || tool.parameters() == null)) {
             return tool;
         }
 

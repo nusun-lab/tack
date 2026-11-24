@@ -180,7 +180,7 @@ class SandboxAdmissionTest {
         private final DefaultCamelContext camel;
         private final AgentRunRequest run =
                 new AgentRunRequest("developer", FrameworkFixtures.ROUTINE_A, Map.of("repositoryUrl", "https://git.example/project"));
-        private final Mission mission = new Mission("sandbox-test", "Build", List.of(), "active", Map.of(), Instant.now());
+        private final Mission mission = new Mission("sandbox-test", "Build", List.of(), "active", Instant.now());
 
         private Fixture(Gateway gateway, long provisionSeconds) throws Exception {
             server = ServerBuilder.forPort(0).addService(gateway).build().start();

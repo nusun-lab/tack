@@ -3,8 +3,6 @@ package us.nusun.tack.framework.model;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
-import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -29,7 +27,7 @@ public record AgentRunRequest(
         personaId = personaId.trim();
         routineId = routineId.trim();
         subroutineId = RoutineDefinition.normalizeSubroutineId(subroutineId);
-        input = immutableMapAllowingNulls(input);
+        input = JsonValues.snapshot(input);
     }
 
     public Map<String, Object> workingState() {
@@ -37,12 +35,5 @@ public record AgentRunRequest(
             return Map.of();
         }
         return Map.of("input", input);
-    }
-
-    private static Map<String, Object> immutableMapAllowingNulls(Map<String, Object> value) {
-        if (value == null || value.isEmpty()) {
-            return Map.of();
-        }
-        return Collections.unmodifiableMap(new LinkedHashMap<>(value));
     }
 }

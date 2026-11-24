@@ -19,7 +19,7 @@ class AgentRunCapacityServiceTest {
     @Test
     void activeRunCountIncludesAcceptedScheduledAndRunningOnly() {
         AgentRunStore store = new AgentRunStore();
-        store.putMission(new Mission("mission-1", "Build", List.of(), "active", Map.of(), Instant.now()));
+        store.putMission(new Mission("mission-1", "Build", List.of(), "active", Instant.now()));
         store.putRun(run("accepted", "mission-1", AgentRun.STATUS_ACCEPTED));
         store.putRun(run("scheduled", "mission-1", AgentRun.STATUS_SCHEDULED));
         store.putRun(run("running", "mission-1", AgentRun.STATUS_RUNNING));

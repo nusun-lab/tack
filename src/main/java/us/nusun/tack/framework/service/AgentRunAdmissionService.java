@@ -81,7 +81,6 @@ public class AgentRunAdmissionService {
                 request.goal(),
                 List.of(),
                 "active",
-                Map.of(),
                 Instant.now());
         List<PreparedAgentRun> prepared = request.agentRuns().stream()
                 .map(agentRunRequest -> prepareAgentRun(mission, null, agentRunRequest))

@@ -10,7 +10,6 @@ import us.nusun.tack.framework.tests.support.TestCamelContexts;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 
 class ArchitectIntegrationLoopTest {
     @Test
@@ -40,11 +39,12 @@ class ArchitectIntegrationLoopTest {
             context.start();
             try (var producer = context.createProducerTemplate()) {
                 var exchange = producer.request("direct:architect-integration-focus", message -> {});
-                assertNull(exchange.getException());
+                if (exchange.getException() != null) {
+                    throw exchange.getException();
+                }
+                assertEquals(1, recoveries.get(), exchange.getProperties().toString());
+                assertEquals(2, batches.get(), exchange.getProperties().toString());
             }
         }
-
-        assertEquals(2, batches.get());
-        assertEquals(1, recoveries.get());
     }
 }

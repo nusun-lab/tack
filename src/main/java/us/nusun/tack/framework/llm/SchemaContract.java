@@ -1,6 +1,7 @@
 package us.nusun.tack.framework.llm;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.networknt.schema.Error;
@@ -17,7 +18,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.stream.Collectors;
 
-/** One normalized schema for the prompt, the provider and worker-side validation. */
+/** One normalized schema for the prompt, the provider and local validation. */
 public final class SchemaContract {
     private final JsonNode schema;
 
@@ -29,18 +30,19 @@ public final class SchemaContract {
         if (input == null || input.isBlank()) {
             throw new IllegalArgumentException("Response schema is required");
         }
-        String source = camel.resolvePropertyPlaceholders(input).strip();
+        String source = input.strip();
+        if (!inline(source)) {
+            source = camel.resolvePropertyPlaceholders(source).strip();
+        }
         String content = source;
-        if (!source.startsWith("{") && !"true".equals(source) && !"false".equals(source)) {
-            if (ResourceHelper.hasScheme(source) || !source.startsWith("[")) {
-                try (var stream = ResourceHelper.resolveMandatoryResourceAsInputStream(camel, source)) {
-                    content = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
-                }
+        if (!inline(source)) {
+            try (var stream = ResourceHelper.resolveMandatoryResourceAsInputStream(camel, source)) {
+                content = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
             }
         }
         JsonNode schema;
         try {
-            schema = mapper.readTree(content);
+            schema = readJson(mapper, content);
         } catch (JsonProcessingException failure) {
             throw new IllegalArgumentException("Response schema is not valid JSON", failure);
         }
@@ -48,6 +50,15 @@ public final class SchemaContract {
             throw new IllegalArgumentException("Response schema must be a JSON object or boolean");
         }
         return new SchemaContract(schema);
+    }
+
+    private static boolean inline(String source) {
+        return (source.startsWith("{") && !source.startsWith("{{")) || source.startsWith("[")
+                || "true".equals(source) || "false".equals(source);
+    }
+
+    static JsonNode readJson(ObjectMapper mapper, String content) throws JsonProcessingException {
+        return mapper.reader().with(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).readTree(content);
     }
 
     public String json() {

@@ -92,44 +92,46 @@ The bundled software-team example is deliberately outside framework core, but it
 
 Plane owns projects, planned work, assignments, status, dependencies, priorities, blockers, and delivery planning. Gitea owns remote repository state and review metadata. Mattermost owns conversation, questions, handoffs, and concise notifications. OpenShell is the local execution boundary for repository content work.
 
-The example publishes six profiles:
+The software-team example declares separate profiles for workspace observation, coordination,
+delivery, product ownership, QA, source changes, integration, and team chat. The
+[example profile table](../README.md#example-tool-profiles) lists the current IDs and ownership.
+Repository-writing profiles share their sandbox and Gitea grants. Plane work profiles share
+classification and query guidance. The read-only workspace profile advertises and enforces an
+explicit list of Plane actions for each resource tool. Omitted actions require a profile-owned
+default. Tack applies defaults and checks the effective values before dispatch.
 
-- `workspace-readonly`: read-only cross-system orientation with explicit allow lists for Plane, Gitea, and Mattermost.
-- `workspace-coordination`: bounded cross-system coordination with explicit allow lists; it can update Plane, create/discover Gitea repositories, and communicate in Mattermost, but it cannot mutate source files, branches, pull requests, releases, or Gitea issue state.
-- `project-management`: broad Plane profile with denials for destructive operations, intake, work logs, pages, feature administration, and custom-schema administration.
-- `source-control`: broad read/remote Gitea profile with denials for destructive operations, native wiki surfaces, issue/label/milestone/time-tracking coordination, and unrelated admin surfaces.
-- `source-control-write`: Gitea remote operations plus `sandbox_exec`; repository contents, builds, tests, diffs, commits, and pushes happen in the persistent persona sandbox rather than through Gitea file-content mutation APIs.
-- `team-chat`: broad Mattermost profile with denials for destructive operations, low-value UI state, reactions, pins, and bookmarks.
+Architect owns the non-empty repository baseline on main. Developers report missing baselines
+to Architect and start task branches from an established baseline. Project managers record
+verified dependency cycles and continue unrelated executable work. Plane CE supports reading
+and creating built-in relations, so the routine does not attempt relation deletion.
 
-Gitea issues, labels, milestones, and time tracking are excluded because Plane is the single source of truth for planned work and status. Cross-system profiles use allow lists because combining systems increases blast radius. Domain profiles use deny lists because a single authoritative system can expose a broad surface without creating cross-system ambiguity.
+## Runtime boundaries
 
-The example declares Plane, Gitea, and Mattermost connection definitions as separate `McpServer` classes. Each `ToolProfile` class injects the server declarations it needs, composes those immutable definitions directly, and owns its capability policy; there is no inheritance between profiles. OpenShell tool exposure follows the same profile boundary even though `sandbox_exec` is provided by Tack rather than MCP.
-
-Routine authors should choose the narrowest profile that supports the act. Composite profiles should reduce redundant model passes when one coherent act needs multiple systems, not become universal all-tools profiles.
-
-## Why not just use a Java BlockingQueue?
-
-A local queue is fine for a toy. Kafka gives you the properties you will need once agents become separate services:
-
-- durable queue
-- replayable request/response log
-- multi-producer fan-in
-- worker isolation
-- metrics
-- future partitioning strategy
-- OpenShift-friendly operational model
+- Workspace and prompt inventory use credential-free views. Tool-server views expose header
+  names for diagnostics and persona views expose public handles.
+- Camel binds HTTP JSON to request types. Direct routes carry typed requests, and Kafka retains
+  its job, result, and scheduling event contracts. Typed per-pass fields are restored from the
+  existing Kafka envelope, with an immutable enqueue-time metadata snapshot.
+- A normalized schema drives the creation prompt, provider constraints when enabled, and local
+  validation before returning a queued response. The provider and local validator enforce
+  different boundaries even when they share the same schema.
+- Projection updates are atomic per run. The visible operation starts when its primary call
+  dispatches, and completion updates that operation by ID. The latest completed primitive is
+  tracked separately from the most recent act used for decision context. The timeline keeps
+  ten events, and retained thought events remain available after a frame exits.
+- LangChain4j supplies MCP filtering, specification mapping, and tool execution wrapping.
+  Tack owns connection lifecycle, persona credentials, and enforcement at execution time.
 
 ## Near-term decisions
 
 ### Priority
 
-Kafka does not natively reorder records inside a partition by priority. Options:
-
-1. Use separate topics: `llm.requests.high`, `llm.requests.normal`, `llm.requests.low`.
-2. Use a scheduler service that reads submitted jobs from a DB and publishes to Kafka in priority order.
-3. Use Kafka only for accepted execution jobs and keep priority in Postgres.
-
-For the first proof, keep priority as metadata only.
+The example runs separate high and low inference lanes. Each has request and reply topics
+with configurable partition strategy and worker parallelism. Request topics need at least the
+lane's worker count in partitions. Tack provisions missing topics when
+`LLM_KAFKA_PROVISION_TOPICS` is enabled. The
+[Strimzi manifest](../deploy/openshift/kafka-topics.yaml) describes the default topics for clusters
+that manage topics declaratively.
 
 ### Persistence
 

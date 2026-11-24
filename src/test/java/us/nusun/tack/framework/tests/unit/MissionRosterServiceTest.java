@@ -54,7 +54,7 @@ class MissionRosterServiceTest {
     @Test
     void missionRosterSupportsDuplicatePersonasWithRunMetadata() {
         AgentRunStore store = new AgentRunStore();
-        store.putMission(new Mission("mission-1", "Build", List.of(), "active", Map.of(), Instant.now()));
+        store.putMission(new Mission("mission-1", "Build", List.of(), "active", Instant.now()));
         store.putRun(new AgentRun("run-a-1", "mission-1", "persona-a", "routine-a", Map.of()));
         store.putRun(new AgentRun("run-a-2", "mission-1", "persona-a", "routine-b", Map.of()));
         MissionRosterService service = service(store);
@@ -108,7 +108,7 @@ class MissionRosterServiceTest {
     @Test
     void missionRosterIncludesSubroutineAndFocusedInput() {
         AgentRunStore store = new AgentRunStore();
-        store.putMission(new Mission("mission-1", "Build", List.of(), "active", Map.of(), Instant.now()));
+        store.putMission(new Mission("mission-1", "Build", List.of(), "active", Instant.now()));
         AgentRun run = new AgentRun(
                 "run-phase-a",
                 "mission-1",
@@ -223,8 +223,8 @@ class MissionRosterServiceTest {
 
     private static AgentRunStore storeWithRuns() {
         AgentRunStore store = new AgentRunStore();
-        store.putMission(new Mission("mission-1", "Build", List.of(), "active", Map.of(), Instant.now()));
-        store.putMission(new Mission("mission-2", "Other", List.of(), "active", Map.of(), Instant.now()));
+        store.putMission(new Mission("mission-1", "Build", List.of(), "active", Instant.now()));
+        store.putMission(new Mission("mission-2", "Other", List.of(), "active", Instant.now()));
         AgentRun runA = new AgentRun("run-a", "mission-1", "run-parent", "persona-a", "routine-a", Map.of());
         runA.status(AgentRun.STATUS_ACCEPTED);
         AgentRun runC = new AgentRun("run-c", "mission-1", "persona-c", "routine-b", Map.of());

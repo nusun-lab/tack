@@ -118,10 +118,15 @@ public class LlmRouteSupport {
                 || job == null || job.responseSchema() == null || job.responseSchema().isBlank()) {
             return;
         }
-        SchemaContract contract = SchemaContract.resolve(exchange.getContext(), objectMapper, job.responseSchema());
+        SchemaContract contract;
+        try {
+            contract = SchemaContract.resolve(exchange.getContext(), objectMapper, job.responseSchema());
+        } catch (java.io.IOException | IllegalArgumentException failure) {
+            throw new LlmResponseException("Unable to resolve response schema " + agentResponseContext(exchange), failure);
+        }
         JsonNode response;
         try {
-            response = objectMapper.readTree(result.content());
+            response = SchemaContract.readJson(objectMapper, result.content());
         } catch (JsonProcessingException e) {
             throw new LlmResponseException(
                     "LLM response failure: reason=malformed-structured-output "
@@ -180,7 +185,10 @@ public class LlmRouteSupport {
     }
 
     private static String agentResponseContext(Exchange exchange) {
-        return "lane=" + firstNonBlank(exchange.getProperty("laneId", String.class), "unknown")
+        LlmExecutionContext invocation = LlmExecutionContext.on(exchange);
+        return "jobId=" + invocation.jobId()
+                + " operation=" + invocation.primitive() + "/" + invocation.primitiveId()
+                + " lane=" + firstNonBlank(exchange.getProperty("laneId", String.class), "unknown")
                 + " passType=" + String.valueOf(exchange.getProperty("passType"))
                 + " finishReason=" + header(exchange, "CamelLangChain4jAgentFinishReason")
                 + " inputTokens=" + header(exchange, "CamelLangChain4jAgentInputTokenCount")

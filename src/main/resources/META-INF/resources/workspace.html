@@ -398,24 +398,6 @@
       catch { return String(value); }
     }
 
-    function renderLatestResult(result) {
-      if (!Object.keys(result).length) return '<div class="empty">No result captured yet.</div>';
-      const type = result.type || 'result';
-      const dangerClass = type === 'failure' ? ' danger' : '';
-      return `<div class="row"><span class="pill subtle${dangerClass}">${esc(type)}</span>${result.createId ? `<span class="pill subtle mono">${esc(result.createId)}</span>` : ''}</div>
-        <h4>Result</h4>
-        <pre>${esc(formatLatestResultText(result))}</pre>`;
-    }
-
-    function formatLatestResultText(result) {
-      const type = result.type || 'result';
-      if (type === 'step') return result.summary || JSON.stringify(result, null, 2);
-      if (type === 'decision') return [`result: ${result.result ?? ''}`, `reason: ${result.reason || ''}`].join('\n');
-      if (type === 'create') return JSON.stringify(result, null, 2);
-      if (type === 'failure') return result.summary || JSON.stringify(result, null, 2);
-      return JSON.stringify(result, null, 2);
-    }
-
     function renderTimeline(timeline) {
       if (!timeline.length) return '<div class="empty">No timeline entries yet.</div>';
       return `<pre class="terminal timeline-terminal" data-timeline-terminal>${timeline.map(t => `<span class="terminal-line"><span class="terminal-time">${esc(formatTime(t.at) || t.at || '')}</span> <span class="terminal-event">${esc(t.type || '')}</span>${t.primitive ? ` <span class="terminal-step">${esc(t.primitive)}:${esc(t.stepId || '')}</span>` : ''}</span>`).join('\n')}</pre>`;

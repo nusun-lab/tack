@@ -65,7 +65,10 @@ class AgentRunIsolationRouteTest {
             context.start();
             ProducerTemplate template = context.createProducerTemplate();
             AgentRun parent = parentRun();
-            Exchange exchange = preparedExchange(context, parent, new AgentRunRequest(FrameworkFixtures.PERSONA_A, "test/child", Map.of("repo", "parking")));
+            var items = new java.util.ArrayList<>(java.util.Arrays.asList(7, null, "note"));
+            var input = Map.of("repo", "parking", "nested", Map.of("items", items));
+            Exchange exchange = preparedExchange(context, parent, Map.of(
+                    "personaId", FrameworkFixtures.PERSONA_A, "routineId", "test/child", "input", input));
 
             long started = System.nanoTime();
             Exchange result = template.send("direct:start-agent-run", exchange);
@@ -90,6 +93,9 @@ class AgentRunIsolationRouteTest {
             assertEquals(handle.agentRunId(), scheduled.agentRunId());
             assertFalse(childStarted.await(100, TimeUnit.MILLISECONDS), "child routine should not start before scheduled event consumption");
             assertEquals(List.of("AGENT_RUN_ACCEPTED"), events(store.get(handle.agentRunId())));
+            items.set(0, 99);
+            assertEquals(Map.of("repo", "parking", "nested", Map.of("items", java.util.Arrays.asList(7, null, "note"))),
+                    store.get(handle.agentRunId()).input());
 
             template.sendBody("direct:handle-agent-run-scheduled", scheduled);
             assertTrue(childStarted.await(2, TimeUnit.SECONDS));
@@ -311,7 +317,7 @@ class AgentRunIsolationRouteTest {
         RoutineCatalog routines = new RoutineCatalog(List.of(routine("test/parent", "direct:test-parent"), routine("test/child", "direct:test-child")));
         FrameworkFixtures.set(manager, "routines", routines);
         AgentRun parent = parentRun();
-        Mission mission = new Mission("mission-1", "Build", List.of(), "active", Map.of(), Instant.now());
+        Mission mission = new Mission("mission-1", "Build", List.of(), "active", Instant.now());
         agentRuns.putMission(mission);
         agentRuns.putRun(parent);
 
@@ -349,7 +355,7 @@ class AgentRunIsolationRouteTest {
 
     private static Exchange preparedExchange(DefaultCamelContext context, AgentRun parent, Object request) {
         Exchange exchange = new DefaultExchange(context);
-        Mission mission = new Mission("mission-1", "Build", List.of(), "active", Map.of(), Instant.now());
+        Mission mission = new Mission("mission-1", "Build", List.of(), "active", Instant.now());
         exchange.setProperty("mission", mission);
         exchange.setProperty("agentRun", parent);
         exchange.setProperty("projectionTimeline", new Object());

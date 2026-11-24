@@ -5,7 +5,6 @@ import static us.nusun.tack.framework.model.FrameworkText.firstNonBlank;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
 import org.apache.camel.Exchange;
 import org.apache.camel.ProducerTemplate;
 import us.nusun.tack.framework.inventory.InferenceLaneRegistry;
@@ -21,7 +20,6 @@ import us.nusun.tack.framework.model.LlmJobEnvelope;
 import us.nusun.tack.framework.model.LlmJobResult;
 import us.nusun.tack.framework.model.LlmJobStatus;
 import us.nusun.tack.framework.model.LlmPassType;
-import us.nusun.tack.framework.model.Mission;
 import us.nusun.tack.framework.model.Persona;
 import us.nusun.tack.framework.model.RoutineDefinition;
 import us.nusun.tack.framework.model.StepResult;
@@ -33,24 +31,36 @@ import us.nusun.tack.framework.state.AgentRun;
 import us.nusun.tack.framework.state.ThoughtStack;
 
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @ApplicationScoped
 public class PrimitiveExecutor {
     private static final String THOUGHT_CONTENT_SCHEMA = "classpath:schemas/thought-content-result-schema.json";
     private static final String ACT_SYNTHESIS_SCHEMA = "classpath:schemas/act-synthesis-result-schema.json";
 
-    @Inject ObjectMapper objectMapper;
-    @Inject ThoughtStackSupport thoughts;
-    @Inject PersonaCatalog personas;
-    @Inject RoutineCatalog routines;
-    @Inject ToolProfileRegistry toolProfiles;
-    @Inject InferenceLaneRegistry lanes;
-    @Inject AgentRunProjectionManager projections;
+    private final ObjectMapper objectMapper;
+    private final ThoughtStackSupport thoughts;
+    private final PersonaCatalog personas;
+    private final RoutineCatalog routines;
+    private final ToolProfileRegistry toolProfiles;
+    private final InferenceLaneRegistry lanes;
+    private final AgentRunProjectionManager projections;
+    private final PrimitivePrompts prompts;
+
+    public PrimitiveExecutor(ObjectMapper objectMapper, ThoughtStackSupport thoughts, PersonaCatalog personas,
+                             RoutineCatalog routines, ToolProfileRegistry toolProfiles, InferenceLaneRegistry lanes,
+                             AgentRunProjectionManager projections) {
+        this.objectMapper = objectMapper;
+        this.thoughts = thoughts;
+        this.personas = personas;
+        this.routines = routines;
+        this.toolProfiles = toolProfiles;
+        this.lanes = lanes;
+        this.projections = projections;
+        this.prompts = new PrimitivePrompts(objectMapper, thoughts, personas, routines);
+    }
 
     public record ActRequest(String id, String prompt, String toolProfile, String lane) {
     }
@@ -82,7 +92,7 @@ public class PrimitiveExecutor {
         ThoughtFrame leaf = requireLeaf(stack, "tack:act");
         AgentRun run = currentRun(exchange);
         String toolProfileId = firstNonBlank(request.toolProfile(), ToolProfileRegistry.NONE_ID);
-        ToolProfile profile = toolProfiles().getRequired(toolProfileId);
+        ToolProfile profile = toolProfiles.getRequired(toolProfileId);
         markCurrent(exchange, "act", request.id());
         exchange.setProperty("actId", request.id());
         exchange.setProperty("actPrompt", request.prompt());
@@ -94,7 +104,7 @@ public class PrimitiveExecutor {
         LlmJobResult toolResult = callLlm(
                 exchange,
                 llm,
-                llmRequest(exchange, actionLaneId, LlmPassType.ACTION, "tool", renderToolPassPrompt(exchange, request, profile), null),
+                llmRequest(exchange, actionLaneId, LlmPassType.ACTION, "tool", prompts.renderToolPassPrompt(exchange, request, profile), null),
                 "tool/action pass");
         Instant observedAt = Instant.now();
         exchange.setProperty("toolPassObservedAt", observedAt);
@@ -105,7 +115,7 @@ public class PrimitiveExecutor {
         LlmJobResult synthesisResult = callLlm(
                 exchange,
                 llm,
-                llmRequest(exchange, synthesisLaneId, LlmPassType.SYNTHESIS, "synthesis", renderActSynthesisPrompt(exchange, request, leaf, toolResult, observedAt), ACT_SYNTHESIS_SCHEMA),
+                llmRequest(exchange, synthesisLaneId, LlmPassType.SYNTHESIS, "synthesis", prompts.renderActSynthesisPrompt(exchange, request, leaf, toolResult, observedAt), ACT_SYNTHESIS_SCHEMA),
                 "act thought synthesis pass");
         projections.record(exchange, "SYNTHESIS_PASS_COMPLETED");
         ActSynthesisResult synthesis = parse(synthesisResult.content(), ActSynthesisResult.class);
@@ -145,7 +155,7 @@ public class PrimitiveExecutor {
                 exchange,
                 llm,
                 llmRequest(exchange, laneId, LlmPassType.DECISION, "decision",
-                        renderDecisionPrompt(exchange, request), schema),
+                        prompts.renderDecisionPrompt(exchange, request, choices), schema),
                 "decision synthesis pass");
         projections.record(exchange, "SYNTHESIS_PASS_COMPLETED");
         DecisionAnswer answer = parse(llmResult.content(), DecisionAnswer.class);
@@ -168,7 +178,7 @@ public class PrimitiveExecutor {
 
     public void create(Exchange exchange, CreateRequest request, ProducerTemplate llm) throws Exception {
         String laneId = resolveLane(exchange, request.lane(), LlmPassType.CREATION);
-        SchemaContract schema = SchemaContract.resolve(exchange.getContext(), mapper(), request.schema());
+        SchemaContract schema = SchemaContract.resolve(exchange.getContext(), objectMapper, request.schema());
         markCurrent(exchange, "create", request.id());
         exchange.setProperty("createId", request.id());
         exchange.setProperty("schemaId", firstNonBlank(request.schemaId(), "caller-schema"));
@@ -176,10 +186,10 @@ public class PrimitiveExecutor {
         LlmJobResult llmResult = callLlm(
                 exchange,
                 llm,
-                llmRequest(exchange, laneId, LlmPassType.CREATION, "create", renderCreatePrompt(exchange, request, schema), schema.json()),
+                llmRequest(exchange, laneId, LlmPassType.CREATION, "create", prompts.renderCreatePrompt(exchange, request, schema), schema.json()),
                 "create synthesis pass");
         projections.record(exchange, "SYNTHESIS_PASS_COMPLETED");
-        JsonNode object = mapper().readTree(llmResult.content());
+        JsonNode object = objectMapper.readTree(llmResult.content());
         CreateResult result = new CreateResult(request.id(), firstNonBlank(request.schemaId(), "caller-schema"), object);
         currentRun(exchange).apply(result);
         exchange.setProperty("creates." + result.createId(), result);
@@ -191,7 +201,7 @@ public class PrimitiveExecutor {
 
     public void enterThought(Exchange exchange, ThoughtEnterRequest request) {
         markCurrent(exchange, "thought-enter", request.name());
-        ThoughtFrame frame = thoughts().push(exchange, request.name(), request.purpose(), request.maxTokens());
+        ThoughtFrame frame = thoughts.push(exchange, request.name(), request.purpose(), request.maxTokens());
         exchange.getMessage().setBody(frame);
     }
 
@@ -223,7 +233,7 @@ public class PrimitiveExecutor {
         LlmJobResult llmResult = callLlm(
                 exchange,
                 llm,
-                llmRequest(exchange, laneId, LlmPassType.CONSOLIDATION, "thought-consolidation", renderConsolidationPrompt(exchange, parent, child), THOUGHT_CONTENT_SCHEMA),
+                llmRequest(exchange, laneId, LlmPassType.CONSOLIDATION, "thought-consolidation", prompts.renderConsolidationPrompt(exchange, parent, child), THOUGHT_CONTENT_SCHEMA),
                 "thought consolidation pass");
         ThoughtContentResult consolidated = parse(llmResult.content(), ThoughtContentResult.class);
         if (consolidated.content() == null || consolidated.content().isBlank()) {
@@ -291,7 +301,7 @@ public class PrimitiveExecutor {
                 persona.name(),
                 0,
                 prompt,
-                primitiveSystemPrompt(exchange, systemContract),
+                prompts.primitiveSystemPrompt(exchange, systemContract),
                 schema,
                 primitiveMetadata(exchange, passType, schema),
                 null);
@@ -321,7 +331,7 @@ public class PrimitiveExecutor {
     private String resolveLane(Exchange exchange, String requestedLane, LlmPassType passType) {
         RoutineDefinition routine = currentRoutine(exchange);
         String laneId = firstNonBlank(requestedLane, routine.laneFor(passType), RoutineDefinition.FRAMEWORK_DEFAULT_LANE);
-        lanes().getRequired(laneId);
+        lanes.getRequired(laneId);
         exchange.setProperty("resolvedLane", laneId);
         exchange.setProperty("laneId", laneId);
         return laneId;
@@ -341,378 +351,6 @@ public class PrimitiveExecutor {
         exchange.removeProperty("decisionPrompt");
         exchange.removeProperty("createPrompt");
         exchange.removeProperty("primitivePrompt");
-    }
-
-    private String primitiveSystemPrompt(Exchange exchange, String primitive) {
-        Persona persona = personas.getRequired(currentRun(exchange).personaId());
-        return renderPersonaBehavior(persona)
-                + switch (primitive) {
-            case "tool" -> """
-
-                    Tool access:
-                    - You have access to only one external tool profile during this pass.
-                    - Framework-local tools such as mission_roster may also be available; use them only when the act
-                      requires current mission-team state.
-
-                    Bounded execution:
-                    - Work only on the highlighted ACT PROMPT.
-                    - Use the fewest useful tool calls; target 1-3 calls for normal steps.
-                    - Stop when the requested evidence, mutation, or blocker is known.
-                    - Do not browse entire projects, repositories, documentation trees, or channels.
-                    - Do not re-check mission context unless this act prompt requires it.
-
-                    Contract:
-                    - Do tool-backed work using available tools.
-                    - Never do anything except the specific act.
-                    - Do not claim external state unless tool-backed.
-                    - Return only a compact plain-text pass report.
-                    """;
-            case "synthesis" -> """
-
-                    Contract:
-                    - Synthesize the completed action result into the required JSON.
-                    - Return only valid JSON matching the supplied schema.
-                    - This pass has no tools; do not call tools, reason about tool availability, or retry the action.
-                    - The preceding action has already completed; do not repeat it.
-                    - Treat the supplied latest observation as the newest evidence.
-                    - Rewrite the current thought as current-state memory, not hidden chain-of-thought.
-                    - Evaluate only what the completed act actually accomplished; do not infer success from intent.
-                    """;
-            case "decision" -> """
-
-                    Contract:
-                    - Answer one narrow routine control-flow question.
-                    - Use only supplied context; this pass has no tools.
-                    - Return only a DecisionResult JSON object.
-                    """;
-            case "create" -> """
-
-                    Contract:
-                    - Create caller-schema-shaped JSON for the highlighted prompt only.
-                    - Use only supplied context; this pass has no tools.
-                    - Return only a JSON object matching the caller schema.
-                    """;
-            case "thought-consolidation" -> """
-
-                    Contract:
-                    - Consolidate a completed child thought into its parent.
-                    - Use only supplied context; this pass has no tools.
-                    - Return only valid JSON matching the supplied schema.
-                    - The framework has already selected the parent; do not reference framework ids in content.
-                    """;
-            default -> throw new IllegalArgumentException("Unknown primitive system contract: " + primitive);
-        };
-    }
-
-    private String renderPersonaBehavior(Persona persona) {
-        return """
-                You are %s. %s
-                Traits: %s
-                """.formatted(
-                safeText(persona.name()),
-                safeText(persona.description()),
-                persona.traits().isEmpty() ? "(none)" : String.join("; ", persona.traits())).strip();
-    }
-
-    private String renderToolPassPrompt(Exchange exchange, ActRequest request, ToolProfile profile) {
-        return """
-                %s
-
-                ## Step-Level Context
-                - Primitive: act
-                - Act id: %s
-                - Tool profile: %s
-
-                ### Current thought:
-                %s
-
-                ### Ancestor context:
-                %s
-
-                ### Tool-profile guidance:
-                %s
-
-                ## Rules / Execution Guidance
-                - The highlighted ACT PROMPT is the only work that matters right now.
-                - Take the smallest useful path: one direct read or mutation first, then stop when enough is known.
-                - Normal steps should finish in 1-3 tool calls. If more is needed, report the remaining narrow follow-up.
-                - Prefer direct ids, links, and named anchors from context over broad searches.
-                - Do not scan whole systems or refresh unrelated mission state.
-                - Label verified evidence and assumptions plainly.
-
-                ## ACT PROMPT - DO THIS NOW
-                This is the only goal for this pass. Use prior context only when it helps complete this act.
-
-                %s
-
-                ## Response Format
-                Return a compact pass report in this shape:
-                Outcome:
-                Tool calls used:
-                Actions taken:
-                Evidence / links / ids:
-                - Label links/ids as verified, missing, expected, or reference. Do not include guessed URLs.
-                Latest observations from this act:
-                - created:
-                - verified:
-                Durable facts to remember:
-                - Preserve only verified current anchors
-                State changed:
-                """.formatted(
-                missionLevelContext(exchange),
-                safeText(request.id()),
-                safeText(profile.id()),
-                renderCurrentThought(stack(exchange).leaf()),
-                renderAncestorThoughts(stack(exchange).frames()),
-                profile.promptGuidance().isBlank() ? "(none)" : profile.promptGuidance(),
-                safeText(request.prompt()));
-    }
-
-    private String renderActSynthesisPrompt(Exchange exchange, ActRequest request, ThoughtFrame leaf, LlmJobResult toolResult, Instant observedAt) {
-        return """
-                %s
-
-                ## Step-Level Context
-                - Primitive: act synthesis
-                - Act id: %s
-
-                ### Act objective:
-                %s
-
-                ### Tool evidence observedAt: %s
-                %s
-
-                ### Current leaf thought purpose:
-                %s
-
-                ### Current leaf existing content:
-                %s
-
-                ### Current leaf token budget:
-                %s
-
-                ### Useful ancestor context:
-                %s
-
-                ## SYNTHESIS PROMPT - DO THIS NOW
-                Rewrite the current thought as complete, compact, current memory and evaluate the completed act.
-
-                Memory:
-                - Preserve still-relevant prior content.
-                - Incorporate durable facts learned during this operation.
-                - Resolve conflicts in favor of newer evidence.
-                - Exclude transient reasoning, raw tool mechanics, and irrelevant detail.
-                - Fit the stated thought purpose and token budget.
-
-                Outcome:
-                - SUCCEEDED: the requested act completed as intended.
-                - PARTIAL: useful work occurred but the requested act still has a directly actionable remainder.
-                - BLOCKED: the requested act cannot continue without another role, external event, or missing authoritative input.
-                - NOOP: the act completed correctly but found nothing to change or do.
-                - FAILED: the act did not accomplish its requested objective.
-
-                Durable progress:
-                - true only when this act materially changed durable external mission state, completed a required handoff,
-                  produced validated implementation evidence, or resolved an actionable condition.
-                - false for reads, understanding, unchanged verification, generic status/chat, or rediscovering existing state.
-                - detecting a blocker alone is not durable progress; recording the required durable blocker/handoff may be.
-
-                Confidence is telemetry only. Estimate confidence in this evaluation from 0.0 to 1.0; it does not authorize actions.
-
-                Return JSON only:
-                {"content":"One coherent updated thought.","summary":"One compact statement of what this act accomplished.","outcome":"SUCCEEDED|PARTIAL|BLOCKED|NOOP|FAILED","durableProgress":true,"confidence":0.95}
-                """.formatted(
-                missionLevelContext(exchange),
-                safeText(request.id()),
-                safeText(request.prompt()),
-                observedAt,
-                safeText(toolResult.content()),
-                safeText(leaf.context()),
-                safeText(leaf.content()),
-                leaf.maxTokens(),
-                renderAncestorThoughts(stack(exchange).frames()));
-    }
-
-    private String renderDecisionPrompt(Exchange exchange, DecideRequest request) {
-        List<String> choices = decisionChoices(request.choices());
-        return """
-                %s
-
-                ## Step-Level Context
-                - Primitive: decide
-                - Decision id: %s
-                - Allowed answers: %s
-
-                ### Active thoughts:
-                %s
-
-                ### Latest step result:
-                %s
-
-                ## Rules / Execution Guidance
-                - Answer only the highlighted decision question.
-                - Choose exactly one allowed answer.
-                - Do not invent missing evidence or perform work outside this decision.
-                - If the answers are yes and no, prefer no when evidence is incomplete, stale, or blocked.
-
-                ## DECISION PROMPT - ANSWER THIS NOW
-                Question: %s
-
-                ## Response Format
-                Return only result, confidence, and reason.
-                """.formatted(
-                missionLevelContext(exchange),
-                safeText(request.id()),
-                String.join(", ", choices),
-                renderThoughtFramesForModel(stack(exchange).frames()),
-                renderStepResultForModel(currentRun(exchange).latestStepResult()),
-                safeText(request.prompt()));
-    }
-
-    private String renderCreatePrompt(Exchange exchange, CreateRequest request, SchemaContract schema) {
-        return """
-                %s
-
-                ## Step-Level Context
-                - Primitive: create
-                - Create id: %s
-
-                ### Active thoughts:
-                %s
-
-                ## Rules / Execution Guidance
-                - Produce only the JSON object requested by the caller schema.
-                - Use catalog data only when the create prompt explicitly includes it.
-                - Do not add explanatory prose or fields outside the schema.
-
-                ## CREATE PROMPT - PRODUCE THIS NOW
-                %s
-
-                ## Caller JSON schema:
-                %s
-                """.formatted(
-                missionLevelContext(exchange),
-                safeText(request.id()),
-                renderThoughtFramesForModel(stack(exchange).frames()),
-                safeText(request.prompt()),
-                schema.json());
-    }
-
-    private String renderConsolidationPrompt(Exchange exchange, ThoughtFrame parent, ThoughtFrame child) {
-        return """
-                %s
-
-                ## Parent thought
-                name: %s
-                purpose: %s
-                maxTokens: %s
-                updatedAt: %s
-                existing content:
-                %s
-
-                ## Child thought being exited
-                name: %s
-                purpose: %s
-                maxTokens: %s
-                updatedAt: %s
-                final content:
-                %s
-
-                ## CONSOLIDATION PROMPT - DO THIS NOW
-                Rewrite the parent as one coherent, current durable thought.
-
-                Preserve still-relevant parent memory.
-                Promote only child information useful beyond the child scope.
-                Replace stale or conflicting information with newer evidence.
-                Discard temporary, redundant, scope-local, or implementation-specific detail.
-                Fit the parent purpose and token budget.
-
-                Do not expose framework ids or expired child ids in the parent content.
-
-                Return JSON only:
-                {"content":"One coherent replacement parent thought."}
-                """.formatted(
-                missionLevelContext(exchange),
-                safeText(parent.name()),
-                safeText(parent.context()),
-                parent.maxTokens(),
-                parent.updatedAt(),
-                safeText(parent.content()),
-                safeText(child.name()),
-                safeText(child.context()),
-                child.maxTokens(),
-                child.updatedAt(),
-                safeText(child.content()));
-    }
-
-    private String missionLevelContext(Exchange exchange) {
-        Mission mission = exchange.getProperty("mission", Mission.class);
-        return """
-                ## Mission-Level Context
-                ### Mission:
-                %s
-
-                ### Agent-run input:
-                %s
-
-                ### Routine context:
-                %s""".formatted(
-                mission == null ? "(none)" : safeText(mission.goal()),
-                renderAgentRunInput(currentRun(exchange)),
-                renderRoutineSummary(currentRoutine(exchange)));
-    }
-
-    private String renderCurrentThought(ThoughtFrame frame) {
-        if (frame == null) {
-            return "(none)";
-        }
-        return """
-                name: %s
-                purpose: %s
-                maxTokens: %s
-                updatedAt: %s
-                content: %s
-                """.formatted(
-                safeText(frame.name()),
-                safeText(frame.context()),
-                frame.maxTokens(),
-                frame.updatedAt(),
-                safeText(frame.content())).strip();
-    }
-
-    private String renderAncestorThoughts(List<ThoughtFrame> frames) {
-        if (frames.size() <= 1) {
-            return "(none)";
-        }
-        return renderThoughtFramesForModel(frames.subList(0, frames.size() - 1));
-    }
-
-    private String renderThoughtFramesForModel(List<ThoughtFrame> frames) {
-        if (frames == null || frames.isEmpty()) {
-            return "(none)";
-        }
-        StringBuilder out = new StringBuilder();
-        for (ThoughtFrame frame : frames) {
-            out.append("- name: ").append(safeText(frame.name())).append('\n');
-            out.append("  purpose: ").append(safeText(frame.context())).append('\n');
-            out.append("  maxTokens: ").append(frame.maxTokens()).append('\n');
-            out.append("  updatedAt: ").append(frame.updatedAt()).append('\n');
-            out.append("  content: ").append(safeText(frame.content())).append('\n');
-        }
-        return out.toString();
-    }
-
-    private String renderStepResultForModel(StepResult result) {
-        if (result == null) {
-            return "null";
-        }
-        LinkedHashMap<String, Object> compact = new LinkedHashMap<>();
-        compact.put("actId", result.actId());
-        compact.put("summary", result.summary());
-        compact.put("outcome", result.outcome());
-        compact.put("durableProgress", result.durableProgress());
-        compact.put("confidence", result.confidence());
-        return asJson(compact);
     }
 
     private void recordThoughtRewritten(Exchange exchange, ThoughtFrame frame, String primitive, String cause) {
@@ -783,7 +421,7 @@ public class PrimitiveExecutor {
     }
 
     private String decisionSchema(List<String> choices) throws Exception {
-        var root = mapper().createObjectNode();
+        var root = objectMapper.createObjectNode();
         root.put("type", "object");
         var properties = root.putObject("properties");
         var result = properties.putObject("result");
@@ -797,48 +435,10 @@ public class PrimitiveExecutor {
                 .add("confidence")
                 .add("reason");
         root.put("additionalProperties", false);
-        return mapper().writeValueAsString(root);
+        return objectMapper.writeValueAsString(root);
     }
 
-    private String renderAgentRunInput(AgentRun run) {
-        Object input = run == null ? null : run.workingState().get("input");
-        if (isEmptyInput(input)) {
-            return "(empty)";
-        }
-        return asJson(input);
-    }
-
-    private static boolean isEmptyInput(Object input) {
-        if (input == null) return true;
-        if (input instanceof String text) return text.isBlank();
-        if (input instanceof Map<?, ?> map) return map.isEmpty();
-        if (input instanceof Iterable<?> iterable) return !iterable.iterator().hasNext();
-        return false;
-    }
-
-    private static String renderRoutineSummary(RoutineDefinition routine) {
-        StringBuilder out = new StringBuilder();
-        out.append("id: ").append(safeText(routine.id()));
-        if (routine.name() != null && !routine.name().isBlank()) {
-            out.append("\nname: ").append(safeText(routine.name()));
-        }
-        String description = compact(routine.description());
-        if (description != null && description.length() <= 240) {
-            out.append("\ndescription: ").append(description);
-        }
-        return out.toString();
-    }
-
-    private String asJson(Object value) {
-        if (value == null) return "null";
-        try {
-            return mapper().writeValueAsString(value);
-        } catch (Exception e) {
-            return String.valueOf(value);
-        }
-    }
-
-    private AgentRun currentRun(Exchange exchange) {
+    static AgentRun currentRun(Exchange exchange) {
         AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
         if (run == null) throw new IllegalStateException("No AgentRun on exchange");
         return run;
@@ -849,43 +449,12 @@ public class PrimitiveExecutor {
     }
 
     private ThoughtStack stack(Exchange exchange) {
-        return thoughts().stack(exchange);
-    }
-
-    private ToolProfileRegistry toolProfiles() {
-        return toolProfiles == null ? new ToolProfileRegistry(List.of()) : toolProfiles;
-    }
-
-    private InferenceLaneRegistry lanes() {
-        return lanes == null ? new InferenceLaneRegistry(List.of()) : lanes;
-    }
-
-    private ThoughtStackSupport thoughts() {
-        if (thoughts == null) {
-            thoughts = new ThoughtStackSupport();
-        }
-        return thoughts;
-    }
-
-    private ObjectMapper mapper() {
-        if (objectMapper == null) {
-            objectMapper = new ObjectMapper();
-        }
-        return objectMapper;
+        return thoughts.stack(exchange);
     }
 
     private <T> T parse(String content, Class<T> type) throws Exception {
         if (content == null || content.isBlank()) throw new IllegalArgumentException("LLM returned empty content for " + type.getSimpleName());
-        return mapper().readValue(content, type);
-    }
-
-    private static String safeText(String value) {
-        return value == null || value.isBlank() ? "(none)" : value.strip();
-    }
-
-    private static String compact(String value) {
-        if (value == null || value.isBlank()) return null;
-        return value.strip().replaceAll("\\s+", " ");
+        return objectMapper.readValue(content, type);
     }
 
     private record DecisionAnswer(String result, double confidence, String reason) {}

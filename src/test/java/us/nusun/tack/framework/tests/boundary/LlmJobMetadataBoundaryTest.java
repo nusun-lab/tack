@@ -10,6 +10,7 @@ import org.apache.camel.support.DefaultExchange;
 import org.junit.jupiter.api.Test;
 import us.nusun.tack.framework.llm.LlmAgentFactory;
 import us.nusun.tack.framework.llm.LlmJobFactory;
+import us.nusun.tack.framework.llm.LlmExecutionContext;
 import us.nusun.tack.framework.mcp.McpClientFactory;
 import us.nusun.tack.framework.tests.support.TestTokenCountEstimator;
 import us.nusun.tack.framework.model.ToolProfile;
@@ -23,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 class LlmJobMetadataBoundaryTest {
     @Test
@@ -37,15 +39,18 @@ class LlmJobMetadataBoundaryTest {
                 "prompt",
                 "system",
                 null,
-                Map.of(
-                        "agentRunId", "run-1",
-                        "missionId", "mission-1",
-                        "personaId", "persona-a",
-                        "toolProfile", FrameworkFixtures.PROFILE_GAMMA,
-                        "primitive", "act",
-                        "primitiveId", "assignment-review",
-                        "laneId", "low-pass",
-                        "passType", "ACTION"),
+                Map.ofEntries(
+                        Map.entry("agentRunId", "run-1"),
+                        Map.entry("missionId", "mission-1"),
+                        Map.entry("personaId", "persona-a"),
+                        Map.entry("toolProfile", FrameworkFixtures.PROFILE_GAMMA),
+                        Map.entry("primitive", "act"),
+                        Map.entry("primitiveId", "assignment-review"),
+                        Map.entry("laneId", "low-pass"),
+                        Map.entry("passType", "ACTION"),
+                        Map.entry("agentRunCapacityMaximum", 5),
+                        Map.entry("llmForceProviderSchema", true),
+                        Map.entry("extension", Map.of("retry", List.of(1, true)))),
                 null).normalized();
         LlmJobEnvelope envelope = LlmJobEnvelope.queued(request);
         String json = TestJson.write(envelope);
@@ -66,6 +71,15 @@ class LlmJobMetadataBoundaryTest {
         assertEquals(FrameworkFixtures.PROFILE_GAMMA, restoredEnvelope.metadata().get("toolProfile"));
         assertEquals("low-pass", restoredEnvelope.laneId());
         assertEquals(LlmPassType.ACTION, restoredEnvelope.passType());
+        LlmExecutionContext context = LlmExecutionContext.on(worker);
+        assertEquals(restoredEnvelope.jobId(), context.jobId());
+        assertEquals(5, context.capacityMaximum());
+        assertEquals(true, context.forceProviderSchema());
+        assertEquals(Map.of("retry", List.of(1, true)), restoredEnvelope.metadata().get("extension"));
+        assertNull(worker.getProperty("extension"));
+        var child = worker.copy();
+        child.removeProperty(LlmExecutionContext.PROPERTY);
+        assertEquals(context, LlmExecutionContext.on(worker));
 
         CapturingMcpClientFactory mcpFactory = new CapturingMcpClientFactory();
         FrameworkFixtures.agentFactory(
