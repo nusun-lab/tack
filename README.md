@@ -157,12 +157,13 @@ See [docs/openshell-sandboxes.md](docs/openshell-sandboxes.md) for lifecycle, ne
 
 ### Requirements
 
-- Java 21
-- Maven
+- JDK 21
 - Kafka
 - an OpenAI-compatible chat-completions endpoint, such as vLLM
 - optional MCP servers for MCP-backed profiles
 - optional OpenShell gateway for sandbox-backed profiles
+
+Set `JAVA_HOME` to your JDK 21 installation or put its `bin` directory on your `PATH`. The Maven Wrapper (`./mvnw`, or `mvnw.cmd` on Windows) downloads Maven 3.9.11 automatically on first use and caches it for subsequent builds.
 
 ### Configure a local runtime
 
