@@ -29,9 +29,13 @@ public class DeliveryManagementToolProfile implements ToolProfileProvider {
 
     @Override
     public List<ToolProfile> toolProfiles() {
-        return List.of(PlaneWork.profile(ID, plane)
+        return List.of(ToolProfile.builder(ID)
+                .mcpServer(plane.definition())
                 .mcpServer(gitea.definition())
-                .allowTool(PlaneMcpServer.ID, "workitem_relation")
+                .allowTools(PlaneMcpServer.ID,
+                        "project", "member", "workitem", "workitem_activity", "workitem_comment",
+                        "workitem_relation", "label", "state")
+                .hideArgument(PlaneMcpServer.ID, "workitem", "pql")
                 .allowTools(GiteaMcpServer.ID,
                         "get_me",
                         "search_repos",
@@ -52,7 +56,7 @@ public class DeliveryManagementToolProfile implements ToolProfileProvider {
                           workitem_relation=list/create; label=list/create; state=list
                         - before mutating an existing work item, retrieve its attached labels and verify classification;
                           never infer classification from title, state, assignee, hierarchy, or wording
-                        """ + PlaneWork.CLASSIFICATION + """
+                        """ + PlaneWorkGuidance.CLASSIFICATION + """
                         - use workitem(action="update", ...) with the complete assignees array for assignment changes
                         - Gitea access in this profile is read-only evidence; do not create repositories or mutate source
                         - built-in dependency relations are direct: use workitem_relation(action="list", ...) to inspect
@@ -67,7 +71,7 @@ public class DeliveryManagementToolProfile implements ToolProfileProvider {
                         - if relation reading fails, use only explicit blocker information on the selected item and report
                           dependency state as unknown when it cannot be verified
 
-                        """ + PlaneWork.QUERIES)
+                        """ + PlaneWorkGuidance.QUERIES)
                 .maxResultTokens(maxResultTokens)
                 .build());
     }

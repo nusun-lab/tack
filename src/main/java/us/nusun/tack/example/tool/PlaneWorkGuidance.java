@@ -1,9 +1,7 @@
 package us.nusun.tack.example.tool;
 
-import us.nusun.tack.framework.model.ToolProfile;
-
-final class PlaneWork {
-    private PlaneWork() {}
+final class PlaneWorkGuidance {
+    private PlaneWorkGuidance() {}
 
     static final String CLASSIFICATION = """
             SKILL: plane-work-classification
@@ -24,12 +22,4 @@ final class PlaneWork {
               workitem_id=<selected UUID>, fields="id,name,sequence_id,state,parent"); never expand parent
             - a field omitted by a sparse projection is unknown, never negative evidence
             """;
-
-    static ToolProfile.Builder profile(String id, PlaneMcpServer plane) {
-        return ToolProfile.builder(id)
-                .mcpServer(plane.definition())
-                .allowTools(PlaneMcpServer.ID,
-                        "project", "member", "workitem", "workitem_activity", "workitem_comment", "label", "state")
-                .hideArgument(PlaneMcpServer.ID, "workitem", "pql");
-    }
 }

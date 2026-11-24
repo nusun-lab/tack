@@ -26,21 +26,25 @@ public class ProductOwnershipToolProfile implements ToolProfileProvider {
 
     @Override
     public List<ToolProfile> toolProfiles() {
-        return List.of(PlaneWork.profile(ID, plane)
+        return List.of(ToolProfile.builder(ID)
+                .mcpServer(plane.definition())
+                .allowTools(PlaneMcpServer.ID,
+                        "project", "member", "workitem", "workitem_activity", "workitem_comment", "label", "state")
+                .hideArgument(PlaneMcpServer.ID, "workitem", "pql")
                 .promptGuidance("""
                         - this profile creates and updates Plane product work; the calling routine owns product policy,
                           lifecycle decisions, acceptance criteria, prioritization decisions, and WIP policy
                         - use only these Plane actions here: project=list/retrieve; member=me;
                           workitem=list/retrieve/retrieve_by_identifier/search/create/update/manage_label;
                           workitem_activity=list; workitem_comment=list/retrieve/create/update; label=list/create; state=list
-                        """ + PlaneWork.CLASSIFICATION + """
+                        """ + PlaneWorkGuidance.CLASSIFICATION + """
                         - create a missing classification label only when the routine explicitly requires that kind, then
                           attach it explicitly with workitem(action="manage_label")
                         - before mutating an existing item based on kind, verify its attached labels
                         - use workitem(action="update", ...) with the complete assignees array for assignment changes
                         - comments preserve evidence/context and are not lifecycle states
 
-                        """ + PlaneWork.QUERIES)
+                        """ + PlaneWorkGuidance.QUERIES)
                 .maxResultTokens(maxResultTokens)
                 .build());
     }

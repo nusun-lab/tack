@@ -40,13 +40,7 @@ The example server definitions use streamable HTTP. Auth formats are fixed in co
 
 ## Software-Team Profiles
 
-The example publishes exactly five profiles:
-
-- `workspace-readonly`: explicit read-only allow lists for Plane, Gitea, and Mattermost.
-- `workspace-coordination`: explicit bounded coordination allow lists for Plane, Gitea, and Mattermost.
-- `project-management`: broad Plane profile with destructive, intake, worklog, page, feature-admin, and custom-schema denials.
-- `source-control`: broad Gitea profile with destructive, native wiki, issue, label, milestone, time-tracking, admin, notification, package, fork, team-search, user-search, and server-version denials.
-- `team-chat`: broad Mattermost profile with destructive, low-value UI-state, reaction, pin, and bookmark denials.
+See [Example tool profiles](../README.md#example-tool-profiles) for the current profile IDs and their roles.
 
 Plane is authoritative for projects, planned work, assignments, status, dependencies, priorities, blockers, and delivery planning. Gitea is authoritative for repositories, files, branches, commits, pull requests, builds, tags, and releases. Mattermost is for conversation, questions, handoffs, and concise notifications.
 

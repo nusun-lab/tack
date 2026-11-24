@@ -31,9 +31,20 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
 
     @Override
     public List<ToolProfile> toolProfiles() {
-        return List.of(PlaneWork.profile(ID, plane)
+        return List.of(ToolProfile.builder(ID)
+                .mcpServer(plane.definition())
                 .mcpServer(gitea.definition())
                 .mcpServer(mattermost.definition())
+                .allowTools(PlaneMcpServer.ID,
+                        "project", "member", "workitem", "workitem_activity", "workitem_comment", "label", "state")
+                .hideArgument(PlaneMcpServer.ID, "workitem", "pql")
+                .permitArgumentValues(PlaneMcpServer.ID, "project", "action", "list", "retrieve")
+                .permitArgumentValues(PlaneMcpServer.ID, "member", "action", "me", "list_workspace", "list_project")
+                .permitArgumentValues(PlaneMcpServer.ID, "workitem", "action", "list", "retrieve", "retrieve_by_identifier", "search")
+                .permitArgumentValues(PlaneMcpServer.ID, "workitem_activity", "action", "list")
+                .permitArgumentValues(PlaneMcpServer.ID, "workitem_comment", "action", "list", "retrieve")
+                .permitArgumentValues(PlaneMcpServer.ID, "label", "action", "list")
+                .permitArgumentValues(PlaneMcpServer.ID, "state", "action", "list")
                 .allowTools(GiteaMcpServer.ID,
                         "get_me",
                         "search_repos",
@@ -58,13 +69,6 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                         "get_user",
                         "get_user_by_username",
                         "search_users")
-                .permitArgumentValues(PlaneMcpServer.ID, "project", "action", "list", "retrieve")
-                .permitArgumentValues(PlaneMcpServer.ID, "member", "action", "me", "list_workspace", "list_project")
-                .permitArgumentValues(PlaneMcpServer.ID, "workitem", "action", "list", "retrieve", "retrieve_by_identifier", "search")
-                .permitArgumentValues(PlaneMcpServer.ID, "workitem_activity", "action", "list")
-                .permitArgumentValues(PlaneMcpServer.ID, "workitem_comment", "action", "list", "retrieve")
-                .permitArgumentValues(PlaneMcpServer.ID, "label", "action", "list")
-                .permitArgumentValues(PlaneMcpServer.ID, "state", "action", "list")
                 .promptGuidance("""
                         - Plane access is read-only; select an explicit action from the tool schema
                         - the calling routine determines which observations matter and what policy to apply to them
@@ -77,7 +81,7 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                         - ids, names, URLs, and values shown only in tool descriptions/examples are illustrative, not live
                           resource locators
 
-                        """ + PlaneWork.CLASSIFICATION + "\n" + PlaneWork.QUERIES + """
+                        """ + PlaneWorkGuidance.CLASSIFICATION + "\n" + PlaneWorkGuidance.QUERIES + """
 
                         SKILL: membership-model
                         - keep active mission roster, Plane workspace membership, Plane project membership, and Mattermost

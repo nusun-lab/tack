@@ -26,12 +26,18 @@ public class QualitySourceControlWriteToolProfile implements ToolProfileProvider
 
     @Override
     public List<ToolProfile> toolProfiles() {
-        return List.of(RepositoryWriting.profile(ID, gitea)
+        return List.of(ToolProfile.builder(ID)
+                .mcpServer(gitea.definition())
+                .allowTool("sandbox", "sandbox_exec")
+                .allowTools(GiteaMcpServer.ID,
+                        "get_me", "search_repos", "get_repository_tree", "get_dir_contents", "get_file_contents",
+                        "list_branches", "list_commits", "get_commit",
+                        "list_pull_requests", "pull_request_read", "pull_request_write")
                 .promptGuidance("""
                         - this profile changes QA-owned test/evidence source in the existing system repository selected by
                           the calling routine; it cannot provision repositories
                         - do not use this profile to modify component implementation
-                        """ + RepositoryWriting.REPOSITORY_GUIDANCE + """
+                        """ + RepositoryWritingGuidance.REPOSITORY_GUIDANCE + """
                         - use ordinary git/filesystem/build/test commands for edits, validation, commits, and pushes
                         - only an actual auth/write failure establishes a write-permission blocker
                         - validate directly in the sandbox; Gitea Actions/CI are not enabled

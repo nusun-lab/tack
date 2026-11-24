@@ -26,7 +26,11 @@ public class EngineeringWorkToolProfile implements ToolProfileProvider {
 
     @Override
     public List<ToolProfile> toolProfiles() {
-        return List.of(PlaneWork.profile(ID, plane)
+        return List.of(ToolProfile.builder(ID)
+                .mcpServer(plane.definition())
+                .allowTools(PlaneMcpServer.ID,
+                        "project", "member", "workitem", "workitem_activity", "workitem_comment", "label", "state")
+                .hideArgument(PlaneMcpServer.ID, "workitem", "pql")
                 .promptGuidance("""
                         - this profile updates already-created engineering work; the calling routine owns selection,
                           lifecycle policy, and completion criteria
@@ -38,7 +42,7 @@ public class EngineeringWorkToolProfile implements ToolProfileProvider {
                         - comments are evidence/context, not hidden lifecycle states
                         - do not create work items, labels, projects, test tasks, or defects in this profile
 
-                        """ + PlaneWork.CLASSIFICATION + "\n" + PlaneWork.QUERIES)
+                        """ + PlaneWorkGuidance.CLASSIFICATION + "\n" + PlaneWorkGuidance.QUERIES)
                 .maxResultTokens(maxResultTokens)
                 .build());
     }
