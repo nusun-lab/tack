@@ -18,6 +18,7 @@ public record ToolProfileView(
         Map<String, Server> mcpServers,
         Map<String, Map<String, Map<String, JsonNode>>> defaultArguments,
         Map<String, Map<String, Set<String>>> hiddenArguments,
+        Map<String, Map<String, Map<String, List<String>>>> permittedArgumentValues,
         String promptGuidance,
         int maxResultTokens
 ) {
@@ -27,6 +28,7 @@ public record ToolProfileView(
         Set<String> allowAll = new LinkedHashSet<>();
         Map<String, Map<String, Map<String, JsonNode>>> defaults = new LinkedHashMap<>();
         Map<String, Map<String, Set<String>>> hidden = new LinkedHashMap<>();
+        Map<String, Map<String, Map<String, List<String>>>> permitted = new LinkedHashMap<>();
         profile.policies().forEach((server, policy) -> {
             if (!policy.allowed().isEmpty()) allowed.put(server, policy.allowed());
             if (!policy.denied().isEmpty()) denied.put(server, policy.denied());
@@ -38,12 +40,15 @@ public record ToolProfileView(
                 if (!arguments.hidden().isEmpty()) {
                     hidden.computeIfAbsent(server, ignored -> new LinkedHashMap<>()).put(tool, arguments.hidden());
                 }
+                if (!arguments.permittedValues().isEmpty()) {
+                    permitted.computeIfAbsent(server, ignored -> new LinkedHashMap<>()).put(tool, arguments.permittedValues());
+                }
             });
         });
         return new ToolProfileView(profile.id(), profile.servers(), allowed, denied, allowAll,
                 profile.mcpServers().entrySet().stream()
                         .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, entry -> Server.of(entry.getValue()))),
-                defaults, hidden, profile.promptGuidance(), profile.maxResultTokens());
+                defaults, hidden, permitted, profile.promptGuidance(), profile.maxResultTokens());
     }
 
     public record Server(String id, String url, String transportType, String authHeaderName, List<String> extraHeaderNames) {

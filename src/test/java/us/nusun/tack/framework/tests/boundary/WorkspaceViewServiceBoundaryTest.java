@@ -36,18 +36,29 @@ class WorkspaceViewServiceBoundaryTest {
     }
 
     @Test
-    void completeWorkspaceResponseExcludesCredentials() throws Exception {
+    void completeWorkspaceResponseExposesPolicyAndExcludesCredentials() throws Exception {
         var persona = Persona.builder("developer").name("Developer").color("blue")
                 .identity("mcp", "SENTINEL_PERSONA_TOKEN", "@developer").build();
         var profile = ToolProfile.builder("profile").mcpServer(McpServerDefinition.builder("mcp")
                 .authHeaderValueFormat("SENTINEL_AUTH_FORMAT %s")
-                .extraHeader("X-Private", "SENTINEL_EXTRA_HEADER").build()).build();
+                .extraHeader("X-Private", "SENTINEL_EXTRA_HEADER").build())
+                .allowTool("mcp", "workitem")
+                .permitArgumentValues("mcp", "workitem", "action", "list", "retrieve")
+                .defaultArgument("mcp", "workitem", "action", "list")
+                .hideArgument("mcp", "workitem", "pql")
+                .build();
         var service = new WorkspaceViewService(new PersonaCatalog(List.of(persona)), FrameworkFixtures.routineCatalog(),
                 FrameworkFixtures.inferenceLaneRegistry(), new ToolProfileRegistry(List.of(profile)),
                 FrameworkFixtures.projectionStore());
 
-        String serialized = new ObjectMapper().findAndRegisterModules().writeValueAsString(service.view());
+        var mapper = new ObjectMapper().findAndRegisterModules();
+        String serialized = mapper.writeValueAsString(service.view());
+        var publicProfile = mapper.readTree(serialized).path("toolProfiles").get(0);
 
+        assertEquals(mapper.valueToTree(Map.of("mcp", Map.of("workitem", Map.of("action", List.of("list", "retrieve"))))),
+                publicProfile.path("permittedArgumentValues"));
+        assertEquals("list", publicProfile.at("/defaultArguments/mcp/workitem/action").asText());
+        assertEquals("pql", publicProfile.at("/hiddenArguments/mcp/workitem/0").asText());
         assertFalse(serialized.contains("SENTINEL_"));
         assertTrue(serialized.contains("@developer"));
         assertTrue(serialized.contains("blue"));

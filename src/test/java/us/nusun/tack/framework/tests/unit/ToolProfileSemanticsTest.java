@@ -27,8 +27,10 @@ import us.nusun.tack.framework.tests.support.FrameworkFixtures;
 import us.nusun.tack.framework.tests.support.TestTokenCountEstimator;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -81,6 +83,21 @@ class ToolProfileSemanticsTest {
         execute(policy, ToolExecutionRequest.builder().name("plane__workitem")
                 .arguments("{\"action\":\"list\"}").build());
         assertEquals("workitem", delegate.lastToolName());
+    }
+
+    @Test
+    void permittedArgumentValuesSnapshotTheMapAndEachList() {
+        var actions = new ArrayList<>(List.of("list", "retrieve"));
+        var rules = new LinkedHashMap<String, List<String>>();
+        rules.put("action", actions);
+        var arguments = new ToolProfile.Arguments(Map.of(), Set.of(), rules);
+
+        actions.add("delete");
+        rules.clear();
+
+        assertEquals(Map.of("action", List.of("list", "retrieve")), arguments.permittedValues());
+        assertThrows(UnsupportedOperationException.class, () -> arguments.permittedValues().get("action").add("update"));
+        assertThrows(UnsupportedOperationException.class, () -> arguments.permittedValues().clear());
     }
 
     @Test

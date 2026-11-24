@@ -505,6 +505,8 @@
       const allowed = arr(obj(p.allowedTools)[server]);
       const denied = arr(obj(p.deniedTools)[server]);
       const defaults = obj(obj(p.defaultArguments)[server]);
+      const hidden = obj(obj(p.hiddenArguments)[server]);
+      const permitted = obj(obj(p.permittedArgumentValues)[server]);
       const hasAllowList = allowed.length > 0;
       const mode = hasAllowList ? `explicit allow list (${allowed.length})` : `broad access (${denied.length} denied)`;
       const modeClass = hasAllowList ? 'allow' : 'deny';
@@ -516,6 +518,10 @@
         ${renderToolChips(denied) || '<p class="muted">None.</p>'}
         <h4>Default arguments</h4>
         ${Object.keys(defaults).length ? `<pre>${json(defaults)}</pre>` : '<p class="muted">None.</p>'}
+        <h4>Hidden arguments</h4>
+        ${Object.keys(hidden).length ? `<pre>${json(hidden)}</pre>` : '<p class="muted">None.</p>'}
+        <h4>Permitted argument values</h4>
+        ${Object.keys(permitted).length ? `<pre>${json(permitted)}</pre>` : '<p class="muted">None.</p>'}
       </details>`;
     }
 

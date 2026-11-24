@@ -80,7 +80,8 @@ public record ToolProfile(
         public Arguments {
             defaults = copyDefaults(defaults);
             hidden = Set.copyOf(hidden);
-            permittedValues = Map.copyOf(permittedValues);
+            permittedValues = permittedValues.entrySet().stream().collect(Collectors.toUnmodifiableMap(
+                    Map.Entry::getKey, entry -> List.copyOf(entry.getValue())));
         }
 
         @Override
