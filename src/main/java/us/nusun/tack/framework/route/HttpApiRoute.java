@@ -2,6 +2,7 @@ package us.nusun.tack.framework.route;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import org.apache.camel.builder.RouteBuilder;
+import org.apache.camel.model.rest.RestBindingMode;
 import us.nusun.tack.framework.model.MissionRequest;
 
 @ApplicationScoped
@@ -10,6 +11,8 @@ public class HttpApiRoute extends RouteBuilder {
     public void configure() {
         restConfiguration()
                 .component("platform-http")
+                .bindingMode(RestBindingMode.json)
+                .dataFormatProperty("autoDiscoverObjectMapper", "true")
                 .dataFormatProperty("prettyPrint", "true");
 
         rest("/missions")

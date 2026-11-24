@@ -51,9 +51,8 @@ public class TackProducer extends DefaultProducer {
                     requiredParameter("id", endpoint.getId(), operation),
                     consumeRequiredHeader(exchange, TackHeaders.PROMPT, operation),
                     endpoint.getSchemaId(),
-                    endpoint.getSchema(),
-                    endpoint.getSchemaJson(),
-                    endpoint.getSchemaUri(),
+                    us.nusun.tack.framework.model.FrameworkText.firstNonBlank(
+                            endpoint.getSchemaJson(), endpoint.getSchemaUri(), endpoint.getSchema()),
                     endpoint.getLane()), producerTemplate);
             case "thought-enter" -> executor.enterThought(exchange, new PrimitiveExecutor.ThoughtEnterRequest(
                     requiredParameter("name", endpoint.getName(), operation),

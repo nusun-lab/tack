@@ -1,7 +1,6 @@
 package us.nusun.tack.example.persona;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import us.nusun.tack.framework.inventory.PersonaProvider;
 import us.nusun.tack.framework.model.Persona;
 
@@ -11,17 +10,11 @@ import java.util.List;
 public class EthanPersona implements PersonaProvider {
     public static final String ID = "software-team/ethan";
 
-    @ConfigProperty(name = "persona.ethan.email", defaultValue = "")
-    String email = "";
+    private final PersonaAccounts.Account account;
 
-    @ConfigProperty(name = "persona.ethan.identity.mattermost.token", defaultValue = "")
-    String mattermostToken = "";
-
-    @ConfigProperty(name = "persona.ethan.identity.gitea.token", defaultValue = "")
-    String giteaToken = "";
-
-    @ConfigProperty(name = "persona.ethan.identity.plane.token", defaultValue = "")
-    String planeToken = "";
+    public EthanPersona(PersonaAccounts accounts) {
+        this.account = accounts.accounts().get("ethan");
+    }
 
     @Override
     public List<Persona> personas() {
@@ -31,7 +24,7 @@ public class EthanPersona implements PersonaProvider {
     public Persona persona() {
         return Persona.builder(ID)
                 .name("Ethan")
-                .email(email)
+                .email(account.email().orElse(""))
                 .description("Product owner persona who owns typed Epics, user value, priority, acceptance intent, and evidence-based completion.")
                 .trait("translates vague goals into small independently valuable Epics")
                 .trait("clarifies scope with crisp acceptance boundaries")
@@ -41,9 +34,9 @@ public class EthanPersona implements PersonaProvider {
                 .trait("shares product decisions naturally when they help teammates move")
                 .label("PO")
                 .color("38;2;114;209;163")
-                .identity("mattermost", mattermostToken, "@product-owner-agent")
-                .identity("gitea", giteaToken, "product-owner-agent")
-                .identity("plane", planeToken, "PO")
+                .identity("mattermost", account.token("mattermost"), "@product-owner-agent")
+                .identity("gitea", account.token("gitea"), "product-owner-agent")
+                .identity("plane", account.token("plane"), "PO")
                 .build();
     }
 }

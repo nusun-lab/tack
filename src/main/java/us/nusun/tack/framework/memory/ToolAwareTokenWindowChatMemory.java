@@ -4,11 +4,9 @@ import static dev.langchain4j.internal.Utils.getOrDefault;
 import static dev.langchain4j.internal.ValidationUtils.ensureGreaterThanZero;
 import static dev.langchain4j.internal.ValidationUtils.ensureNotNull;
 
-import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
-import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.model.TokenCountEstimator;
@@ -19,7 +17,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
-import java.util.function.Function;
 
 /**
  * Ephemeral tool-pass memory that keeps the complete tool execution history internally while projecting a
@@ -34,7 +31,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
     private static final int JOURNAL_VALUE_PREVIEW_CHARS = 320;
 
     private final Object id;
-    private final Function<Object, Integer> maxTokensProvider;
+    private final int maxTokens;
     private final TokenCountEstimator tokenCountEstimator;
     private final boolean alwaysKeepSystemMessageFirst;
     private final int maxToolCalls;
@@ -43,15 +40,13 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
     private final Consumer<String> runtimeWarningSink;
 
     private List<ChatMessage> messages = new ArrayList<>();
-    private final List<JournalEntry> journal = new ArrayList<>();
-    private int toolCalls;
+    private final ToolInteractions interactions = new ToolInteractions();
     private boolean compacted;
     private boolean degradationNoticeSent;
 
     private ToolAwareTokenWindowChatMemory(Builder builder) {
         this.id = ensureNotNull(builder.id, "id");
-        this.maxTokensProvider = ensureNotNull(builder.maxTokensProvider, "maxTokensProvider");
-        ensureGreaterThanZero(this.maxTokensProvider.apply(id), "maxTokens");
+        this.maxTokens = ensureGreaterThanZero(builder.maxTokens, "maxTokens");
         this.tokenCountEstimator = ensureNotNull(builder.tokenCountEstimator, "tokenCountEstimator");
         this.alwaysKeepSystemMessageFirst = getOrDefault(builder.alwaysKeepSystemMessageFirst, false);
         this.maxToolCalls = Math.max(0, builder.maxToolCalls);
@@ -82,15 +77,14 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         } else {
             updatedMessages.add(message);
         }
-        record(message);
+        interactions.record(message);
         this.messages = updatedMessages;
     }
 
     @Override
     public synchronized void set(Iterable<ChatMessage> iter) {
         this.messages = new ArrayList<>();
-        this.journal.clear();
-        this.toolCalls = 0;
+        this.interactions.clear();
         this.compacted = false;
         this.degradationNoticeSent = false;
         iter.forEach(this::add);
@@ -104,8 +98,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
     @Override
     public synchronized void clear() {
         this.messages = new ArrayList<>();
-        this.journal.clear();
-        this.toolCalls = 0;
+        this.interactions.clear();
         this.compacted = false;
         this.degradationNoticeSent = false;
     }
@@ -116,7 +109,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
 
     public static final class Builder {
         private Object id = ChatMemoryService.DEFAULT;
-        private Function<Object, Integer> maxTokensProvider;
+        private int maxTokens;
         private TokenCountEstimator tokenCountEstimator;
         private Boolean alwaysKeepSystemMessageFirst;
         private int maxToolCalls;
@@ -129,14 +122,8 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
             return this;
         }
 
-        public Builder maxTokens(Integer maxTokens, TokenCountEstimator tokenCountEstimator) {
-            this.maxTokensProvider = ignored -> maxTokens;
-            this.tokenCountEstimator = tokenCountEstimator;
-            return this;
-        }
-
-        public Builder dynamicMaxTokens(Function<Object, Integer> maxTokensProvider, TokenCountEstimator tokenCountEstimator) {
-            this.maxTokensProvider = maxTokensProvider;
+        public Builder maxTokens(int maxTokens, TokenCountEstimator tokenCountEstimator) {
+            this.maxTokens = maxTokens;
             this.tokenCountEstimator = tokenCountEstimator;
             return this;
         }
@@ -176,7 +163,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
             return List.of();
         }
         int rawTokens = tokenCountEstimator.estimateTokenCountInMessages(rawMessages);
-        double historyPressure = ratio(rawTokens, maxTokens());
+        double historyPressure = ratio(rawTokens, maxTokens);
 
         if (!compacted && historyPressure < compactionThreshold) {
             List<ChatMessage> projected = new ArrayList<>(rawMessages);
@@ -186,7 +173,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
 
         compacted = true;
         int rawStart = recentToolHistoryStart(rawMessages, recentToolInteractions);
-        int journalCutoff = Math.max(0, journal.size() - recentToolInteractions);
+        int journalCutoff = Math.max(0, interactions.requested().size() - recentToolInteractions);
         List<ChatMessage> projected = protectedPrefix(rawMessages);
         addDegradationMessageIfNeeded(projected);
         addJournal(projected, journalCutoff);
@@ -198,13 +185,13 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         }
 
         int projectedTokens = tokenCountEstimator.estimateTokenCountInMessages(projected);
-        if (projectedTokens > maxTokens()) {
+        if (projectedTokens > maxTokens) {
             projected = protectedPrefix(rawMessages);
             addDegradationMessageIfNeeded(projected);
-            addJournal(projected, journal.size());
+            addJournal(projected, interactions.requested().size());
             projectedTokens = tokenCountEstimator.estimateTokenCountInMessages(projected);
         }
-        if (projectedTokens > maxTokens()) {
+        if (projectedTokens > maxTokens) {
             throw new IllegalStateException(
                     "Ephemeral tool-pass projection exceeded the safe token budget while only protected messages and deterministic journal remain");
         }
@@ -230,11 +217,11 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
 
     private void notifyRuntimeBudget(int rawTokens, int projectedTokens, boolean compacted) {
         StringBuilder summary = new StringBuilder("TOKEN BUDGET transcript=")
-                .append(projectedTokens).append('/').append(maxTokens())
-                .append(" (").append(percent(ratio(projectedTokens, maxTokens()))).append("%)")
+                .append(projectedTokens).append('/').append(maxTokens)
+                .append(" (").append(percent(ratio(projectedTokens, maxTokens))).append("%)")
                 .append(" rawTranscript=").append(rawTokens)
                 .append(" compacted=").append(compacted)
-                .append(" calls=").append(toolCalls);
+                .append(" calls=").append(interactions.requested().size());
         if (maxToolCalls > 0) {
             summary.append('/').append(maxToolCalls);
         }
@@ -246,17 +233,17 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
     }
 
     private void appendJournal(StringBuilder text, int entries) {
-        int limit = Math.min(entries, journal.size());
+        int limit = Math.min(entries, interactions.requested().size());
         int i = 0;
         while (i < limit) {
-            JournalEntry entry = journal.get(i);
+            ToolInteractions.Interaction entry = interactions.requested().get(i);
             int repeats = 1;
-            while (i + repeats < limit && entry.sameExecution(journal.get(i + repeats))) {
+            while (i + repeats < limit && entry.sameExecution(interactions.requested().get(i + repeats))) {
                 repeats++;
             }
-            text.append(i + 1).append(". ").append(entry.toolName).append('(')
-                    .append(preview(entry.arguments)).append(")\n   -> ")
-                    .append(entry.resultLabel()).append(": ").append(preview(entry.resultText));
+            text.append(i + 1).append(". ").append(entry.tool()).append('(')
+                    .append(preview(entry.arguments())).append(")\n   -> ")
+                    .append(entry.resultLabel()).append(": ").append(preview(entry.resultText()));
             if (repeats > 1) {
                 text.append("\n   -> identical execution repeated ").append(repeats).append(" times");
             }
@@ -266,49 +253,21 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
     }
 
     private int repeatedExecutions() {
-        if (journal.size() < 2) {
+        if (interactions.requested().size() < 2) {
             return 0;
         }
-        JournalEntry latest = journal.getLast();
-        if (latest.resultText == null) {
+        ToolInteractions.Interaction latest = interactions.requested().getLast();
+        if (latest.resultText() == null) {
             return 0;
         }
         int repeated = 0;
-        for (int i = journal.size() - 2; i >= 0; i--) {
-            if (!latest.sameExecution(journal.get(i))) {
+        for (int i = interactions.requested().size() - 2; i >= 0; i--) {
+            if (!latest.sameExecution(interactions.requested().get(i))) {
                 break;
             }
             repeated++;
         }
         return repeated;
-    }
-
-    private void record(ChatMessage message) {
-        if (message instanceof AiMessage aiMessage && aiMessage.hasToolExecutionRequests()) {
-            for (ToolExecutionRequest request : aiMessage.toolExecutionRequests()) {
-                toolCalls++;
-                journal.add(new JournalEntry(request.id(), request.name(), normalize(request.arguments())));
-            }
-            return;
-        }
-        if (message instanceof ToolExecutionResultMessage result) {
-            for (int i = journal.size() - 1; i >= 0; i--) {
-                JournalEntry entry = journal.get(i);
-                if (entry.resultText == null && same(entry.requestId, result.id())) {
-                    entry.resultText = safeText(result);
-                    entry.isError = result.isError();
-                    return;
-                }
-            }
-        }
-    }
-
-    private static String safeText(ToolExecutionResultMessage result) {
-        try {
-            return normalize(result.text());
-        } catch (Exception e) {
-            return normalize(String.valueOf(result.contents()));
-        }
     }
 
     private static List<ChatMessage> protectedPrefix(List<ChatMessage> rawMessages) {
@@ -348,38 +307,6 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         return messages.stream().filter(UserMessage.class::isInstance).map(UserMessage.class::cast).findFirst();
     }
 
-    static Optional<Integer> findOldestToolExecutionRequestIndex(List<ChatMessage> messages) {
-        Optional<Integer> currentUserIndex = originalUserMessageIndex(messages);
-        for (int i = 0; i < messages.size(); i++) {
-            ChatMessage message = messages.get(i);
-            if (message instanceof SystemMessage) {
-                continue;
-            }
-            if (currentUserIndex.isPresent() && currentUserIndex.get() == i) {
-                continue;
-            }
-            if (message instanceof AiMessage aiMessage && aiMessage.hasToolExecutionRequests()) {
-                return Optional.of(i);
-            }
-        }
-        return Optional.empty();
-    }
-
-    private static Optional<Integer> originalUserMessageIndex(List<ChatMessage> messages) {
-        for (int i = 0; i < messages.size(); i++) {
-            if (messages.get(i) instanceof UserMessage) {
-                return Optional.of(i);
-            }
-        }
-        return Optional.empty();
-    }
-
-    private int maxTokens() {
-        Integer maxTokens = maxTokensProvider.apply(id);
-        ensureGreaterThanZero(maxTokens, "maxTokens");
-        return maxTokens;
-    }
-
     private static double ratio(int used, int max) {
         return max <= 0 ? 0.0 : (double) used / (double) max;
     }
@@ -395,50 +322,10 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         return value;
     }
 
-    private static String normalize(String value) {
-        return value == null ? "" : value.strip().replaceAll("\\s+", " ");
-    }
-
     private static String preview(String value) {
-        String normalized = normalize(value);
+        String normalized = ToolInteractions.normalize(value);
         return normalized.length() <= JOURNAL_VALUE_PREVIEW_CHARS
                 ? normalized
                 : normalized.substring(0, JOURNAL_VALUE_PREVIEW_CHARS) + "...(truncated)";
-    }
-
-    private static boolean same(String left, String right) {
-        return left == null ? right == null : left.equals(right);
-    }
-
-    private static final class JournalEntry {
-        private final String requestId;
-        private final String toolName;
-        private final String arguments;
-        private String resultText;
-        private Boolean isError;
-
-        private JournalEntry(String requestId, String toolName, String arguments) {
-            this.requestId = requestId;
-            this.toolName = toolName == null ? "unknown" : toolName;
-            this.arguments = arguments == null ? "" : arguments;
-        }
-
-        private String resultLabel() {
-            if (Boolean.TRUE.equals(isError)) return "ERROR";
-            if (Boolean.FALSE.equals(isError)) return "SUCCESS";
-            return "RESULT";
-        }
-
-        private boolean sameExecution(JournalEntry other) {
-            return other != null
-                    && toolName.equals(other.toolName)
-                    && arguments.equals(other.arguments)
-                    && same(resultText, other.resultText)
-                    && sameBoolean(isError, other.isError);
-        }
-
-        private static boolean sameBoolean(Boolean left, Boolean right) {
-            return left == null ? right == null : left.equals(right);
-        }
     }
 }

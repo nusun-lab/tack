@@ -1,5 +1,6 @@
 package us.nusun.tack.framework.route;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.Body;
@@ -30,6 +31,7 @@ public class AgentRunRoute extends RouteBuilder {
     @Inject AgentRunProjectionManager projections;
     @Inject AgentRunStore agentRuns;
     @Inject AgentRunAdmissionService admissions;
+    @Inject ObjectMapper mapper;
 
     @Override
     public void configure() {
@@ -39,8 +41,12 @@ public class AgentRunRoute extends RouteBuilder {
                 .routeId("start-agent-run")
                 .doTry()
                     .validate(exchangeProperty("mission").isNotNull())
-                    .marshal().json(JsonLibrary.Jackson)
-                    .unmarshal().json(JsonLibrary.Jackson, AgentRunRequest.class)
+                    .process(exchange -> {
+                        Object request = exchange.getMessage().getBody();
+                        if (!(request instanceof AgentRunRequest)) {
+                            exchange.getMessage().setBody(mapper.convertValue(request, AgentRunRequest.class));
+                        }
+                    })
                     .bean(admissions, "admit")
                     .setProperty("agentRunAdmission", body())
                     .setBody(simple("${body.event}"))

@@ -86,15 +86,8 @@ class CompactedSystemMessageOrderingTest {
     }
 
     private static LlmAgentFactory.DynamicAgentFactory factory(ChatModel model) {
-        return new LlmAgentFactory.DynamicAgentFactory(
-                FrameworkFixtures.inferenceLaneRegistry(),
-                Map.of("low-pass", model),
-                new McpClientFactory(),
-                FrameworkFixtures.toolProfileRegistry(),
-                FrameworkFixtures.personaCatalog(),
-                new CompactionTokenEstimator(),
-                35,
-                4);
+        return FrameworkFixtures.agentFactory(
+                "low-pass", model, new McpClientFactory(), new CompactionTokenEstimator(), 35, 4, null);
     }
 
     private static Exchange exchange() {

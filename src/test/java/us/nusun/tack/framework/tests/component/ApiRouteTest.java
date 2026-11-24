@@ -6,6 +6,8 @@ import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.support.processor.PredicateValidationException;
 import org.junit.jupiter.api.Test;
 import us.nusun.tack.framework.route.ApiRoute;
+import us.nusun.tack.framework.model.AgentRunRequest;
+import us.nusun.tack.framework.model.MissionRequest;
 import us.nusun.tack.framework.tests.support.FrameworkFixtures;
 import us.nusun.tack.framework.tests.support.TestCamelContexts;
 
@@ -14,11 +16,11 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 class ApiRouteTest {
     @Test
-    void submitMissionUsesExplicitAgentRunsAndReturnsAcceptedJson() throws Exception {
+    void submitMissionUsesTypedRequestsAndReturnsAcceptedResponse() throws Exception {
         try (DefaultCamelContext context = TestCamelContexts.quiet()) {
             FrameworkFixtures.bindCatalogBeans(context);
             bindApiDependencies(context);
@@ -42,14 +44,14 @@ class ApiRouteTest {
 
             Exchange result = context.createProducerTemplate().request(
                     "direct:submit-mission",
-                    exchange -> exchange.getIn().setBody("""
-                            {"goal":"Build a parking lot manager app.","agentRuns":[{"personaId":"persona-a","routineId":"routine-a"}]}
-                            """));
+                    exchange -> exchange.getIn().setBody(new MissionRequest("Build a parking lot manager app.",
+                            List.of(new AgentRunRequest("persona-a", "routine-a", Map.of())))));
 
-            String response = result.getIn().getBody(String.class);
+            var response = assertInstanceOf(Map.class, result.getIn().getBody());
             assertEquals(202, result.getIn().getHeader(Exchange.HTTP_RESPONSE_CODE));
-            assertTrue(response.contains("\"missionId\":\"mission-1\""));
-            assertTrue(response.contains("\"agentRunId\":\"run-1\""));
+            assertEquals("mission-1", response.get("missionId"));
+            assertEquals("run-1", assertInstanceOf(Map.class,
+                    assertInstanceOf(List.class, response.get("agentRuns")).getFirst()).get("agentRunId"));
         }
     }
 
@@ -69,7 +71,7 @@ class ApiRouteTest {
 
             Exception failure = assertThrows(Exception.class, () -> context.createProducerTemplate().requestBody(
                     "direct:submit-mission",
-                    "{\"goal\":\"   \",\"agentRuns\":[{\"personaId\":\"persona-a\",\"routineId\":\"routine-a\"}]}"));
+                    new MissionRequest("   ", List.of(new AgentRunRequest("persona-a", "routine-a", Map.of())))));
 
             assertCausedBy(failure, PredicateValidationException.class);
         }
@@ -91,7 +93,7 @@ class ApiRouteTest {
 
             Exception failure = assertThrows(Exception.class, () -> context.createProducerTemplate().requestBody(
                     "direct:submit-mission",
-                    "{\"goal\":\"Build\",\"agentRuns\":[]}"));
+                    new MissionRequest("Build", List.of())));
 
             assertCausedBy(failure, PredicateValidationException.class);
         }

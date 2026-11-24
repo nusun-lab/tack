@@ -9,6 +9,7 @@ import dev.langchain4j.mcp.client.McpHeadersSupplier;
 import dev.langchain4j.mcp.client.transport.McpTransport;
 import dev.langchain4j.mcp.client.transport.http.StreamableHttpMcpTransport;
 import dev.langchain4j.model.TokenCountEstimator;
+import dev.langchain4j.service.tool.ToolProvider;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -56,13 +57,13 @@ public class McpClientFactory {
     private final AtomicLong cacheHits = new AtomicLong();
     private final AtomicLong cacheMisses = new AtomicLong();
 
-    public List<McpClient> clientsFor(Persona persona, ToolProfile profile) {
+    public List<ServerClient> clientsFor(Persona persona, ToolProfile profile) {
         if (profile == null || profile.none()) {
             return List.of();
         }
-        List<McpClient> clients = profile.mcpServers().values().stream()
+        List<ServerClient> clients = profile.mcpServers().values().stream()
                 .filter(server -> profile.allowsServer(server.id()))
-                .map(server -> profiledClient(persona, profile, server))
+                .map(server -> serverClient(persona, profile, server))
                 .flatMap(Stream::ofNullable)
                 .toList();
         if (clients.isEmpty() && !profile.mcpServers().isEmpty()) {
@@ -86,12 +87,18 @@ public class McpClientFactory {
         return cacheMisses.get();
     }
 
-    private McpClient profiledClient(Persona persona, ToolProfile profile, McpServerDefinition server) {
-        McpClient client = cachedClient(persona, profile, server);
-        return client == null
-                ? null
-                : new ProfiledMcpClient(client, server.id(), profile, persona, logTokens, maxToolResultTokens, tokenCountEstimator, false);
+    public List<ToolProvider> toolProvidersFor(Persona persona, ToolProfile profile) {
+        return clientsFor(persona, profile).stream().<ToolProvider>map(connection ->
+                new McpToolPolicy(connection.client(), connection.server(), profile, persona, logTokens,
+                        maxToolResultTokens, tokenCountEstimator).provider()).toList();
     }
+
+    private ServerClient serverClient(Persona persona, ToolProfile profile, McpServerDefinition server) {
+        McpClient client = cachedClient(persona, profile, server);
+        return client == null ? null : new ServerClient(server.id(), client);
+    }
+
+    public record ServerClient(String server, McpClient client) {}
 
     private McpClient cachedClient(Persona persona, ToolProfile profile, McpServerDefinition server) {
         ExternalIdentity identity = persona.identityFor(server.id());

@@ -6,7 +6,6 @@ import org.apache.camel.Body;
 import org.apache.camel.Exchange;
 import org.apache.camel.ExchangeProperty;
 import org.apache.camel.Header;
-import org.apache.camel.support.DefaultExchange;
 import us.nusun.tack.framework.inventory.PersonaCatalog;
 import us.nusun.tack.framework.inventory.RoutineCatalog;
 import us.nusun.tack.framework.model.AgentRunAdmission;
@@ -63,7 +62,7 @@ public class AgentRunAdmissionService {
         List<PreparedAgentRun> prepared = requests.stream()
                 .map(request -> prepareAgentRun(mission, parent, request))
                 .toList();
-        return commitPrepared(exchange, mission, prepared, capacityMaximum(exchange));
+        return commitPrepared(mission, prepared, capacityMaximum(exchange));
     }
 
     public MissionAdmissionPlan prepareMission(@Body MissionRequest request, @Header("requestId") String requestedId) {
@@ -94,7 +93,7 @@ public class AgentRunAdmissionService {
         if (plan == null) {
             throw new IllegalArgumentException("Mission admission plan is required");
         }
-        return commitPrepared(exchange, plan.mission(), plan.agentRuns(), capacityMaximum(exchange));
+        return commitPrepared(plan.mission(), plan.agentRuns(), capacityMaximum(exchange));
     }
 
     private PreparedAgentRun prepareAgentRun(Mission mission, AgentRun parent, AgentRunRequest request) {
@@ -127,7 +126,7 @@ public class AgentRunAdmissionService {
                 new AgentRunScheduled(run.missionId(), run.id()));
     }
 
-    private List<AgentRunAdmission> commitPrepared(Exchange exchange, Mission mission, List<PreparedAgentRun> preparedRuns, Integer capacityMaximum) {
+    private List<AgentRunAdmission> commitPrepared(Mission mission, List<PreparedAgentRun> preparedRuns, Integer capacityMaximum) {
         List<AgentRunAdmission> admissions = new ArrayList<>();
         synchronized (agentRuns) {
             validateCapacity(mission, preparedRuns, capacityMaximum);
@@ -139,7 +138,7 @@ public class AgentRunAdmissionService {
             agentRuns.putMission(mission);
             for (PreparedAgentRun prepared : preparedRuns) {
                 agentRuns.putRun(prepared.run());
-                recordAccepted(exchange, mission, prepared.run());
+                projections.recordAccepted(mission, prepared.run());
                 admissions.add(new AgentRunAdmission(prepared.handle(), prepared.event()));
             }
         }
@@ -196,13 +195,6 @@ public class AgentRunAdmissionService {
                 "missionId", plan.mission().id(),
                 "status", "accepted",
                 "agentRuns", handles == null ? List.of() : List.copyOf(handles));
-    }
-
-    private void recordAccepted(Exchange source, Mission mission, AgentRun run) {
-        Exchange projectionExchange = new DefaultExchange(source.getContext());
-        projectionExchange.setProperty("mission", mission);
-        projectionExchange.setProperty("agentRun", run);
-        projections.record(projectionExchange, "AGENT_RUN_ACCEPTED");
     }
 
     public static AgentRunHandle handle(AgentRun run, String status) {

@@ -16,7 +16,6 @@ import us.nusun.tack.framework.llm.LlmDeadLetterFactory;
 import us.nusun.tack.framework.llm.LlmJobFactory;
 import us.nusun.tack.framework.llm.LlmRouteSupport;
 import us.nusun.tack.framework.model.LlmJobEnvelope;
-import us.nusun.tack.framework.model.LlmJobRequest;
 import us.nusun.tack.framework.model.LlmJobResult;
 import us.nusun.tack.framework.model.LlmJobStatus;
 import us.nusun.tack.framework.model.LlmPassType;
@@ -183,7 +182,7 @@ class LlmRouteFrameworkRouteTest {
 
         try (DefaultCamelContext context = context(replies, kafka)) {
             context.start();
-            LlmJobEnvelope queued = LlmJobEnvelope.queued(new us.nusun.tack.framework.model.LlmJobRequest(
+            LlmJobEnvelope queued = LlmJobEnvelope.queued(new us.nusun.tack.framework.model.LlmJobEnvelope(
                     null, "low-pass", LlmPassType.ACTION, "test", "Persona A", 0, "prompt", "system", null, Map.of(), null).normalized());
             replies.register(queued);
             LlmJobResult result = LlmJobResult.succeeded(queued, "test-model", "ok", "ok", Instant.now());
@@ -203,7 +202,7 @@ class LlmRouteFrameworkRouteTest {
 
         try (DefaultCamelContext context = context(replies, kafka)) {
             context.start();
-            LlmJobEnvelope queued = LlmJobEnvelope.queued(new LlmJobRequest(
+            LlmJobEnvelope queued = LlmJobEnvelope.queued(new LlmJobEnvelope(
                     UUID.randomUUID(),
                     "low-pass",
                     LlmPassType.SYNTHESIS,
@@ -234,7 +233,7 @@ class LlmRouteFrameworkRouteTest {
 
         try (DefaultCamelContext context = context(replies, kafka, nullBodyAgentFactory())) {
             context.start();
-            LlmJobEnvelope queued = LlmJobEnvelope.queued(new LlmJobRequest(
+            LlmJobEnvelope queued = LlmJobEnvelope.queued(new LlmJobEnvelope(
                     UUID.randomUUID(),
                     "low-pass",
                     LlmPassType.SYNTHESIS,

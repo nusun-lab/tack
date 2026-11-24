@@ -5,6 +5,7 @@ import us.nusun.tack.framework.model.AgentRunProjection;
 
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.UnaryOperator;
 
 @ApplicationScoped
 public class ProjectionStore {
@@ -12,6 +13,14 @@ public class ProjectionStore {
 
     public void put(AgentRunProjection projection) {
         projections.put(projection.agentRunId(), projection);
+    }
+
+    void update(String id, UnaryOperator<AgentRunProjection> change) {
+        projections.compute(id, (key, current) -> change.apply(current));
+    }
+
+    void updateExisting(String id, UnaryOperator<AgentRunProjection> change) {
+        projections.computeIfPresent(id, (key, current) -> change.apply(current));
     }
 
     public AgentRunProjection get(String agentRunId) {

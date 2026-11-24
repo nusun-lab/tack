@@ -3,7 +3,6 @@ package us.nusun.tack.framework.tests.boundary;
 import org.junit.jupiter.api.Test;
 import us.nusun.tack.framework.llm.InFlightReplyManager;
 import us.nusun.tack.framework.model.LlmJobEnvelope;
-import us.nusun.tack.framework.model.LlmJobRequest;
 import us.nusun.tack.framework.model.LlmJobResult;
 import us.nusun.tack.framework.model.LlmJobStatus;
 import us.nusun.tack.framework.model.LlmPassType;
@@ -89,7 +88,7 @@ class InFlightReplyManagerBoundaryTest {
     }
 
     private static LlmJobEnvelope queuedJob(UUID jobId) {
-        return LlmJobEnvelope.queued(new LlmJobRequest(
+        return LlmJobEnvelope.queued(new LlmJobEnvelope(
                 jobId,
                 "low-pass",
                 LlmPassType.ACTION,

@@ -5,4 +5,4 @@ public record DecisionResult(
         String result,
         double confidence,
         String reason
-) {}
+) implements PrimitiveResult {}

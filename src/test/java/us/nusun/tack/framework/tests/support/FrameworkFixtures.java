@@ -1,6 +1,12 @@
 package us.nusun.tack.framework.tests.support;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.TokenCountEstimator;
+import us.nusun.tack.framework.config.ToolPassSettings;
+import us.nusun.tack.framework.llm.LlmAgentFactory;
+import us.nusun.tack.framework.llm.LlmRouteSupport;
+import us.nusun.tack.framework.mcp.McpClientFactory;
 import org.apache.camel.Exchange;
 import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.support.DefaultExchange;
@@ -133,6 +139,14 @@ public final class FrameworkFixtures {
                         .apiKeyConfigKey("llm.inference-lane.high.api-key")
                         .apiKeyEnvVariable("LLM_HIGH_API_KEY")
                         .build());
+    }
+
+    public static LlmAgentFactory.DynamicAgentFactory agentFactory(
+            String lane, ChatModel model, McpClientFactory clients, TokenCountEstimator estimator,
+            int memoryTokens, int maxToolCalls, LlmRouteSupport routeSupport) {
+        return new LlmAgentFactory.DynamicAgentFactory(Map.of(lane, model),
+                Map.of(lane, new ToolPassSettings(memoryTokens, maxToolCalls, 0.50, 3, 69632, 4092)),
+                clients, toolProfileRegistry(), personaCatalog(), estimator, null, null, routeSupport, new ObjectMapper());
     }
 
     public static InferenceLaneRegistry inferenceLaneRegistry() {

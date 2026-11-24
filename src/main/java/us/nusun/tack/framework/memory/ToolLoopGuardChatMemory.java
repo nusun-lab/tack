@@ -3,14 +3,10 @@ package us.nusun.tack.framework.memory;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
-import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.memory.ChatMemory;
 
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Hard stop for pathological tool loops and tool-pass budget exhaustion.
@@ -21,8 +17,7 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
 
     private final ChatMemory delegate;
     private final int maxToolCalls;
-    private final Map<String, RequestSignature> pending = new HashMap<>();
-    private final List<ExecutionSignature> completedExecutions = new ArrayList<>();
+    private final ToolInteractions interactions = new ToolInteractions();
     private int acceptedToolCalls;
     private int assistantRounds;
 
@@ -62,7 +57,7 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
                 throw new ToolCallBudgetExceededException(maxToolCalls, acceptedToolCalls, requests.size());
             }
             for (ToolExecutionRequest request : requests) {
-                RequestSignature signature = RequestSignature.from(request);
+                ToolInteractions.Signature signature = ToolInteractions.Signature.from(request);
                 int cycleLength = repeatedCycleLength(signature);
                 if (cycleLength > 0) {
                     throw new RepeatedToolExecutionException(signature.toolName(), cycleLength);
@@ -70,23 +65,12 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
             }
             delegate.add(message);
             acceptedToolCalls += requests.size();
-            for (ToolExecutionRequest request : requests) {
-                pending.put(request.id(), RequestSignature.from(request));
-            }
+            interactions.record(message);
             return;
         }
 
         delegate.add(message);
-        if (message instanceof ToolExecutionResultMessage result) {
-            RequestSignature request = pending.remove(result.id());
-            if (request == null) {
-                return;
-            }
-            completedExecutions.add(new ExecutionSignature(
-                    request,
-                    normalize(resultText(result)),
-                    result.isError()));
-        }
+        interactions.record(message);
     }
 
     @Override
@@ -103,13 +87,13 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
     @Override
     public synchronized void clear() {
         delegate.clear();
-        pending.clear();
-        completedExecutions.clear();
+        interactions.clear();
         acceptedToolCalls = 0;
         assistantRounds = 0;
     }
 
-    private int repeatedCycleLength(RequestSignature nextRequest) {
+    private int repeatedCycleLength(ToolInteractions.Signature nextRequest) {
+        List<ToolInteractions.Execution> completedExecutions = interactions.completed();
         int completed = completedExecutions.size();
         for (int cycleLength = 1; cycleLength <= MAX_CYCLE_LENGTH; cycleLength++) {
             if (completed < cycleLength * 2) {
@@ -132,29 +116,8 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
         return 0;
     }
 
-    private static String resultText(ToolExecutionResultMessage result) {
-        try {
-            return result.text();
-        } catch (Exception ignored) {
-            return String.valueOf(result.contents());
-        }
-    }
-
     private static int textLength(String value) {
         return value == null ? 0 : value.length();
-    }
-
-    private static String normalize(String value) {
-        return value == null ? "" : value.strip().replaceAll("\\s+", " ");
-    }
-
-    private record RequestSignature(String toolName, String arguments) {
-        private static RequestSignature from(ToolExecutionRequest request) {
-            return new RequestSignature(normalize(request.name()), normalize(request.arguments()));
-        }
-    }
-
-    private record ExecutionSignature(RequestSignature request, String result, boolean error) {
     }
 
     public static class ToolPassTerminatedException extends RuntimeException {

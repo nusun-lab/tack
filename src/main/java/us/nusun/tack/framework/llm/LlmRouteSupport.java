@@ -5,9 +5,6 @@ import static us.nusun.tack.framework.model.FrameworkText.firstNonBlank;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.networknt.schema.Error;
-import com.networknt.schema.SchemaRegistry;
-import com.networknt.schema.SpecificationVersion;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.Body;
@@ -15,7 +12,6 @@ import org.apache.camel.CamelContext;
 import org.apache.camel.Exchange;
 import org.apache.camel.ExchangeProperty;
 import org.apache.camel.ServiceStatus;
-import org.apache.camel.support.ResourceHelper;
 import org.apache.camel.component.langchain4j.agent.api.AiAgentBody;
 import us.nusun.tack.framework.inventory.InferenceLaneRegistry;
 import us.nusun.tack.framework.logging.LogTokens;
@@ -24,10 +20,8 @@ import us.nusun.tack.framework.model.LlmJobEnvelope;
 import us.nusun.tack.framework.model.LlmJobResult;
 import us.nusun.tack.framework.projection.AgentRunProjectionManager;
 
-import java.io.InputStream;
 import java.time.Instant;
 import java.util.List;
-import java.util.stream.Collectors;
 import java.util.UUID;
 
 @ApplicationScoped
@@ -45,6 +39,7 @@ public class LlmRouteSupport {
     }
 
     @Inject CamelContext camelContext;
+    @Inject ObjectMapper objectMapper;
     @Inject InferenceLaneRegistry lanes;
     @Inject InFlightReplyManager inFlightReplyManager;
     @Inject LlmDeadLetterFactory deadLetterFactory;
@@ -69,6 +64,7 @@ public class LlmRouteSupport {
             LlmDeadLetterFactory deadLetterFactory,
             LogTokens logTokens) {
         this.camelContext = camelContext;
+        this.objectMapper = new ObjectMapper();
         this.lanes = lanes;
         this.inFlightReplyManager = inFlightReplyManager;
         this.deadLetterFactory = deadLetterFactory;
@@ -122,17 +118,10 @@ public class LlmRouteSupport {
                 || job == null || job.responseSchema() == null || job.responseSchema().isBlank()) {
             return;
         }
-        String schemaText = exchange.getContext().resolvePropertyPlaceholders(job.responseSchema());
-        if (ResourceHelper.hasScheme(schemaText)) {
-            try (InputStream in = ResourceHelper.resolveMandatoryResourceAsInputStream(exchange.getContext(), schemaText)) {
-                schemaText = exchange.getContext().getTypeConverter().mandatoryConvertTo(String.class, in);
-            }
-        }
-        ObjectMapper mapper = new ObjectMapper();
-        JsonNode schema = mapper.readTree(schemaText);
+        SchemaContract contract = SchemaContract.resolve(exchange.getContext(), objectMapper, job.responseSchema());
         JsonNode response;
         try {
-            response = mapper.readTree(result.content());
+            response = objectMapper.readTree(result.content());
         } catch (JsonProcessingException e) {
             throw new LlmResponseException(
                     "LLM response failure: reason=malformed-structured-output "
@@ -141,12 +130,10 @@ public class LlmRouteSupport {
                             + " responseTail=" + responseTail(result.content()),
                     e);
         }
-        List<Error> errors = SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
-                .getSchema(schema)
-                .validate(response);
-        if (!errors.isEmpty()) {
-            String message = errors.stream().map(Error::getMessage).sorted().collect(Collectors.joining("; "));
-            throw new IllegalArgumentException("LLM response schema validation failed: " + message);
+        try {
+            contract.validate(response);
+        } catch (IllegalArgumentException failure) {
+            throw new LlmResponseException(failure.getMessage() + " " + agentResponseContext(exchange), failure);
         }
     }
 

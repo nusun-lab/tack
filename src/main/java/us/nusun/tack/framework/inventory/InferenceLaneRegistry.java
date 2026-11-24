@@ -15,7 +15,7 @@ public class InferenceLaneRegistry {
 
     @Inject
     public InferenceLaneRegistry(Instance<InferenceLaneProvider> laneProviders) {
-        this(laneProviders.stream().map(InferenceLaneProvider::inferenceLane).toList());
+        this(laneProviders.stream().flatMap(provider -> provider.inferenceLanes().stream()).toList());
     }
 
     public InferenceLaneRegistry(List<InferenceLaneDefinition> lanes) {

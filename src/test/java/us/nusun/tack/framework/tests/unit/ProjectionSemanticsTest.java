@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test;
 import us.nusun.tack.framework.inventory.RoutineCatalog;
 import us.nusun.tack.framework.model.AgentRunProjection;
 import us.nusun.tack.framework.model.LlmJobEnvelope;
-import us.nusun.tack.framework.model.LlmJobRequest;
 import us.nusun.tack.framework.model.LlmPassType;
 import us.nusun.tack.framework.model.RoutineDefinition;
 import us.nusun.tack.framework.model.StepResult;
@@ -35,7 +34,7 @@ class ProjectionSemanticsTest {
         AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
         run.currentPrimitive("act");
         run.currentId("work-item-review");
-        run.apply(new StepResult("work-item-review", "Project membership is missing.", List.of()));
+        run.apply(new StepResult("work-item-review", null, "Project membership is missing.", "SUCCEEDED", false, 0));
         exchange.setProperty("toolProfile", FrameworkFixtures.PROFILE_BETA);
         String fullPrompt = "Review one current item in the project management system. " + "Preserve this sentence. ".repeat(30);
         exchange.setProperty("actPrompt", fullPrompt);
@@ -80,7 +79,7 @@ class ProjectionSemanticsTest {
         run.currentPrimitive("act");
         run.currentId("inspect-current-work");
 
-        LlmJobEnvelope job = LlmJobEnvelope.queued(new LlmJobRequest(
+        LlmJobEnvelope job = LlmJobEnvelope.queued(new LlmJobEnvelope(
                 null,
                 "high-pass",
                 LlmPassType.ACTION,
@@ -140,7 +139,7 @@ class ProjectionSemanticsTest {
         AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
         manager.record(exchange, "AGENT_RUN_STARTED");
 
-        LlmJobEnvelope action = LlmJobEnvelope.queued(new LlmJobRequest(
+        LlmJobEnvelope action = LlmJobEnvelope.queued(new LlmJobEnvelope(
                 null,
                 "high-pass",
                 LlmPassType.ACTION,
@@ -161,7 +160,7 @@ class ProjectionSemanticsTest {
         manager.recordLlmStarted(exchange);
         manager.recordPrimitiveCompleted(exchange, "act", "inspect", "Inspection complete.");
 
-        LlmJobEnvelope synthesis = LlmJobEnvelope.queued(new LlmJobRequest(
+        LlmJobEnvelope synthesis = LlmJobEnvelope.queued(new LlmJobEnvelope(
                 null,
                 "low-pass",
                 LlmPassType.SYNTHESIS,
@@ -295,7 +294,7 @@ class ProjectionSemanticsTest {
         exchange.setProperty("toolPassResult", "RAW_TOOL_PAYLOAD_" + "x".repeat(5000) + "_SECRET_TOKEN");
         run.currentPrimitive("act");
         run.currentId("inspect-delivery-state");
-        run.apply(new StepResult("inspect-delivery-state", "Delivery state summarized.", List.of()));
+        run.apply(new StepResult("inspect-delivery-state", null, "Delivery state summarized.", "SUCCEEDED", false, 0));
 
         manager.record(exchange, "ACT_COMPLETED");
 

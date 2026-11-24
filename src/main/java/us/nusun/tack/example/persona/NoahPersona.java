@@ -1,7 +1,6 @@
 package us.nusun.tack.example.persona;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import us.nusun.tack.framework.inventory.PersonaProvider;
 import us.nusun.tack.framework.model.Persona;
 
@@ -11,17 +10,11 @@ import java.util.List;
 public class NoahPersona implements PersonaProvider {
     public static final String ID = "software-team/noah";
 
-    @ConfigProperty(name = "persona.noah.email", defaultValue = "")
-    String email = "";
+    private final PersonaAccounts.Account account;
 
-    @ConfigProperty(name = "persona.noah.identity.mattermost.token", defaultValue = "")
-    String mattermostToken = "";
-
-    @ConfigProperty(name = "persona.noah.identity.gitea.token", defaultValue = "")
-    String giteaToken = "";
-
-    @ConfigProperty(name = "persona.noah.identity.plane.token", defaultValue = "")
-    String planeToken = "";
+    public NoahPersona(PersonaAccounts accounts) {
+        this.account = accounts.accounts().get("noah");
+    }
 
     @Override
     public List<Persona> personas() {
@@ -32,7 +25,7 @@ public class NoahPersona implements PersonaProvider {
         return Persona.builder(ID)
                 .name("Noah")
                 .description("Director persona for a small software team; understands mission progress, maintains required role coverage, and protects mission and product viability through completion.")
-                .email(email)
+                .email(account.email().orElse(""))
                 .trait("is hilarious and always cracking jokes")
                 .trait("trusts his team and does not micro-manage")
                 .trait("delegates whole-mission responsibility rather than prescribing another role's product, planning, or implementation decisions")
@@ -45,9 +38,9 @@ public class NoahPersona implements PersonaProvider {
                 .label("DIR")
                 .color("38;2;64;224;255")
                 .agentRunStartAssignable(false)
-                .identity("mattermost", mattermostToken, "@director-agent")
-                .identity("gitea", giteaToken, "director-agent")
-                .identity("plane", planeToken, "Director")
+                .identity("mattermost", account.token("mattermost"), "@director-agent")
+                .identity("gitea", account.token("gitea"), "director-agent")
+                .identity("plane", account.token("plane"), "Director")
                 .build();
     }
 }

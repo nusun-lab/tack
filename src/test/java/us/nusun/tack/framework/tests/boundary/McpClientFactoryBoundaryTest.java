@@ -1,6 +1,5 @@
 package us.nusun.tack.framework.tests.boundary;
 
-import dev.langchain4j.mcp.client.McpClient;
 import org.junit.jupiter.api.Test;
 import us.nusun.tack.framework.logging.LogTokens;
 import us.nusun.tack.framework.mcp.McpClientFactory;
@@ -38,12 +37,12 @@ class McpClientFactoryBoundaryTest {
                 .allowAllTools(FrameworkFixtures.SERVER_BETA)
                 .build();
 
-        List<McpClient> clients = factory.clientsFor(persona, profile);
+        List<McpClientFactory.ServerClient> clients = factory.clientsFor(persona, profile);
 
         assertEquals(Set.of(
                         FrameworkFixtures.SERVER_ALPHA + ":persona-a",
                         FrameworkFixtures.SERVER_BETA + ":persona-a"),
-                clients.stream().map(McpClient::key).collect(Collectors.toSet()));
+                clients.stream().map(connection -> connection.client().key()).collect(Collectors.toSet()));
     }
 
     @Test
@@ -63,12 +62,12 @@ class McpClientFactoryBoundaryTest {
                 .allowTool(FrameworkFixtures.SERVER_ALPHA, "alpha_post")
                 .build();
 
-        List<McpClient> readClients = factory.clientsFor(persona, readProfile);
-        List<McpClient> writeClients = factory.clientsFor(persona, writeProfile);
+        List<McpClientFactory.ServerClient> readClients = factory.clientsFor(persona, readProfile);
+        List<McpClientFactory.ServerClient> writeClients = factory.clientsFor(persona, writeProfile);
 
         assertEquals(1, readClients.size());
         assertEquals(1, writeClients.size());
-        assertEquals(readClients.getFirst().key(), writeClients.getFirst().key());
+        org.junit.jupiter.api.Assertions.assertSame(readClients.getFirst().client(), writeClients.getFirst().client());
         assertEquals(1, factory.cachedClientCount());
         assertEquals(1, factory.cacheMisses());
         assertEquals(1, factory.cacheHits());
@@ -116,9 +115,9 @@ class McpClientFactoryBoundaryTest {
                 .allowAllTools(FrameworkFixtures.SERVER_GAMMA)
                 .build();
 
-        List<McpClient> clients = factory.clientsFor(persona, profile);
+        List<McpClientFactory.ServerClient> clients = factory.clientsFor(persona, profile);
 
-        assertEquals(List.of(FrameworkFixtures.SERVER_ALPHA + ":persona-a"), clients.stream().map(McpClient::key).toList());
+        assertEquals(List.of(FrameworkFixtures.SERVER_ALPHA + ":persona-a"), clients.stream().map(connection -> connection.client().key()).toList());
     }
 
     @Test
@@ -137,10 +136,10 @@ class McpClientFactoryBoundaryTest {
                 .allowAllTools("custom-mcp")
                 .build();
 
-        List<McpClient> clients = factory.clientsFor(persona, profile);
+        List<McpClientFactory.ServerClient> clients = factory.clientsFor(persona, profile);
 
         assertEquals(1, clients.size());
-        assertEquals("custom-mcp:persona-a", clients.getFirst().key());
+        assertEquals("custom-mcp:persona-a", clients.getFirst().client().key());
     }
 
     @Test
@@ -156,9 +155,9 @@ class McpClientFactoryBoundaryTest {
                 .allowAllTools(FrameworkFixtures.SERVER_ALPHA)
                 .build();
 
-        List<McpClient> clients = factory.clientsFor(persona, profile);
+        List<McpClientFactory.ServerClient> clients = factory.clientsFor(persona, profile);
 
-        assertEquals(List.of(FrameworkFixtures.SERVER_ALPHA + ":persona-a"), clients.stream().map(McpClient::key).toList());
+        assertEquals(List.of(FrameworkFixtures.SERVER_ALPHA + ":persona-a"), clients.stream().map(connection -> connection.client().key()).toList());
     }
 
     private static McpClientFactory factory() {

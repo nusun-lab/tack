@@ -24,7 +24,6 @@ import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.support.DefaultExchange;
 import org.junit.jupiter.api.Test;
 import us.nusun.tack.framework.model.LlmJobEnvelope;
-import us.nusun.tack.framework.model.LlmJobRequest;
 import us.nusun.tack.framework.model.LlmJobResult;
 import us.nusun.tack.framework.model.LlmJobStatus;
 import us.nusun.tack.framework.model.LlmPassType;
@@ -96,7 +95,7 @@ class HallucinatedToolNameRecoveryStrategyTest {
 
         try (DefaultCamelContext context = routeContext(model, kafka)) {
             context.start();
-            LlmJobEnvelope job = LlmJobEnvelope.queued(new LlmJobRequest(
+            LlmJobEnvelope job = LlmJobEnvelope.queued(new LlmJobEnvelope(
                     UUID.randomUUID(),
                     "low-pass",
                     LlmPassType.ACTION,
@@ -159,14 +158,8 @@ class HallucinatedToolNameRecoveryStrategyTest {
     }
 
     private static LlmAgentFactory.DynamicAgentFactory factory(String laneId, ChatModel model) {
-        return new LlmAgentFactory.DynamicAgentFactory(
-                FrameworkFixtures.inferenceLaneRegistry(),
-                Map.of(laneId, model),
-                new McpClientFactory(),
-                FrameworkFixtures.toolProfileRegistry(),
-                FrameworkFixtures.personaCatalog(),
-                new TestTokenCountEstimator(),
-                12000);
+        return FrameworkFixtures.agentFactory(
+                laneId, model, new McpClientFactory(), new TestTokenCountEstimator(), 12000, 4, null);
     }
 
     private static Exchange exchange(String laneId) {

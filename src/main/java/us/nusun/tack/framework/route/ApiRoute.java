@@ -4,7 +4,6 @@ import jakarta.enterprise.context.ApplicationScoped;
 import org.apache.camel.Exchange;
 import org.apache.camel.LoggingLevel;
 import org.apache.camel.builder.RouteBuilder;
-import org.apache.camel.model.dataformat.JsonLibrary;
 import org.apache.camel.support.processor.PredicateValidationException;
 import us.nusun.tack.framework.model.MissionRequest;
 
@@ -20,12 +19,11 @@ public class ApiRoute extends RouteBuilder {
 
         from("direct:submit-mission")
                 .routeId("submit-mission")
-                .unmarshal().json(JsonLibrary.Jackson, MissionRequest.class)
+                .validate(body().isInstanceOf(MissionRequest.class))
                 .validate(simple("${body.goal} != null && ${body.goal.trim()} != ''"))
                 .validate(simple("${body.agentRuns} != null && ${body.agentRuns.size} > 0"))
                 .to("direct:start-mission")
                 .removeHeaders("*")
-                .marshal().json(JsonLibrary.Jackson)
                 .setHeader(Exchange.HTTP_RESPONSE_CODE, constant(202))
                 .setHeader(Exchange.CONTENT_TYPE, constant("application/json"));
 
@@ -37,14 +35,12 @@ public class ApiRoute extends RouteBuilder {
                     .otherwise()
                         .bean("resetService", "reset")
                 .end()
-                .marshal().json(JsonLibrary.Jackson)
                 .setHeader(Exchange.HTTP_RESPONSE_CODE, constant(200))
                 .setHeader(Exchange.CONTENT_TYPE, constant("application/json"));
 
         from("direct:workspace-view")
                 .routeId("workspace-view")
                 .bean("workspaceViewService", "view")
-                .marshal().json(JsonLibrary.Jackson)
                 .setHeader(Exchange.HTTP_RESPONSE_CODE, constant(200))
                 .setHeader(Exchange.CONTENT_TYPE, constant("application/json"));
     }

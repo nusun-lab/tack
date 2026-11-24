@@ -9,7 +9,6 @@ import us.nusun.tack.framework.llm.LlmDeadLetterFactory;
 import us.nusun.tack.framework.llm.LlmRouteSupport;
 import us.nusun.tack.framework.logging.LogTokens;
 import us.nusun.tack.framework.model.LlmJobEnvelope;
-import us.nusun.tack.framework.model.LlmJobRequest;
 import us.nusun.tack.framework.model.LlmJobResult;
 import us.nusun.tack.framework.model.LlmPassType;
 import us.nusun.tack.framework.tests.support.FrameworkFixtures;
@@ -55,7 +54,7 @@ class LoggingSemanticsTest {
     }
 
     private static LlmJobEnvelope job() {
-        return LlmJobEnvelope.queued(new LlmJobRequest(
+        return LlmJobEnvelope.queued(new LlmJobEnvelope(
                 null,
                 "low-pass",
                 LlmPassType.SYNTHESIS,

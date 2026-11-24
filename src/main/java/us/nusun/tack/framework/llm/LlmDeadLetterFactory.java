@@ -75,7 +75,7 @@ public class LlmDeadLetterFactory {
         return firstNonBlank(
                 exchange.getProperty("model", String.class),
                 exchange.getProperty("modelId", String.class),
-                metadataValue(exchange.getProperty("llmJob", LlmJobEnvelope.class), "model"),
+                LlmExecutionContext.on(exchange).model(),
                 globalModelFallback,
                 "unknown");
     }
@@ -90,25 +90,13 @@ public class LlmDeadLetterFactory {
         }
         return firstNonBlank(
                 exchange.getProperty("laneId", String.class),
-                job == null ? null : job.laneId(),
-                metadataValue(job, "laneId"),
-                metadataValue(job, "inferenceLane"),
+                LlmExecutionContext.from(job).laneId(),
                 "unknown");
     }
 
     private LlmPassType passType(Exchange exchange, LlmJobEnvelope job) {
-        Object passType = exchange.getProperty("passType");
-        if (passType instanceof LlmPassType typed) {
-            return typed;
-        }
-        if (passType instanceof String text && !text.isBlank()) {
-            return LlmPassType.valueOf(text.strip().toUpperCase());
-        }
-        if (job != null && job.passType() != null) {
-            return job.passType();
-        }
-        String metadata = metadataValue(job, "passType");
-        return metadata == null || metadata.isBlank() ? null : LlmPassType.valueOf(metadata.strip().toUpperCase());
+        LlmPassType explicit = LlmExecutionContext.enumValue(LlmPassType.class, exchange.getProperty("passType"));
+        return explicit == null ? LlmExecutionContext.from(job).passType() : explicit;
     }
 
     private static Map<String, Object> normalizeDlqMetadata(Map<String, Object> metadata) {
@@ -197,20 +185,6 @@ public class LlmDeadLetterFactory {
             }
         }
         return Instant.now();
-    }
-
-    private static String metadataValue(LlmJobEnvelope job, String key) {
-        if (job == null || job.metadata() == null) {
-            return null;
-        }
-        Object value = job.metadata().get(key);
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof String text) {
-            return text;
-        }
-        return null;
     }
 
     private static String resolveOptionalPlaceholder(Exchange exchange, String placeholder) {

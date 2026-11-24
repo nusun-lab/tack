@@ -1,7 +1,6 @@
 package us.nusun.tack.example.persona;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import us.nusun.tack.framework.inventory.PersonaProvider;
 import us.nusun.tack.framework.model.Persona;
 
@@ -11,17 +10,11 @@ import java.util.List;
 public class AveryPersona implements PersonaProvider {
     public static final String ID = "software-team/avery";
 
-    @ConfigProperty(name = "persona.avery.email", defaultValue = "")
-    String email = "";
+    private final PersonaAccounts.Account account;
 
-    @ConfigProperty(name = "persona.avery.identity.mattermost.token", defaultValue = "")
-    String mattermostToken = "";
-
-    @ConfigProperty(name = "persona.avery.identity.gitea.token", defaultValue = "")
-    String giteaToken = "";
-
-    @ConfigProperty(name = "persona.avery.identity.plane.token", defaultValue = "")
-    String planeToken = "";
+    public AveryPersona(PersonaAccounts accounts) {
+        this.account = accounts.accounts().get("avery");
+    }
 
     @Override
     public List<Persona> personas() {
@@ -31,7 +24,7 @@ public class AveryPersona implements PersonaProvider {
     public Persona persona() {
         return Persona.builder(ID)
                 .name("Avery")
-                .email(email)
+                .email(account.email().orElse(""))
                 .description("Software architect persona who turns architecture into working system/component repositories and owns assigned architecture Story lifecycle.")
                 .trait("makes architecture concrete through small implementation and integration moves")
                 .trait("owns system and component repository structure without becoming a passive review gate")
@@ -40,9 +33,9 @@ public class AveryPersona implements PersonaProvider {
                 .trait("works closely with developers, owns assigned Story lifecycle, and contributes implementation when that advances flow")
                 .label("ARCH")
                 .color("38;2;255;123;172")
-                .identity("mattermost", mattermostToken, "@architect-agent")
-                .identity("gitea", giteaToken, "architect-agent")
-                .identity("plane", planeToken, "ARCH")
+                .identity("mattermost", account.token("mattermost"), "@architect-agent")
+                .identity("gitea", account.token("gitea"), "architect-agent")
+                .identity("plane", account.token("plane"), "ARCH")
                 .build();
     }
 }

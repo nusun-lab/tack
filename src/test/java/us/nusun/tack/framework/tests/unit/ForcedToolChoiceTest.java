@@ -24,7 +24,6 @@ import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.support.DefaultExchange;
 import org.junit.jupiter.api.Test;
 import us.nusun.tack.framework.model.LlmJobEnvelope;
-import us.nusun.tack.framework.model.LlmJobRequest;
 import us.nusun.tack.framework.model.LlmPassType;
 import us.nusun.tack.framework.mcp.McpClientFactory;
 import us.nusun.tack.framework.tests.support.TestTokenCountEstimator;
@@ -139,19 +138,8 @@ class ForcedToolChoiceTest {
             String laneId,
             ChatModel model,
             LlmRouteSupport routeSupport) {
-        return new LlmAgentFactory.DynamicAgentFactory(
-                FrameworkFixtures.inferenceLaneRegistry(),
-                Map.of(laneId, model),
-                new McpClientFactory(),
-                FrameworkFixtures.toolProfileRegistry(),
-                FrameworkFixtures.personaCatalog(),
-                new TestTokenCountEstimator(),
-                12000,
-                4,
-                null,
-                null,
-                null,
-                routeSupport);
+        return FrameworkFixtures.agentFactory(
+                laneId, model, new McpClientFactory(), new TestTokenCountEstimator(), 12000, 4, routeSupport);
     }
 
     private static LlmRouteSupport routeSupport(LogTokens logs) {
@@ -186,7 +174,7 @@ class ForcedToolChoiceTest {
     }
 
     private static LlmJobEnvelope job(String laneId, LlmPassType passType, String schema) {
-        return LlmJobEnvelope.queued(new LlmJobRequest(
+        return LlmJobEnvelope.queued(new LlmJobEnvelope(
                 UUID.randomUUID(),
                 laneId,
                 passType,

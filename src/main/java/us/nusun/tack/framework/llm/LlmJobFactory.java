@@ -1,8 +1,6 @@
 package us.nusun.tack.framework.llm;
 
 import static us.nusun.tack.framework.model.FrameworkText.firstNonBlank;
-import static us.nusun.tack.framework.model.FrameworkText.putIfNonBlank;
-import static us.nusun.tack.framework.model.FrameworkText.putIfPresent;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -12,17 +10,13 @@ import us.nusun.tack.framework.inventory.InferenceLaneRegistry;
 import us.nusun.tack.framework.inventory.PersonaCatalog;
 import us.nusun.tack.framework.model.InferenceLaneDefinition;
 import us.nusun.tack.framework.model.LlmJobEnvelope;
-import us.nusun.tack.framework.model.LlmJobRequest;
 import us.nusun.tack.framework.model.LlmPassType;
 import us.nusun.tack.framework.model.Mission;
 import us.nusun.tack.framework.model.PartitionKeyStrategy;
 import us.nusun.tack.framework.model.Persona;
 import us.nusun.tack.framework.model.RoutineDefinition;
-import us.nusun.tack.framework.sandbox.PersonaSandboxManager;
 import us.nusun.tack.framework.state.AgentRun;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.UUID;
 
 @ApplicationScoped
@@ -72,13 +66,13 @@ public class LlmJobFactory {
                 exchange.getProperty("passType"),
                 exchange.getProperty("llmPassType"));
 
-        LlmJobRequest request = body instanceof LlmJobRequest existing
+        LlmJobEnvelope request = body instanceof LlmJobEnvelope existing
                 ? normalize(
                         existing,
                         jobId,
                         firstNonBlank(headerLaneId, blank(existing.laneId()) ? defaultLaneId : null),
                         headerPassType)
-                : LlmJobRequest.fromPrompt(
+                : LlmJobEnvelope.fromPrompt(
                         jobId,
                         firstNonBlank(headerLaneId, propertyLaneId, defaultLaneId),
                         firstPassType(headerPassType, propertyPassType, LlmPassType.SYNTHESIS),
@@ -91,18 +85,18 @@ public class LlmJobFactory {
                         .ensureJsonOnlyResponse();
 
         InferenceLaneDefinition lane = lanes.getRequired(request.laneId());
-        request = withRouteMetadata(request, exchange, lane, globalModelFallback);
-        exchange.setProperty("laneId", lane.id());
-        exchange.setProperty("passType", request.passType());
+        String model = selectedModel(lane, globalModelFallback);
+        LlmExecutionContext context = LlmExecutionContext.capture(exchange, request, lane, model);
+        LlmJobEnvelope queued = LlmJobEnvelope.queued(request.withMetadata(context.wireMetadata(request.metadata())));
+        context.exposeToCamel(exchange);
         exchange.setProperty("inferenceLane", lane);
-        exchange.setProperty("modelId", selectedModel(lane, globalModelFallback));
+        exchange.setProperty("modelId", model);
         exchange.setProperty("laneRequestTopic", lane.requestTopic());
         exchange.setProperty("laneReplyTopic", lane.responseTopic());
         exchange.setProperty("llmPartitionKey", partitionKey(request, exchange, lane));
         applyLogPersona(exchange, personas, request.requester());
-        exchange.setProperty("llmJobId", request.jobId());
-        exchange.setProperty("llmJob", LlmJobEnvelope.queued(request));
-        exchange.getIn().setBody(exchange.getProperty("llmJob", LlmJobEnvelope.class));
+        exchange.setProperty("llmJob", queued);
+        exchange.getIn().setBody(queued);
     }
 
     public void restoreFrameworkMetadata(Exchange exchange) {
@@ -110,24 +104,27 @@ public class LlmJobFactory {
     }
 
     public void restoreFrameworkMetadata(Exchange exchange, LlmJobEnvelope job) {
-        restoreFrameworkMetadataFromEnvelope(exchange, job);
+        if (job != null) {
+            LlmExecutionContext.from(job).exposeToCamel(exchange);
+        }
         applyLogPersona(exchange, personas, job == null ? null : job.requester());
     }
 
-    public String partitionKey(LlmJobRequest request, Exchange exchange, InferenceLaneDefinition lane) {
+    public String partitionKey(LlmJobEnvelope request, Exchange exchange, InferenceLaneDefinition lane) {
         PartitionKeyStrategy strategy = lane == null ? PartitionKeyStrategy.AGENT_RUN : lane.partitionKeyStrategy();
+        LlmExecutionContext context = LlmExecutionContext.from(request);
         return switch (strategy) {
             case AGENT_RUN -> firstNonBlank(
                     agentRunId(exchange),
-                    metadataValue(request, "agentRunId"),
+                    context.agentRunId(),
                     missionId(exchange),
-                    metadataValue(request, "missionId"),
+                    context.missionId(),
                     String.valueOf(request.jobId()));
             case MISSION -> firstNonBlank(
                     missionId(exchange),
-                    metadataValue(request, "missionId"),
+                    context.missionId(),
                     agentRunId(exchange),
-                    metadataValue(request, "agentRunId"),
+                    context.agentRunId(),
                     String.valueOf(request.jobId()));
             case JOB -> String.valueOf(request.jobId());
         };
@@ -146,25 +143,6 @@ public class LlmJobFactory {
         return job == null ? null : job.jobId();
     }
 
-    private static LlmJobRequest withRouteMetadata(LlmJobRequest request, Exchange exchange, InferenceLaneDefinition lane, String globalModelFallback) {
-        LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
-        if (request.metadata() != null) {
-            metadata.putAll(request.metadata());
-        }
-        putIfNonBlank(metadata, "laneId", lane.id());
-        putIfNonBlank(metadata, "passType", request.passType() == null ? null : request.passType().name());
-        putIfNonBlank(metadata, "model", selectedModel(lane, globalModelFallback));
-        putIfNonBlank(metadata, "partitionKeyStrategy", lane.partitionKeyStrategy().name());
-        putIfNonBlank(metadata, "personaId", exchange.getProperty("personaId", String.class));
-        putIfNonBlank(metadata, "toolProfile", exchange.getProperty("toolProfile", String.class));
-        putIfNonBlank(metadata, PersonaSandboxManager.WORKING_STATE_SANDBOX_NAME,
-                exchange.getProperty(PersonaSandboxManager.WORKING_STATE_SANDBOX_NAME, String.class));
-        putIfPresent(metadata, ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY,
-                firstPresent(exchange.getProperty(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY),
-                        exchange.getIn().getHeader(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY)));
-        return new LlmJobRequest(request.jobId(), request.laneId(), request.passType(), request.requester(), request.role(), request.priority(), request.prompt(), request.systemPrompt(), request.responseSchema(), Map.copyOf(metadata), request.requestedAt());
-    }
-
     private static String selectedModel(InferenceLaneDefinition lane, String globalModelFallback) {
         return LlmAgentFactory.selectedModel(lane, globalModelFallback);
     }
@@ -181,26 +159,8 @@ public class LlmJobFactory {
         exchange.setProperty("agentLogColor", persona.color());
     }
 
-    private static void restoreFrameworkMetadataFromEnvelope(Exchange exchange, LlmJobEnvelope job) {
-        if (job == null) {
-            return;
-        }
-        exchange.setProperty("llmJobId", job.jobId());
-        exchange.setProperty("laneId", job.laneId());
-        exchange.setProperty("passType", job.passType());
-        if (job.metadata() == null) {
-            return;
-        }
-        job.metadata().forEach((key, value) -> {
-            if (value != null) {
-                exchange.setProperty(key, String.valueOf(value));
-            }
-        });
-        exchange.setProperty("passType", job.passType());
-    }
-
-    private static LlmJobRequest normalize(LlmJobRequest request, UUID overrideJobId, String laneId, LlmPassType passType) {
-        LlmJobRequest normalized = overrideJobId == null ? request : request.withJobId(overrideJobId);
+    private static LlmJobEnvelope normalize(LlmJobEnvelope request, UUID overrideJobId, String laneId, LlmPassType passType) {
+        LlmJobEnvelope normalized = overrideJobId == null ? request : request.withJobId(overrideJobId);
         normalized = normalized.withLaneAndPass(laneId, passType);
         return normalized.normalized().ensureJsonOnlyResponse();
     }
@@ -216,17 +176,7 @@ public class LlmJobFactory {
     }
 
     private static LlmPassType parsePassType(Object value) {
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof LlmPassType passType) {
-            return passType;
-        }
-        String text = String.valueOf(value);
-        if (text == null || text.isBlank()) {
-            return null;
-        }
-        return LlmPassType.valueOf(text.strip().toUpperCase());
+        return LlmExecutionContext.enumValue(LlmPassType.class, value);
     }
 
     private static UUID readJobId(String rawJobId) {
@@ -234,20 +184,6 @@ public class LlmJobFactory {
             return null;
         }
         return UUID.fromString(rawJobId);
-    }
-
-    private static String metadataValue(LlmJobRequest request, String key) {
-        if (request == null || request.metadata() == null) {
-            return null;
-        }
-        Object value = request.metadata().get(key);
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof String text) {
-            return text;
-        }
-        return String.valueOf(value);
     }
 
     private static String agentRunId(Exchange exchange) {
@@ -270,15 +206,6 @@ public class LlmJobFactory {
 
     private static boolean blank(String value) {
         return value == null || value.isBlank();
-    }
-
-    private static Object firstPresent(Object... values) {
-        for (Object value : values) {
-            if (value != null) {
-                return value;
-            }
-        }
-        return null;
     }
 
     private static String resolveOptionalPlaceholder(Exchange exchange, String placeholder) {

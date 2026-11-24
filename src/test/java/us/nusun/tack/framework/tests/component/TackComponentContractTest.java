@@ -6,7 +6,6 @@ import org.apache.camel.impl.DefaultCamelContext;
 import org.junit.jupiter.api.Test;
 import us.nusun.tack.framework.model.AgentRunProjection;
 import us.nusun.tack.framework.model.LlmJobEnvelope;
-import us.nusun.tack.framework.model.LlmJobRequest;
 import us.nusun.tack.framework.model.LlmJobResult;
 import us.nusun.tack.framework.model.LlmJobStatus;
 import us.nusun.tack.framework.model.LlmPassType;
@@ -122,12 +121,12 @@ class TackComponentContractTest {
         ScriptedLlm llm = new ScriptedLlm(request -> {
             if (request.responseSchema() != null
                     && request.responseSchema().contains("\"enum\":[\"yes\",\"no\"]")) {
-                return "{\"decisionId\":\"ready\",\"result\":\"yes\",\"confidence\":0.87,"
+                return "{\"result\":\"yes\",\"confidence\":0.87,"
                         + "\"reason\":\"evidence is present\"}";
             }
             if (request.responseSchema() != null
                     && request.responseSchema().contains("\"enum\":[\"build\",\"wait\"]")) {
-                return "{\"decisionId\":\"focus\",\"result\":\"build\",\"confidence\":0.91,"
+                return "{\"result\":\"build\",\"confidence\":0.91,"
                         + "\"reason\":\"work is ready\"}";
             }
             return "{\"value\":\"created\"}";
@@ -170,7 +169,7 @@ class TackComponentContractTest {
             int consolidation = 0;
 
             @Override
-            public String apply(LlmJobRequest request) {
+            public String apply(LlmJobEnvelope request) {
                 if (request.passType() == LlmPassType.ACTION) {
                     return "tool evidence turn " + (act + 1);
                 }
@@ -327,7 +326,7 @@ class TackComponentContractTest {
             @Override
             public void configure() {
                 from("direct:llm").process(exchange -> {
-                    LlmJobRequest request = exchange.getMessage().getBody(LlmJobRequest.class);
+                    LlmJobEnvelope request = exchange.getMessage().getBody(LlmJobEnvelope.class);
                     llm.requests.add(request);
                     LlmJobEnvelope job = LlmJobEnvelope.queued(request.normalized());
                     String agentRunId = String.valueOf(request.metadata().get("agentRunId"));
@@ -354,11 +353,11 @@ class TackComponentContractTest {
     }
 
     private static final class ScriptedLlm {
-        private final List<LlmJobRequest> requests = new ArrayList<>();
-        private final Function<LlmJobRequest, String> response;
+        private final List<LlmJobEnvelope> requests = new ArrayList<>();
+        private final Function<LlmJobEnvelope, String> response;
         private boolean failConsolidation;
 
-        private ScriptedLlm(Function<LlmJobRequest, String> response) {
+        private ScriptedLlm(Function<LlmJobEnvelope, String> response) {
             this.response = response;
         }
     }

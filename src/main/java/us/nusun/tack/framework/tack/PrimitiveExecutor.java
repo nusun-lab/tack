@@ -1,13 +1,9 @@
 package us.nusun.tack.framework.tack;
 
 import static us.nusun.tack.framework.model.FrameworkText.firstNonBlank;
-import static us.nusun.tack.framework.model.FrameworkText.putIfNonBlank;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.networknt.schema.Error;
-import com.networknt.schema.SchemaRegistry;
-import com.networknt.schema.SpecificationVersion;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.Exchange;
@@ -18,8 +14,10 @@ import us.nusun.tack.framework.inventory.RoutineCatalog;
 import us.nusun.tack.framework.inventory.ToolProfileRegistry;
 import us.nusun.tack.framework.llm.ProviderStructuredOutputSupport;
 import us.nusun.tack.framework.model.CreateResult;
+import us.nusun.tack.framework.llm.SchemaContract;
+import us.nusun.tack.framework.llm.LlmExecutionContext;
 import us.nusun.tack.framework.model.DecisionResult;
-import us.nusun.tack.framework.model.LlmJobRequest;
+import us.nusun.tack.framework.model.LlmJobEnvelope;
 import us.nusun.tack.framework.model.LlmJobResult;
 import us.nusun.tack.framework.model.LlmJobStatus;
 import us.nusun.tack.framework.model.LlmPassType;
@@ -34,8 +32,6 @@ import us.nusun.tack.framework.routine.ThoughtStackSupport;
 import us.nusun.tack.framework.state.AgentRun;
 import us.nusun.tack.framework.state.ThoughtStack;
 
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -67,8 +63,6 @@ public class PrimitiveExecutor {
             String prompt,
             String schemaId,
             String schema,
-            String schemaJson,
-            String schemaUri,
             String lane) {
     }
 
@@ -127,8 +121,7 @@ public class PrimitiveExecutor {
                 synthesis.summary(),
                 synthesis.outcome(),
                 synthesis.durableProgress(),
-                synthesis.confidence(),
-                List.of());
+                synthesis.confidence());
         run.apply(result);
         exchange.setProperty("latestStepResult", result);
         exchange.setProperty("act." + request.id() + ".outcome", result.outcome());
@@ -155,11 +148,8 @@ public class PrimitiveExecutor {
                         renderDecisionPrompt(exchange, request), schema),
                 "decision synthesis pass");
         projections.record(exchange, "SYNTHESIS_PASS_COMPLETED");
-        DecisionResult result = parse(llmResult.content(), DecisionResult.class);
-        if (result.decisionId() == null || !result.decisionId().equals(request.id())) {
-            throw new FrameworkPrimitiveException("Decision result id " + result.decisionId()
-                    + " does not match requested id " + request.id());
-        }
+        DecisionAnswer answer = parse(llmResult.content(), DecisionAnswer.class);
+        DecisionResult result = new DecisionResult(request.id(), answer.result(), answer.confidence(), answer.reason());
         if (result.result() == null || !choices.contains(result.result())) {
             throw new FrameworkPrimitiveException("Decision result " + result.result()
                     + " is not one of the allowed choices " + choices);
@@ -178,22 +168,18 @@ public class PrimitiveExecutor {
 
     public void create(Exchange exchange, CreateRequest request, ProducerTemplate llm) throws Exception {
         String laneId = resolveLane(exchange, request.lane(), LlmPassType.CREATION);
-        ResolvedSchema schema = resolveCreateSchema(request);
+        SchemaContract schema = SchemaContract.resolve(exchange.getContext(), mapper(), request.schema());
         markCurrent(exchange, "create", request.id());
         exchange.setProperty("createId", request.id());
         exchange.setProperty("schemaId", firstNonBlank(request.schemaId(), "caller-schema"));
         exchange.setProperty("createPrompt", request.prompt());
-        exchange.setProperty("createSchema", schema.raw());
-        exchange.setProperty("createSchemaJson", schema.json());
-        exchange.setProperty("createSchemaUri", schema.uri());
         LlmJobResult llmResult = callLlm(
                 exchange,
                 llm,
-                llmRequest(exchange, laneId, LlmPassType.CREATION, "create", renderCreatePrompt(exchange, request, schema), schema.uri()),
+                llmRequest(exchange, laneId, LlmPassType.CREATION, "create", renderCreatePrompt(exchange, request, schema), schema.json()),
                 "create synthesis pass");
         projections.record(exchange, "SYNTHESIS_PASS_COMPLETED");
         JsonNode object = mapper().readTree(llmResult.content());
-        validateAgainstSchema(schema.json(), object);
         CreateResult result = new CreateResult(request.id(), firstNonBlank(request.schemaId(), "caller-schema"), object);
         currentRun(exchange).apply(result);
         exchange.setProperty("creates." + result.createId(), result);
@@ -251,7 +237,7 @@ public class PrimitiveExecutor {
         exchange.getMessage().setBody(popped);
     }
 
-    private LlmJobResult callLlm(Exchange exchange, ProducerTemplate llm, LlmJobRequest request, String passDescription) {
+    private LlmJobResult callLlm(Exchange exchange, ProducerTemplate llm, LlmJobEnvelope request, String passDescription) {
         try {
             clearLlmExchangeState(exchange);
             exchange.getMessage().setBody(request);
@@ -273,6 +259,7 @@ public class PrimitiveExecutor {
     private void clearLlmExchangeState(Exchange exchange) {
         exchange.removeProperty("llmJobId");
         exchange.removeProperty("llmJob");
+        exchange.removeProperty(LlmExecutionContext.PROPERTY);
         exchange.removeProperty("llmResult");
         exchange.removeProperty("llmQueueFailureHandling");
     }
@@ -293,10 +280,10 @@ public class PrimitiveExecutor {
         return llm;
     }
 
-    private LlmJobRequest llmRequest(Exchange exchange, String laneId, LlmPassType passType, String systemContract, String prompt, String schema) {
+    private LlmJobEnvelope llmRequest(Exchange exchange, String laneId, LlmPassType passType, String systemContract, String prompt, String schema) {
         AgentRun run = currentRun(exchange);
         Persona persona = personas.getRequired(run.personaId());
-        return new LlmJobRequest(
+        LlmJobEnvelope request = new LlmJobEnvelope(
                 null,
                 laneId,
                 passType,
@@ -306,30 +293,13 @@ public class PrimitiveExecutor {
                 prompt,
                 primitiveSystemPrompt(exchange, systemContract),
                 schema,
-                frameworkMetadata(exchange, laneId, passType, schema),
+                primitiveMetadata(exchange, passType, schema),
                 null);
+        return request.withMetadata(LlmExecutionContext.capture(exchange, request, null, null).wireMetadata(request.metadata()));
     }
 
-    private Map<String, Object> frameworkMetadata(Exchange exchange, String laneId, LlmPassType passType, String schema) {
+    private Map<String, Object> primitiveMetadata(Exchange exchange, LlmPassType passType, String schema) {
         LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
-        AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
-        Mission mission = exchange.getProperty("mission", Mission.class);
-        if (run != null) {
-            putIfNonBlank(metadata, "agentRunId", run.id());
-            putIfNonBlank(metadata, "personaId", run.personaId());
-            putIfNonBlank(metadata, "primitive", run.currentPrimitive());
-            putIfNonBlank(metadata, "primitiveId", run.currentId());
-        }
-        if (mission != null) {
-            putIfNonBlank(metadata, "missionId", mission.id());
-        }
-        putIfNonBlank(metadata, "toolProfile", exchange.getProperty("toolProfile", String.class));
-        putIfNonBlank(metadata, "primitivePrompt", firstNonBlank(
-                exchange.getProperty("actPrompt", String.class),
-                exchange.getProperty("decisionPrompt", String.class),
-                exchange.getProperty("createPrompt", String.class)));
-        putIfNonBlank(metadata, "laneId", laneId);
-        putIfNonBlank(metadata, "passType", passType == null ? null : passType.name());
         if (passType == LlmPassType.CONSOLIDATION) {
             ThoughtStack stack = stack(exchange);
             ThoughtFrame child = stack.leaf();
@@ -589,7 +559,7 @@ public class PrimitiveExecutor {
                 Question: %s
 
                 ## Response Format
-                Return only decisionId, result, confidence, and reason.
+                Return only result, confidence, and reason.
                 """.formatted(
                 missionLevelContext(exchange),
                 safeText(request.id()),
@@ -599,7 +569,7 @@ public class PrimitiveExecutor {
                 safeText(request.prompt()));
     }
 
-    private String renderCreatePrompt(Exchange exchange, CreateRequest request, ResolvedSchema schema) {
+    private String renderCreatePrompt(Exchange exchange, CreateRequest request, SchemaContract schema) {
         return """
                 %s
 
@@ -816,7 +786,6 @@ public class PrimitiveExecutor {
         var root = mapper().createObjectNode();
         root.put("type", "object");
         var properties = root.putObject("properties");
-        properties.putObject("decisionId").put("type", "string");
         var result = properties.putObject("result");
         result.put("type", "string");
         var allowed = result.putArray("enum");
@@ -824,62 +793,11 @@ public class PrimitiveExecutor {
         properties.putObject("confidence").put("type", "number");
         properties.putObject("reason").put("type", "string");
         root.putArray("required")
-                .add("decisionId")
                 .add("result")
                 .add("confidence")
                 .add("reason");
         root.put("additionalProperties", false);
         return mapper().writeValueAsString(root);
-    }
-
-    private ResolvedSchema resolveCreateSchema(CreateRequest request) throws Exception {
-        String explicitJson = request.schemaJson();
-        String explicitUri = request.schemaUri();
-        String raw = request.schema();
-        if (explicitJson != null && !explicitJson.isBlank()) {
-            return new ResolvedSchema(firstNonBlank(raw, explicitJson), explicitJson, explicitUri);
-        }
-        String candidate = firstNonBlank(explicitUri, raw);
-        if (candidate == null || candidate.isBlank()) {
-            throw new IllegalArgumentException("Missing required schema parameter for tack:create");
-        }
-        if (isSchemaUri(candidate)) {
-            return new ResolvedSchema(candidate, loadSchema(candidate), candidate);
-        }
-        return new ResolvedSchema(candidate, candidate, explicitUri);
-    }
-
-    private boolean isSchemaUri(String value) {
-        return value.startsWith("classpath:") || value.startsWith("file:");
-    }
-
-    private String loadSchema(String uri) throws Exception {
-        if (uri.startsWith("classpath:")) {
-            String path = uri.substring("classpath:".length());
-            if (path.startsWith("/")) path = path.substring(1);
-            ClassLoader loader = Thread.currentThread().getContextClassLoader();
-            try (InputStream in = loader.getResourceAsStream(path)) {
-                if (in == null) throw new IllegalArgumentException("Schema resource not found: " + uri);
-                return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-            }
-        }
-        if (uri.startsWith("file:")) {
-            return java.nio.file.Files.readString(java.nio.file.Path.of(java.net.URI.create(uri)));
-        }
-        throw new IllegalArgumentException("Unsupported schema URI: " + uri);
-    }
-
-    private void validateAgainstSchema(String schemaJson, JsonNode object) throws Exception {
-        if (schemaJson == null || schemaJson.isBlank()) return;
-        JsonNode schema = mapper().readTree(schemaJson);
-        List<Error> errors = SchemaRegistry
-                .withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
-                .getSchema(schema)
-                .validate(object);
-        if (!errors.isEmpty()) {
-            String message = errors.stream().map(Error::getMessage).sorted().collect(Collectors.joining("; "));
-            throw new FrameworkPrimitiveException("CreateResult schema validation failed: " + message);
-        }
     }
 
     private String renderAgentRunInput(AgentRun run) {
@@ -970,6 +888,6 @@ public class PrimitiveExecutor {
         return value.strip().replaceAll("\\s+", " ");
     }
 
-    private record ResolvedSchema(String raw, String json, String uri) {
-    }
+    private record DecisionAnswer(String result, double confidence, String reason) {}
+
 }

@@ -1,5 +1,7 @@
 package us.nusun.tack.framework.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 public record InferenceLaneDefinition(
         String id,
         String requestTopic,
@@ -9,7 +11,8 @@ public record InferenceLaneDefinition(
         String endpoint,
         String model,
         String apiKeyConfigKey,
-        String apiKeyEnvVariable
+        String apiKeyEnvVariable,
+        @JsonIgnore String configName
 ) {
     public InferenceLaneDefinition {
         if (parallelism < 1) {
@@ -30,6 +33,7 @@ public record InferenceLaneDefinition(
         private String model = "";
         private String apiKeyConfigKey = "";
         private String apiKeyEnvVariable = "";
+        private String configName;
 
         private Builder(String id) { this.id = id; }
         public Builder requestTopic(String requestTopic) { this.requestTopic = requestTopic; return this; }
@@ -40,6 +44,7 @@ public record InferenceLaneDefinition(
         public Builder model(String model) { this.model = model; return this; }
         public Builder apiKeyConfigKey(String apiKeyConfigKey) { this.apiKeyConfigKey = apiKeyConfigKey; return this; }
         public Builder apiKeyEnvVariable(String apiKeyEnvVariable) { this.apiKeyEnvVariable = apiKeyEnvVariable; return this; }
-        public InferenceLaneDefinition build() { return new InferenceLaneDefinition(id, requestTopic, responseTopic, parallelism, partitionKeyStrategy, endpoint, model, apiKeyConfigKey, apiKeyEnvVariable); }
+        public Builder configName(String configName) { this.configName = configName; return this; }
+        public InferenceLaneDefinition build() { return new InferenceLaneDefinition(id, requestTopic, responseTopic, parallelism, partitionKeyStrategy, endpoint, model, apiKeyConfigKey, apiKeyEnvVariable, configName); }
     }
 }

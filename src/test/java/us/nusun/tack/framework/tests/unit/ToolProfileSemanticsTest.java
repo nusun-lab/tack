@@ -5,13 +5,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.invocation.InvocationContext;
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.mcp.client.*;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.service.tool.ToolExecutionResult;
 import org.junit.jupiter.api.Test;
 import us.nusun.tack.framework.inventory.ToolProfileRegistry;
 import us.nusun.tack.framework.logging.LogTokens;
-import us.nusun.tack.framework.mcp.ProfiledMcpClient;
+import us.nusun.tack.framework.mcp.McpToolPolicy;
+import dev.langchain4j.service.tool.ToolProviderRequest;
+import dev.langchain4j.model.TokenCountEstimator;
 import us.nusun.tack.framework.model.McpServerDefinition;
 import us.nusun.tack.framework.model.Persona;
 import us.nusun.tack.framework.model.ToolProfile;
@@ -27,6 +30,29 @@ import static org.junit.jupiter.api.Assertions.*;
 class ToolProfileSemanticsTest {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final TestTokenCountEstimator TOKEN_ESTIMATOR = new TestTokenCountEstimator();
+
+    private static McpToolPolicy policy(McpClient client, String server, ToolProfile profile) {
+        return policy(client, server, profile, null, null, 0, null);
+    }
+
+    private static McpToolPolicy policy(McpClient client, String server, ToolProfile profile,
+                                        Persona persona, LogTokens logs, int maximum) {
+        return policy(client, server, profile, persona, logs, maximum, null);
+    }
+
+    private static McpToolPolicy policy(McpClient client, String server, ToolProfile profile,
+                                        Persona persona, LogTokens logs, int maximum, TokenCountEstimator estimator) {
+        return new McpToolPolicy(client, server, profile, persona, logs, maximum, estimator);
+    }
+
+    private static List<ToolSpecification> tools(McpToolPolicy policy) {
+        return List.copyOf(policy.provider().provideTools(ToolProviderRequest.builder().invocationContext(InvocationContext.builder().userMessage(UserMessage.from("List available tools")).build()).build()).tools().keySet());
+    }
+
+    private static ToolExecutionResult execute(McpToolPolicy policy, ToolExecutionRequest request) {
+        return policy.provider().provideTools(ToolProviderRequest.builder().invocationContext(InvocationContext.builder().userMessage(UserMessage.from("List available tools")).build()).build())
+                .toolExecutorByName(request.name()).executeWithContext(request, InvocationContext.builder().userMessage(UserMessage.from("List available tools")).build());
+    }
 
     @Test
     void promptGuidanceIsAvailableFromBuilderAndSyntheticProfiles() {
@@ -57,11 +83,11 @@ class ToolProfileSemanticsTest {
     @Test
     void configuredDefaultArgumentsAreAppliedBeforeToolExecution() throws Exception {
         ToolProfile profile = FrameworkFixtures.toolProfileRegistry().getRequired(FrameworkFixtures.PROFILE_BETA);
-        ProfiledMcpClient client = new ProfiledMcpClient(null, FrameworkFixtures.SERVER_BETA, profile);
+        McpToolPolicy client = policy(null, FrameworkFixtures.SERVER_BETA, profile);
 
         ToolExecutionRequest request = ToolExecutionRequest.builder().id("1").name("beta_list").arguments("{}").build();
 
-        JsonNode arguments = OBJECT_MAPPER.readTree(client.applyProfile(request).arguments());
+        JsonNode arguments = OBJECT_MAPPER.readTree(client.prepareRequest(request).arguments());
 
         assertEquals("id,name,identifier", arguments.get("fields").asText());
     }
@@ -82,12 +108,12 @@ class ToolProfileSemanticsTest {
                         .required("query", "pql")
                         .build())
                 .build();
-        ProfiledMcpClient client = new ProfiledMcpClient(
+        McpToolPolicy client = policy(
                 new FakeMcpClient(List.of(search)),
                 FrameworkFixtures.SERVER_ALPHA,
                 profile);
 
-        ToolSpecification exposed = client.listTools().getFirst();
+        ToolSpecification exposed = tools(client).getFirst();
 
         assertTrue(exposed.parameters().properties().containsKey("query"));
         assertFalse(exposed.parameters().properties().containsKey("pql"));
@@ -101,7 +127,7 @@ class ToolProfileSemanticsTest {
                 .allowTool(FrameworkFixtures.SERVER_ALPHA, "search")
                 .hideArgument(FrameworkFixtures.SERVER_ALPHA, "search", "pql")
                 .build();
-        ProfiledMcpClient client = new ProfiledMcpClient(
+        McpToolPolicy client = policy(
                 new FakeMcpClient(List.of(ToolSpecification.builder().name("search").description("Search").build())),
                 FrameworkFixtures.SERVER_ALPHA,
                 profile);
@@ -112,7 +138,7 @@ class ToolProfileSemanticsTest {
                 .build();
 
         IllegalArgumentException failure =
-                assertThrows(IllegalArgumentException.class, () -> client.executeTool(request));
+                assertThrows(IllegalArgumentException.class, () -> client.prepareRequest(request));
 
         assertEquals(
                 "Argument pql is hidden by profile hidden-argument for tool search",
@@ -130,23 +156,23 @@ class ToolProfileSemanticsTest {
                 .build();
         FakeMcpClient alphaDelegate = new FakeMcpClient(List.of(ToolSpecification.builder().name("get_me").description("Current user").build()));
         FakeMcpClient betaDelegate = new FakeMcpClient(List.of(ToolSpecification.builder().name("get_me").description("Current user").build()));
-        ProfiledMcpClient alpha = new ProfiledMcpClient(alphaDelegate, FrameworkFixtures.SERVER_ALPHA, profile);
-        ProfiledMcpClient beta = new ProfiledMcpClient(betaDelegate, FrameworkFixtures.SERVER_BETA, profile);
+        McpToolPolicy alpha = policy(alphaDelegate, FrameworkFixtures.SERVER_ALPHA, profile);
+        McpToolPolicy beta = policy(betaDelegate, FrameworkFixtures.SERVER_BETA, profile);
 
-        assertEquals(List.of("alpha_mcp__get_me"), alpha.listTools().stream().map(ToolSpecification::name).toList());
-        assertEquals(List.of("beta_mcp__get_me"), beta.listTools().stream().map(ToolSpecification::name).toList());
+        assertEquals(List.of("alpha_mcp__get_me"), tools(alpha).stream().map(ToolSpecification::name).toList());
+        assertEquals(List.of("beta_mcp__get_me"), tools(beta).stream().map(ToolSpecification::name).toList());
 
         ToolExecutionRequest exposedRequest = ToolExecutionRequest.builder()
                 .id("1")
                 .name("alpha_mcp__get_me")
                 .arguments("{}")
                 .build();
-        ToolExecutionRequest delegateRequest = alpha.applyProfile(exposedRequest);
+        ToolExecutionRequest delegateRequest = alpha.prepareRequest(exposedRequest);
 
         assertEquals("get_me", delegateRequest.name());
         assertEquals("id,name", OBJECT_MAPPER.readTree(delegateRequest.arguments()).get("fields").asText());
 
-        alpha.executeTool(exposedRequest);
+        execute(alpha, exposedRequest);
         assertEquals("get_me", alphaDelegate.lastToolName());
     }
 
@@ -156,12 +182,12 @@ class ToolProfileSemanticsTest {
                 .mcpServer(McpServerDefinition.builder(FrameworkFixtures.SERVER_ALPHA).url("http://alpha.example/mcp").build())
                 .allowTool(FrameworkFixtures.SERVER_ALPHA, "get_me")
                 .build();
-        ProfiledMcpClient client = new ProfiledMcpClient(
+        McpToolPolicy client = policy(
                 new FakeMcpClient(List.of(ToolSpecification.builder().name("get_me").description("Current user").build())),
                 FrameworkFixtures.SERVER_ALPHA,
                 profile);
 
-        assertEquals(List.of("get_me"), client.listTools().stream().map(ToolSpecification::name).toList());
+        assertEquals(List.of("get_me"), tools(client).stream().map(ToolSpecification::name).toList());
     }
 
     @Test
@@ -173,11 +199,11 @@ class ToolProfileSemanticsTest {
                 .defaultArgument(FrameworkFixtures.SERVER_ALPHA, "alpha_search", "query", "parking")
                 .defaultArgumentJson(FrameworkFixtures.SERVER_ALPHA, "alpha_search", "states", "[\"open\",\"started\"]")
                 .build();
-        ProfiledMcpClient client = new ProfiledMcpClient(null, FrameworkFixtures.SERVER_ALPHA, profile);
+        McpToolPolicy client = policy(null, FrameworkFixtures.SERVER_ALPHA, profile);
 
         ToolExecutionRequest request = ToolExecutionRequest.builder().id("1").name("alpha_search").arguments("{}").build();
 
-        JsonNode arguments = OBJECT_MAPPER.readTree(client.applyProfile(request).arguments());
+        JsonNode arguments = OBJECT_MAPPER.readTree(client.prepareRequest(request).arguments());
         assertTrue(arguments.get("includeClosed").asBoolean());
         assertEquals(5, arguments.get("limit").asInt());
         assertEquals("parking", arguments.get("query").asText());
@@ -202,11 +228,11 @@ class ToolProfileSemanticsTest {
     @Test
     void profileDefaultsDoNotOverrideCallerProvidedArguments() throws Exception {
         ToolProfile profile = FrameworkFixtures.toolProfileRegistry().getRequired(FrameworkFixtures.PROFILE_BETA);
-        ProfiledMcpClient client = new ProfiledMcpClient(null, FrameworkFixtures.SERVER_BETA, profile);
+        McpToolPolicy client = policy(null, FrameworkFixtures.SERVER_BETA, profile);
 
         ToolExecutionRequest request = ToolExecutionRequest.builder().id("1").name("beta_list").arguments("{\"fields\":\"id,name\",\"limit\":5}").build();
 
-        JsonNode arguments = OBJECT_MAPPER.readTree(client.applyProfile(request).arguments());
+        JsonNode arguments = OBJECT_MAPPER.readTree(client.prepareRequest(request).arguments());
 
         assertEquals("id,name", arguments.get("fields").asText());
         assertEquals(5, arguments.get("limit").asInt());
@@ -221,8 +247,8 @@ class ToolProfileSemanticsTest {
                 .allowTool(FrameworkFixtures.SERVER_BETA, "beta_read")
                 .build();
 
-        assertEquals(List.of("alpha_read"), new ProfiledMcpClient(new FakeMcpClient(), FrameworkFixtures.SERVER_ALPHA, profile).listTools().stream().map(ToolSpecification::name).toList());
-        assertEquals(List.of("beta_read"), new ProfiledMcpClient(new FakeMcpClient(), FrameworkFixtures.SERVER_BETA, profile).listTools().stream().map(ToolSpecification::name).toList());
+        assertEquals(List.of("alpha_read"), tools(policy(new FakeMcpClient(), FrameworkFixtures.SERVER_ALPHA, profile)).stream().map(ToolSpecification::name).toList());
+        assertEquals(List.of("beta_read"), tools(policy(new FakeMcpClient(), FrameworkFixtures.SERVER_BETA, profile)).stream().map(ToolSpecification::name).toList());
     }
 
     @Test
@@ -231,9 +257,9 @@ class ToolProfileSemanticsTest {
                 .server(FrameworkFixtures.SERVER_GAMMA)
                 .allowTool(FrameworkFixtures.SERVER_GAMMA, "gamma_get_pull_request")
                 .build();
-        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient(), FrameworkFixtures.SERVER_GAMMA, profile);
+        McpToolPolicy client = policy(new FakeMcpClient(), FrameworkFixtures.SERVER_GAMMA, profile);
 
-        assertEquals(List.of("gamma_get_pull_request"), client.listTools().stream().map(ToolSpecification::name).toList());
+        assertEquals(List.of("gamma_get_pull_request"), tools(client).stream().map(ToolSpecification::name).toList());
     }
 
     @Test
@@ -242,9 +268,9 @@ class ToolProfileSemanticsTest {
                 .server(FrameworkFixtures.SERVER_GAMMA)
                 .denyTool(FrameworkFixtures.SERVER_GAMMA, "delete_repository")
                 .build();
-        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient(), FrameworkFixtures.SERVER_GAMMA, profile);
+        McpToolPolicy client = policy(new FakeMcpClient(), FrameworkFixtures.SERVER_GAMMA, profile);
 
-        assertEquals(List.of("alpha_read", "alpha_write", "alpha_delete", "beta_read", "gamma_get_pull_request"), client.listTools().stream().map(ToolSpecification::name).toList());
+        assertEquals(List.of("alpha_read", "alpha_write", "alpha_delete", "beta_read", "gamma_get_pull_request"), tools(client).stream().map(ToolSpecification::name).toList());
         assertTrue(profile.allowsTool(FrameworkFixtures.SERVER_GAMMA, "gamma_get_pull_request"));
         assertFalse(profile.allowsTool(FrameworkFixtures.SERVER_GAMMA, "delete_repository"));
     }
@@ -258,7 +284,7 @@ class ToolProfileSemanticsTest {
                 .build();
 
         assertFalse(profile.allowsTool(FrameworkFixtures.SERVER_ALPHA, "alpha_delete"));
-        assertTrue(new ProfiledMcpClient(new FakeMcpClient(), FrameworkFixtures.SERVER_ALPHA, profile).listTools().isEmpty());
+        assertTrue(tools(policy(new FakeMcpClient(), FrameworkFixtures.SERVER_ALPHA, profile)).isEmpty());
     }
 
     @Test
@@ -266,9 +292,9 @@ class ToolProfileSemanticsTest {
         ToolProfile profile = ToolProfile.builder("other-server")
                 .server(FrameworkFixtures.SERVER_BETA)
                 .build();
-        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient(), FrameworkFixtures.SERVER_ALPHA, profile);
+        McpToolPolicy client = policy(new FakeMcpClient(), FrameworkFixtures.SERVER_ALPHA, profile);
 
-        assertTrue(client.listTools().isEmpty());
+        assertTrue(tools(client).isEmpty());
         assertFalse(profile.allowsTool(FrameworkFixtures.SERVER_ALPHA, "alpha_read"));
     }
 
@@ -278,10 +304,10 @@ class ToolProfileSemanticsTest {
                 .server(FrameworkFixtures.SERVER_GAMMA)
                 .denyTool(FrameworkFixtures.SERVER_GAMMA, "delete_repository")
                 .build();
-        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient(), FrameworkFixtures.SERVER_GAMMA, profile);
+        McpToolPolicy client = policy(new FakeMcpClient(), FrameworkFixtures.SERVER_GAMMA, profile);
         ToolExecutionRequest request = ToolExecutionRequest.builder().id("1").name("delete_repository").arguments("{}").build();
 
-        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class, () -> client.executeTool(request));
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class, () -> client.prepareRequest(request));
 
         assertEquals("Tool delete_repository is not allowed by profile safe-default", failure.getMessage());
     }
@@ -347,9 +373,9 @@ class ToolProfileSemanticsTest {
                 .allowTool(FrameworkFixtures.SERVER_GAMMA, "gamma_get_pull_request")
                 .maxResultTokens(10)
                 .build();
-        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient("x".repeat(100)), FrameworkFixtures.SERVER_GAMMA, profile, null, null, 0, TOKEN_ESTIMATOR);
+        McpToolPolicy client = policy(new FakeMcpClient("x".repeat(100)), FrameworkFixtures.SERVER_GAMMA, profile, null, null, 0, TOKEN_ESTIMATOR);
 
-        ToolExecutionResult result = client.executeTool(ToolExecutionRequest.builder().id("1").name("gamma_get_pull_request").arguments("{}").build());
+        ToolExecutionResult result = execute(client, ToolExecutionRequest.builder().id("1").name("gamma_get_pull_request").arguments("{}").build());
 
         assertTrue(TOKEN_ESTIMATOR.estimateTokenCountInText(result.resultText()) <= 10);
         assertTrue(result.resultText().contains("...(truncated, original 25 tokens)"));
@@ -361,9 +387,9 @@ class ToolProfileSemanticsTest {
                 .server(FrameworkFixtures.SERVER_GAMMA)
                 .allowTool(FrameworkFixtures.SERVER_GAMMA, "gamma_get_pull_request")
                 .build();
-        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient("x".repeat(100)), FrameworkFixtures.SERVER_GAMMA, profile, null, null, 10, TOKEN_ESTIMATOR);
+        McpToolPolicy client = policy(new FakeMcpClient("x".repeat(100)), FrameworkFixtures.SERVER_GAMMA, profile, null, null, 10, TOKEN_ESTIMATOR);
 
-        ToolExecutionResult result = client.executeTool(ToolExecutionRequest.builder().id("1").name("gamma_get_pull_request").arguments("{}").build());
+        ToolExecutionResult result = execute(client, ToolExecutionRequest.builder().id("1").name("gamma_get_pull_request").arguments("{}").build());
 
         assertTrue(TOKEN_ESTIMATOR.estimateTokenCountInText(result.resultText()) <= 10);
         assertTrue(result.resultText().contains("...(truncated, original 25 tokens)"));
@@ -377,9 +403,9 @@ class ToolProfileSemanticsTest {
                 .allowTool(FrameworkFixtures.SERVER_GAMMA, "gamma_get_pull_request")
                 .maxResultTokens(5000)
                 .build();
-        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient(longResult), FrameworkFixtures.SERVER_GAMMA, profile, null, null, 100, TOKEN_ESTIMATOR);
+        McpToolPolicy client = policy(new FakeMcpClient(longResult), FrameworkFixtures.SERVER_GAMMA, profile, null, null, 100, TOKEN_ESTIMATOR);
 
-        ToolExecutionResult result = client.executeTool(ToolExecutionRequest.builder().id("1").name("gamma_get_pull_request").arguments("{}").build());
+        ToolExecutionResult result = execute(client, ToolExecutionRequest.builder().id("1").name("gamma_get_pull_request").arguments("{}").build());
 
         assertEquals(longResult, result.resultText());
     }
@@ -391,9 +417,9 @@ class ToolProfileSemanticsTest {
                 .server(FrameworkFixtures.SERVER_GAMMA)
                 .allowTool(FrameworkFixtures.SERVER_GAMMA, "gamma_get_pull_request")
                 .build();
-        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient(longResult), FrameworkFixtures.SERVER_GAMMA, profile, null, null, 0);
+        McpToolPolicy client = policy(new FakeMcpClient(longResult), FrameworkFixtures.SERVER_GAMMA, profile, null, null, 0);
 
-        ToolExecutionResult result = client.executeTool(ToolExecutionRequest.builder().id("1").name("gamma_get_pull_request").arguments("{}").build());
+        ToolExecutionResult result = execute(client, ToolExecutionRequest.builder().id("1").name("gamma_get_pull_request").arguments("{}").build());
 
         assertEquals(longResult, result.resultText());
     }
@@ -407,9 +433,9 @@ class ToolProfileSemanticsTest {
                 .build();
         CapturingLogTokens logs = new CapturingLogTokens();
         Persona persona = FrameworkFixtures.personaCatalog().getRequired(FrameworkFixtures.PERSONA_A);
-        ProfiledMcpClient client = new ProfiledMcpClient(new FakeMcpClient(hugeResult), FrameworkFixtures.SERVER_GAMMA, profile, persona, logs, 10, TOKEN_ESTIMATOR);
+        McpToolPolicy client = policy(new FakeMcpClient(hugeResult), FrameworkFixtures.SERVER_GAMMA, profile, persona, logs, 10, TOKEN_ESTIMATOR);
 
-        ToolExecutionResult result = client.executeTool(ToolExecutionRequest.builder().id("1").name("gamma_get_pull_request").arguments("{}").build());
+        ToolExecutionResult result = execute(client, ToolExecutionRequest.builder().id("1").name("gamma_get_pull_request").arguments("{}").build());
 
         assertTrue(TOKEN_ESTIMATOR.estimateTokenCountInText(result.resultText()) <= 10);
         assertTrue(result.resultText().contains("...(truncated, original 25 tokens)"));

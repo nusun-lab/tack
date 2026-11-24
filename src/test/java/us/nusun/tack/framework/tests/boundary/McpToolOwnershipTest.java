@@ -3,6 +3,7 @@ package us.nusun.tack.framework.tests.boundary;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.invocation.InvocationContext;
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.mcp.client.McpClient;
 import dev.langchain4j.mcp.client.McpGetPromptResult;
 import dev.langchain4j.mcp.client.McpPrompt;
@@ -11,10 +12,9 @@ import dev.langchain4j.mcp.client.McpResource;
 import dev.langchain4j.mcp.client.McpResourceTemplate;
 import dev.langchain4j.mcp.client.McpRoot;
 import dev.langchain4j.service.tool.ToolExecutionResult;
-import dev.langchain4j.model.TokenCountEstimator;
-import dev.langchain4j.data.message.ChatMessage;
 import org.junit.jupiter.api.Test;
-import us.nusun.tack.framework.mcp.ProfiledMcpClient;
+import us.nusun.tack.framework.mcp.McpToolPolicy;
+import dev.langchain4j.service.tool.ToolProviderRequest;
 import us.nusun.tack.framework.model.ToolProfile;
 
 import java.util.List;
@@ -23,47 +23,18 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-class ProfiledMcpClientBoundaryTest {
+class McpToolOwnershipTest {
     @Test
-    void nonOwningProfileWrapperDoesNotCloseSharedDelegate() throws Exception {
+    void toolDiscoveryLeavesSharedClientOwnedByTheFactory() {
         AtomicInteger closes = new AtomicInteger();
         CountingMcpClient delegate = new CountingMcpClient(closes);
-        ToolProfile profile = ToolProfile.builder("shared-tools")
-                .allowAllTools("synthetic-mcp")
-                .build();
-        ProfiledMcpClient client = new ProfiledMcpClient(
-                delegate,
-                "synthetic-mcp",
-                profile,
-                null,
-                null,
-                1000,
-                new FixedTokenCountEstimator(),
-                false);
+        ToolProfile profile = ToolProfile.builder("shared-tools").allowAllTools("synthetic-mcp").build();
+        var policy = new McpToolPolicy(delegate, "synthetic-mcp", profile, null, null, 1000, null);
 
-        client.close();
+        policy.provider().provideTools(ToolProviderRequest.builder().invocationContext(InvocationContext.builder().userMessage(UserMessage.from("List available tools")).build()).build());
+        policy.provider().provideTools(ToolProviderRequest.builder().invocationContext(InvocationContext.builder().userMessage(UserMessage.from("List available tools")).build()).build());
 
         assertEquals(0, closes.get());
-    }
-
-    @Test
-    void owningProfileWrapperPreservesStandaloneCloseBehavior() throws Exception {
-        AtomicInteger closes = new AtomicInteger();
-        CountingMcpClient delegate = new CountingMcpClient(closes);
-        ToolProfile profile = ToolProfile.builder("owned-tools")
-                .allowAllTools("synthetic-mcp")
-                .build();
-        ProfiledMcpClient client = new ProfiledMcpClient(delegate, "synthetic-mcp", profile);
-
-        client.close();
-
-        assertEquals(1, closes.get());
-    }
-
-    private static final class FixedTokenCountEstimator implements TokenCountEstimator {
-        @Override public int estimateTokenCountInText(String text) { return text == null ? 0 : text.length(); }
-        @Override public int estimateTokenCountInMessage(ChatMessage message) { return 0; }
-        @Override public int estimateTokenCountInMessages(Iterable<ChatMessage> messages) { return 0; }
     }
 
     private static final class CountingMcpClient implements McpClient {

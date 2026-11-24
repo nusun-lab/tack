@@ -14,7 +14,6 @@ import us.nusun.tack.framework.mcp.McpClientFactory;
 import us.nusun.tack.framework.tests.support.TestTokenCountEstimator;
 import us.nusun.tack.framework.model.ToolProfile;
 import us.nusun.tack.framework.model.LlmJobEnvelope;
-import us.nusun.tack.framework.model.LlmJobRequest;
 import us.nusun.tack.framework.model.LlmPassType;
 import us.nusun.tack.framework.model.Persona;
 import us.nusun.tack.framework.tests.support.FrameworkFixtures;
@@ -28,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class LlmJobMetadataBoundaryTest {
     @Test
     void workerExchangeRestoresFrameworkMetadataFromSerializedEnvelope() throws Exception {
-        LlmJobRequest request = new LlmJobRequest(
+        LlmJobEnvelope request = new LlmJobEnvelope(
                 null,
                 "low-pass",
                 LlmPassType.ACTION,
@@ -69,14 +68,8 @@ class LlmJobMetadataBoundaryTest {
         assertEquals(LlmPassType.ACTION, restoredEnvelope.passType());
 
         CapturingMcpClientFactory mcpFactory = new CapturingMcpClientFactory();
-        new LlmAgentFactory.DynamicAgentFactory(
-                FrameworkFixtures.inferenceLaneRegistry(),
-                Map.of("low-pass", new UnusedChatModel()),
-                mcpFactory,
-                FrameworkFixtures.toolProfileRegistry(),
-                FrameworkFixtures.personaCatalog(),
-                new TestTokenCountEstimator(),
-                12000).createAgent(worker);
+        FrameworkFixtures.agentFactory(
+                "low-pass", new UnusedChatModel(), mcpFactory, new TestTokenCountEstimator(), 12000, 4, null).createAgent(worker);
 
         assertEquals("persona-a", mcpFactory.persona.id());
         assertEquals(FrameworkFixtures.PROFILE_GAMMA, mcpFactory.profile.id());
@@ -84,7 +77,7 @@ class LlmJobMetadataBoundaryTest {
 
     @Test
     void workerExchangeRestoresPersonaLogLabelAndColorFromSerializedEnvelope() throws Exception {
-        LlmJobRequest request = new LlmJobRequest(
+        LlmJobEnvelope request = new LlmJobEnvelope(
                 null,
                 "low-pass",
                 LlmPassType.SYNTHESIS,
@@ -111,7 +104,7 @@ class LlmJobMetadataBoundaryTest {
         ToolProfile profile;
 
         @Override
-        public List<McpClient> clientsFor(Persona persona, ToolProfile profile) {
+        public List<ServerClient> clientsFor(Persona persona, ToolProfile profile) {
             this.persona = persona;
             this.profile = profile;
             return List.of();

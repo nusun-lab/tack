@@ -14,7 +14,6 @@ import us.nusun.tack.framework.llm.LlmRouteSupport;
 import us.nusun.tack.framework.model.InferenceLaneDefinition;
 import us.nusun.tack.framework.model.LlmJobDeadLetter;
 import us.nusun.tack.framework.model.LlmJobEnvelope;
-import us.nusun.tack.framework.model.LlmJobRequest;
 import us.nusun.tack.framework.model.LlmJobResult;
 import us.nusun.tack.framework.model.LlmJobStatus;
 import us.nusun.tack.framework.model.LlmPassType;
@@ -200,11 +199,11 @@ class LlmQueueLifecycleTest {
     }
 
     @Test
-    void prepareExistingLlmJobRequestPreservesRequestLaneAndActionPassType() {
+    void prepareExistingLlmJobEnvelopePreservesRequestLaneAndActionPassType() {
         Exchange exchange = new DefaultExchange(TestCamelContexts.quiet());
         exchange.setProperty("personaId", FrameworkFixtures.PERSONA_A);
         exchange.setProperty("toolProfile", FrameworkFixtures.PROFILE_GAMMA);
-        exchange.getIn().setBody(new LlmJobRequest(
+        exchange.getIn().setBody(new LlmJobEnvelope(
                 null,
                 "high-pass",
                 LlmPassType.ACTION,
@@ -228,11 +227,11 @@ class LlmQueueLifecycleTest {
     }
 
     @Test
-    void prepareExistingLlmJobRequestIgnoresStaleExchangePassTypeProperty() {
+    void prepareExistingLlmJobEnvelopeIgnoresStaleExchangePassTypeProperty() {
         Exchange exchange = new DefaultExchange(TestCamelContexts.quiet());
         exchange.setProperty("passType", LlmPassType.ACTION);
         exchange.setProperty("laneId", "high-pass");
-        exchange.getIn().setBody(new LlmJobRequest(
+        exchange.getIn().setBody(new LlmJobEnvelope(
                 null,
                 "low-pass",
                 LlmPassType.SYNTHESIS,
@@ -683,7 +682,7 @@ class LlmQueueLifecycleTest {
         Instant requestedAt = Instant.parse("2026-01-01T00:00:00Z");
         Instant startedAt = Instant.parse("2026-01-01T00:00:05Z");
         UUID jobId = UUID.randomUUID();
-        LlmJobEnvelope job = LlmJobEnvelope.queued(new LlmJobRequest(
+        LlmJobEnvelope job = LlmJobEnvelope.queued(new LlmJobEnvelope(
                 jobId,
                 "high-pass",
                 LlmPassType.ACTION,
@@ -839,7 +838,7 @@ class LlmQueueLifecycleTest {
             merged.putIfAbsent("passType", passType.name());
         }
         merged.putIfAbsent("primitive", "act");
-        return LlmJobEnvelope.queued(new LlmJobRequest(
+        return LlmJobEnvelope.queued(new LlmJobEnvelope(
                 jobId,
                 laneId,
                 passType,

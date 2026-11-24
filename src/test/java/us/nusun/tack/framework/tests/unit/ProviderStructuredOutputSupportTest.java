@@ -16,14 +16,11 @@ import us.nusun.tack.framework.llm.LlmRouteSupport;
 import us.nusun.tack.framework.llm.ProviderStructuredOutputSupport;
 import us.nusun.tack.framework.tests.support.TestTokenCountEstimator;
 import us.nusun.tack.framework.model.LlmJobEnvelope;
-import us.nusun.tack.framework.model.LlmJobRequest;
 import us.nusun.tack.framework.model.LlmPassType;
 import us.nusun.tack.framework.tests.support.FrameworkFixtures;
 
-import java.lang.reflect.Method;
 import java.util.Map;
 import java.util.Properties;
-import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -62,50 +59,6 @@ class ProviderStructuredOutputSupportTest {
         }
     }
 
-
-    @Test
-    void laneModelConstructionCreatesOneChatModelPerInferenceLane() throws Exception {
-        Method laneModels = LlmAgentFactory.class.getDeclaredMethod(
-                "laneModels",
-                us.nusun.tack.framework.inventory.InferenceLaneRegistry.class,
-                String.class,
-                String.class,
-                String.class,
-                double.class,
-                double.class,
-                double.class,
-                int.class,
-                double.class,
-                double.class,
-                int.class,
-                long.class,
-                boolean.class,
-                String.class,
-                boolean.class);
-        laneModels.setAccessible(true);
-
-        Map<?, ?> models = (Map<?, ?>) laneModels.invoke(
-                null,
-                FrameworkFixtures.inferenceLaneRegistry(),
-                "http://localhost:9999/v1",
-                "test-key",
-                "global-model",
-                0.0,
-                1.0,
-                0.0,
-                -1,
-                0.0,
-                1.0,
-                128,
-                1000L,
-                false,
-                null,
-                true);
-
-        assertEquals(Set.of("low-pass", "high-pass"), models.keySet());
-        assertEquals(2, models.values().size());
-        assertEquals(2, Set.copyOf(models.values()).size());
-    }
 
     @Test
     void schemaJobSetsProviderResponseFormatOnAgentFactoryAgent() throws Exception {
@@ -171,7 +124,7 @@ class ProviderStructuredOutputSupportTest {
     }
 
     private static LlmJobEnvelope job(String laneId, String schema, Map<String, Object> metadata) {
-        return LlmJobEnvelope.queued(new LlmJobRequest(
+        return LlmJobEnvelope.queued(new LlmJobEnvelope(
                 UUID.randomUUID(),
                 laneId,
                 LlmPassType.SYNTHESIS,
@@ -186,14 +139,8 @@ class ProviderStructuredOutputSupportTest {
     }
 
     private static LlmAgentFactory.DynamicAgentFactory factory(DefaultCamelContext context) {
-        LlmAgentFactory.DynamicAgentFactory factory = new LlmAgentFactory.DynamicAgentFactory(
-                FrameworkFixtures.inferenceLaneRegistry(),
-                Map.of("low-pass", chatModel()),
-                null,
-                null,
-                null,
-                new TestTokenCountEstimator(),
-                12000);
+        LlmAgentFactory.DynamicAgentFactory factory = FrameworkFixtures.agentFactory(
+                "low-pass", chatModel(), new us.nusun.tack.framework.mcp.McpClientFactory(), new TestTokenCountEstimator(), 12000, 4, null);
         factory.setCamelContext(context);
         return factory;
     }

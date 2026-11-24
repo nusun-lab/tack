@@ -1,12 +1,9 @@
 package us.nusun.tack.framework.state;
 
-import us.nusun.tack.framework.model.CreateResult;
-import us.nusun.tack.framework.model.DecisionResult;
+import us.nusun.tack.framework.model.PrimitiveResult;
 import us.nusun.tack.framework.model.StepResult;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 
 public class AgentRun {
@@ -25,11 +22,8 @@ public class AgentRun {
     private String status;
     private String currentPrimitive;
     private String currentId;
-    private String latestObservation;
     private StepResult latestStepResult;
-    private DecisionResult latestDecisionResult;
-    private CreateResult latestCreateResult;
-    private final List<StepResult> stepHistory = new ArrayList<>();
+    private PrimitiveResult latestResult;
     private final Map<String, Object> workingState;
     private final Instant startedAt;
 
@@ -65,29 +59,16 @@ public class AgentRun {
     public void currentPrimitive(String currentPrimitive) { this.currentPrimitive = currentPrimitive; }
     public String currentId() { return currentId; }
     public void currentId(String currentId) { this.currentId = currentId; }
-    public String latestObservation() { return latestObservation; }
-    public void latestObservation(String latestObservation) { this.latestObservation = latestObservation; }
     public StepResult latestStepResult() { return latestStepResult; }
-    public DecisionResult latestDecisionResult() { return latestDecisionResult; }
-    public CreateResult latestCreateResult() { return latestCreateResult; }
-    public List<StepResult> stepHistory() { return List.copyOf(stepHistory); }
+    public PrimitiveResult latestResult() { return latestResult; }
     public Map<String, Object> workingState() { return workingState; }
     public Object input() { return workingState.get("input"); }
     public Instant startedAt() { return startedAt; }
 
-    public void apply(StepResult result) {
-        latestStepResult = result;
-        latestObservation = result == null ? latestObservation : result.summary();
-        if (result != null) {
-            stepHistory.add(result);
+    public void apply(PrimitiveResult result) {
+        latestResult = result;
+        if (result instanceof StepResult step) {
+            latestStepResult = step;
         }
-    }
-
-    public void apply(DecisionResult result) {
-        latestDecisionResult = result;
-    }
-
-    public void apply(CreateResult result) {
-        latestCreateResult = result;
     }
 }
