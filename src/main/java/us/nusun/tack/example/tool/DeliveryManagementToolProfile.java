@@ -29,18 +29,9 @@ public class DeliveryManagementToolProfile implements ToolProfileProvider {
 
     @Override
     public List<ToolProfile> toolProfiles() {
-        return List.of(ToolProfile.builder(ID)
-                .mcpServer(plane.definition())
+        return List.of(PlaneWork.profile(ID, plane)
                 .mcpServer(gitea.definition())
-                .allowTools(PlaneMcpServer.ID,
-                        "project",
-                        "member",
-                        "workitem",
-                        "workitem_activity",
-                        "workitem_comment",
-                        "workitem_relation",
-                        "label",
-                        "state")
+                .allowTool(PlaneMcpServer.ID, "workitem_relation")
                 .allowTools(GiteaMcpServer.ID,
                         "get_me",
                         "search_repos",
@@ -61,10 +52,7 @@ public class DeliveryManagementToolProfile implements ToolProfileProvider {
                           workitem_relation=list/create; label=list/create; state=list
                         - before mutating an existing work item, retrieve its attached labels and verify classification;
                           never infer classification from title, state, assignee, hierarchy, or wording
-                        - Tack work classification is represented by exactly one attached Plane label: epic, story, test,
-                          or defect; classification labels never represent lifecycle state
-                        - these labels are unrelated to Plane's native work-item type and type_id; never use type_id to
-                          determine Tack classification
+                        """ + PlaneWork.CLASSIFICATION + """
                         - use workitem(action="update", ...) with the complete assignees array for assignment changes
                         - Gitea access in this profile is read-only evidence; do not create repositories or mutate source
                         - built-in dependency relations are direct: use workitem_relation(action="list", ...) to inspect
@@ -79,19 +67,7 @@ public class DeliveryManagementToolProfile implements ToolProfileProvider {
                         - if relation reading fails, use only explicit blocker information on the selected item and report
                           dependency state as unknown when it cannot be verified
 
-                        SKILL: plane-query-recipes
-                        - Discovery: workitem(action="list", project_id=<verified>, per_page=12,
-                          fields="id,name,sequence_id,state,priority,assignees")
-                        - Classification: workitem(action="retrieve", project_id=<verified>,
-                          workitem_id=<selected UUID>, expand="labels",
-                          fields="id,name,sequence_id,state,labels")
-                        - Description: workitem(action="retrieve", project_id=<verified>,
-                          workitem_id=<selected UUID>, fields="id,name,sequence_id,state,description_html")
-                        - Parent: workitem(action="retrieve", project_id=<verified>,
-                          workitem_id=<selected UUID>, fields="id,name,sequence_id,state,parent"); never expand parent
-                        - a field omitted by a sparse projection is unknown, never negative evidence
-                        """)
-                .hideArgument(PlaneMcpServer.ID, "workitem", "pql")
+                        """ + PlaneWork.QUERIES)
                 .maxResultTokens(maxResultTokens)
                 .build());
     }

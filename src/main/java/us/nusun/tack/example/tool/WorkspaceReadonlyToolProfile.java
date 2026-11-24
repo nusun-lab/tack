@@ -31,18 +31,9 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
 
     @Override
     public List<ToolProfile> toolProfiles() {
-        return List.of(ToolProfile.builder(ID)
-                .mcpServer(plane.definition())
+        return List.of(PlaneWork.profile(ID, plane)
                 .mcpServer(gitea.definition())
                 .mcpServer(mattermost.definition())
-                .allowTools(PlaneMcpServer.ID,
-                        "project",
-                        "member",
-                        "workitem",
-                        "workitem_activity",
-                        "workitem_comment",
-                        "label",
-                        "state")
                 .allowTools(GiteaMcpServer.ID,
                         "get_me",
                         "search_repos",
@@ -82,25 +73,7 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                         - ids, names, URLs, and values shown only in tool descriptions/examples are illustrative, not live
                           resource locators
 
-                        SKILL: plane-work-classification
-                        - Tack work classification is represented only by attached Plane labels: epic, story, test, or defect
-                        - these classification labels are unrelated to Plane's native work-item type and type_id; never use
-                          type_id to determine Tack classification
-                        - verify classification from attached labels: epic means Epic, story means Story, test means Test,
-                          and defect means Defect
-                        - every classified work item carries exactly one of these four labels
-
-                        SKILL: plane-query-recipes
-                        - Discovery: workitem(action="list", project_id=<verified>, per_page=12,
-                          fields="id,name,sequence_id,state,priority,assignees")
-                        - Classification: workitem(action="retrieve", project_id=<verified>,
-                          workitem_id=<selected UUID>, expand="labels",
-                          fields="id,name,sequence_id,state,labels")
-                        - Description: workitem(action="retrieve", project_id=<verified>,
-                          workitem_id=<selected UUID>, fields="id,name,sequence_id,state,description_html")
-                        - Parent: workitem(action="retrieve", project_id=<verified>,
-                          workitem_id=<selected UUID>, fields="id,name,sequence_id,state,parent"); never expand parent
-                        - a field omitted by a sparse projection is unknown, never negative evidence
+                        """ + PlaneWork.CLASSIFICATION + "\n" + PlaneWork.QUERIES + """
 
                         SKILL: membership-model
                         - keep active mission roster, Plane workspace membership, Plane project membership, and Mattermost
@@ -124,7 +97,6 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                         - do not repeat an equivalent failed call without new evidence
                         - distinguish verified observations from assumptions
                         """)
-                .hideArgument(PlaneMcpServer.ID, "workitem", "pql")
                 .maxResultTokens(maxResultTokens)
                 .build());
     }

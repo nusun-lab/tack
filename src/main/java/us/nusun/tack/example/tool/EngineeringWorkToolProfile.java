@@ -26,16 +26,7 @@ public class EngineeringWorkToolProfile implements ToolProfileProvider {
 
     @Override
     public List<ToolProfile> toolProfiles() {
-        return List.of(ToolProfile.builder(ID)
-                .mcpServer(plane.definition())
-                .allowTools(PlaneMcpServer.ID,
-                        "project",
-                        "member",
-                        "workitem",
-                        "workitem_activity",
-                        "workitem_comment",
-                        "label",
-                        "state")
+        return List.of(PlaneWork.profile(ID, plane)
                 .promptGuidance("""
                         - this profile updates already-created engineering work; the calling routine owns selection,
                           lifecycle policy, and completion criteria
@@ -47,24 +38,7 @@ public class EngineeringWorkToolProfile implements ToolProfileProvider {
                         - comments are evidence/context, not hidden lifecycle states
                         - do not create work items, labels, projects, test tasks, or defects in this profile
 
-                        SKILL: plane-work-classification
-                        - Tack work classification is represented by attached labels epic, story, test, or defect
-                        - these labels are unrelated to Plane's native work-item type and type_id; never use type_id to
-                          determine Tack classification
-
-                        SKILL: plane-query-recipes
-                        - Discovery: workitem(action="list", project_id=<verified>, per_page=12,
-                          fields="id,name,sequence_id,state,priority,assignees")
-                        - Classification: workitem(action="retrieve", project_id=<verified>,
-                          workitem_id=<selected UUID>, expand="labels",
-                          fields="id,name,sequence_id,state,labels")
-                        - Description: workitem(action="retrieve", project_id=<verified>,
-                          workitem_id=<selected UUID>, fields="id,name,sequence_id,state,description_html")
-                        - Parent: workitem(action="retrieve", project_id=<verified>,
-                          workitem_id=<selected UUID>, fields="id,name,sequence_id,state,parent"); never expand parent
-                        - a field omitted by a sparse projection is unknown, never negative evidence
-                        """)
-                .hideArgument(PlaneMcpServer.ID, "workitem", "pql")
+                        """ + PlaneWork.CLASSIFICATION + "\n" + PlaneWork.QUERIES)
                 .maxResultTokens(maxResultTokens)
                 .build());
     }
