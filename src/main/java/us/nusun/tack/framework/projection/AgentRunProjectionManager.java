@@ -44,43 +44,33 @@ public class AgentRunProjectionManager {
 
     public void record(Exchange exchange, String eventType, Map<String, Object> details) {
         AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
-        if (run == null) {
-            return;
+        if (run != null) {
+            record(exchange, run, new ProjectionEvent(eventType, run.currentPrimitive(), run.currentId(), details), null);
         }
+    }
+
+    public void recordPrimitiveCompleted(Exchange exchange, String eventType, String primitive,
+                                         String primitiveId, String response) {
+        AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
+        if (run != null) {
+            record(exchange, run, new ProjectionEvent(eventType, primitive, primitiveId, Map.of()),
+                    Objects.toString(response, ""));
+        }
+    }
+
+    private void record(Exchange exchange, AgentRun run, ProjectionEvent event, String response) {
         Mission mission = exchange.getProperty("mission", Mission.class);
         ThoughtStack stack = exchange.getProperty(ThoughtStackSupport.STACK_PROPERTY, ThoughtStack.class);
         String profile = exchange.getProperty("toolProfile", String.class);
         String lane = firstNonBlank(exchange.getProperty("resolvedLane", String.class),
                 exchange.getProperty("laneId", String.class));
         String failure = exchange.getProperty("latestPrimitiveFailure", String.class);
-        record(run, mission, stack, profile, lane, failure,
-                new ProjectionEvent(eventType, run.currentPrimitive(), run.currentId(), details));
+        store.update(run.id(), previous -> build(run, mission, stack, profile, lane, failure, previous, event, response));
     }
 
     public void recordAccepted(Mission mission, AgentRun run) {
-        record(run, mission, null, null, null, null,
-                new ProjectionEvent("AGENT_RUN_ACCEPTED", null, null, Map.of()));
-    }
-
-    private void record(AgentRun run, Mission mission, ThoughtStack stack, String profile, String lane,
-                        String failure, ProjectionEvent event) {
-        store.update(run.id(), previous -> build(run, mission, stack, profile, lane, failure, previous, event));
-    }
-
-    public void recordPrimitiveCompleted(Exchange exchange, String primitive, String primitiveId, String response) {
-        AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
-        if (run == null) {
-            return;
-        }
-        store.updateExisting(run.id(), previous -> {
-            Map<String, Object> current = previous.current();
-            if (!Objects.equals(current.get("primitive"), primitive) || !Objects.equals(current.get("id"), primitiveId)) {
-                return previous;
-            }
-            Map<String, Object> completed = new LinkedHashMap<>(current);
-            completed.put("response", response == null ? "" : response);
-            return copy(previous, Map.copyOf(completed), previous.toolProfile(), previous.laneId(), null);
-        });
+        var event = new ProjectionEvent("AGENT_RUN_ACCEPTED", null, null, Map.of());
+        store.update(run.id(), previous -> build(run, mission, null, null, null, null, previous, event, null));
     }
 
     public void recordLlmStarted(Exchange exchange) {
@@ -141,17 +131,28 @@ public class AgentRunProjectionManager {
     }
 
     private AgentRunProjection build(AgentRun run, Mission mission, ThoughtStack stack, String profile, String lane,
-                                     String failure, AgentRunProjection previous, ProjectionEvent event) {
+                                     String failure, AgentRunProjection previous, ProjectionEvent event, String response) {
         Persona persona = personas.getRequired(run.personaId());
         RoutineDefinition routine = routines.getRequired(run.routineId());
         SubroutineDefinition subroutine = run.subroutineId() == null ? null : routine.requireSubroutine(run.subroutineId());
         return new AgentRunProjection(run.id(), run.missionId(), run.parentAgentRunId(), run.status(),
                 missionSummary(mission, run.missionId()), personaSummary(persona), routineSummary(routine),
-                subroutineSummary(subroutine), run.input(), previous == null ? Map.of() : previous.current(),
+                subroutineSummary(subroutine), run.input(), current(previous, event, response),
                 firstNonBlank(previous == null ? null : previous.toolProfile(), profile),
                 firstNonBlank(previous == null ? null : previous.laneId(), lane),
                 thoughtFrames(stack), thoughtHistory(previous, event), latest(failure, run),
                 timeline(previous, event), Instant.now());
+    }
+
+    private static Map<String, Object> current(AgentRunProjection previous, ProjectionEvent event, String response) {
+        Map<String, Object> current = previous == null ? Map.of() : previous.current();
+        if (response == null || !Objects.equals(current.get("primitive"), event.primitive())
+                || !Objects.equals(current.get("id"), event.id())) {
+            return current;
+        }
+        var completed = new LinkedHashMap<>(current);
+        completed.put("response", response);
+        return Map.copyOf(completed);
     }
 
     private static Map<String, Object> missionSummary(Mission mission, String missionId) {

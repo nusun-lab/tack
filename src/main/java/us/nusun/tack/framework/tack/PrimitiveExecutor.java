@@ -139,8 +139,7 @@ public class PrimitiveExecutor {
         exchange.setProperty("act." + request.id() + ".confidence", result.confidence());
         exchange.setProperty("act." + request.id() + ".summary", result.summary());
         exchange.getMessage().setBody(result);
-        projections.recordPrimitiveCompleted(exchange, "act", request.id(), result.summary());
-        projections.record(exchange, "ACT_COMPLETED");
+        projections.recordPrimitiveCompleted(exchange, "ACT_COMPLETED", "act", request.id(), result.summary());
     }
 
     public void decide(Exchange exchange, DecideRequest request, ProducerTemplate llm) throws Exception {
@@ -170,10 +169,10 @@ public class PrimitiveExecutor {
         exchange.getMessage().setBody(result);
         projections.recordPrimitiveCompleted(
                 exchange,
+                "DECISION_COMPLETED",
                 "decide",
                 request.id(),
                 "result: " + result.result() + "\nreason: " + result.reason());
-        projections.record(exchange, "DECISION_COMPLETED");
     }
 
     public void create(Exchange exchange, CreateRequest request, ProducerTemplate llm) throws Exception {
@@ -195,8 +194,7 @@ public class PrimitiveExecutor {
         exchange.setProperty("creates." + result.createId(), result);
         exchange.setProperty("latestCreateResult", result);
         exchange.getMessage().setBody(object.toString());
-        projections.recordPrimitiveCompleted(exchange, "create", request.id(), object.toString());
-        projections.record(exchange, "CREATE_COMPLETED");
+        projections.recordPrimitiveCompleted(exchange, "CREATE_COMPLETED", "create", request.id(), object.toString());
     }
 
     public void enterThought(Exchange exchange, ThoughtEnterRequest request) {

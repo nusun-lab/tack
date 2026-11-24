@@ -171,7 +171,9 @@ class ProjectionSemanticsTest {
         assertEquals("Inspect the current work item.", projection.current().get("request"));
         assertEquals("", projection.current().get("response"));
 
-        manager.recordPrimitiveCompleted(exchange, "act", "inspect-current-work", "Current response");
+        manager.recordPrimitiveCompleted(exchange, "DECISION_COMPLETED", "decide", "previous-step", "Older response");
+        assertEquals("", store.get(run.id()).current().get("response"));
+        manager.recordPrimitiveCompleted(exchange, "ACT_COMPLETED", "act", "inspect-current-work", "Current response");
         projection = store.get(run.id());
         assertEquals("Current response", projection.current().get("response"));
 
@@ -209,7 +211,7 @@ class ProjectionSemanticsTest {
         exchange.setProperty("agentRunId", run.id());
         exchange.setProperty("llmJob", action);
         manager.recordLlmStarted(exchange);
-        manager.recordPrimitiveCompleted(exchange, "act", "inspect", "Inspection complete.");
+        manager.recordPrimitiveCompleted(exchange, "ACT_COMPLETED", "act", "inspect", "Inspection complete.");
 
         LlmJobEnvelope synthesis = LlmJobEnvelope.queued(new LlmJobEnvelope(
                 null,

@@ -11,10 +11,6 @@ import java.util.function.UnaryOperator;
 public class ProjectionStore {
     private final ConcurrentHashMap<String, AgentRunProjection> projections = new ConcurrentHashMap<>();
 
-    public void put(AgentRunProjection projection) {
-        projections.put(projection.agentRunId(), projection);
-    }
-
     void update(String id, UnaryOperator<AgentRunProjection> change) {
         projections.compute(id, (key, current) -> change.apply(current));
     }

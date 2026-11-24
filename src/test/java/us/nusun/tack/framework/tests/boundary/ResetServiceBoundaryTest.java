@@ -2,7 +2,6 @@ package us.nusun.tack.framework.tests.boundary;
 
 import org.junit.jupiter.api.Test;
 import us.nusun.tack.framework.llm.KafkaTopicProvisioner;
-import us.nusun.tack.framework.model.AgentRunProjection;
 import us.nusun.tack.framework.model.Mission;
 import us.nusun.tack.framework.projection.ProjectionStore;
 import us.nusun.tack.framework.sandbox.PersonaSandboxManager;
@@ -23,9 +22,7 @@ class ResetServiceBoundaryTest {
     void resetPurgesKafkaTopicsDestroysSandboxesAndClearsInMemoryState() throws Exception {
         ProjectionStore projections = new ProjectionStore();
         AgentRunStore agentRuns = new AgentRunStore();
-        agentRuns.putMission(new Mission("mission-1", "Build", List.of(), "active", Instant.now()));
-        agentRuns.putRun(new AgentRun("run-1", "mission-1", FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A, Map.of()));
-        projections.put(projection("run-1"));
+        seedRun(projections, agentRuns);
         TestKafkaTopicProvisioner kafkaTopics = new TestKafkaTopicProvisioner(List.of("agent-runs.scheduled", "llm.requests.low"));
         TestPersonaSandboxManager sandboxes = new TestPersonaSandboxManager(List.of("tack-a", "tack-b"));
         ResetService reset = resetService(projections, agentRuns, kafkaTopics, sandboxes);
@@ -61,8 +58,7 @@ class ResetServiceBoundaryTest {
     void resetDoesNotReportSuccessWhenKafkaPurgeFails() {
         ProjectionStore projections = new ProjectionStore();
         AgentRunStore agentRuns = new AgentRunStore();
-        projections.put(projection("run-1"));
-        agentRuns.putRun(new AgentRun("run-1", "mission-1", FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A, Map.of()));
+        seedRun(projections, agentRuns);
         TestKafkaTopicProvisioner kafkaTopics = new TestKafkaTopicProvisioner(List.of());
         kafkaTopics.failure = new IllegalStateException("broker unavailable");
         TestPersonaSandboxManager sandboxes = new TestPersonaSandboxManager(List.of("tack-a"));
@@ -89,22 +85,12 @@ class ResetServiceBoundaryTest {
         return reset;
     }
 
-    private static AgentRunProjection projection(String runId) {
-        return new AgentRunProjection(
-                runId,
-                "mission-1",
-                null,
-                "running",
-                Map.of(),
-                Map.of(),
-                Map.of(),
-                null,
-                "low-pass",
-                List.of(),
-                List.of(),
-                Map.of(),
-                List.of(),
-                Instant.now());
+    private static void seedRun(ProjectionStore projections, AgentRunStore agentRuns) {
+        var mission = new Mission("mission-1", "Build", List.of(), "active", Instant.now());
+        var run = new AgentRun("run-1", mission.id(), FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A, Map.of());
+        agentRuns.putMission(mission);
+        agentRuns.putRun(run);
+        FrameworkFixtures.projectionManager(projections).recordAccepted(mission, run);
     }
 
     private static final class TestKafkaTopicProvisioner extends KafkaTopicProvisioner {
