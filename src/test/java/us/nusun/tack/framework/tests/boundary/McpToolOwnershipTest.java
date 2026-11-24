@@ -31,8 +31,8 @@ class McpToolOwnershipTest {
         ToolProfile profile = ToolProfile.builder("shared-tools").allowAllTools("synthetic-mcp").build();
         var policy = new McpToolPolicy(delegate, "synthetic-mcp", profile, null, null, 1000, null);
 
-        policy.provider().provideTools(ToolProviderRequest.builder().invocationContext(InvocationContext.builder().userMessage(UserMessage.from("List available tools")).build()).build());
-        policy.provider().provideTools(ToolProviderRequest.builder().invocationContext(InvocationContext.builder().userMessage(UserMessage.from("List available tools")).build()).build());
+        policy.provider().provideTools(new ToolProviderRequest("test-memory", UserMessage.from("List available tools")));
+        policy.provider().provideTools(new ToolProviderRequest("test-memory", UserMessage.from("List available tools")));
 
         assertEquals(0, closes.get());
     }

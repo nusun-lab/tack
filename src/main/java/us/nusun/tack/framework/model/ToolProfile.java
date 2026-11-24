@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -59,7 +60,7 @@ public record ToolProfile(
         return arguments(server, toolName).hidden();
     }
 
-    private Arguments arguments(String server, String toolName) {
+    public Arguments arguments(String server, String toolName) {
         ServerPolicy policy = policies.get(server);
         return policy == null ? Arguments.NONE : policy.arguments().getOrDefault(toolName, Arguments.NONE);
     }
@@ -73,12 +74,13 @@ public record ToolProfile(
         }
     }
 
-    public record Arguments(Map<String, JsonNode> defaults, Set<String> hidden) {
-        private static final Arguments NONE = new Arguments(Map.of(), Set.of());
+    public record Arguments(Map<String, JsonNode> defaults, Set<String> hidden, Map<String, List<String>> permittedValues) {
+        private static final Arguments NONE = new Arguments(Map.of(), Set.of(), Map.of());
 
         public Arguments {
             defaults = copyDefaults(defaults);
             hidden = Set.copyOf(hidden);
+            permittedValues = Map.copyOf(permittedValues);
         }
 
         @Override
@@ -197,6 +199,15 @@ public record ToolProfile(
             return this;
         }
 
+        public Builder permitArgumentValues(String server, String tool, String name, String... values) {
+            List<String> permitted = List.of(values);
+            if (permitted.isEmpty()) {
+                throw new IllegalArgumentException("Expected at least one permitted value for " + name);
+            }
+            policy(server).arguments(tool).permittedValues.put(name, permitted);
+            return this;
+        }
+
         public Builder maxResultTokens(int maxResultTokens) {
             this.maxResultTokens = maxResultTokens;
             return this;
@@ -227,7 +238,7 @@ public record ToolProfile(
 
             private ServerPolicy build() {
                 Map<String, Arguments> built = new LinkedHashMap<>();
-                arguments.forEach((tool, settings) -> built.put(tool, new Arguments(settings.defaults, settings.hidden)));
+                arguments.forEach((tool, settings) -> built.put(tool, new Arguments(settings.defaults, settings.hidden, settings.permittedValues)));
                 return new ServerPolicy(connection, allowed, denied, allowAll, declared, built);
             }
         }
@@ -235,6 +246,7 @@ public record ToolProfile(
         private static final class ArgumentBuilder {
             private final Map<String, JsonNode> defaults = new LinkedHashMap<>();
             private final Set<String> hidden = new LinkedHashSet<>();
+            private final Map<String, List<String>> permittedValues = new LinkedHashMap<>();
         }
     }
 }

@@ -8,8 +8,13 @@ import dev.langchain4j.invocation.InvocationContext;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.mcp.client.*;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
+import dev.langchain4j.model.chat.request.json.JsonEnumSchema;
 import dev.langchain4j.service.tool.ToolExecutionResult;
 import org.junit.jupiter.api.Test;
+import us.nusun.tack.example.tool.MattermostMcpServer;
+import us.nusun.tack.example.tool.GiteaMcpServer;
+import us.nusun.tack.example.tool.PlaneMcpServer;
+import us.nusun.tack.example.tool.WorkspaceReadonlyToolProfile;
 import us.nusun.tack.framework.inventory.ToolProfileRegistry;
 import us.nusun.tack.framework.logging.LogTokens;
 import us.nusun.tack.framework.mcp.McpToolPolicy;
@@ -46,12 +51,51 @@ class ToolProfileSemanticsTest {
     }
 
     private static List<ToolSpecification> tools(McpToolPolicy policy) {
-        return List.copyOf(policy.provider().provideTools(ToolProviderRequest.builder().invocationContext(InvocationContext.builder().userMessage(UserMessage.from("List available tools")).build()).build()).tools().keySet());
+        return List.copyOf(policy.provider().provideTools(new ToolProviderRequest("test-memory", UserMessage.from("List available tools"))).tools().keySet());
     }
 
     private static ToolExecutionResult execute(McpToolPolicy policy, ToolExecutionRequest request) {
-        return policy.provider().provideTools(ToolProviderRequest.builder().invocationContext(InvocationContext.builder().userMessage(UserMessage.from("List available tools")).build()).build())
+        return policy.provider().provideTools(new ToolProviderRequest("test-memory", UserMessage.from("List available tools")))
                 .toolExecutorByName(request.name()).executeWithContext(request, InvocationContext.builder().userMessage(UserMessage.from("List available tools")).build());
+    }
+
+    @Test
+    void readOnlyPlaneToolsRejectMutationsBeforeDispatch() {
+        var readOnly = new WorkspaceReadonlyToolProfile(
+                new PlaneMcpServer("", ""),
+                new GiteaMcpServer(""),
+                new MattermostMcpServer(""),
+                4000).toolProfiles().getFirst();
+        var delegate = new FakeMcpClient(List.of(ToolSpecification.builder().name("workitem").build()));
+        var policy = policy(delegate, "plane", readOnly, null, null, 0, TOKEN_ESTIMATOR);
+        var parameters = tools(policy).getFirst().parameters();
+        var action = assertInstanceOf(JsonEnumSchema.class, parameters.properties().get("action"));
+        assertEquals(List.of("list", "retrieve", "retrieve_by_identifier", "search"), action.enumValues());
+        assertTrue(parameters.required().contains("action"));
+
+        for (String arguments : List.of("{\"action\":\"update\"}", "{\"action\":null}", "{}")) {
+            var request = ToolExecutionRequest.builder().name("plane__workitem").arguments(arguments).build();
+            assertThrows(IllegalArgumentException.class, () -> execute(policy, request));
+            assertNull(delegate.lastRequest);
+        }
+        execute(policy, ToolExecutionRequest.builder().name("plane__workitem")
+                .arguments("{\"action\":\"list\"}").build());
+        assertEquals("workitem", delegate.lastToolName());
+    }
+
+    @Test
+    void permittedValuesAreCheckedAfterApplyingProfileDefaults() throws Exception {
+        var profile = ToolProfile.builder("read")
+                .allowTool("plane", "workitem")
+                .permitArgumentValues("plane", "workitem", "action", "list")
+                .defaultArgument("plane", "workitem", "action", "list")
+                .build();
+        var delegate = new FakeMcpClient(List.of(ToolSpecification.builder().name("workitem").build()));
+        var policy = policy(delegate, "plane", profile);
+
+        assertFalse(tools(policy).getFirst().parameters().required().contains("action"));
+        execute(policy, ToolExecutionRequest.builder().name("workitem").arguments("{}").build());
+        assertEquals("list", OBJECT_MAPPER.readTree(delegate.lastRequest.arguments()).get("action").asText());
     }
 
     @Test

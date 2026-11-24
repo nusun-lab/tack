@@ -9,7 +9,9 @@ import dev.langchain4j.invocation.InvocationContext;
 import dev.langchain4j.mcp.McpToolProvider;
 import dev.langchain4j.mcp.client.McpClient;
 import dev.langchain4j.model.TokenCountEstimator;
+import dev.langchain4j.model.chat.request.json.JsonEnumSchema;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
+import dev.langchain4j.model.chat.request.json.JsonSchemaElement;
 import dev.langchain4j.service.tool.ToolExecutionResult;
 import dev.langchain4j.service.tool.ToolExecutor;
 import us.nusun.tack.framework.logging.LogTokens;
@@ -17,6 +19,7 @@ import us.nusun.tack.framework.model.Persona;
 import us.nusun.tack.framework.model.ToolProfile;
 
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -79,33 +82,51 @@ public final class McpToolPolicy {
     }
 
     private ToolSpecification exposeTool(ToolSpecification tool) {
-        ToolSpecification projected = hideArguments(tool);
+        ToolSpecification projected = projectArguments(tool);
         if (!qualifiesToolNames()) {
             return projected;
         }
         return projected.toBuilder().name(exposedToolName(tool.name())).build();
     }
 
-    private ToolSpecification hideArguments(ToolSpecification tool) {
-        Set<String> hidden = profile.hiddenArguments(server, tool.name());
-        if (hidden.isEmpty() || tool.parameters() == null) {
+    private ToolSpecification projectArguments(ToolSpecification tool) {
+        ToolProfile.Arguments policy = profile.arguments(server, tool.name());
+        Set<String> hidden = policy.hidden();
+        if (hidden.isEmpty() && policy.permittedValues().isEmpty()) {
             return tool;
         }
 
-        var properties = new LinkedHashMap<>(tool.parameters().properties());
+        JsonObjectSchema original = tool.parameters();
+        var properties = new LinkedHashMap<String, JsonSchemaElement>();
+        var required = new LinkedHashSet<String>();
+        JsonObjectSchema.Builder parameters = JsonObjectSchema.builder();
+        if (original != null) {
+            properties.putAll(original.properties());
+            if (original.required() != null) {
+                required.addAll(original.required());
+            }
+            parameters.description(original.description())
+                    .additionalProperties(original.additionalProperties())
+                    .definitions(original.definitions());
+        }
         hidden.forEach(properties::remove);
-        List<String> required = tool.parameters().required() == null
-                ? null
-                : tool.parameters().required().stream().filter(name -> !hidden.contains(name)).toList();
-
-        JsonObjectSchema parameters = JsonObjectSchema.builder()
-                .description(tool.parameters().description())
-                .addProperties(properties)
-                .required(required)
-                .additionalProperties(tool.parameters().additionalProperties())
-                .definitions(tool.parameters().definitions())
-                .build();
-        return tool.toBuilder().parameters(parameters).build();
+        required.removeAll(hidden);
+        Set<String> defaults = policy.defaults().keySet();
+        policy.permittedValues().forEach((name, values) -> {
+            if (!hidden.contains(name)) {
+                JsonSchemaElement originalProperty = properties.get(name);
+                properties.put(name, JsonEnumSchema.builder()
+                        .description(originalProperty == null ? null : originalProperty.description())
+                        .enumValues(values)
+                        .build());
+                if (defaults.contains(name)) {
+                    required.remove(name);
+                } else {
+                    required.add(name);
+                }
+            }
+        });
+        return tool.toBuilder().parameters(parameters.addProperties(properties).required(List.copyOf(required)).build()).build();
     }
 
     public ToolExecutionRequest prepareRequest(ToolExecutionRequest request) {
@@ -113,10 +134,11 @@ public final class McpToolPolicy {
         if (!profile.allowsTool(server, toolName)) {
             throw new IllegalArgumentException("Tool " + request.name() + " is not allowed by profile " + profile.id());
         }
-        Set<String> hidden = profile.hiddenArguments(server, toolName);
-        Map<String, JsonNode> defaults = profile.defaultArguments(server, toolName);
+        ToolProfile.Arguments policy = profile.arguments(server, toolName);
+        Set<String> hidden = policy.hidden();
+        Map<String, JsonNode> defaults = policy.defaults();
         ToolExecutionRequest renamed = toolName.equals(request.name()) ? request : request.toBuilder().name(toolName).build();
-        if (hidden.isEmpty() && defaults.isEmpty()) {
+        if (hidden.isEmpty() && defaults.isEmpty() && policy.permittedValues().isEmpty()) {
             return renamed;
         }
         ObjectNode arguments = parseArgumentsObject(request.arguments());
@@ -127,6 +149,13 @@ public final class McpToolPolicy {
         defaults.forEach((name, value) -> {
             if (!arguments.has(name)) {
                 arguments.set(name, value);
+            }
+        });
+        policy.permittedValues().forEach((name, values) -> {
+            JsonNode effective = arguments.get(name);
+            if (effective == null || !effective.isTextual() || !values.contains(effective.textValue())) {
+                throw new IllegalArgumentException(
+                        "Argument " + name + " must be one of " + values + " for tool " + request.name());
             }
         });
         return renamed.toBuilder().arguments(arguments.toString()).build();

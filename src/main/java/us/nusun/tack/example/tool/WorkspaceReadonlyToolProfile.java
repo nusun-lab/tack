@@ -58,11 +58,15 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                         "get_user",
                         "get_user_by_username",
                         "search_users")
+                .permitArgumentValues(PlaneMcpServer.ID, "project", "action", "list", "retrieve")
+                .permitArgumentValues(PlaneMcpServer.ID, "member", "action", "me", "list_workspace", "list_project")
+                .permitArgumentValues(PlaneMcpServer.ID, "workitem", "action", "list", "retrieve", "retrieve_by_identifier", "search")
+                .permitArgumentValues(PlaneMcpServer.ID, "workitem_activity", "action", "list")
+                .permitArgumentValues(PlaneMcpServer.ID, "workitem_comment", "action", "list", "retrieve")
+                .permitArgumentValues(PlaneMcpServer.ID, "label", "action", "list")
+                .permitArgumentValues(PlaneMcpServer.ID, "state", "action", "list")
                 .promptGuidance("""
-                        - treat Plane access in this profile as read-only; use only these actions:
-                          project=list/retrieve; member=me/list_workspace/list_project;
-                          workitem=list/retrieve/retrieve_by_identifier/search; workitem_activity=list;
-                          workitem_comment=list/retrieve; label=list; state=list
+                        - Plane access is read-only; select an explicit action from the tool schema
                         - the calling routine determines which observations matter and what policy to apply to them
                         - use only artifacts that can be verified as belonging to the current mission; unrelated resources
                           are not evidence
