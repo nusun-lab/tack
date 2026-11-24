@@ -1,4 +1,4 @@
-package us.nusun.tack.example.persona;
+package us.nusun.tack.framework.config;
 
 import io.smallrye.config.ConfigMapping;
 import io.smallrye.config.WithParentName;

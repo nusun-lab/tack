@@ -1,6 +1,7 @@
 package us.nusun.tack.example.persona;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import us.nusun.tack.framework.config.PersonaAccounts;
 import us.nusun.tack.framework.inventory.PersonaProvider;
 import us.nusun.tack.framework.model.Persona;
 

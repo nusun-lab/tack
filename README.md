@@ -280,18 +280,33 @@ public class CoordinatorRoutine extends RouteBuilder implements RoutineProvider 
 
 ### Define an inference lane
 
+Each provider declares one lane. `configName` selects its group under `llm.inference-lane`.
+The framework resolves model and endpoint fallbacks along with sampling and tool-memory settings.
+
 ```java
 @ApplicationScoped
-public class LowLane implements InferenceLaneProvider {
+public class LowPassLane implements InferenceLaneProvider {
+    public static final String ID = "low-pass";
+    private static final String CONFIG_NAME = "low";
+
+    private final LaneConfiguration.Lane config;
+
+    public LowPassLane(LaneConfiguration configuration) {
+        this.config = configuration.lanes().get(CONFIG_NAME);
+    }
+
     @Override
     public InferenceLaneDefinition inferenceLane() {
-        return InferenceLaneDefinition.builder("low-pass")
-                .requestTopic("llm.requests.low")
-                .responseTopic("llm.replies.low")
-                .parallelism(1)
-                .partitionKeyStrategy(PartitionKeyStrategy.AGENT_RUN)
-                .endpoint("http://localhost:8000/v1")
-                .model("qwen-low")
+        return InferenceLaneDefinition.builder(ID)
+                .configName(CONFIG_NAME)
+                .requestTopic(config.requestTopic().orElse("llm.requests.low"))
+                .responseTopic(config.replyTopic().orElse("llm.replies.low"))
+                .parallelism(config.parallelism())
+                .partitionKeyStrategy(config.partitionKeyStrategy().orElse(PartitionKeyStrategy.AGENT_RUN))
+                .endpoint(config.endpoint().orElse(""))
+                .model(config.model().orElse(""))
+                .apiKeyConfigKey("llm.inference-lane.low.api-key")
+                .apiKeyEnvVariable("LLM_LOW_API_KEY")
                 .build();
     }
 }
