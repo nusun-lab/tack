@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.camel.Exchange;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.impl.DefaultCamelContext;
+import us.nusun.tack.framework.inventory.PersonaCatalog;
 import us.nusun.tack.framework.inventory.RoutineCatalog;
 import us.nusun.tack.framework.model.AgentRunProjection;
 import us.nusun.tack.framework.model.AgentRunScheduled;
@@ -12,6 +13,7 @@ import us.nusun.tack.framework.projection.AgentRunProjectionManager;
 import us.nusun.tack.framework.projection.ProjectionStore;
 import us.nusun.tack.framework.route.AgentRunRoute;
 import us.nusun.tack.framework.route.MissionRoute;
+import us.nusun.tack.framework.sandbox.PersonaSandboxManager;
 import us.nusun.tack.framework.service.AgentRunAdmissionService;
 import us.nusun.tack.framework.state.AgentRunStore;
 
@@ -33,6 +35,17 @@ public final class AgentRunRouteTestSupport {
             AgentRunStore agentRuns,
             StubKafkaComponent kafka,
             String consumerGroup) throws Exception {
+        return context(manager, routines, agentRuns, kafka, consumerGroup, FrameworkFixtures.personaCatalog(), null);
+    }
+
+    public static DefaultCamelContext context(
+            AgentRunProjectionManager manager,
+            RoutineCatalog routines,
+            AgentRunStore agentRuns,
+            StubKafkaComponent kafka,
+            String consumerGroup,
+            PersonaCatalog personas,
+            PersonaSandboxManager sandboxes) throws Exception {
         DefaultCamelContext context = TestCamelContexts.quiet();
         context.setAutowiredEnabled(false);
         context.getShutdownStrategy().setTimeout(1);
@@ -44,13 +57,14 @@ public final class AgentRunRouteTestSupport {
         context.addComponent("kafka", kafka);
 
         AgentRunAdmissionService admissions = new AgentRunAdmissionService();
-        FrameworkFixtures.set(admissions, "personas", FrameworkFixtures.personaCatalog());
+        FrameworkFixtures.set(admissions, "personas", personas);
+        FrameworkFixtures.set(admissions, "sandboxes", sandboxes);
         FrameworkFixtures.set(admissions, "routines", routines);
         FrameworkFixtures.set(admissions, "projections", manager);
         FrameworkFixtures.set(admissions, "agentRuns", agentRuns);
 
         AgentRunRoute agentRunRoute = new AgentRunRoute();
-        FrameworkFixtures.set(agentRunRoute, "personas", FrameworkFixtures.personaCatalog());
+        FrameworkFixtures.set(agentRunRoute, "personas", personas);
         FrameworkFixtures.set(agentRunRoute, "routines", routines);
         FrameworkFixtures.set(agentRunRoute, "projections", manager);
         FrameworkFixtures.set(agentRunRoute, "agentRuns", agentRuns);

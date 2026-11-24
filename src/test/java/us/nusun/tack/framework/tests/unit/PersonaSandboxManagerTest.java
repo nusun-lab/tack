@@ -5,6 +5,10 @@ import us.nusun.tack.framework.model.Mission;
 import us.nusun.tack.framework.model.Persona;
 import us.nusun.tack.framework.sandbox.OpenShellGrpcClient;
 import us.nusun.tack.framework.sandbox.PersonaSandboxManager;
+import us.nusun.tack.framework.sandbox.grpc.ObjectMeta;
+import us.nusun.tack.framework.sandbox.grpc.Sandbox;
+import us.nusun.tack.framework.sandbox.grpc.SandboxPhase;
+import us.nusun.tack.framework.sandbox.grpc.SandboxStatus;
 import us.nusun.tack.framework.state.AgentRun;
 
 import java.time.Instant;
@@ -62,9 +66,10 @@ class PersonaSandboxManagerTest {
 
     private static final class FakeOpenShellClient extends OpenShellGrpcClient {
         private int createCalls;
+        private Sandbox sandbox;
 
         private FakeOpenShellClient() {
-            super(true, 1, 1);
+            super(true, 1, 1, 1, "test-sandbox-image");
         }
 
         @Override
@@ -73,15 +78,27 @@ class PersonaSandboxManagerTest {
         }
 
         @Override
-        public Optional<us.nusun.tack.framework.sandbox.grpc.Sandbox> getSandbox(String name) {
-            return Optional.empty();
+        public Optional<Sandbox> getSandbox(String name) {
+            return Optional.ofNullable(sandbox);
         }
 
         @Override
-        public us.nusun.tack.framework.sandbox.grpc.Sandbox createSandboxReady(
+        public Sandbox createSandbox(
                 String name, List<String> providers, Map<String, String> labels) {
             createCalls++;
-            return null;
+            sandbox = Sandbox.newBuilder()
+                    .setMetadata(ObjectMeta.newBuilder().setId(name).setName(name))
+                    .setStatus(SandboxStatus.newBuilder().setPhase(SandboxPhase.SANDBOX_PHASE_READY))
+                    .build();
+            return sandbox;
+        }
+
+        @Override
+        public void authorizeDeveloperPackages(String name) {
+        }
+
+        @Override
+        public void prepareMaven(String name) {
         }
     }
 }
