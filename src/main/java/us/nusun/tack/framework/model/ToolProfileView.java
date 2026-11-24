@@ -2,6 +2,8 @@ package us.nusun.tack.framework.model;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -20,11 +22,28 @@ public record ToolProfileView(
         int maxResultTokens
 ) {
     public static ToolProfileView of(ToolProfile profile) {
-        return new ToolProfileView(profile.id(), profile.servers(), profile.allowedTools(), profile.deniedTools(),
-                profile.allowAllToolServers(),
+        Map<String, Set<String>> allowed = new LinkedHashMap<>();
+        Map<String, Set<String>> denied = new LinkedHashMap<>();
+        Set<String> allowAll = new LinkedHashSet<>();
+        Map<String, Map<String, Map<String, JsonNode>>> defaults = new LinkedHashMap<>();
+        Map<String, Map<String, Set<String>>> hidden = new LinkedHashMap<>();
+        profile.policies().forEach((server, policy) -> {
+            if (!policy.allowed().isEmpty()) allowed.put(server, policy.allowed());
+            if (!policy.denied().isEmpty()) denied.put(server, policy.denied());
+            if (policy.allowAll()) allowAll.add(server);
+            policy.arguments().forEach((tool, arguments) -> {
+                if (!arguments.defaults().isEmpty()) {
+                    defaults.computeIfAbsent(server, ignored -> new LinkedHashMap<>()).put(tool, arguments.defaults());
+                }
+                if (!arguments.hidden().isEmpty()) {
+                    hidden.computeIfAbsent(server, ignored -> new LinkedHashMap<>()).put(tool, arguments.hidden());
+                }
+            });
+        });
+        return new ToolProfileView(profile.id(), profile.servers(), allowed, denied, allowAll,
                 profile.mcpServers().entrySet().stream()
                         .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, entry -> Server.of(entry.getValue()))),
-                profile.defaultArguments(), profile.hiddenArguments(), profile.promptGuidance(), profile.maxResultTokens());
+                defaults, hidden, profile.promptGuidance(), profile.maxResultTokens());
     }
 
     public record Server(String id, String url, String transportType, String authHeaderName, List<String> extraHeaderNames) {
