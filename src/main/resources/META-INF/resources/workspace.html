@@ -253,13 +253,14 @@
     });
 
     async function refresh() {
+      const previous = latest;
       latest = await fetch('/workspace/view').then(r => r.json());
       renderCounts(latest);
       renderProjections(arr(latest.agentRunProjections));
-      renderPersonas(arr(latest.personas));
-      renderRoutines(arr(latest.routines));
-      renderLanes(arr(latest.inferenceLanes));
-      renderTools(arr(latest.toolProfiles));
+      if (JSON.stringify(previous?.personas) !== JSON.stringify(latest.personas)) renderPersonas(arr(latest.personas));
+      if (JSON.stringify(previous?.routines) !== JSON.stringify(latest.routines)) renderRoutines(arr(latest.routines));
+      if (JSON.stringify(previous?.inferenceLanes) !== JSON.stringify(latest.inferenceLanes)) renderLanes(arr(latest.inferenceLanes));
+      if (JSON.stringify(previous?.toolProfiles) !== JSON.stringify(latest.toolProfiles)) renderTools(arr(latest.toolProfiles));
       scrollTimelinesToBottom();
     }
 
@@ -495,7 +496,7 @@
       profiles.forEach(profile => Object.entries(obj(profile.mcpServers)).forEach(([id, server]) => servers.set(id, server)));
       document.getElementById('toolServers').innerHTML = [...servers.entries()].map(([id, server]) => `<article class="card">
         <div class="inventory-title"><h3>${esc(id)}</h3><span class="label mono">${esc(server.transportType || '')}</span></div>
-        <dl class="kv"><dt>URL</dt><dd>${esc(server.url || '(not configured)')}</dd><dt>Auth header</dt><dd class="mono">${esc(server.authHeaderName || '')}</dd><dt>Extra headers</dt><dd>${Object.keys(obj(server.extraHeaders)).map(key => `<span class="label mono">${esc(key)}</span>`).join(' ') || '<span class="muted">none</span>'}</dd></dl>
+        <dl class="kv"><dt>URL</dt><dd>${esc(server.url || '(not configured)')}</dd><dt>Auth header</dt><dd class="mono">${esc(server.authHeaderName || '')}</dd><dt>Extra headers</dt><dd>${arr(server.extraHeaderNames).map(key => `<span class="label mono">${esc(key)}</span>`).join(' ') || '<span class="muted">none</span>'}</dd></dl>
       </article>`).join('') || '<div class="empty">No MCP server definitions declared.</div>';
     }
 

@@ -1,33 +1,47 @@
 package us.nusun.tack.framework.service;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
 import jakarta.inject.Named;
+import us.nusun.tack.framework.inventory.InferenceLaneRegistry;
 import us.nusun.tack.framework.inventory.PersonaCatalog;
 import us.nusun.tack.framework.inventory.RoutineCatalog;
 import us.nusun.tack.framework.inventory.ToolProfileRegistry;
+import us.nusun.tack.framework.model.AgentRunProjection;
+import us.nusun.tack.framework.model.InferenceLaneDefinition;
+import us.nusun.tack.framework.model.PersonaView;
+import us.nusun.tack.framework.model.RoutineDefinition;
+import us.nusun.tack.framework.model.ToolProfileView;
 import us.nusun.tack.framework.projection.ProjectionStore;
-import us.nusun.tack.framework.inventory.InferenceLaneRegistry;
 
-import java.util.LinkedHashMap;
-import java.util.Map;
+import java.util.List;
 
 @ApplicationScoped
 @Named("workspaceViewService")
 public class WorkspaceViewService {
-    @Inject PersonaCatalog personas;
-    @Inject RoutineCatalog routines;
-    @Inject InferenceLaneRegistry lanes;
-    @Inject ToolProfileRegistry toolProfiles;
-    @Inject ProjectionStore projections;
+    private final List<PersonaView> personas;
+    private final List<RoutineDefinition> routines;
+    private final List<InferenceLaneDefinition> lanes;
+    private final List<ToolProfileView> toolProfiles;
+    private final ProjectionStore projections;
 
-    public Map<String, Object> view() {
-        LinkedHashMap<String, Object> view = new LinkedHashMap<>();
-        view.put("personas", personas.all());
-        view.put("routines", routines.all());
-        view.put("inferenceLanes", lanes.allLanes());
-        view.put("toolProfiles", toolProfiles.all());
-        view.put("agentRunProjections", projections.all());
-        return view;
+    public WorkspaceViewService(PersonaCatalog personas, RoutineCatalog routines, InferenceLaneRegistry lanes,
+                                ToolProfileRegistry toolProfiles, ProjectionStore projections) {
+        this.personas = personas.views();
+        this.routines = routines.all();
+        this.lanes = lanes.allLanes();
+        this.toolProfiles = toolProfiles.views();
+        this.projections = projections;
     }
+
+    public WorkspaceView view() {
+        return new WorkspaceView(personas, routines, lanes, toolProfiles, projections.all());
+    }
+
+    public record WorkspaceView(
+            List<PersonaView> personas,
+            List<RoutineDefinition> routines,
+            List<InferenceLaneDefinition> inferenceLanes,
+            List<ToolProfileView> toolProfiles,
+            List<AgentRunProjection> agentRunProjections
+    ) {}
 }

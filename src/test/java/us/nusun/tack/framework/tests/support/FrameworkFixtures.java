@@ -172,7 +172,7 @@ public final class FrameworkFixtures {
     }
 
     public static MissionRosterService missionRosterService(AgentRunStore agentRuns, PersonaCatalog personas, RoutineCatalog routines) {
-        return new MissionRosterService(agentRuns, personas, routines);
+        return new MissionRosterService(agentRuns, personas, routines, new ObjectMapper());
     }
 
     public static void bindCatalogBeans(DefaultCamelContext context) {

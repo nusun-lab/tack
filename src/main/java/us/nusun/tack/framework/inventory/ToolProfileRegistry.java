@@ -6,6 +6,7 @@ import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import us.nusun.tack.framework.model.ToolProfile;
+import us.nusun.tack.framework.model.ToolProfileView;
 
 import java.util.List;
 import java.util.Map;
@@ -54,8 +55,12 @@ public class ToolProfileRegistry {
         return profiles.values().stream().sorted(java.util.Comparator.comparing(ToolProfile::id)).toList();
     }
 
+    public List<ToolProfileView> views() {
+        return all().stream().map(ToolProfileView::of).toList();
+    }
+
     public String allJson() {
-        return json.write(all(), "tool profile");
+        return json.write(views(), "tool profile");
     }
 
     public String promptJson() {

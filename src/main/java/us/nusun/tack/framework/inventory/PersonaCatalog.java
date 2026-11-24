@@ -5,11 +5,10 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
-import us.nusun.tack.framework.model.ExternalIdentity;
 import us.nusun.tack.framework.model.Persona;
+import us.nusun.tack.framework.model.PersonaView;
 
 import java.util.Comparator;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -49,67 +48,32 @@ public class PersonaCatalog {
         return all().stream().filter(Persona::agentRunStartAssignable).toList();
     }
 
+    public List<PersonaView> views() {
+        return all().stream().map(PersonaView::of).toList();
+    }
+
     public String allJson() {
-        return json(all());
+        return json(views());
     }
 
     public String agentRunStartAssignableJson() {
-        return json(agentRunStartAssignable());
+        return json(views().stream().filter(PersonaView::agentRunStartAssignable).toList());
     }
 
     public String personaInventoryPromptJson() {
-        return json(all().stream().map(persona -> promptView(persona, null)).toList());
+        return allJson();
     }
 
     public String allPromptJson() {
-        return personaInventoryPromptJson();
+        return allJson();
     }
 
     public String agentRunStartAssignablePromptJson() {
-        return json(agentRunStartAssignable().stream().map(persona -> promptView(persona, null)).toList());
-    }
-
-    private static PersonaPromptView promptView(Persona persona, String selfPersonaId) {
-        return new PersonaPromptView(
-                persona.id(),
-                persona.name(),
-                persona.label(),
-                persona.description(),
-                persona.traits(),
-                persona.agentRunStartAssignable(),
-                persona.id() != null && persona.id().equals(selfPersonaId),
-                promptIdentities(persona));
-    }
-
-    public static Map<String, IdentityPromptView> promptIdentities(Persona persona) {
-        LinkedHashMap<String, IdentityPromptView> safe = new LinkedHashMap<>();
-        persona.identities().entrySet().stream()
-                .sorted(Map.Entry.comparingByKey())
-                .forEach(entry -> {
-                    ExternalIdentity identity = entry.getValue();
-                    String handle = identity == null ? null : identity.handle();
-                    if (handle != null && !handle.isBlank()) {
-                        String platform = identity.platform() == null || identity.platform().isBlank() ? entry.getKey() : identity.platform();
-                        safe.put(entry.getKey(), new IdentityPromptView(platform, handle));
-                    }
-                });
-        return Map.copyOf(safe);
+        return agentRunStartAssignableJson();
     }
 
     private String json(Object value) {
         return json.write(value, "persona");
     }
 
-    public record PersonaPromptView(
-            String id,
-            String name,
-            String label,
-            String description,
-            List<String> traits,
-            boolean agentRunStartAssignable,
-            boolean self,
-            Map<String, IdentityPromptView> identities
-    ) {}
-
-    public record IdentityPromptView(String platform, String handle) {}
 }

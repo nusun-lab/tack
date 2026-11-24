@@ -26,7 +26,7 @@ class MissionRosterServiceTest {
         AgentRunStore store = storeWithRuns();
         MissionRosterService service = service(store);
 
-        String roster = service.missionRosterPrompt("mission-1");
+        String roster = service.rosterView("mission-1", "history", "full", null, null, null, null);
 
         assertEquals(2, entryCount(roster));
         assertTrue(roster.contains("- name: Persona A"));
@@ -42,7 +42,7 @@ class MissionRosterServiceTest {
         AgentRunStore store = storeWithRuns();
         MissionRosterService service = service(store);
 
-        String roster = service.missionRosterPrompt("mission-2");
+        String roster = service.rosterView("mission-2", "history", "full", null, null, null, null);
 
         assertEquals(1, entryCount(roster));
         assertTrue(roster.contains("- name: Persona B"));
@@ -59,7 +59,7 @@ class MissionRosterServiceTest {
         store.putRun(new AgentRun("run-a-2", "mission-1", "persona-a", "routine-b", Map.of()));
         MissionRosterService service = service(store);
 
-        String roster = service.missionRosterPrompt("mission-1");
+        String roster = service.rosterView("mission-1", "history", "full", null, null, null, null);
 
         assertEquals(2, entryCount(roster));
         assertTrue(roster.contains("- name: Persona A"));
@@ -79,14 +79,14 @@ class MissionRosterServiceTest {
         AgentRunStore store = storeWithRuns();
         MissionRosterService service = service(store);
 
-        String roster = service.missionRosterPrompt("mission-1");
+        String roster = service.rosterView("mission-1", "history", "full", null, null, null, null);
 
         assertTrue(roster.contains("- name: Persona A"));
         assertTrue(roster.contains("routine: Routine A"));
-        assertTrue(roster.contains("platform identities: alpha-mcp @persona-a, beta-mcp @persona-a, gamma-mcp @persona-a"));
+        assertTrue(roster.contains("platform identities: alpha-mcp=@persona-a, beta-mcp=@persona-a, gamma-mcp=@persona-a"));
         assertTrue(roster.contains("- name: Persona C"));
         assertTrue(roster.contains("routine: Routine B"));
-        assertTrue(roster.contains("platform identities: alpha-mcp @persona-c"));
+        assertTrue(roster.contains("platform identities: alpha-mcp=@persona-c"));
         assertTrue(roster.contains("personaId: persona-a"));
         assertTrue(roster.contains("routineId: routine-a"));
         assertTrue(roster.contains("agentRunId: run-a"));
@@ -121,7 +121,7 @@ class MissionRosterServiceTest {
         store.putRun(run);
         MissionRosterService service = service(store);
 
-        String roster = service.activeMissionRosterPrompt("mission-1");
+        String roster = service.rosterView("mission-1", "active", "full", null, null, null, null);
 
         assertTrue(roster.contains("subroutineId: phase-a"));
         assertTrue(roster.contains("subroutine: Perform phase A."));
@@ -137,7 +137,7 @@ class MissionRosterServiceTest {
         store.putRun(complete);
         MissionRosterService service = service(store);
 
-        String roster = service.activeMissionRosterPrompt("mission-1");
+        String roster = service.rosterView("mission-1", "active", "full", null, null, null, null);
 
         assertFalse(roster.contains("run-complete"));
         assertEquals(2, entryCount(roster));

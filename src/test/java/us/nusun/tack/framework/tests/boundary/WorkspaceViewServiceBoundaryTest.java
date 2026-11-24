@@ -1,6 +1,12 @@
 package us.nusun.tack.framework.tests.boundary;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import us.nusun.tack.framework.inventory.PersonaCatalog;
+import us.nusun.tack.framework.inventory.ToolProfileRegistry;
+import us.nusun.tack.framework.model.McpServerDefinition;
+import us.nusun.tack.framework.model.Persona;
+import us.nusun.tack.framework.model.ToolProfile;
 import us.nusun.tack.framework.model.AgentRunProjection;
 import us.nusun.tack.framework.projection.AgentRunProjectionManager;
 import us.nusun.tack.framework.projection.ProjectionStore;
@@ -12,7 +18,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
@@ -21,14 +26,32 @@ class WorkspaceViewServiceBoundaryTest {
     void viewIncludesStaticCatalogsAndEmptyProjectionListWhenNoRunsExist() {
         WorkspaceViewService service = service(FrameworkFixtures.projectionStore());
 
-        Map<String, Object> view = service.view();
+        var view = service.view();
 
-        assertTrue(assertInstanceOf(List.class, view.get("personas")).size() >= 2);
-        assertTrue(assertInstanceOf(List.class, view.get("routines")).size() >= 2);
-        assertFalse(view.containsKey("execution" + "Runtimes"));
-        assertTrue(assertInstanceOf(List.class, view.get("inferenceLanes")).size() >= 2);
-        assertTrue(assertInstanceOf(List.class, view.get("toolProfiles")).size() >= 3);
-        assertEquals(List.of(), view.get("agentRunProjections"));
+        assertTrue(view.personas().size() >= 2);
+        assertTrue(view.routines().size() >= 2);
+        assertTrue(view.inferenceLanes().size() >= 2);
+        assertTrue(view.toolProfiles().size() >= 3);
+        assertEquals(List.of(), view.agentRunProjections());
+    }
+
+    @Test
+    void completeWorkspaceResponseExcludesCredentials() throws Exception {
+        var persona = Persona.builder("developer").name("Developer").color("blue")
+                .identity("mcp", "SENTINEL_PERSONA_TOKEN", "@developer").build();
+        var profile = ToolProfile.builder("profile").mcpServer(McpServerDefinition.builder("mcp")
+                .authHeaderValueFormat("SENTINEL_AUTH_FORMAT %s")
+                .extraHeader("X-Private", "SENTINEL_EXTRA_HEADER").build()).build();
+        var service = new WorkspaceViewService(new PersonaCatalog(List.of(persona)), FrameworkFixtures.routineCatalog(),
+                FrameworkFixtures.inferenceLaneRegistry(), new ToolProfileRegistry(List.of(profile)),
+                FrameworkFixtures.projectionStore());
+
+        String serialized = new ObjectMapper().findAndRegisterModules().writeValueAsString(service.view());
+
+        assertFalse(serialized.contains("SENTINEL_"));
+        assertTrue(serialized.contains("@developer"));
+        assertTrue(serialized.contains("blue"));
+        assertTrue(serialized.contains("X-Private"));
     }
 
     @Test
@@ -52,9 +75,8 @@ class WorkspaceViewServiceBoundaryTest {
         new us.nusun.tack.framework.routine.ThoughtStackSupport().push("Child implementation context", 200).process(childExchange);
         manager.record(childExchange, "CHILD_STARTED");
 
-        List<?> projections = assertInstanceOf(List.class, service.view().get("agentRunProjections"));
+        List<AgentRunProjection> projections = service.view().agentRunProjections();
         AgentRunProjection childProjection = projections.stream()
-                .map(AgentRunProjection.class::cast)
                 .filter(item -> item.agentRunId().equals("child-run"))
                 .findFirst()
                 .orElseThrow();
@@ -69,12 +91,7 @@ class WorkspaceViewServiceBoundaryTest {
     }
 
     private static WorkspaceViewService service(ProjectionStore store) {
-        WorkspaceViewService service = new WorkspaceViewService();
-        FrameworkFixtures.set(service, "personas", FrameworkFixtures.personaCatalog());
-        FrameworkFixtures.set(service, "routines", FrameworkFixtures.routineCatalog());
-        FrameworkFixtures.set(service, "lanes", FrameworkFixtures.inferenceLaneRegistry());
-        FrameworkFixtures.set(service, "toolProfiles", FrameworkFixtures.toolProfileRegistry());
-        FrameworkFixtures.set(service, "projections", store);
-        return service;
+        return new WorkspaceViewService(FrameworkFixtures.personaCatalog(), FrameworkFixtures.routineCatalog(),
+                FrameworkFixtures.inferenceLaneRegistry(), FrameworkFixtures.toolProfileRegistry(), store);
     }
 }
