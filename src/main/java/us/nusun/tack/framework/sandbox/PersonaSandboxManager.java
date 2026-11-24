@@ -2,31 +2,33 @@ package us.nusun.tack.framework.sandbox;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.jboss.logging.Logger;
 import us.nusun.tack.framework.logging.LogTokens;
 import us.nusun.tack.framework.model.ExternalIdentity;
 import us.nusun.tack.framework.model.Mission;
 import us.nusun.tack.framework.model.Persona;
+import us.nusun.tack.framework.sandbox.grpc.Sandbox;
 import us.nusun.tack.framework.state.AgentRun;
 
 import java.net.URI;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 @ApplicationScoped
 public class PersonaSandboxManager {
     public static final String WORKING_STATE_SANDBOX_NAME = "sandboxName";
+    private static final Logger LOG = Logger.getLogger(PersonaSandboxManager.class);
     private static final String GITEA_PROFILE_ID = "tack-gitea";
 
     private final OpenShellGrpcClient openshell;
     private final OpenShellLifecycleClient lifecycle;
     private final LogTokens logTokens;
     private final String configuredGiteaUrl;
-    private final ConcurrentHashMap<SandboxKey, CompletableFuture<SandboxRef>> sandboxes = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Persona> personasBySandbox = new ConcurrentHashMap<>();
     private final Object giteaProfileLock = new Object();
     private volatile String installedGiteaProfileEndpoint;
@@ -49,26 +51,10 @@ public class PersonaSandboxManager {
         if (mission == null || persona == null || run == null) {
             throw new IllegalArgumentException("Mission, persona, and AgentRun are required for sandbox admission");
         }
-        SandboxKey key = new SandboxKey(mission.id(), persona.id());
-        CompletableFuture<SandboxRef> mine = new CompletableFuture<>();
-        CompletableFuture<SandboxRef> existing = sandboxes.putIfAbsent(key, mine);
-        if (existing != null) {
-            SandboxRef ref = existing.join();
-            personasBySandbox.put(ref.name(), persona);
-            run.workingState().put(WORKING_STATE_SANDBOX_NAME, ref.name());
-            return ref;
-        }
-        try {
-            SandboxRef ref = provision(mission, persona, run);
-            mine.complete(ref);
-            personasBySandbox.put(ref.name(), persona);
-            run.workingState().put(WORKING_STATE_SANDBOX_NAME, ref.name());
-            return ref;
-        } catch (RuntimeException e) {
-            mine.completeExceptionally(e);
-            sandboxes.remove(key, mine);
-            throw e;
-        }
+        SandboxRef ref = provision(mission, persona, run);
+        personasBySandbox.put(ref.name(), persona);
+        run.workingState().put(WORKING_STATE_SANDBOX_NAME, ref.name());
+        return ref;
     }
 
     public SandboxExecTool tool(String sandboxName) {
@@ -89,49 +75,91 @@ public class PersonaSandboxManager {
         try {
             return lifecycle.deleteTackSandboxes();
         } finally {
-            sandboxes.clear();
             personasBySandbox.clear();
         }
     }
 
     private SandboxRef provision(Mission mission, Persona persona, AgentRun run) {
         String sandboxName = sandboxName(mission.id(), persona.id());
-        ExternalIdentity gitea = persona.identityFor("gitea");
-        String repositoryUrl = repositoryUrl(run);
-        String giteaUrl = firstNonBlank(configuredGiteaUrl, repositoryBaseUrl(repositoryUrl));
-        String providerName = null;
-        OpenShellGrpcClient.Endpoint endpoint = null;
-
-        if (gitea != null && !blank(gitea.token()) && !blank(gitea.handle()) && !blank(giteaUrl)) {
-            endpoint = endpoint(giteaUrl);
-            ensureGiteaProfile(endpoint);
-            providerName = openshell.ensureProvider(
-                    providerName(persona),
-                    GITEA_PROFILE_ID,
-                    gitea.token());
-        }
-
-        var existing = openshell.getSandbox(sandboxName);
-        if (existing.isEmpty()) {
-            openshell.createSandboxReady(
-                    sandboxName,
-                    providerName == null ? List.of() : List.of(providerName),
-                    Map.of(
-                            "tack-owner", "tack",
-                            "tack-mission", shortHash(mission.id()),
-                            "tack-persona", labelValue(persona.id())));
-        } else {
-            openshell.requireReady(sandboxName);
-            if (providerName != null) {
-                openshell.attachProvider(sandboxName, providerName);
+        String context = "mission=" + mission.id() + " persona=" + persona.id() + " sandbox=" + sandboxName;
+        long preparationStarted = System.nanoTime();
+        long stageStarted = preparationStarted;
+        String stage = "sandbox lookup";
+        Duration timeout = openshell.controlTimeout();
+        Sandbox sandbox = null;
+        try {
+            sandbox = openshell.getSandbox(sandboxName).orElse(null);
+            ExternalIdentity gitea = persona.identityFor("gitea");
+            String giteaUrl = firstNonBlank(configuredGiteaUrl, repositoryBaseUrl(repositoryUrl(run)));
+            String providerName = null;
+            OpenShellGrpcClient.Endpoint endpoint = null;
+            if (gitea != null && !blank(gitea.token()) && !blank(gitea.handle()) && !blank(giteaUrl)) {
+                stage = "Gitea provider setup";
+                stageStarted = System.nanoTime();
+                endpoint = endpoint(giteaUrl);
+                ensureGiteaProfile(endpoint);
+                providerName = openshell.ensureProvider(providerName(persona), GITEA_PROFILE_ID, gitea.token());
             }
-        }
 
-        if (providerName != null && endpoint != null) {
-            openshell.authorizeGit(sandboxName, endpoint);
-            configureGitIdentity(sandboxName, persona, gitea);
+            if (sandbox == null) {
+                stage = "sandbox creation";
+                stageStarted = System.nanoTime();
+                sandbox = openshell.createSandbox(
+                        sandboxName,
+                        providerName == null ? List.of() : List.of(providerName),
+                        Map.of(
+                                "tack-owner", "tack",
+                                "tack-mission", shortHash(mission.id()),
+                                "tack-persona", labelValue(persona.id())));
+            }
+
+            stage = "readiness";
+            stageStarted = System.nanoTime();
+            timeout = openshell.provisionTimeout();
+            sandbox = openshell.awaitProvisionedReady(sandbox);
+            LOG.infof("OpenShell sandbox ready %s elapsedMs=%d timeoutSeconds=%d %s",
+                    context, elapsedMillis(stageStarted), timeout.toSeconds(), OpenShellGrpcClient.describe(sandbox));
+
+            stage = "developer package policy";
+            stageStarted = System.nanoTime();
+            timeout = openshell.controlTimeout();
+            openshell.authorizeDeveloperPackages(sandboxName);
+
+            if (providerName != null) {
+                if (!sandbox.getSpec().getProvidersList().contains(providerName)) {
+                    stage = "Gitea provider attachment";
+                    stageStarted = System.nanoTime();
+                    openshell.attachProvider(sandboxName, providerName);
+                }
+                stage = "Git network policy";
+                stageStarted = System.nanoTime();
+                openshell.authorizeGit(sandboxName, endpoint);
+
+                stage = "Git identity and credentials";
+                stageStarted = System.nanoTime();
+                timeout = openshell.execTimeout();
+                configureGitIdentity(sandboxName, persona, gitea);
+            }
+            stage = "Java 21 Maven environment";
+            stageStarted = System.nanoTime();
+            timeout = openshell.execTimeout();
+            openshell.prepareMaven(sandboxName);
+
+            LOG.infof("OpenShell sandbox prepared %s elapsedMs=%d", context, elapsedMillis(preparationStarted));
+            return new SandboxRef(sandboxName);
+        } catch (RuntimeException e) {
+            String message = "OpenShell sandbox preparation failed " + context + " stage=" + stage
+                    + " elapsedMs=" + elapsedMillis(stageStarted) + " timeoutSeconds=" + timeout.toSeconds()
+                    + " totalElapsedMs=" + elapsedMillis(preparationStarted) + " "
+                    + (stage.equals("readiness") ? "" : OpenShellGrpcClient.describe(sandbox) + " ")
+                    + e.getMessage();
+            LOG.warn(message);
+            throw new IllegalStateException(message, e);
         }
-        return new SandboxRef(sandboxName);
+    }
+
+    private static long elapsedMillis(long started) {
+        return Duration.ofNanos(System.nanoTime() - started).toMillis();
     }
 
     private void ensureGiteaProfile(OpenShellGrpcClient.Endpoint endpoint) {
@@ -158,7 +186,7 @@ public class PersonaSandboxManager {
                 + " && git config --global credential.helper '" + shellSafe(helper) + "'";
         OpenShellGrpcClient.SandboxExecResult result = openshell.exec(sandboxName, command, "/sandbox");
         if (result.exitCode() != 0) {
-            throw new IllegalStateException("Unable to configure git identity in sandbox " + sandboxName + ": " + result.stderr());
+            throw new IllegalStateException("Unable to configure git identity in sandbox " + sandboxName + " exit=" + result.exitCode() + ": " + result.stderr());
         }
     }
 
@@ -236,6 +264,4 @@ public class PersonaSandboxManager {
     public record SandboxRef(String name) {
     }
 
-    private record SandboxKey(String missionId, String personaId) {
-    }
 }
