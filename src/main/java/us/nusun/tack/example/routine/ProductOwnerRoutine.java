@@ -12,6 +12,9 @@ import us.nusun.tack.framework.tack.TackHeaders;
 
 import java.util.List;
 
+import static org.apache.camel.builder.PredicateBuilder.and;
+import static org.apache.camel.builder.PredicateBuilder.or;
+
 @ApplicationScoped
 public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider {
     public static final String ID = "software-team/product-owner";
@@ -104,15 +107,11 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         from("direct:po-epic-work-loop")
                 .routeId("po-epic-work-loop")
                 .setProperty("poEpicWorkIterations", constant(0))
-                .setProperty("poEpicWorkContinue", constant(true))
-                .loopDoWhile(simple("${exchangeProperty.poEpicWorkContinue} == true && ${exchangeProperty.poEpicWorkIterations} < 6"))
+                .loopDoWhile(and(exchangeProperty("poEpicWorkIterations").isLessThan(6),
+                        or(exchangeProperty("poEpicWorkIterations").isEqualTo(0),
+                            exchangeProperty("act.po-epic-work.durableProgress").isEqualTo(true))))
                     .setProperty("poEpicWorkIterations", simple("${exchangeProperty.poEpicWorkIterations++}"))
-                    .setProperty("poEpicWorkContinue", constant(false))
                     .to("direct:po-epic-definition")
-                    .choice()
-                        .when(exchangeProperty("act.po-epic-work.durableProgress").isEqualTo(true))
-                            .setProperty("poEpicWorkContinue", constant(true))
-                    .end()
                 .end();
 
         from("direct:po-epic-definition")

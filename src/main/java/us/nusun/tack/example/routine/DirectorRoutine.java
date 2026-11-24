@@ -7,7 +7,7 @@ import us.nusun.tack.example.tool.TeamChatToolProfile;
 import us.nusun.tack.example.tool.WorkspaceReadonlyToolProfile;
 import us.nusun.tack.framework.inventory.RoutineProvider;
 import us.nusun.tack.framework.model.LlmPassType;
-import us.nusun.tack.framework.model.MissionRequest;
+import us.nusun.tack.framework.model.AgentRunRequest;
 import us.nusun.tack.framework.model.RoutineDefinition;
 import us.nusun.tack.framework.service.AgentRunAdmissionService;
 import us.nusun.tack.framework.tack.TackHeaders;
@@ -18,6 +18,8 @@ import java.util.List;
 public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
     public static final String ID = "software-team/director";
     static final int MAX_ACTIVE_MISSION_RUNS = 7;
+
+    public record AgentRunBatch(List<AgentRunRequest> agentRuns) {}
 
     @Override
     public List<RoutineDefinition> routines() {
@@ -114,7 +116,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         Return {"agentRuns":[]} when none is missing or capacity prevents another start.
                         """))
                 .to("tack:create?id=planned-agent-runs&schemaId=agent-run-request-list&schema=classpath:schemas/example/software-team/agent-run-requests-schema.json")
-                .unmarshal().json(JsonLibrary.Jackson, MissionRequest.class)
+                .unmarshal().json(JsonLibrary.Jackson, AgentRunBatch.class)
                 .setBody(simple("${body.agentRuns}"))
                 .to("direct:start-agent-runs")
                 .to("tack:thought-exit?name=director-staffing-focus");
