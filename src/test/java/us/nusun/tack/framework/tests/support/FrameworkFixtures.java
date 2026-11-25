@@ -8,6 +8,8 @@ import us.nusun.tack.framework.llm.LlmAgentFactory;
 import us.nusun.tack.framework.llm.LlmRouteSupport;
 import us.nusun.tack.framework.mcp.McpClientFactory;
 import org.apache.camel.Exchange;
+import us.nusun.tack.framework.llm.LlmJobFactory;
+import us.nusun.tack.framework.model.LlmJobEnvelope;
 import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.support.DefaultExchange;
 import us.nusun.tack.framework.inventory.InferenceLaneRegistry;
@@ -168,7 +170,7 @@ public final class FrameworkFixtures {
         ThoughtStackSupport thoughts = new ThoughtStackSupport();
         set(thoughts, "projections", projections);
         return new PrimitiveExecutor(objectMapper, thoughts, personas, routines, toolProfileRegistry(),
-                inferenceLaneRegistry(), projections);
+                projections);
     }
 
     public static AgentRunStore defaultAgentRunStore() {
@@ -185,7 +187,6 @@ public final class FrameworkFixtures {
     public static void bindCatalogBeans(DefaultCamelContext context) {
         context.getRegistry().bind("personaCatalog", personaCatalog());
         context.getRegistry().bind("routineCatalog", routineCatalog());
-        context.getRegistry().bind("toolProfileCatalog", toolProfileRegistry());
     }
 
     public static ProjectionStore projectionStore() {
@@ -205,6 +206,39 @@ public final class FrameworkFixtures {
         exchange.setProperty("mission", new Mission("mission-1", "Test mission", List.of(), "active", Instant.now()));
         exchange.setProperty("agentRun", new AgentRun("run-1", "mission-1", personaId, routineId, Map.of("input", Map.of("brief", "Test run input"))));
         return exchange;
+    }
+
+    public static LlmJobFactory jobFactory(InferenceLaneRegistry lanes, String defaultModel, boolean providerSchemaDefault) {
+        var jobs = new LlmJobFactory();
+        set(jobs, "lanes", lanes);
+        set(jobs, "personas", personaCatalog());
+        set(jobs, "defaultLane", "low-pass");
+        set(jobs, "defaultModel", defaultModel);
+        set(jobs, "providerSchemaDefault", providerSchemaDefault);
+        return jobs;
+    }
+
+    public static LlmJobFactory jobFactory() {
+        return jobFactory(inferenceLaneRegistry(), "test-model", false);
+    }
+
+    public static void restoreJob(Exchange exchange, LlmJobEnvelope job) {
+        exchange.setProperty("llmJob", job);
+        jobFactory().restore(exchange);
+    }
+
+    public static Exchange agentExchange(String laneId, LlmPassType passType) {
+        var exchange = new DefaultExchange(new DefaultCamelContext());
+        restoreJob(exchange, queuedJob(new LlmJobEnvelope(null, laneId, passType, "test", "test", 0,
+                "Inspect", "system", null, Map.of("personaId", PERSONA_A), null)));
+        return exchange;
+    }
+
+    public static LlmJobEnvelope queuedJob(LlmJobEnvelope request) {
+        return new LlmJobEnvelope(request.jobId() == null ? UUID.randomUUID() : request.jobId(), LlmJobStatus.QUEUED,
+                request.laneId(), request.passType(), request.requester(), request.role(), request.priority(),
+                request.prompt(), request.systemPrompt(), request.responseSchema(), request.metadata(),
+                request.requestedAt() == null ? Instant.now() : request.requestedAt());
     }
 
     public static LlmJobResult llmResult(String laneId, String content) {

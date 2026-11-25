@@ -26,38 +26,14 @@ public record ToolProfile(
         return new Builder(id);
     }
 
-    public Set<String> servers() {
-        return policies.entrySet().stream().filter(entry -> entry.getValue().declared())
-                .map(Map.Entry::getKey).collect(Collectors.toUnmodifiableSet());
-    }
-
-    public Map<String, McpServerDefinition> mcpServers() {
-        return policies.entrySet().stream()
-                .filter(entry -> entry.getValue().connection() != null)
-                .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, entry -> entry.getValue().connection()));
-    }
-
     public boolean none() {
         return "none".equals(id) || policies.values().stream().noneMatch(ServerPolicy::declared);
-    }
-
-    public boolean allowsServer(String server) {
-        ServerPolicy policy = policies.get(server);
-        return policy != null && policy.declared();
     }
 
     public boolean allowsTool(String server, String toolName) {
         ServerPolicy policy = policies.get(server);
         return policy != null && policy.declared() && !policy.denied().contains(toolName)
                 && (policy.allowAll() || policy.allowed().isEmpty() || policy.allowed().contains(toolName));
-    }
-
-    public Map<String, JsonNode> defaultArguments(String server, String toolName) {
-        return arguments(server, toolName).defaults();
-    }
-
-    public Set<String> hiddenArguments(String server, String toolName) {
-        return arguments(server, toolName).hidden();
     }
 
     public Arguments arguments(String server, String toolName) {

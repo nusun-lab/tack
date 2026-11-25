@@ -21,7 +21,6 @@ import org.apache.camel.Exchange;
 import org.apache.camel.component.langchain4j.agent.api.Agent;
 import org.apache.camel.component.langchain4j.agent.api.AiAgentBody;
 import org.apache.camel.impl.DefaultCamelContext;
-import org.apache.camel.support.DefaultExchange;
 import org.junit.jupiter.api.Test;
 import us.nusun.tack.framework.model.LlmJobEnvelope;
 import us.nusun.tack.framework.model.LlmPassType;
@@ -32,7 +31,6 @@ import us.nusun.tack.framework.tests.support.FrameworkFixtures;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -68,8 +66,8 @@ class ForcedToolChoiceTest {
     @Test
     void toolEnabledAgentPreservesProviderResponseFormat() {
         RecordingChatModel model = new RecordingChatModel(false);
-        Exchange exchange = exchange("low-pass", LlmPassType.ACTION, context(true));
-        exchange.setProperty("llmJob", job("low-pass", LlmPassType.ACTION, SCHEMA));
+        Exchange exchange = exchange("low-pass", LlmPassType.ACTION);
+        FrameworkFixtures.restoreJob(exchange, job("low-pass", LlmPassType.ACTION, SCHEMA));
         Agent agent = factory("low-pass", model).createAgent(exchange);
 
         agent.chat(new AiAgentBody<>("Inspect current external state.", "You are a tester.", "memory-2"), probeToolProvider());
@@ -87,7 +85,7 @@ class ForcedToolChoiceTest {
         CapturingLogTokens logs = new CapturingLogTokens();
         LlmRouteSupport routeSupport = routeSupport(logs);
         Exchange exchange = exchange("low-pass", LlmPassType.ACTION);
-        exchange.setProperty("llmJob", job("low-pass", LlmPassType.ACTION, null));
+        FrameworkFixtures.restoreJob(exchange, job("low-pass", LlmPassType.ACTION, null));
 
         Agent agent = factory("low-pass", model, routeSupport).createAgent(exchange);
 
@@ -106,7 +104,7 @@ class ForcedToolChoiceTest {
         CapturingLogTokens logs = new CapturingLogTokens();
         LlmRouteSupport routeSupport = routeSupport(logs);
         Exchange exchange = exchange("low-pass", LlmPassType.SYNTHESIS);
-        exchange.setProperty("llmJob", job("low-pass", LlmPassType.SYNTHESIS, null));
+        FrameworkFixtures.restoreJob(exchange, job("low-pass", LlmPassType.SYNTHESIS, null));
 
         Agent agent = factory("low-pass", model, routeSupport).createAgent(exchange);
 
@@ -146,35 +144,17 @@ class ForcedToolChoiceTest {
         DefaultCamelContext context = new DefaultCamelContext();
         return new LlmRouteSupport(
                 context,
-                FrameworkFixtures.inferenceLaneRegistry(),
                 new InFlightReplyManager(),
                 new LlmDeadLetterFactory(),
                 logs);
     }
 
     private static Exchange exchange(String laneId, LlmPassType passType) {
-        return exchange(laneId, passType, new DefaultCamelContext());
-    }
-
-    private static Exchange exchange(String laneId, LlmPassType passType, DefaultCamelContext context) {
-        Exchange exchange = new DefaultExchange(context);
-        exchange.setProperty("laneId", laneId);
-        exchange.setProperty("passType", passType);
-        exchange.setProperty("personaId", FrameworkFixtures.PERSONA_A);
-        exchange.setProperty("toolProfile", "none");
-        return exchange;
-    }
-
-    private static DefaultCamelContext context(boolean providerSchemaEnabled) {
-        DefaultCamelContext context = new DefaultCamelContext();
-        Properties properties = new Properties();
-        properties.setProperty("llm.model-default.structured-output.provider-schema-enabled", String.valueOf(providerSchemaEnabled));
-        context.getPropertiesComponent().setOverrideProperties(properties);
-        return context;
+        return FrameworkFixtures.agentExchange(laneId, passType);
     }
 
     private static LlmJobEnvelope job(String laneId, LlmPassType passType, String schema) {
-        return LlmJobEnvelope.queued(new LlmJobEnvelope(
+        return FrameworkFixtures.queuedJob(new LlmJobEnvelope(
                 UUID.randomUUID(),
                 laneId,
                 passType,
@@ -184,8 +164,8 @@ class ForcedToolChoiceTest {
                 "Return the result.",
                 "Return only JSON.",
                 schema,
-                Map.of(),
-                null).normalized());
+                Map.of("personaId", FrameworkFixtures.PERSONA_A, "llmForceProviderSchema", schema != null),
+                null));
     }
 
     private static ToolProvider probeToolProvider() {

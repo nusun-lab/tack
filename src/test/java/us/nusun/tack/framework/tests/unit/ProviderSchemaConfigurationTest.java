@@ -9,26 +9,20 @@ import org.apache.camel.component.langchain4j.agent.api.Agent;
 import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.support.DefaultExchange;
 import org.junit.jupiter.api.Test;
-import us.nusun.tack.framework.llm.InFlightReplyManager;
 import us.nusun.tack.framework.llm.LlmAgentFactory;
-import us.nusun.tack.framework.llm.LlmDeadLetterFactory;
-import us.nusun.tack.framework.llm.LlmRouteSupport;
-import us.nusun.tack.framework.llm.ProviderStructuredOutputSupport;
 import us.nusun.tack.framework.tests.support.TestTokenCountEstimator;
 import us.nusun.tack.framework.model.LlmJobEnvelope;
 import us.nusun.tack.framework.model.LlmPassType;
 import us.nusun.tack.framework.tests.support.FrameworkFixtures;
 
 import java.util.Map;
-import java.util.Properties;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class ProviderStructuredOutputSupportTest {
+class ProviderSchemaConfigurationTest {
     private static final String SCHEMA = """
             {
               "type": "object",
@@ -41,29 +35,9 @@ class ProviderStructuredOutputSupportTest {
             """;
 
     @Test
-    void dynamicAgentUriDoesNotAppendJsonSchemaWhenProviderSchemaIsEnabled() throws Exception {
-        try (DefaultCamelContext context = context(true)) {
-            Exchange exchange = new DefaultExchange(context);
-            LlmJobEnvelope job = job("low-pass", SCHEMA);
-            LlmRouteSupport support = new LlmRouteSupport(
-                    context,
-                    FrameworkFixtures.inferenceLaneRegistry(),
-                    new InFlightReplyManager(),
-                    new LlmDeadLetterFactory());
-
-            support.prepareAgentCall(job, exchange);
-
-            String uri = exchange.getProperty("agentInvocationUri", String.class);
-            assertEquals("langchain4j-agent:dynamic?agentFactory=#dynamicAgentFactory", uri);
-            assertTrue(!uri.contains("jsonSchema"));
-        }
-    }
-
-
-    @Test
     void schemaJobSetsProviderResponseFormatOnAgentFactoryAgent() throws Exception {
-        try (DefaultCamelContext context = context(true)) {
-            Agent agent = factory(context).createAgent(exchange(context, job("low-pass", SCHEMA)));
+        try (DefaultCamelContext context = new DefaultCamelContext()) {
+            Agent agent = factory(context).createAgent(exchange(context, job("low-pass", SCHEMA), true));
 
             ResponseFormat responseFormat = ((AbstractAgent<?>) agent).getResponseFormat();
             assertNotNull(responseFormat);
@@ -75,8 +49,8 @@ class ProviderStructuredOutputSupportTest {
 
     @Test
     void nonSchemaJobDoesNotSetProviderResponseFormat() throws Exception {
-        try (DefaultCamelContext context = context(true)) {
-            Agent agent = factory(context).createAgent(exchange(context, job("low-pass", null)));
+        try (DefaultCamelContext context = new DefaultCamelContext()) {
+            Agent agent = factory(context).createAgent(exchange(context, job("low-pass", null), true));
 
             assertNull(((AbstractAgent<?>) agent).getResponseFormat());
         }
@@ -84,8 +58,8 @@ class ProviderStructuredOutputSupportTest {
 
     @Test
     void disabledProviderSchemaDoesNotSetResponseFormatEvenWhenResponseSchemaExists() throws Exception {
-        try (DefaultCamelContext context = context(false)) {
-            Agent agent = factory(context).createAgent(exchange(context, job("low-pass", SCHEMA)));
+        try (DefaultCamelContext context = new DefaultCamelContext()) {
+            Agent agent = factory(context).createAgent(exchange(context, job("low-pass", SCHEMA), false));
 
             assertNull(((AbstractAgent<?>) agent).getResponseFormat());
         }
@@ -93,29 +67,34 @@ class ProviderStructuredOutputSupportTest {
 
     @Test
     void forceProviderSchemaMetadataSetsResponseFormatWhenDefaultIsDisabled() throws Exception {
-        try (DefaultCamelContext context = context(false)) {
+        try (DefaultCamelContext context = new DefaultCamelContext()) {
             Agent agent = factory(context).createAgent(exchange(context, job(
                     "low-pass",
                     SCHEMA,
-                    Map.of(ProviderStructuredOutputSupport.FORCE_PROVIDER_SCHEMA_PROPERTY, true))));
+                    Map.of("llmForceProviderSchema", true)), false));
 
             assertNotNull(((AbstractAgent<?>) agent).getResponseFormat());
         }
     }
 
-    private static DefaultCamelContext context(boolean providerSchemaEnabled) {
-        DefaultCamelContext context = new DefaultCamelContext();
-        Properties properties = new Properties();
-        properties.setProperty("llm.model-default.structured-output.provider-schema-enabled", String.valueOf(providerSchemaEnabled));
-        context.getPropertiesComponent().setOverrideProperties(properties);
-        return context;
+    @Test
+    void workerDefaultStillEnablesProviderSchemaWhenWireForceFlagIsFalse() throws Exception {
+        try (var context = new DefaultCamelContext()) {
+            Exchange producer = exchange(context, job("low-pass", SCHEMA, Map.of("llmForceProviderSchema", false)), false);
+            var queued = producer.getMessage().getBody(LlmJobEnvelope.class);
+            assertEquals(false, queued.metadata().get("llmForceProviderSchema"));
+
+            Exchange worker = new DefaultExchange(context);
+            worker.setProperty("llmJob", queued);
+            FrameworkFixtures.jobFactory(FrameworkFixtures.inferenceLaneRegistry(), "test-model", true).restore(worker);
+            assertNotNull(((AbstractAgent<?>) factory(context).createAgent(worker)).getResponseFormat());
+        }
     }
 
-    private static Exchange exchange(DefaultCamelContext context, LlmJobEnvelope job) {
+    private static Exchange exchange(DefaultCamelContext context, LlmJobEnvelope job, boolean enabled) {
         Exchange exchange = new DefaultExchange(context);
-        exchange.setProperty("laneId", job.laneId());
-        exchange.setProperty("passType", job.passType());
-        exchange.setProperty("llmJob", job);
+        exchange.getMessage().setBody(job);
+        FrameworkFixtures.jobFactory(FrameworkFixtures.inferenceLaneRegistry(), "test-model", enabled).prepare(exchange);
         return exchange;
     }
 
@@ -124,7 +103,7 @@ class ProviderStructuredOutputSupportTest {
     }
 
     private static LlmJobEnvelope job(String laneId, String schema, Map<String, Object> metadata) {
-        return LlmJobEnvelope.queued(new LlmJobEnvelope(
+        return new LlmJobEnvelope(
                 UUID.randomUUID(),
                 laneId,
                 LlmPassType.SYNTHESIS,
@@ -135,7 +114,7 @@ class ProviderStructuredOutputSupportTest {
                 "Return only JSON.",
                 schema,
                 metadata,
-                null).normalized());
+                null);
     }
 
     private static LlmAgentFactory.DynamicAgentFactory factory(DefaultCamelContext context) {

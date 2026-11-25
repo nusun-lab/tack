@@ -4,7 +4,6 @@ import us.nusun.tack.framework.llm.HallucinatedToolNameRecoveryStrategy;
 import us.nusun.tack.framework.llm.InFlightReplyManager;
 import us.nusun.tack.framework.llm.LlmAgentFactory;
 import us.nusun.tack.framework.llm.LlmDeadLetterFactory;
-import us.nusun.tack.framework.llm.LlmJobFactory;
 import us.nusun.tack.framework.llm.LlmRouteSupport;
 
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
@@ -21,7 +20,6 @@ import org.apache.camel.Exchange;
 import org.apache.camel.component.langchain4j.agent.api.Agent;
 import org.apache.camel.component.langchain4j.agent.api.AiAgentBody;
 import org.apache.camel.impl.DefaultCamelContext;
-import org.apache.camel.support.DefaultExchange;
 import org.junit.jupiter.api.Test;
 import us.nusun.tack.framework.model.LlmJobEnvelope;
 import us.nusun.tack.framework.model.LlmJobResult;
@@ -35,7 +33,6 @@ import us.nusun.tack.framework.tests.support.StubKafkaComponent;
 import us.nusun.tack.framework.tests.support.TestCamelContexts;
 import us.nusun.tack.framework.tests.support.TestJson;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -95,7 +92,7 @@ class HallucinatedToolNameRecoveryStrategyTest {
 
         try (DefaultCamelContext context = routeContext(model, kafka)) {
             context.start();
-            LlmJobEnvelope job = LlmJobEnvelope.queued(new LlmJobEnvelope(
+            LlmJobEnvelope job = FrameworkFixtures.queuedJob(new LlmJobEnvelope(
                     UUID.randomUUID(),
                     "low-pass",
                     LlmPassType.ACTION,
@@ -110,7 +107,7 @@ class HallucinatedToolNameRecoveryStrategyTest {
                             "toolProfile", "none",
                             "laneId", "low-pass",
                             "passType", "ACTION"),
-                    null).normalized());
+                    null));
             String json = TestJson.write(job);
 
             assertDoesNotThrow(() -> kafka.emit("llm.requests.low", json));
@@ -163,12 +160,7 @@ class HallucinatedToolNameRecoveryStrategyTest {
     }
 
     private static Exchange exchange(String laneId) {
-        Exchange exchange = new DefaultExchange(new DefaultCamelContext());
-        exchange.setProperty("laneId", laneId);
-        exchange.setProperty("passType", LlmPassType.ACTION);
-        exchange.setProperty("personaId", FrameworkFixtures.PERSONA_A);
-        exchange.setProperty("toolProfile", "none");
-        return exchange;
+        return FrameworkFixtures.agentExchange(laneId, LlmPassType.ACTION);
     }
 
     private static DefaultCamelContext routeContext(ChatModel model, StubKafkaComponent kafka) throws Exception {
@@ -191,12 +183,11 @@ class HallucinatedToolNameRecoveryStrategyTest {
         FrameworkFixtures.bindCatalogBeans(context);
         LlmRoute route = new LlmRoute();
         FrameworkFixtures.set(route, "lanes", FrameworkFixtures.inferenceLaneRegistry());
-        FrameworkFixtures.set(route, "jobFactory", new LlmJobFactory(FrameworkFixtures.inferenceLaneRegistry(), FrameworkFixtures.personaCatalog()));
+        FrameworkFixtures.set(route, "jobFactory", FrameworkFixtures.jobFactory());
         LlmDeadLetterFactory deadLetters = new LlmDeadLetterFactory();
         FrameworkFixtures.set(route, "deadLetterFactory", deadLetters);
         FrameworkFixtures.set(route, "routeSupport", new LlmRouteSupport(
                 context,
-                FrameworkFixtures.inferenceLaneRegistry(),
                 replies,
                 deadLetters));
         context.addRoutes(route);

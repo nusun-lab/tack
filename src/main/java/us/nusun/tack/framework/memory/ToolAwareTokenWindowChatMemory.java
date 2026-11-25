@@ -1,6 +1,5 @@
 package us.nusun.tack.framework.memory;
 
-import static dev.langchain4j.internal.Utils.getOrDefault;
 import static dev.langchain4j.internal.ValidationUtils.ensureGreaterThanZero;
 import static dev.langchain4j.internal.ValidationUtils.ensureNotNull;
 
@@ -10,13 +9,11 @@ import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.model.TokenCountEstimator;
-import dev.langchain4j.service.memory.ChatMemoryService;
 
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
-import java.util.function.Consumer;
 
 /**
  * Ephemeral tool-pass memory that keeps the complete tool execution history internally while projecting a
@@ -33,26 +30,21 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
     private final Object id;
     private final int maxTokens;
     private final TokenCountEstimator tokenCountEstimator;
-    private final boolean alwaysKeepSystemMessageFirst;
-    private final int maxToolCalls;
     private final double compactionThreshold;
     private final int recentToolInteractions;
-    private final Consumer<String> runtimeWarningSink;
 
     private List<ChatMessage> messages = new ArrayList<>();
     private final ToolInteractions interactions = new ToolInteractions();
     private boolean compacted;
     private boolean degradationNoticeSent;
 
-    private ToolAwareTokenWindowChatMemory(Builder builder) {
-        this.id = ensureNotNull(builder.id, "id");
-        this.maxTokens = ensureGreaterThanZero(builder.maxTokens, "maxTokens");
-        this.tokenCountEstimator = ensureNotNull(builder.tokenCountEstimator, "tokenCountEstimator");
-        this.alwaysKeepSystemMessageFirst = getOrDefault(builder.alwaysKeepSystemMessageFirst, false);
-        this.maxToolCalls = Math.max(0, builder.maxToolCalls);
-        this.compactionThreshold = validThreshold(builder.compactionThreshold);
-        this.recentToolInteractions = Math.max(0, builder.recentToolInteractions);
-        this.runtimeWarningSink = builder.runtimeWarningSink == null ? ignored -> { } : builder.runtimeWarningSink;
+    ToolAwareTokenWindowChatMemory(Object id, int maxTokens, TokenCountEstimator tokenCountEstimator,
+                                   double compactionThreshold, int recentToolInteractions) {
+        this.id = ensureNotNull(id, "id");
+        this.maxTokens = ensureGreaterThanZero(maxTokens, "maxTokens");
+        this.tokenCountEstimator = ensureNotNull(tokenCountEstimator, "tokenCountEstimator");
+        this.compactionThreshold = validThreshold(compactionThreshold);
+        this.recentToolInteractions = Math.max(0, recentToolInteractions);
     }
 
     @Override
@@ -62,23 +54,18 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
 
     @Override
     public synchronized void add(ChatMessage message) {
-        List<ChatMessage> updatedMessages = new ArrayList<>(messages);
         if (message instanceof SystemMessage) {
-            Optional<SystemMessage> maybeSystemMessage = SystemMessage.findFirst(updatedMessages);
-            if (maybeSystemMessage.isPresent()) {
-                if (maybeSystemMessage.get().equals(message)) {
-                    return;
-                }
-                updatedMessages.remove(maybeSystemMessage.get());
+            if (!messages.isEmpty() && message.equals(messages.getFirst())) {
+                return;
             }
-        }
-        if (message instanceof SystemMessage && alwaysKeepSystemMessageFirst) {
-            updatedMessages.add(0, message);
+            if (!messages.isEmpty() && messages.getFirst() instanceof SystemMessage) {
+                messages.removeFirst();
+            }
+            messages.addFirst(message);
         } else {
-            updatedMessages.add(message);
+            messages.add(message);
         }
         interactions.record(message);
-        this.messages = updatedMessages;
     }
 
     @Override
@@ -103,72 +90,13 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         this.degradationNoticeSent = false;
     }
 
-    public static Builder builder() {
-        return new Builder();
-    }
-
-    public static final class Builder {
-        private Object id = ChatMemoryService.DEFAULT;
-        private int maxTokens;
-        private TokenCountEstimator tokenCountEstimator;
-        private Boolean alwaysKeepSystemMessageFirst;
-        private int maxToolCalls;
-        private double compactionThreshold = 0.50;
-        private int recentToolInteractions = 3;
-        private Consumer<String> runtimeWarningSink;
-
-        public Builder id(Object id) {
-            this.id = id;
-            return this;
-        }
-
-        public Builder maxTokens(int maxTokens, TokenCountEstimator tokenCountEstimator) {
-            this.maxTokens = maxTokens;
-            this.tokenCountEstimator = tokenCountEstimator;
-            return this;
-        }
-
-        public Builder alwaysKeepSystemMessageFirst(Boolean alwaysKeepSystemMessageFirst) {
-            this.alwaysKeepSystemMessageFirst = alwaysKeepSystemMessageFirst;
-            return this;
-        }
-
-        public Builder maxToolCalls(int maxToolCalls) {
-            this.maxToolCalls = maxToolCalls;
-            return this;
-        }
-
-        public Builder compactionThreshold(double compactionThreshold) {
-            this.compactionThreshold = compactionThreshold;
-            return this;
-        }
-
-        public Builder recentToolInteractions(int recentToolInteractions) {
-            this.recentToolInteractions = recentToolInteractions;
-            return this;
-        }
-
-        public Builder runtimeWarningSink(Consumer<String> runtimeWarningSink) {
-            this.runtimeWarningSink = runtimeWarningSink;
-            return this;
-        }
-
-        public ToolAwareTokenWindowChatMemory build() {
-            return new ToolAwareTokenWindowChatMemory(this);
-        }
-    }
-
     private List<ChatMessage> project(List<ChatMessage> rawMessages) {
         if (rawMessages.isEmpty()) {
             return List.of();
         }
         int rawTokens = tokenCountEstimator.estimateTokenCountInMessages(rawMessages);
-        double historyPressure = ratio(rawTokens, maxTokens);
-
-        if (!compacted && historyPressure < compactionThreshold) {
-            List<ChatMessage> projected = new ArrayList<>(rawMessages);
-            notifyRuntimeBudget(rawTokens, rawTokens, false);
-            return projected;
+        if (!compacted && (double) rawTokens / maxTokens < compactionThreshold) {
+            return rawMessages;
         }
 
         compacted = true;
@@ -195,7 +123,6 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
             throw new IllegalStateException(
                     "Ephemeral tool-pass projection exceeded the safe token budget while only protected messages and deterministic journal remain");
         }
-        notifyRuntimeBudget(rawTokens, projectedTokens, true);
         return projected;
     }
 
@@ -213,23 +140,6 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
         StringBuilder text = new StringBuilder("Execution journal\n");
         appendJournal(text, entries);
         projected.add(UserMessage.from(JOURNAL_MESSAGE_NAME, text.toString().strip()));
-    }
-
-    private void notifyRuntimeBudget(int rawTokens, int projectedTokens, boolean compacted) {
-        StringBuilder summary = new StringBuilder("TOKEN BUDGET transcript=")
-                .append(projectedTokens).append('/').append(maxTokens)
-                .append(" (").append(percent(ratio(projectedTokens, maxTokens))).append("%)")
-                .append(" rawTranscript=").append(rawTokens)
-                .append(" compacted=").append(compacted)
-                .append(" calls=").append(interactions.requested().size());
-        if (maxToolCalls > 0) {
-            summary.append('/').append(maxToolCalls);
-        }
-        int repeated = repeatedExecutions();
-        if (repeated > 0) {
-            summary.append(" repeats=").append(repeated);
-        }
-        runtimeWarningSink.accept(summary.toString());
     }
 
     private void appendJournal(StringBuilder text, int entries) {
@@ -250,24 +160,6 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
             text.append('\n');
             i += repeats;
         }
-    }
-
-    private int repeatedExecutions() {
-        if (interactions.requested().size() < 2) {
-            return 0;
-        }
-        ToolInteractions.Interaction latest = interactions.requested().getLast();
-        if (latest.resultText() == null) {
-            return 0;
-        }
-        int repeated = 0;
-        for (int i = interactions.requested().size() - 2; i >= 0; i--) {
-            if (!latest.sameExecution(interactions.requested().get(i))) {
-                break;
-            }
-            repeated++;
-        }
-        return repeated;
     }
 
     private static List<ChatMessage> protectedPrefix(List<ChatMessage> rawMessages) {
@@ -305,14 +197,6 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
 
     private static Optional<UserMessage> originalUserMessage(List<ChatMessage> messages) {
         return messages.stream().filter(UserMessage.class::isInstance).map(UserMessage.class::cast).findFirst();
-    }
-
-    private static double ratio(int used, int max) {
-        return max <= 0 ? 0.0 : (double) used / (double) max;
-    }
-
-    private static int percent(double ratio) {
-        return (int) Math.round(ratio * 100.0);
     }
 
     private static double validThreshold(double value) {

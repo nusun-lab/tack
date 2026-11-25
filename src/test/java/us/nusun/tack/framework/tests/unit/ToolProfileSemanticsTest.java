@@ -136,9 +136,9 @@ class ToolProfileSemanticsTest {
                 .allowAllTools(FrameworkFixtures.SERVER_BETA)
                 .build();
 
-        assertEquals(2, profile.mcpServers().size());
-        assertTrue(profile.allowsServer(FrameworkFixtures.SERVER_ALPHA));
-        assertTrue(profile.allowsServer(FrameworkFixtures.SERVER_BETA));
+        assertEquals(2, profile.policies().size());
+        assertTrue(profile.policies().get(FrameworkFixtures.SERVER_ALPHA).declared());
+        assertTrue(profile.policies().get(FrameworkFixtures.SERVER_BETA).declared());
     }
 
     @Test
@@ -280,10 +280,10 @@ class ToolProfileSemanticsTest {
                 .mcpServer(McpServerDefinition.builder(FrameworkFixtures.SERVER_GAMMA).url("http://gamma.example/mcp").build())
                 .build();
 
-        assertTrue(logicalOnly.allowsServer(FrameworkFixtures.SERVER_GAMMA));
-        assertTrue(logicalOnly.mcpServers().isEmpty());
-        assertTrue(buildable.allowsServer(FrameworkFixtures.SERVER_GAMMA));
-        assertEquals("http://gamma.example/mcp", buildable.mcpServers().get(FrameworkFixtures.SERVER_GAMMA).url());
+        assertTrue(logicalOnly.policies().get(FrameworkFixtures.SERVER_GAMMA).declared());
+        assertNull(logicalOnly.policies().get(FrameworkFixtures.SERVER_GAMMA).connection());
+        assertTrue(buildable.policies().get(FrameworkFixtures.SERVER_GAMMA).declared());
+        assertEquals("http://gamma.example/mcp", buildable.policies().get(FrameworkFixtures.SERVER_GAMMA).connection().url());
     }
 
     @Test
@@ -383,9 +383,9 @@ class ToolProfileSemanticsTest {
                 .defaultArgument(FrameworkFixtures.SERVER_BETA, "list", "limit", 5)
                 .build();
 
-        assertEquals("alpha", profile.defaultArguments(FrameworkFixtures.SERVER_ALPHA, "search").get("query").asText());
-        assertEquals("beta", profile.defaultArguments(FrameworkFixtures.SERVER_BETA, "search").get("query").asText());
-        assertTrue(profile.defaultArguments(FrameworkFixtures.SERVER_ALPHA, "list").isEmpty());
+        assertEquals("alpha", profile.arguments(FrameworkFixtures.SERVER_ALPHA, "search").defaults().get("query").asText());
+        assertEquals("beta", profile.arguments(FrameworkFixtures.SERVER_BETA, "search").defaults().get("query").asText());
+        assertTrue(profile.arguments(FrameworkFixtures.SERVER_ALPHA, "list").defaults().isEmpty());
     }
 
     @Test
@@ -403,28 +403,11 @@ class ToolProfileSemanticsTest {
                 .denyTool(FrameworkFixtures.SERVER_ALPHA, "alpha_delete")
                 .build();
 
-        assertEquals("http://alpha.example/mcp", first.mcpServers().get(FrameworkFixtures.SERVER_ALPHA).url());
-        assertEquals("one", second.mcpServers().get(FrameworkFixtures.SERVER_ALPHA).extraHeaders().get("x-synthetic"));
+        assertEquals("http://alpha.example/mcp", first.policies().get(FrameworkFixtures.SERVER_ALPHA).connection().url());
+        assertEquals("one", second.policies().get(FrameworkFixtures.SERVER_ALPHA).connection().extraHeaders().get("x-synthetic"));
         assertTrue(first.allowsTool(FrameworkFixtures.SERVER_ALPHA, "alpha_read"));
         assertFalse(second.allowsTool(FrameworkFixtures.SERVER_ALPHA, "alpha_delete"));
         assertThrows(UnsupportedOperationException.class, () -> shared.extraHeaders().put("x-other", "two"));
-    }
-
-    @Test
-    void allJsonIncludesAllowedAndDeniedToolPolicy() {
-        ToolProfileRegistry registry = new ToolProfileRegistry(List.of(ToolProfile.builder("json-policy")
-                .server(FrameworkFixtures.SERVER_ALPHA)
-                .allowTool(FrameworkFixtures.SERVER_ALPHA, "alpha_read")
-                .denyTool(FrameworkFixtures.SERVER_ALPHA, "alpha_delete")
-                .build()));
-
-        String json = registry.allJson();
-
-        assertTrue(json.contains("allowedTools"));
-        assertTrue(json.contains("alpha_read"));
-        assertTrue(json.contains("deniedTools"));
-        assertTrue(json.contains("alpha_delete"));
-        assertTrue(json.contains("hiddenArguments"));
     }
 
     @Test
@@ -509,11 +492,11 @@ class ToolProfileSemanticsTest {
     void genericToolProfilesDeclareToolSurfaceWithoutScenarioSpecificProfiles() {
         ToolProfile profile = FrameworkFixtures.toolProfileRegistry().getRequired(FrameworkFixtures.PROFILE_BETA);
 
-        assertTrue(profile.allowsServer(FrameworkFixtures.SERVER_BETA));
+        assertTrue(profile.policies().get(FrameworkFixtures.SERVER_BETA).declared());
         assertTrue(profile.allowsTool(FrameworkFixtures.SERVER_BETA, "beta_list"));
         assertTrue(profile.allowsTool(FrameworkFixtures.SERVER_BETA, "beta_create"));
         assertFalse(profile.allowsTool(FrameworkFixtures.SERVER_BETA, "beta_delete"));
-        assertEquals("id,name,identifier", profile.defaultArguments(FrameworkFixtures.SERVER_BETA, "beta_list").get("fields").asText());
+        assertEquals("id,name,identifier", profile.arguments(FrameworkFixtures.SERVER_BETA, "beta_list").defaults().get("fields").asText());
     }
 
     @Test
@@ -524,7 +507,6 @@ class ToolProfileSemanticsTest {
         assertTrue(registry.getRequired("").none());
         assertTrue(registry.getRequired("none").none());
         assertEquals(List.of("tools"), registry.all().stream().map(ToolProfile::id).toList());
-        assertFalse(registry.allJson().contains("\"id\":\"none\""));
     }
 
     @Test

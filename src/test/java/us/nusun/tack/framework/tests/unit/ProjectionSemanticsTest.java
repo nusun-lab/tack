@@ -86,10 +86,9 @@ class ProjectionSemanticsTest {
         run.currentPrimitive("act");
         run.currentId("work-item-review");
         run.apply(new StepResult("work-item-review", null, "Project membership is missing.", "SUCCEEDED", false, 0));
-        exchange.setProperty("toolProfile", FrameworkFixtures.PROFILE_BETA);
-        String fullPrompt = "Review one current item in the project management system. " + "Preserve this sentence. ".repeat(30);
-        exchange.setProperty("actPrompt", fullPrompt);
-        exchange.setProperty("resolvedLane", "high-pass");
+        FrameworkFixtures.restoreJob(exchange, FrameworkFixtures.queuedJob(new LlmJobEnvelope(null,
+                "high-pass", LlmPassType.ACTION, "test", "test", 0, "Review work", null, null,
+                Map.of("toolProfile", FrameworkFixtures.PROFILE_BETA), null)));
         ThoughtStack stack = new ThoughtStack();
         stack.push(new ThoughtFrame("pm", "pm-cycle", "Project Manager routine context", 900, "Current state: ".repeat(120)));
         exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
@@ -112,8 +111,7 @@ class ProjectionSemanticsTest {
         assertEquals("Project membership is missing.", projection.latestResult().get("summary"));
         assertEquals("ACT_COMPLETED", projection.timeline().getFirst().get("type"));
         assertTrue(projection.thoughtHistory().isEmpty());
-        assertEquals(Boolean.TRUE, projection.thoughtStack().getFirst().get("truncated"));
-        assertEquals("pm-cycle", projection.thoughtStack().getFirst().get("displayId"));
+        assertEquals("pm-cycle", projection.thoughtStack().getFirst().name());
     }
 
 
@@ -130,7 +128,7 @@ class ProjectionSemanticsTest {
         run.currentPrimitive("act");
         run.currentId("inspect-current-work");
 
-        LlmJobEnvelope job = LlmJobEnvelope.queued(new LlmJobEnvelope(
+        LlmJobEnvelope job = FrameworkFixtures.queuedJob(new LlmJobEnvelope(
                 null,
                 "high-pass",
                 LlmPassType.ACTION,
@@ -146,9 +144,9 @@ class ProjectionSemanticsTest {
                         "primitiveId", "inspect-current-work",
                         "primitivePrompt", "Inspect the current work item.",
                         "toolProfile", FrameworkFixtures.PROFILE_BETA),
-                null).normalized());
+                null));
         exchange.setProperty("agentRunId", run.id());
-        exchange.setProperty("llmJob", job);
+        FrameworkFixtures.restoreJob(exchange, job);
 
         manager.recordLlmStarted(exchange);
 
@@ -192,7 +190,7 @@ class ProjectionSemanticsTest {
         AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
         manager.record(exchange, "AGENT_RUN_STARTED");
 
-        LlmJobEnvelope action = LlmJobEnvelope.queued(new LlmJobEnvelope(
+        LlmJobEnvelope action = FrameworkFixtures.queuedJob(new LlmJobEnvelope(
                 null,
                 "high-pass",
                 LlmPassType.ACTION,
@@ -207,13 +205,13 @@ class ProjectionSemanticsTest {
                         "primitive", "act",
                         "primitiveId", "inspect",
                         "primitivePrompt", "Inspect current work."),
-                null).normalized());
+                null));
         exchange.setProperty("agentRunId", run.id());
-        exchange.setProperty("llmJob", action);
+        FrameworkFixtures.restoreJob(exchange, action);
         manager.recordLlmStarted(exchange);
         manager.recordPrimitiveCompleted(exchange, "ACT_COMPLETED", "act", "inspect", "Inspection complete.");
 
-        LlmJobEnvelope synthesis = LlmJobEnvelope.queued(new LlmJobEnvelope(
+        LlmJobEnvelope synthesis = FrameworkFixtures.queuedJob(new LlmJobEnvelope(
                 null,
                 "low-pass",
                 LlmPassType.SYNTHESIS,
@@ -228,8 +226,8 @@ class ProjectionSemanticsTest {
                         "primitive", "act",
                         "primitiveId", "inspect",
                         "primitivePrompt", "Inspect current work."),
-                null).normalized());
-        exchange.setProperty("llmJob", synthesis);
+                null));
+        FrameworkFixtures.restoreJob(exchange, synthesis);
         manager.recordLlmStarted(exchange);
 
         AgentRunProjection projection = store.get(run.id());
@@ -322,7 +320,8 @@ class ProjectionSemanticsTest {
                 "content", "durable child content",
                 "primitive", "act",
                 "timestamp", java.time.Instant.now().toString()));
-        thoughts.pop().process(exchange);
+        FrameworkFixtures.primitiveExecutor(store).exitThought(exchange,
+                new us.nusun.tack.framework.tack.PrimitiveExecutor.ThoughtExitRequest(frame.name(), null), null);
 
         AgentRunProjection projection = store.get(run.id());
         assertTrue(projection.thoughtStack().isEmpty());
@@ -352,7 +351,7 @@ class ProjectionSemanticsTest {
         manager.record(exchange, "ACT_COMPLETED");
 
         AgentRunProjection projection = store.get(run.id());
-        assertEquals(fullThought, projection.thoughtStack().getFirst().get("content"));
+        assertEquals(fullThought, projection.thoughtStack().getFirst().content());
         String json = TestJson.write(projection);
         assertTrue(json.contains(fullThought.substring(0, 120)));
         assertFalse(json.contains("SECRET_TOKEN"));

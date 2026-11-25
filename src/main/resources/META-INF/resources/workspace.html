@@ -277,9 +277,7 @@
     }
 
     function mcpServerCount(profiles) {
-      const servers = new Set();
-      profiles.forEach(profile => Object.keys(obj(profile.mcpServers)).forEach(id => servers.add(id)));
-      return servers.size;
+      return mcpServers(profiles).size;
     }
 
     function renderProjections(projections) {
@@ -406,10 +404,10 @@
     function renderThought(agentRunId, t, index) {
       const content = t.content ?? '';
       const context = t.context ?? '';
-      const displayId = t.displayId || t.name || t.id || `thought-${index + 1}`;
+      const displayId = t.name || t.id || `thought-${index + 1}`;
       const contentIsDuplicateContext = content.trim() && content.trim() === context.trim();
       const hasUsefulContent = content.trim() && !contentIsDuplicateContext;
-      const usefulApproxTokens = hasUsefulContent ? t.approxTokens : 0;
+      const usefulApproxTokens = hasUsefulContent ? Math.max(1, Math.floor(content.length / 4)) : 0;
       const key = `projection:${agentRunId}:thought:${t.id || index}`;
       return `<details class="thought" data-global-detail ${detailAttrs(key)}>
         <summary>${esc(displayId)} · ${esc(usefulApproxTokens)} content tokens</summary>
@@ -473,10 +471,18 @@
       renderToolProfiles(profiles);
     }
 
-    function renderToolServers(profiles) {
+    function mcpServers(profiles) {
       const servers = new Map();
-      profiles.forEach(profile => Object.entries(obj(profile.mcpServers)).forEach(([id, server]) => servers.set(id, server)));
-      document.getElementById('toolServers').innerHTML = [...servers.entries()].map(([id, server]) => `<article class="card">
+      for (const profile of profiles) {
+        for (const [id, policy] of Object.entries(obj(profile.servers))) {
+          if (policy.connection) servers.set(id, policy.connection);
+        }
+      }
+      return servers;
+    }
+
+    function renderToolServers(profiles) {
+      document.getElementById('toolServers').innerHTML = [...mcpServers(profiles)].map(([id, server]) => `<article class="card">
         <div class="inventory-title"><h3>${esc(id)}</h3><span class="label mono">${esc(server.transportType || '')}</span></div>
         <dl class="kv"><dt>URL</dt><dd>${esc(server.url || '(not configured)')}</dd><dt>Auth header</dt><dd class="mono">${esc(server.authHeaderName || '')}</dd><dt>Extra headers</dt><dd>${arr(server.extraHeaderNames).map(key => `<span class="label mono">${esc(key)}</span>`).join(' ') || '<span class="muted">none</span>'}</dd></dl>
       </article>`).join('') || '<div class="empty">No MCP server definitions declared.</div>';
@@ -487,8 +493,8 @@
     }
 
     function renderToolProfile(p) {
-      const servers = arr(p.servers);
-      const mcpServerIds = Object.keys(obj(p.mcpServers));
+      const servers = Object.entries(obj(p.servers));
+      const mcpServerIds = servers.filter(([, policy]) => policy.connection).map(([id]) => id);
       return `<article class="card">
         <div class="inventory-title"><h3>${esc(p.id)}</h3><span class="label">max ${esc(p.maxResultTokens || 0)} tokens</span></div>
         <dl class="kv">
@@ -497,31 +503,28 @@
         </dl>
         <details data-global-detail ${detailAttrs(`tool-profile:${p.id}:guidance`)}><summary>Prompt guidance</summary><pre>${esc(p.promptGuidance || '')}</pre></details>
         <h4>Policy</h4>
-        <div class="policy-list">${servers.map(server => renderToolPolicy(p, server)).join('') || '<div class="empty">No servers declared.</div>'}</div>
+        <div class="policy-list">${servers.map(([id, policy]) => renderToolPolicy(p.id, id, policy)).join('') || '<div class="empty">No servers declared.</div>'}</div>
       </article>`;
     }
 
-    function renderToolPolicy(p, server) {
-      const allowed = arr(obj(p.allowedTools)[server]);
-      const denied = arr(obj(p.deniedTools)[server]);
-      const defaults = obj(obj(p.defaultArguments)[server]);
-      const hidden = obj(obj(p.hiddenArguments)[server]);
-      const permitted = obj(obj(p.permittedArgumentValues)[server]);
-      const hasAllowList = allowed.length > 0;
-      const mode = hasAllowList ? `explicit allow list (${allowed.length})` : `broad access (${denied.length} denied)`;
-      const modeClass = hasAllowList ? 'allow' : 'deny';
-      return `<details class="policy-server" data-global-detail ${detailAttrs(`tool-profile:${p.id}:policy:${server}`)}>
-        <summary><span class="policy-summary"><span class="policy-summary-name"><strong class="mono">${esc(server)}</strong></span><span class="policy-mode ${modeClass}">${esc(mode)}</span></span></summary>
-        <h4>Allowed tools ${hasAllowList ? `(${allowed.length})` : '(broad)'}</h4>
-        ${renderToolChips(hasAllowList ? allowed : []) || (hasAllowList ? '<div class="empty">No allowed tools.</div>' : '<p class="muted">All discovered tools except denied tools.</p>')}
+    function renderToolPolicy(profileId, server, policy) {
+      const allowed = arr(policy.allowedTools);
+      const denied = arr(policy.deniedTools);
+      const explicit = !policy.allowAll && allowed.length > 0;
+      const mode = explicit ? `explicit allow list (${allowed.length})` : `broad access (${denied.length} denied)`;
+      const argumentsByTool = Object.entries(obj(policy.arguments));
+      return `<details class="policy-server" data-global-detail ${detailAttrs(`tool-profile:${profileId}:policy:${server}`)}>
+        <summary><span class="policy-summary"><span class="policy-summary-name"><strong class="mono">${esc(server)}</strong></span><span class="policy-mode ${explicit ? 'allow' : 'deny'}">${esc(mode)}</span></span></summary>
+        <h4>Allowed tools</h4>
+        ${explicit ? renderToolChips(allowed) : '<p class="muted">All discovered tools except denied tools.</p>'}
         <h4>Denied tools (${denied.length})</h4>
         ${renderToolChips(denied) || '<p class="muted">None.</p>'}
-        <h4>Default arguments</h4>
-        ${Object.keys(defaults).length ? `<pre>${json(defaults)}</pre>` : '<p class="muted">None.</p>'}
-        <h4>Hidden arguments</h4>
-        ${Object.keys(hidden).length ? `<pre>${json(hidden)}</pre>` : '<p class="muted">None.</p>'}
-        <h4>Permitted argument values</h4>
-        ${Object.keys(permitted).length ? `<pre>${json(permitted)}</pre>` : '<p class="muted">None.</p>'}
+        <h4>Argument rules</h4>
+        ${argumentsByTool.map(([tool, rules]) => `<h4 class="mono">${esc(tool)}</h4><dl class="kv">
+          <dt>Defaults</dt><dd>${Object.keys(obj(rules.defaults)).length ? `<pre>${json(rules.defaults)}</pre>` : 'None.'}</dd>
+          <dt>Hidden</dt><dd>${arr(rules.hidden).length ? renderToolChips(rules.hidden) : 'None.'}</dd>
+          <dt>Permitted values</dt><dd>${Object.keys(obj(rules.permittedValues)).length ? `<pre>${json(rules.permittedValues)}</pre>` : 'None.'}</dd>
+        </dl>`).join('') || '<p class="muted">None.</p>'}
       </details>`;
     }
 

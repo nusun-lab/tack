@@ -7,7 +7,6 @@ import org.junit.jupiter.api.Test;
 import us.nusun.tack.framework.model.AgentRunProjection;
 import us.nusun.tack.framework.model.LlmJobEnvelope;
 import us.nusun.tack.framework.model.LlmJobResult;
-import us.nusun.tack.framework.model.LlmJobStatus;
 import us.nusun.tack.framework.model.LlmPassType;
 import us.nusun.tack.framework.model.Mission;
 import us.nusun.tack.framework.model.StepResult;
@@ -72,6 +71,35 @@ class TackComponentContractTest {
             assertEquals(LlmPassType.SYNTHESIS, llm.requests.get(1).passType());
             assertTrue(llm.requests.get(1).prompt().contains("Rewrite the current thought"));
             assertFalse(llm.requests.get(1).prompt().contains("t_"));
+        }
+    }
+
+    @Test
+    void actResultUsesTheThoughtThatFitsTheRetainedBudget() throws Exception {
+        String generated = "durable evidence ".repeat(12).strip();
+        ScriptedLlm llm = new ScriptedLlm(request -> request.passType() == LlmPassType.ACTION
+                ? "evidence" : "{\"content\":\"" + generated + "\"}");
+        try (var context = context(new ProjectionStore(), llm)) {
+            context.addRoutes(new RouteBuilder() {
+                @Override
+                public void configure() {
+                    from("direct:bounded-thought")
+                            .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("Retain just the evidence."))
+                            .to("tack:thought-enter?name=bounded&maxTokens=8")
+                            .setHeader(TackHeaders.PROMPT, constant("Inspect."))
+                            .to("tack:act?id=inspect");
+                }
+            });
+            context.start();
+
+            Exchange result = send(context, "direct:bounded-thought");
+            StepResult completed = assertInstanceOf(StepResult.class, result.getMessage().getBody());
+            String retained = result.getProperty(ThoughtStackSupport.STACK_PROPERTY, ThoughtStack.class).leaf().content();
+
+            assertTrue(retained.endsWith(" [truncated]"));
+            assertTrue(retained.length() < generated.length());
+            assertEquals(retained, completed.thought());
+            assertEquals(completed, result.getProperty("agentRun", AgentRun.class).latestStepResult());
         }
     }
 
@@ -326,21 +354,19 @@ class TackComponentContractTest {
             @Override
             public void configure() {
                 from("direct:llm").process(exchange -> {
-                    LlmJobEnvelope request = exchange.getMessage().getBody(LlmJobEnvelope.class);
-                    llm.requests.add(request);
-                    LlmJobEnvelope job = LlmJobEnvelope.queued(request.normalized());
-                    String agentRunId = String.valueOf(request.metadata().get("agentRunId"));
-                    exchange.setProperty("agentRunId", agentRunId);
-                    exchange.setProperty("llmJob", job);
+                    FrameworkFixtures.jobFactory().prepare(exchange);
+                    LlmJobEnvelope job = exchange.getMessage().getBody(LlmJobEnvelope.class);
+                    llm.requests.add(job);
+                    String agentRunId = String.valueOf(job.metadata().get("agentRunId"));
                     if (store.get(agentRunId) == null) {
                         projections.record(exchange, "AGENT_RUN_STARTED");
                     }
                     projections.recordLlmStarted(exchange);
-                    if (llm.failConsolidation && "thought-exit".equals(request.metadata().get("primitive"))) {
+                    if (llm.failConsolidation && "thought-exit".equals(job.metadata().get("primitive"))) {
                         exchange.getMessage().setBody(LlmJobResult.failed(job, "test-model", "consolidation unavailable", "", Instant.now()));
                         return;
                     }
-                    String content = llm.response.apply(request);
+                    String content = llm.response.apply(job);
                     exchange.getMessage().setBody(LlmJobResult.succeeded(job, "test-model", content, content, Instant.now()));
                 });
             }

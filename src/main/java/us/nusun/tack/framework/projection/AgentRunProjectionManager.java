@@ -18,7 +18,6 @@ import us.nusun.tack.framework.model.DecisionResult;
 import us.nusun.tack.framework.model.CreateResult;
 import us.nusun.tack.framework.model.RoutineDefinition;
 import us.nusun.tack.framework.model.SubroutineDefinition;
-import us.nusun.tack.framework.model.ThoughtFrame;
 import us.nusun.tack.framework.routine.ThoughtStackSupport;
 import us.nusun.tack.framework.state.AgentRun;
 import us.nusun.tack.framework.state.ThoughtStack;
@@ -61,9 +60,9 @@ public class AgentRunProjectionManager {
     private void record(Exchange exchange, AgentRun run, ProjectionEvent event, String response) {
         Mission mission = exchange.getProperty("mission", Mission.class);
         ThoughtStack stack = exchange.getProperty(ThoughtStackSupport.STACK_PROPERTY, ThoughtStack.class);
-        String profile = exchange.getProperty("toolProfile", String.class);
-        String lane = firstNonBlank(exchange.getProperty("resolvedLane", String.class),
-                exchange.getProperty("laneId", String.class));
+        var invocation = LlmExecutionContext.on(exchange);
+        String profile = invocation == null ? null : invocation.toolProfile();
+        String lane = invocation == null ? null : invocation.laneId();
         String failure = exchange.getProperty("latestPrimitiveFailure", String.class);
         store.update(run.id(), previous -> build(run, mission, stack, profile, lane, failure, previous, event, response));
     }
@@ -74,29 +73,28 @@ public class AgentRunProjectionManager {
     }
 
     public void recordLlmStarted(Exchange exchange) {
-        String agentRunId = exchange.getProperty("agentRunId", String.class);
-        LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
-        if (agentRunId == null || agentRunId.isBlank() || job == null) {
+        var invocation = LlmExecutionContext.on(exchange);
+        if (invocation == null || invocation.agentRunId() == null) {
             return;
         }
-
-        LlmExecutionContext invocation = LlmExecutionContext.on(exchange);
+        var job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
         String primitive = invocation.primitive();
         String primitiveId = invocation.primitiveId();
-        ProjectionEvent event = new ProjectionEvent(llmStartedEvent(job.passType(), primitive), primitive, primitiveId,
+        var pass = invocation.passType();
+        ProjectionEvent event = new ProjectionEvent(llmStartedEvent(pass, primitive), primitive, primitiveId,
                 metadataMap(job, "thoughtConsolidationDetails"));
-        store.updateExisting(agentRunId, previous -> {
-            if (!projectsPrimaryRequest(job.passType())) {
+        store.updateExisting(invocation.agentRunId(), previous -> {
+            if (!projectsPrimaryRequest(pass)) {
                 return copy(previous, previous.current(), previous.toolProfile(), previous.laneId(), event);
             }
             LinkedHashMap<String, Object> current = new LinkedHashMap<>();
             if (primitive != null && !primitive.isBlank()) current.put("primitive", primitive);
             if (primitiveId != null && !primitiveId.isBlank()) current.put("id", primitiveId);
-            current.put("jobId", job.jobId().toString());
+            current.put("jobId", invocation.jobId().toString());
             current.put("request", Objects.toString(invocation.primitivePrompt(), ""));
             current.put("response", "");
             return copy(previous, Map.copyOf(current), firstNonBlank(invocation.toolProfile(), previous.toolProfile()),
-                    firstNonBlank(job.laneId(), previous.laneId()), event);
+                    firstNonBlank(invocation.laneId(), previous.laneId()), event);
         });
     }
 
@@ -140,7 +138,7 @@ public class AgentRunProjectionManager {
                 subroutineSummary(subroutine), run.input(), current(previous, event, response),
                 firstNonBlank(previous == null ? null : previous.toolProfile(), profile),
                 firstNonBlank(previous == null ? null : previous.laneId(), lane),
-                thoughtFrames(stack), thoughtHistory(previous, event), latest(failure, run),
+                stack == null ? List.of() : stack.frames(), thoughtHistory(previous, event), latest(failure, run),
                 timeline(previous, event), Instant.now());
     }
 
@@ -209,36 +207,6 @@ public class AgentRunProjectionManager {
             case CreateResult creation -> Map.of("type", "create", "createId", creation.createId());
             case null -> Map.of();
         };
-    }
-
-    private static List<Map<String, Object>> thoughtFrames(ThoughtStack stack) {
-        if (stack == null) {
-            return List.of();
-        }
-        List<ThoughtFrame> frames = stack.frames();
-        ArrayList<Map<String, Object>> rows = new ArrayList<>(frames.size());
-        for (ThoughtFrame frame : frames) {
-            rows.add(thoughtFrame(frame));
-        }
-        return List.copyOf(rows);
-    }
-
-    private static Map<String, Object> thoughtFrame(ThoughtFrame frame) {
-        String content = frame.content() == null ? "" : frame.content();
-        Map<String, Object> row = new LinkedHashMap<>();
-        row.put("id", frame.id());
-        if (frame.name() != null && !frame.name().isBlank()) {
-            row.put("name", frame.name());
-            row.put("displayId", frame.name());
-        }
-        row.put("context", frame.context());
-        row.put("updatedAt", frame.updatedAt());
-        row.put("maxTokens", frame.maxTokens());
-        row.put("approxTokens", content.isBlank() ? 0 : Math.max(1, content.length() / 4));
-        row.put("contentPreview", content.length() <= 240 ? content : content.substring(0, 230) + " [truncated]");
-        row.put("content", content);
-        row.put("truncated", content.length() > 240);
-        return row;
     }
 
     private static List<Map<String, Object>> timeline(AgentRunProjection previous, ProjectionEvent event) {

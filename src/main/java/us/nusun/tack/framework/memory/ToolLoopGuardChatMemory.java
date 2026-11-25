@@ -4,6 +4,8 @@ import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.memory.ChatMemory;
+import dev.langchain4j.model.TokenCountEstimator;
+import us.nusun.tack.framework.config.ToolPassSettings;
 
 import java.util.LinkedList;
 import java.util.List;
@@ -20,6 +22,11 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
     private final ToolInteractions interactions = new ToolInteractions();
     private int acceptedToolCalls;
     private int assistantRounds;
+
+    public static ChatMemory forPass(Object id, ToolPassSettings settings, TokenCountEstimator estimator) {
+        return new ToolLoopGuardChatMemory(new ToolAwareTokenWindowChatMemory(id, settings.memoryTokens(), estimator,
+                settings.compactionThreshold(), settings.recentToolInteractions()), settings.maxToolCalls());
+    }
 
     public ToolLoopGuardChatMemory(ChatMemory delegate) {
         this(delegate, 0);

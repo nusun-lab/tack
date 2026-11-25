@@ -27,22 +27,19 @@ class LoggingSemanticsTest {
         CapturingLogTokens logs = new CapturingLogTokens();
         LlmRouteSupport support = new LlmRouteSupport(
                 new DefaultCamelContext(),
-                FrameworkFixtures.inferenceLaneRegistry(),
                 new InFlightReplyManager(),
                 new LlmDeadLetterFactory(),
                 logs);
         Exchange exchange = new DefaultExchange(new DefaultCamelContext());
-        exchange.setProperty("agentLabel", "DEV");
-        exchange.setProperty("agentLogColor", "38;2;100;50;10");
         LlmJobEnvelope job = job();
-        exchange.setProperty("llmJob", job);
+        FrameworkFixtures.restoreJob(exchange, job);
 
         support.logPrompt(job, exchange);
         support.logModelResponse(LlmJobResult.succeeded(job, "model", "{\"ok\":true}", "{\"ok\":true}", Instant.now()), exchange);
 
         assertEquals(2, logs.messages.size());
-        assertTrue(logs.messages.get(0).startsWith("\u001B[38;2;55;28;6m[DEV] SYSTEM system\nPROMPT prompt"));
-        assertTrue(logs.messages.get(1).startsWith("\u001B[38;2;100;50;10m[DEV] RESPONSE {\"ok\":true}"));
+        assertTrue(logs.messages.get(0).startsWith("\u001B[38;2;58;93;140m[PA] SYSTEM system\nPROMPT prompt"));
+        assertTrue(logs.messages.get(1).startsWith("\u001B[38;2;106;169;255m[PA] RESPONSE {\"ok\":true}"));
     }
 
     @Test
@@ -54,7 +51,7 @@ class LoggingSemanticsTest {
     }
 
     private static LlmJobEnvelope job() {
-        return LlmJobEnvelope.queued(new LlmJobEnvelope(
+        return FrameworkFixtures.queuedJob(new LlmJobEnvelope(
                 null,
                 "low-pass",
                 LlmPassType.SYNTHESIS,
@@ -64,8 +61,8 @@ class LoggingSemanticsTest {
                 "prompt",
                 "system",
                 null,
-                Map.of(),
-                null).normalized());
+                Map.of("personaId", FrameworkFixtures.PERSONA_A),
+                null));
     }
 
     private static final class CapturingLogTokens extends LogTokens {

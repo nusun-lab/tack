@@ -16,8 +16,6 @@ import dev.langchain4j.service.tool.ToolProviderResult;
 import org.apache.camel.Exchange;
 import org.apache.camel.component.langchain4j.agent.api.Agent;
 import org.apache.camel.component.langchain4j.agent.api.AiAgentBody;
-import org.apache.camel.impl.DefaultCamelContext;
-import org.apache.camel.support.DefaultExchange;
 import org.junit.jupiter.api.Test;
 import us.nusun.tack.framework.llm.LlmAgentFactory;
 import us.nusun.tack.framework.mcp.McpClientFactory;
@@ -26,7 +24,6 @@ import us.nusun.tack.framework.tests.support.FrameworkFixtures;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -91,12 +88,7 @@ class CompactedSystemMessageOrderingTest {
     }
 
     private static Exchange exchange() {
-        Exchange exchange = new DefaultExchange(new DefaultCamelContext());
-        exchange.setProperty("laneId", "low-pass");
-        exchange.setProperty("passType", LlmPassType.ACTION);
-        exchange.setProperty("personaId", FrameworkFixtures.PERSONA_A);
-        exchange.setProperty("toolProfile", "none");
-        return exchange;
+        return FrameworkFixtures.agentExchange("low-pass", LlmPassType.ACTION);
     }
 
     private static ToolProvider probeToolProvider() {

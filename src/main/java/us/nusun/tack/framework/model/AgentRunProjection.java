@@ -17,7 +17,7 @@ public record AgentRunProjection(
         Map<String, Object> current,
         String toolProfile,
         String laneId,
-        List<Map<String, Object>> thoughtStack,
+        List<ThoughtFrame> thoughtStack,
         List<Map<String, Object>> thoughtHistory,
         Map<String, Object> latestResult,
         List<Map<String, Object>> timeline,

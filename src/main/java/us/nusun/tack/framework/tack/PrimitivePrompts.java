@@ -9,6 +9,7 @@ import us.nusun.tack.framework.inventory.RoutineCatalog;
 import us.nusun.tack.framework.llm.SchemaContract;
 import us.nusun.tack.framework.model.DecisionResult;
 import us.nusun.tack.framework.model.LlmJobResult;
+import us.nusun.tack.framework.model.LlmPassType;
 import us.nusun.tack.framework.model.Mission;
 import us.nusun.tack.framework.model.Persona;
 import us.nusun.tack.framework.model.RoutineDefinition;
@@ -44,11 +45,11 @@ final class PrimitivePrompts {
         return thoughts.stack(exchange);
     }
 
-    String primitiveSystemPrompt(Exchange exchange, String primitive) {
+    String primitiveSystemPrompt(Exchange exchange, LlmPassType passType) {
         Persona persona = personas.getRequired(currentRun(exchange).personaId());
         return renderPersonaBehavior(persona)
-                + switch (primitive) {
-            case "tool" -> """
+                + switch (passType) {
+            case ACTION -> """
 
                     Tool access:
                     - You have access to only one external tool profile during this pass.
@@ -68,7 +69,7 @@ final class PrimitivePrompts {
                     - Do not claim external state unless tool-backed.
                     - Return only a compact plain-text pass report.
                     """;
-            case "synthesis" -> """
+            case SYNTHESIS -> """
 
                     Contract:
                     - Synthesize the completed action result into the required JSON.
@@ -79,21 +80,21 @@ final class PrimitivePrompts {
                     - Rewrite the current thought as current-state memory, not hidden chain-of-thought.
                     - Evaluate only what the completed act actually accomplished; do not infer success from intent.
                     """;
-            case "decision" -> """
+            case DECISION -> """
 
                     Contract:
                     - Answer one narrow routine control-flow question.
                     - Use only supplied context; this pass has no tools.
                     - Return only a DecisionResult JSON object.
                     """;
-            case "create" -> """
+            case CREATION -> """
 
                     Contract:
                     - Create caller-schema-shaped JSON for the highlighted prompt only.
                     - Use only supplied context; this pass has no tools.
                     - Return only a JSON object matching the caller schema.
                     """;
-            case "thought-consolidation" -> """
+            case CONSOLIDATION -> """
 
                     Contract:
                     - Consolidate a completed child thought into its parent.
@@ -101,7 +102,6 @@ final class PrimitivePrompts {
                     - Return only valid JSON matching the supplied schema.
                     - The framework has already selected the parent; do not reference framework ids in content.
                     """;
-            default -> throw new IllegalArgumentException("Unknown primitive system contract: " + primitive);
         };
     }
 

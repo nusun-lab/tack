@@ -13,7 +13,6 @@ import org.jboss.logmanager.Logger;
 import org.junit.jupiter.api.Test;
 import us.nusun.tack.framework.llm.InFlightReplyManager;
 import us.nusun.tack.framework.llm.LlmDeadLetterFactory;
-import us.nusun.tack.framework.llm.LlmJobFactory;
 import us.nusun.tack.framework.llm.LlmRouteSupport;
 import us.nusun.tack.framework.model.LlmJobEnvelope;
 import us.nusun.tack.framework.model.LlmJobResult;
@@ -50,17 +49,11 @@ class LlmRouteFrameworkRouteTest {
         try (DefaultCamelContext context = context(replies, kafka)) {
             context.start();
 
-            Exchange result = context.createProducerTemplate().request("direct:llm", exchange -> {
-                exchange.setProperty("personaId", FrameworkFixtures.PERSONA_A);
-                exchange.setProperty("agentRunId", "run:/high?partition=stable");
-                exchange.setProperty("toolProfile", FrameworkFixtures.PROFILE_GAMMA);
-                exchange.getIn().setHeader("lane", "high-pass");
-                exchange.getIn().setHeader("passType", LlmPassType.ACTION);
-                exchange.getIn().setHeader("responseSchema", "classpath:schemas/framework/text-result-schema.json");
-                exchange.getIn().setBody("Return a JSON result.");
-            });
-
-            LlmJobResult body = result.getMessage().getBody(LlmJobResult.class);
+            LlmJobResult body = context.createProducerTemplate().requestBody("direct:llm",
+                    new LlmJobEnvelope(null, "high-pass", LlmPassType.ACTION, null, null, 0, "Return a JSON result.",
+                            null, "classpath:schemas/framework/text-result-schema.json",
+                            Map.of("personaId", FrameworkFixtures.PERSONA_A, "agentRunId", "run:/high?partition=stable",
+                                    "toolProfile", FrameworkFixtures.PROFILE_GAMMA), null), LlmJobResult.class);
             assertEquals(LlmJobStatus.SUCCEEDED, body.status());
             assertEquals("high-pass", body.laneId());
             assertEquals(LlmPassType.ACTION, body.passType());
@@ -112,13 +105,7 @@ class LlmRouteFrameworkRouteTest {
 
             CamelExecutionException failure = assertThrows(
                     CamelExecutionException.class,
-                    () -> context.createProducerTemplate().requestBodyAndHeaders(
-                            "direct:llm",
-                            "Return invalid JSON for the schema.",
-                            Map.of(
-                                    "lane", "low-pass",
-                                    "passType", LlmPassType.SYNTHESIS,
-                                    "responseSchema", "classpath:schemas/framework/text-result-schema.json")));
+                    () -> context.createProducerTemplate().requestBody("direct:llm", structuredRequest("Return invalid JSON for the schema.")));
 
             assertTrue(failure.getMessage().contains("Exception occurred during execution"));
             assertEquals(0, replies.inFlightCount());
@@ -155,13 +142,7 @@ class LlmRouteFrameworkRouteTest {
 
             assertThrows(
                     CamelExecutionException.class,
-                    () -> context.createProducerTemplate().requestBodyAndHeaders(
-                            "direct:llm",
-                            "Return truncated JSON.",
-                            Map.of(
-                                    "lane", "low-pass",
-                                    "passType", LlmPassType.SYNTHESIS,
-                                    "responseSchema", "classpath:schemas/framework/text-result-schema.json")));
+                    () -> context.createProducerTemplate().requestBody("direct:llm", structuredRequest("Return truncated JSON.")));
 
             await(() -> kafka.sentTopics().contains("llm.dead-letter"));
             String deadLetterJson = kafka.sentTo("llm.dead-letter").getFirst().getIn().getBody(String.class);
@@ -182,8 +163,8 @@ class LlmRouteFrameworkRouteTest {
 
         try (DefaultCamelContext context = context(replies, kafka)) {
             context.start();
-            LlmJobEnvelope queued = LlmJobEnvelope.queued(new us.nusun.tack.framework.model.LlmJobEnvelope(
-                    null, "low-pass", LlmPassType.ACTION, "test", "Persona A", 0, "prompt", "system", null, Map.of(), null).normalized());
+            LlmJobEnvelope queued = FrameworkFixtures.queuedJob(new us.nusun.tack.framework.model.LlmJobEnvelope(
+                    null, "low-pass", LlmPassType.ACTION, "test", "Persona A", 0, "prompt", "system", null, Map.of(), null));
             replies.register(queued);
             LlmJobResult result = LlmJobResult.succeeded(queued, "test-model", "ok", "ok", Instant.now());
 
@@ -202,7 +183,7 @@ class LlmRouteFrameworkRouteTest {
 
         try (DefaultCamelContext context = context(replies, kafka)) {
             context.start();
-            LlmJobEnvelope queued = LlmJobEnvelope.queued(new LlmJobEnvelope(
+            LlmJobEnvelope queued = FrameworkFixtures.queuedJob(new LlmJobEnvelope(
                     UUID.randomUUID(),
                     "low-pass",
                     LlmPassType.SYNTHESIS,
@@ -213,7 +194,7 @@ class LlmRouteFrameworkRouteTest {
                     "Return only JSON.",
                     null,
                     Map.of(),
-                    null).normalized());
+                    null));
             String json = TestJson.write(queued);
 
             kafka.emit("llm.requests.low", json);
@@ -233,7 +214,7 @@ class LlmRouteFrameworkRouteTest {
 
         try (DefaultCamelContext context = context(replies, kafka, nullBodyAgentFactory())) {
             context.start();
-            LlmJobEnvelope queued = LlmJobEnvelope.queued(new LlmJobEnvelope(
+            LlmJobEnvelope queued = FrameworkFixtures.queuedJob(new LlmJobEnvelope(
                     UUID.randomUUID(),
                     "low-pass",
                     LlmPassType.SYNTHESIS,
@@ -244,7 +225,7 @@ class LlmRouteFrameworkRouteTest {
                     "Return only JSON.",
                     null,
                     Map.of("primitive", "test-synthesis"),
-                    null).normalized());
+                    null));
 
             kafka.emit("llm.requests.low", TestJson.write(queued));
 
@@ -262,6 +243,11 @@ class LlmRouteFrameworkRouteTest {
             assertTrue(deadLetterJson.contains("LLM response failure: reason=empty-final-content"));
             assertTrue(deadLetterExchange.getIn().getHeader(KafkaConstants.KEY) instanceof UUID);
         }
+    }
+
+    private static LlmJobEnvelope structuredRequest(String prompt) {
+        return new LlmJobEnvelope(null, "low-pass", LlmPassType.SYNTHESIS, null, null, 0, prompt,
+                null, "classpath:schemas/framework/text-result-schema.json", Map.of(), null);
     }
 
     private static DefaultCamelContext context(InFlightReplyManager replies, StubKafkaComponent kafka) throws Exception {
@@ -285,12 +271,11 @@ class LlmRouteFrameworkRouteTest {
         FrameworkFixtures.bindCatalogBeans(context);
         LlmRoute route = new LlmRoute();
         FrameworkFixtures.set(route, "lanes", FrameworkFixtures.inferenceLaneRegistry());
-        FrameworkFixtures.set(route, "jobFactory", new LlmJobFactory(FrameworkFixtures.inferenceLaneRegistry(), FrameworkFixtures.personaCatalog()));
+        FrameworkFixtures.set(route, "jobFactory", FrameworkFixtures.jobFactory());
         LlmDeadLetterFactory deadLetters = new LlmDeadLetterFactory();
         FrameworkFixtures.set(route, "deadLetterFactory", deadLetters);
         FrameworkFixtures.set(route, "routeSupport", new LlmRouteSupport(
                 context,
-                FrameworkFixtures.inferenceLaneRegistry(),
                 replies,
                 deadLetters));
         context.addRoutes(route);

@@ -1,6 +1,5 @@
 package us.nusun.tack.framework.llm;
 
-import static us.nusun.tack.framework.model.FrameworkText.firstNonBlank;
 
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -38,11 +37,10 @@ import us.nusun.tack.framework.inventory.PersonaCatalog;
 import us.nusun.tack.framework.inventory.ToolProfileRegistry;
 import us.nusun.tack.framework.mcp.McpClientFactory;
 import us.nusun.tack.framework.memory.QwenTokenCountEstimator;
-import us.nusun.tack.framework.memory.EphemeralToolPassChatMemoryProvider;
+import us.nusun.tack.framework.memory.ToolLoopGuardChatMemory;
 import us.nusun.tack.framework.model.InferenceLaneDefinition;
 import us.nusun.tack.framework.model.LlmJobEnvelope;
 import us.nusun.tack.framework.model.LlmPassType;
-import us.nusun.tack.framework.model.RoutineDefinition;
 import us.nusun.tack.framework.model.ToolProfile;
 import us.nusun.tack.framework.sandbox.PersonaSandboxManager;
 import us.nusun.tack.framework.service.MissionRosterService;
@@ -55,7 +53,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 @Singleton
 public class LlmAgentFactory {
@@ -98,10 +95,6 @@ public class LlmAgentFactory {
         }
         return new DynamicAgentFactory(models, toolPassSettings, mcpClientFactory, toolProfiles,
                 personas, tokenCountEstimator, sandboxes, missionRoster, routeSupport, objectMapper);
-    }
-
-    public static String selectedModel(InferenceLaneDefinition lane, String globalFallback) {
-        return firstNonBlank(lane == null ? null : lane.model(), globalFallback);
     }
 
     private static OpenAiChatModel chatModel(EffectiveLaneSettings settings) {
@@ -177,17 +170,14 @@ public class LlmAgentFactory {
             if (exchange == null) {
                 throw new IllegalArgumentException("DynamicAgentFactory requires the active Camel exchange");
             }
-            LlmExecutionContext invocation = LlmExecutionContext.on(exchange);
-            String laneId = firstNonBlank(exchange.getProperty("laneId", String.class), invocation.laneId(),
-                    RoutineDefinition.FRAMEWORK_DEFAULT_LANE);
+            LlmExecutionContext invocation = LlmExecutionContext.require(exchange);
+            String laneId = invocation.laneId();
             ToolPassSettings settings = toolPassSettings.get(laneId);
             ChatModel model = laneModels.get(laneId);
             if (model == null) {
                 throw new IllegalStateException("No chat model configured for inference lane " + laneId);
             }
-            LlmPassType explicitPass = LlmExecutionContext.enumValue(LlmPassType.class, exchange.getProperty("passType"));
-            LlmPassType passType = explicitPass != null ? explicitPass
-                    : invocation.passType() == null ? LlmPassType.SYNTHESIS : invocation.passType();
+            LlmPassType passType = invocation.passType();
             LlmCallDiagnostics diagnostics = passType == LlmPassType.ACTION
                     ? new LlmCallDiagnostics(exchange, tokenCountEstimator, settings.contextWindow(), settings.maxOutputTokens(), settings.memoryTokens())
                     : null;
@@ -201,17 +191,9 @@ public class LlmAgentFactory {
                 if (settings.maxToolCalls() > 0) {
                     configuration.withMaxToolCallingRoundTrips(settings.maxToolCalls() + 1);
                 }
-                configuration.withChatMemoryProvider(new EphemeralToolPassChatMemoryProvider(
-                        settings.memoryTokens(),
-                        tokenCountEstimator,
-                        true,
-                        settings.maxToolCalls(),
-                        settings.compactionThreshold(),
-                        settings.recentToolInteractions(),
-                        ignored -> { }));
-                ToolProfile profile = toolProfiles.getRequired(firstNonBlank(exchange.getProperty("toolProfile", String.class),
-                        invocation.toolProfile()));
-                String personaId = firstNonBlank(exchange.getProperty("personaId", String.class), invocation.personaId());
+                configuration.withChatMemoryProvider(id -> ToolLoopGuardChatMemory.forPass(id, settings, tokenCountEstimator));
+                ToolProfile profile = toolProfiles.getRequired(invocation.toolProfile());
+                String personaId = invocation.personaId();
                 if (blank(personaId)) {
                     throw new IllegalStateException("No personaId on exchange for tool-capable LLM pass");
                 }
@@ -223,8 +205,7 @@ public class LlmAgentFactory {
                     customTools.add(new MissionRosterTool(missionRoster, missionId, capacityMaximum));
                 }
                 if (sandboxes != null && profile.allowsTool(SANDBOX_TOOL_SERVER, SANDBOX_EXEC_TOOL)) {
-                    String sandboxName = firstNonBlank(exchange.getProperty(PersonaSandboxManager.WORKING_STATE_SANDBOX_NAME, String.class),
-                            invocation.sandboxName());
+                    String sandboxName = invocation.sandboxName();
                     if (blank(sandboxName)) {
                         sandboxName = sandboxes.sandboxNameFor(missionId, personaId);
                     }
@@ -239,10 +220,10 @@ public class LlmAgentFactory {
                     configuration.withCustomTools(customTools);
                 }
             }
-            Agent agent = configuration.getChatMemoryProvider() == null
+            AbstractAgent<?> agent = configuration.getChatMemoryProvider() == null
                     ? new AgentWithoutMemory(configuration)
                     : new AgentWithMemory(configuration);
-            applyProviderSchemaIfRequired(exchange, laneId, passType, agent);
+            applyProviderSchema(exchange, invocation, agent);
             if (diagnostics == null) {
                 return agent;
             }
@@ -259,11 +240,27 @@ public class LlmAgentFactory {
             return request.toBuilder().toolChoice(hasToolResult ? ToolChoice.AUTO : ToolChoice.REQUIRED).build();
         }
 
-        private record DispatchObservingChatModel(ChatModel delegate, Exchange exchange, LlmRouteSupport routeSupport,
-                                                  LlmCallDiagnostics diagnostics) implements ChatModel {
+        private static final class DispatchObservingChatModel implements ChatModel {
+            private final ChatModel delegate;
+            private final Exchange exchange;
+            private final LlmRouteSupport routeSupport;
+            private final LlmCallDiagnostics diagnostics;
+            private boolean dispatched;
+
+            private DispatchObservingChatModel(ChatModel delegate, Exchange exchange, LlmRouteSupport routeSupport,
+                                               LlmCallDiagnostics diagnostics) {
+                this.delegate = delegate;
+                this.exchange = exchange;
+                this.routeSupport = routeSupport;
+                this.diagnostics = diagnostics;
+            }
+
             @Override
             public ChatResponse chat(ChatRequest request, ChatRequestOptions options) {
-                observeDispatch(exchange, routeSupport);
+                if (!dispatched && routeSupport != null) {
+                    routeSupport.logPrompt(job(exchange), exchange);
+                    dispatched = true;
+                }
                 if (diagnostics != null) {
                     request = forceInitialToolChoice(request);
                     diagnostics.logBudget(request);
@@ -292,14 +289,6 @@ public class LlmAgentFactory {
             }
         }
 
-        private static void observeDispatch(Exchange exchange, LlmRouteSupport routeSupport) {
-            if (routeSupport == null || Boolean.TRUE.equals(exchange.getProperty("llmDispatchObserved", Boolean.class))) {
-                return;
-            }
-            routeSupport.logPrompt(job(exchange), exchange);
-            exchange.setProperty("llmDispatchObserved", true);
-        }
-
         private static ToolProvider combineTools(ToolProvider routeTools, List<ToolProvider> mcpTools) {
             if (mcpTools.isEmpty()) {
                 return routeTools;
@@ -315,44 +304,23 @@ public class LlmAgentFactory {
             return new CompositeToolProvider(providers);
         }
 
-        private void applyProviderSchemaIfRequired(Exchange exchange, String laneId, LlmPassType passType, Agent agent) {
-            LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
-            boolean schemaPresent = ProviderStructuredOutputSupport.hasResponseSchema(job);
-            boolean schemaEnabled = ProviderStructuredOutputSupport.providerSchemaEnabled(exchange, job);
-            if (!schemaPresent || !schemaEnabled) {
-                if (schemaPresent) {
-                    LOG.info("Provider schema enforcement skipped jobId={} lane={} passType={} schemaEnabled=false",
-                            jobId(job), laneId, passType);
-                } else {
-                    LOG.debug("Provider schema enforcement skipped jobId={} lane={} passType={} schemaEnabled={} schemaPresent=false",
-                            jobId(job), laneId, passType, schemaEnabled);
-                }
+        private void applyProviderSchema(Exchange exchange, LlmExecutionContext invocation, AbstractAgent<?> agent) {
+            LlmJobEnvelope job = job(exchange);
+            if (!job.hasResponseSchema() || !invocation.providerSchemaEnabled()) {
                 return;
             }
-            if (!(agent instanceof AbstractAgent<?> abstractAgent)) {
-                throw new IllegalStateException("Provider structured output requires a Camel AbstractAgent for lane "
-                        + laneId + " passType=" + passType);
-            }
             try {
-                abstractAgent.setResponseFormat(SchemaContract.resolve(camelContext(exchange), objectMapper, job.responseSchema()).providerFormat());
-                LOG.info("Provider schema enforcement applied jobId={} lane={} passType={} schemaEnabled=true",
-                        jobId(job), laneId, passType);
-            } catch (IOException e) {
+                agent.setResponseFormat(SchemaContract.resolve(exchange.getContext(), objectMapper, job.responseSchema()).providerFormat());
+                LOG.info("Provider schema enforcement applied jobId={} lane={} passType={}",
+                        invocation.jobId(), invocation.laneId(), invocation.passType());
+            } catch (IOException | IllegalArgumentException failure) {
                 throw new IllegalArgumentException("Unable to resolve responseSchema for provider structured output: jobId="
-                        + jobId(job) + " lane=" + laneId + " passType=" + passType, e);
+                        + invocation.jobId() + " lane=" + invocation.laneId() + " passType=" + invocation.passType(), failure);
             }
-        }
-
-        private CamelContext camelContext(Exchange exchange) {
-            return camelContext == null ? exchange.getContext() : camelContext;
         }
 
         private static LlmJobEnvelope job(Exchange exchange) {
             return exchange.getProperty("llmJob", LlmJobEnvelope.class);
-        }
-
-        private static Object jobId(LlmJobEnvelope job) {
-            return job == null ? null : job.jobId();
         }
 
         @Override public CamelContext getCamelContext() { return camelContext; }

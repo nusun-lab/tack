@@ -13,20 +13,17 @@ import org.apache.camel.Exchange;
 import org.apache.camel.ExchangeProperty;
 import org.apache.camel.ServiceStatus;
 import org.apache.camel.component.langchain4j.agent.api.AiAgentBody;
-import us.nusun.tack.framework.inventory.InferenceLaneRegistry;
 import us.nusun.tack.framework.logging.LogTokens;
-import us.nusun.tack.framework.model.InferenceLaneDefinition;
 import us.nusun.tack.framework.model.LlmJobEnvelope;
 import us.nusun.tack.framework.model.LlmJobResult;
+import us.nusun.tack.framework.model.LlmJobStatus;
 import us.nusun.tack.framework.projection.AgentRunProjectionManager;
 
 import java.time.Instant;
-import java.util.List;
-import java.util.UUID;
 
 @ApplicationScoped
 public class LlmRouteSupport {
-    private static final String DYNAMIC_AGENT_URI = "langchain4j-agent:dynamic?agentFactory=#dynamicAgentFactory";
+    private static final String REGISTERED = "llmReplyRegistered";
 
     public static final class LlmAvailabilityException extends RuntimeException {
         public LlmAvailabilityException(String message) { super(message); }
@@ -40,7 +37,6 @@ public class LlmRouteSupport {
 
     @Inject CamelContext camelContext;
     @Inject ObjectMapper objectMapper;
-    @Inject InferenceLaneRegistry lanes;
     @Inject InFlightReplyManager inFlightReplyManager;
     @Inject LlmDeadLetterFactory deadLetterFactory;
     @Inject LogTokens logTokens;
@@ -51,30 +47,39 @@ public class LlmRouteSupport {
 
     public LlmRouteSupport(
             CamelContext camelContext,
-            InferenceLaneRegistry lanes,
             InFlightReplyManager inFlightReplyManager,
             LlmDeadLetterFactory deadLetterFactory) {
-        this(camelContext, lanes, inFlightReplyManager, deadLetterFactory, new LogTokens(false));
+        this(camelContext, inFlightReplyManager, deadLetterFactory, new LogTokens(false));
     }
 
     public LlmRouteSupport(
             CamelContext camelContext,
-            InferenceLaneRegistry lanes,
             InFlightReplyManager inFlightReplyManager,
             LlmDeadLetterFactory deadLetterFactory,
             LogTokens logTokens) {
         this.camelContext = camelContext;
         this.objectMapper = new ObjectMapper();
-        this.lanes = lanes;
         this.inFlightReplyManager = inFlightReplyManager;
         this.deadLetterFactory = deadLetterFactory;
         this.logTokens = logTokens;
     }
 
-    public LlmJobResult awaitReply(@ExchangeProperty("llmJobId") UUID jobId, Exchange exchange) throws Exception {
+    public void registerReply(@Body LlmJobEnvelope job, Exchange exchange) {
+        inFlightReplyManager.register(job);
+        exchange.setProperty(REGISTERED, true);
+    }
+
+    public void discardReply(Exchange exchange) {
+        if (Boolean.TRUE.equals(exchange.removeProperty(REGISTERED))) {
+            inFlightReplyManager.discard(LlmExecutionContext.require(exchange).jobId());
+        }
+    }
+
+    public LlmJobResult awaitReply(Exchange exchange) throws Exception {
         long timeoutMs = Long.parseLong(exchange.getContext().resolvePropertyPlaceholders("{{llm.reply-timeout-ms:300000}}"));
         try {
-            return inFlightReplyManager.await(jobId, timeoutMs);
+            exchange.removeProperty(REGISTERED);
+            return inFlightReplyManager.await(LlmExecutionContext.require(exchange).jobId(), timeoutMs);
         } catch (Exception failure) {
             throw new LlmAvailabilityException("LLM reply failure: " + deadLetterFactory.contextSummary(exchange)
                     + " reason=" + failure.getMessage(), failure);
@@ -82,12 +87,7 @@ public class LlmRouteSupport {
     }
 
     public void prepareAgentCall(@ExchangeProperty("llmJob") LlmJobEnvelope job, Exchange exchange) {
-        InferenceLaneDefinition lane = lanes.getRequired(job.laneId());
-        exchange.setProperty("inferenceLane", lane);
-        exchange.setProperty("laneId", lane.id());
-        exchange.setProperty("passType", job.passType());
         exchange.setProperty("llmStartedAt", Instant.now());
-        exchange.setProperty("agentInvocationUri", DYNAMIC_AGENT_URI);
         exchange.getIn().setBody(new AiAgentBody<>(job.prompt(), firstNonBlank(job.systemPrompt(), """
                 You are a precise worker in a shared LLM queue. Return only what the requester asked for.
                 """.strip()), job.jobId()));
@@ -114,8 +114,8 @@ public class LlmRouteSupport {
 
     public void validateResponseSchema(@Body LlmJobResult result, @ExchangeProperty("llmJob") LlmJobEnvelope job,
             Exchange exchange) throws Exception {
-        if (result == null || result.content() == null || result.content().isBlank()
-                || job == null || job.responseSchema() == null || job.responseSchema().isBlank()) {
+        if (result == null || result.status() != LlmJobStatus.SUCCEEDED || result.content() == null || result.content().isBlank()
+                || job == null || !job.hasResponseSchema()) {
             return;
         }
         SchemaContract contract;
@@ -147,21 +147,11 @@ public class LlmRouteSupport {
             @ExchangeProperty("llmJob") LlmJobEnvelope job,
             @ExchangeProperty("llmStartedAt") Instant startedAt,
             Exchange exchange) {
-        LlmJobResult result = LlmJobResult.succeeded(
-                job,
-                deadLetterFactory.modelId(exchange),
-                rawResponse,
-                rawResponse,
-                startedAt);
-        return result;
+        return LlmJobResult.succeeded(job, deadLetterFactory.modelId(exchange), rawResponse, rawResponse, startedAt);
     }
 
-    public void verifySelectedRoutesAvailable(@ExchangeProperty("inferenceLane") InferenceLaneDefinition lane, Exchange exchange) {
-        if (lane == null) {
-            throw new LlmAvailabilityException("Selected LLM inference lane is unavailable: " + deadLetterFactory.contextSummary(exchange)
-                    + " reason=missing inferenceLane exchange property");
-        }
-        String routeSuffix = routeSuffix(lane.id());
+    public void verifySelectedRoutesAvailable(Exchange exchange) {
+        String routeSuffix = routeSuffix(LlmExecutionContext.require(exchange).laneId());
         if (localWorkerRouteVerificationEnabled(exchange)) {
             verifyRouteStarted(exchange, "llm-worker-" + routeSuffix);
         }
@@ -186,26 +176,15 @@ public class LlmRouteSupport {
 
     private static String agentResponseContext(Exchange exchange) {
         LlmExecutionContext invocation = LlmExecutionContext.on(exchange);
-        return "jobId=" + invocation.jobId()
+        String diagnostics = exchange.getProperty(LlmCallDiagnostics.FINAL_SUMMARY, String.class);
+        return (invocation == null ? "" : "jobId=" + invocation.jobId()
                 + " operation=" + invocation.primitive() + "/" + invocation.primitiveId()
-                + " lane=" + firstNonBlank(exchange.getProperty("laneId", String.class), "unknown")
-                + " passType=" + String.valueOf(exchange.getProperty("passType"))
+                + " lane=" + invocation.laneId() + " passType=" + invocation.passType())
                 + " finishReason=" + header(exchange, "CamelLangChain4jAgentFinishReason")
                 + " inputTokens=" + header(exchange, "CamelLangChain4jAgentInputTokenCount")
                 + " outputTokens=" + header(exchange, "CamelLangChain4jAgentOutputTokenCount")
                 + " totalTokens=" + header(exchange, "CamelLangChain4jAgentTotalTokenCount")
-                + " finalTextChars=" + property(exchange, "llmFinalTextChars")
-                + " finalThinkingChars=" + property(exchange, "llmFinalThinkingChars")
-                + " finalInputTokens=" + property(exchange, "llmFinalInputTokens")
-                + " finalOutputTokens=" + property(exchange, "llmFinalOutputTokens")
-                + " finalReasoningTokens=" + property(exchange, "llmFinalReasoningTokens")
-                + " intermediateResponses=" + property(exchange, "llmIntermediateResponses")
-                + " toolExecutions=" + property(exchange, "llmToolExecutions");
-    }
-
-    private static String property(Exchange exchange, String name) {
-        Object value = exchange.getProperty(name);
-        return value == null ? "unknown" : String.valueOf(value);
+                + (diagnostics == null ? "" : " " + diagnostics);
     }
 
     private static String header(Exchange exchange, String name) {
@@ -231,15 +210,13 @@ public class LlmRouteSupport {
     }
 
     private static String agentLabel(Exchange exchange) {
-        String label = exchange.getProperty("agentLabel", String.class);
-        if (label != null && !label.isBlank()) {
-            return label;
-        }
-        LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
-        return job == null || job.requester() == null || job.requester().isBlank() ? "LLM" : job.requester();
+        var invocation = LlmExecutionContext.on(exchange);
+        var job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
+        return invocation == null ? firstNonBlank(job == null ? null : job.requester(), "LLM") : invocation.logLabel();
     }
 
     private static String agentLogColor(Exchange exchange) {
-        return exchange.getProperty("agentLogColor", String.class);
+        var invocation = LlmExecutionContext.on(exchange);
+        return invocation == null ? null : invocation.logColor();
     }
 }

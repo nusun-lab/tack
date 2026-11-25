@@ -8,7 +8,6 @@ import us.nusun.tack.framework.model.InferenceLaneDefinition;
 import us.nusun.tack.framework.model.LlmJobDeadLetter;
 import us.nusun.tack.framework.model.LlmJobEnvelope;
 import us.nusun.tack.framework.model.LlmJobResult;
-import us.nusun.tack.framework.model.LlmPassType;
 import us.nusun.tack.framework.model.Persona;
 
 import java.time.Instant;
@@ -21,82 +20,47 @@ public class LlmDeadLetterFactory {
     private static final int MAX_DLQ_METADATA_STRING_LENGTH = 512;
 
     public LlmJobDeadLetter failedQueuedJobDeadLetter(Exchange exchange) {
-        return failedQueuedJobDeadLetter(exchange, globalModelFallback(exchange));
-    }
-
-    private LlmJobDeadLetter failedQueuedJobDeadLetter(Exchange exchange, String globalModelFallback) {
-        LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
+        var job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
         if (job == null) {
             throw new IllegalStateException("Cannot publish LLM DLQ entry without llmJob exchange property");
         }
-        exchange.setProperty("llmJobId", job.jobId());
+        var context = LlmExecutionContext.on(exchange);
         return new LlmJobDeadLetter(
-                job.jobId(),
-                laneId(exchange, job),
-                passType(exchange, job),
-                job.requester(),
-                job.role(),
-                modelId(exchange, globalModelFallback),
-                normalizeDlqMetadata(job.metadata()),
+                context == null ? job.jobId() : context.jobId(),
+                context == null ? firstNonBlank(job.laneId(), "unknown") : context.laneId(),
+                context == null ? job.passType() : context.passType(),
+                job.requester(), job.role(), modelId(exchange), normalizeDlqMetadata(job.metadata()),
                 firstNonBlank(exchange.getProperty("llmFailureMessage", String.class), "Unknown LLM queue failure"),
-                job.requestedAt(),
-                Instant.now());
+                job.requestedAt(), Instant.now());
     }
 
     public LlmJobResult failedLlmResult(Exchange exchange) {
-        return failedLlmResult(exchange, globalModelFallback(exchange));
-    }
-
-    private LlmJobResult failedLlmResult(Exchange exchange, String globalModelFallback) {
         Exception failure = exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class);
-        LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
-        String message = failureMessage(failure, "Unknown LLM worker failure");
-        return LlmJobResult.failed(job, modelId(exchange, globalModelFallback), message, null,
-                firstInstant(exchange.getProperty("llmStartedAt", Instant.class), job == null ? null : job.requestedAt(), Instant.now()));
+        var job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
+        Instant startedAt = exchange.getProperty("llmStartedAt", Instant.class);
+        return LlmJobResult.failed(job, modelId(exchange), failureMessage(failure, "Unknown LLM worker failure"), null,
+                startedAt == null ? job.requestedAt() : startedAt);
     }
 
     public String contextSummary(Exchange exchange) {
-        return contextSummary(exchange, globalModelFallback(exchange));
-    }
-
-    private String contextSummary(Exchange exchange, String globalModelFallback) {
-        LlmJobEnvelope job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
-        return "jobId=" + firstNonBlank(exchange.getProperty("llmJobId", String.class), job == null ? null : String.valueOf(job.jobId()))
-                + " laneId=" + laneId(exchange, job)
-                + " passType=" + passType(exchange, job)
-                + " model=" + modelId(exchange, globalModelFallback);
-    }
-
-    public String modelId(Exchange exchange) {
-        return modelId(exchange, globalModelFallback(exchange));
-    }
-
-    private String modelId(Exchange exchange, String globalModelFallback) {
-        return firstNonBlank(
-                exchange.getProperty("model", String.class),
-                exchange.getProperty("modelId", String.class),
-                LlmExecutionContext.on(exchange).model(),
-                globalModelFallback,
-                "unknown");
-    }
-
-    private String laneId(Exchange exchange, LlmJobEnvelope job) {
-        Object lane = exchange.getProperty("inferenceLane");
-        if (lane instanceof InferenceLaneDefinition definition) {
-            return definition.id();
+        var context = LlmExecutionContext.on(exchange);
+        var job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
+        if (context != null) {
+            return "jobId=" + context.jobId() + " laneId=" + context.laneId()
+                    + " passType=" + context.passType() + " model=" + modelId(exchange);
         }
-        if (lane instanceof String id && !id.isBlank()) {
-            return id;
-        }
-        return firstNonBlank(
-                exchange.getProperty("laneId", String.class),
-                LlmExecutionContext.from(job).laneId(),
-                "unknown");
+        return "jobId=" + (job == null ? null : job.jobId())
+                + " laneId=" + firstNonBlank(job == null ? null : job.laneId(), "unknown")
+                + " passType=" + (job == null ? null : job.passType()) + " model=" + modelId(exchange);
     }
 
-    private LlmPassType passType(Exchange exchange, LlmJobEnvelope job) {
-        LlmPassType explicit = LlmExecutionContext.enumValue(LlmPassType.class, exchange.getProperty("passType"));
-        return explicit == null ? LlmExecutionContext.from(job).passType() : explicit;
+    String modelId(Exchange exchange) {
+        var context = LlmExecutionContext.on(exchange);
+        if (context != null) {
+            return firstNonBlank(context.model(), "unknown");
+        }
+        var job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
+        return firstNonBlank(job == null ? null : LlmExecutionContext.text(job.metadata(), "model"), "unknown");
     }
 
     private static Map<String, Object> normalizeDlqMetadata(Map<String, Object> metadata) {
@@ -176,26 +140,5 @@ public class LlmDeadLetterFactory {
             current = current.getCause();
         }
         return current;
-    }
-
-    private static Instant firstInstant(Instant... values) {
-        for (Instant value : values) {
-            if (value != null) {
-                return value;
-            }
-        }
-        return Instant.now();
-    }
-
-    private static String resolveOptionalPlaceholder(Exchange exchange, String placeholder) {
-        try {
-            return exchange.getContext().resolvePropertyPlaceholders(placeholder);
-        } catch (Exception ignored) {
-            return null;
-        }
-    }
-
-    private static String globalModelFallback(Exchange exchange) {
-        return resolveOptionalPlaceholder(exchange, "{{llm.model-default.openai.model:}}");
     }
 }

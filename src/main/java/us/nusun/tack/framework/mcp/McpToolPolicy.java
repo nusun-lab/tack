@@ -162,7 +162,7 @@ public final class McpToolPolicy {
     }
 
     private boolean qualifiesToolNames() {
-        return profile.mcpServers().size() > 1;
+        return profile.policies().values().stream().filter(policy -> policy.connection() != null).limit(2).count() == 2;
     }
 
     private String exposedToolName(String toolName) {

@@ -6,7 +6,6 @@ import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
 import us.nusun.tack.framework.model.RoutineDefinition;
-import us.nusun.tack.framework.model.SubroutineDefinition;
 import us.nusun.tack.framework.state.AgentRun;
 
 import java.util.Comparator;
@@ -41,10 +40,6 @@ public class RoutineCatalog {
         return routine;
     }
 
-    public SubroutineDefinition requireSubroutine(String routineId, String subroutineId) {
-        return getRequired(routineId).requireSubroutine(subroutineId);
-    }
-
     public String routeUriFor(AgentRun run) {
         if (run == null) {
             throw new IllegalArgumentException("AgentRun route resolution requires run");
@@ -56,18 +51,10 @@ public class RoutineCatalog {
         return routines.values().stream().sorted(Comparator.comparing(RoutineDefinition::id)).toList();
     }
 
-    public String allJson() {
-        return json(all());
-    }
-
     public String startableJson() {
-        return json(all().stream()
+        return json.write(all().stream()
                 .map(routine -> new AdvertisedRoutine(routine.id(), routine.name(), routine.description()))
-                .toList());
-    }
-
-    private String json(Object value) {
-        return json.write(value, "routine");
+                .toList(), "routine");
     }
 
     private record AdvertisedRoutine(String id, String name, String description) { }

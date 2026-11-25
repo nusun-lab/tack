@@ -44,36 +44,11 @@ public class PersonaCatalog {
         return personas.values().stream().sorted(Comparator.comparing(Persona::id)).toList();
     }
 
-    public List<Persona> agentRunStartAssignable() {
-        return all().stream().filter(Persona::agentRunStartAssignable).toList();
-    }
-
     public List<PersonaView> views() {
         return all().stream().map(PersonaView::of).toList();
     }
 
-    public String allJson() {
-        return json(views());
-    }
-
-    public String agentRunStartAssignableJson() {
-        return json(views().stream().filter(PersonaView::agentRunStartAssignable).toList());
-    }
-
-    public String personaInventoryPromptJson() {
-        return allJson();
-    }
-
-    public String allPromptJson() {
-        return allJson();
-    }
-
     public String agentRunStartAssignablePromptJson() {
-        return agentRunStartAssignableJson();
+        return json.write(views().stream().filter(PersonaView::agentRunStartAssignable).toList(), "persona");
     }
-
-    private String json(Object value) {
-        return json.write(value, "persona");
-    }
-
 }

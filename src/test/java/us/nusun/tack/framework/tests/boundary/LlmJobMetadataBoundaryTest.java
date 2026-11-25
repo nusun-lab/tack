@@ -1,6 +1,5 @@
 package us.nusun.tack.framework.tests.boundary;
 
-import dev.langchain4j.mcp.client.McpClient;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
@@ -8,8 +7,6 @@ import org.apache.camel.Exchange;
 import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.support.DefaultExchange;
 import org.junit.jupiter.api.Test;
-import us.nusun.tack.framework.llm.LlmAgentFactory;
-import us.nusun.tack.framework.llm.LlmJobFactory;
 import us.nusun.tack.framework.llm.LlmExecutionContext;
 import us.nusun.tack.framework.mcp.McpClientFactory;
 import us.nusun.tack.framework.tests.support.TestTokenCountEstimator;
@@ -20,6 +17,7 @@ import us.nusun.tack.framework.model.Persona;
 import us.nusun.tack.framework.tests.support.FrameworkFixtures;
 import us.nusun.tack.framework.tests.support.TestJson;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -29,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 class LlmJobMetadataBoundaryTest {
     @Test
     void workerExchangeRestoresFrameworkMetadataFromSerializedEnvelope() throws Exception {
+        var retry = new ArrayList<>(List.of(1, true));
         LlmJobEnvelope request = new LlmJobEnvelope(
                 null,
                 "low-pass",
@@ -50,23 +49,30 @@ class LlmJobMetadataBoundaryTest {
                         Map.entry("passType", "ACTION"),
                         Map.entry("agentRunCapacityMaximum", 5),
                         Map.entry("llmForceProviderSchema", true),
-                        Map.entry("extension", Map.of("retry", List.of(1, true)))),
-                null).normalized();
-        LlmJobEnvelope envelope = LlmJobEnvelope.queued(request);
-        String json = TestJson.write(envelope);
-        LlmJobEnvelope restoredEnvelope = TestJson.read(json, LlmJobEnvelope.class);
-        Exchange worker = new DefaultExchange(new DefaultCamelContext());
+                        Map.entry("extension", Map.of("retry", retry))),
+                null);
+        var producer = new DefaultExchange(new DefaultCamelContext());
+        producer.getMessage().setBody(request);
+        FrameworkFixtures.jobFactory().prepare(producer);
+        LlmJobEnvelope envelope = producer.getMessage().getBody(LlmJobEnvelope.class);
+        retry.clear();
+        assertEquals(Map.of("retry", List.of(1, true)), envelope.metadata().get("extension"));
+        LlmJobEnvelope restoredEnvelope = TestJson.read(TestJson.write(envelope), LlmJobEnvelope.class);
+        Exchange worker = new DefaultExchange(producer.getContext());
+        FrameworkFixtures.restoreJob(worker, restoredEnvelope);
+        assertEquals(LlmExecutionContext.on(producer), LlmExecutionContext.on(worker));
 
-        new LlmJobFactory().restoreFrameworkMetadata(worker, restoredEnvelope);
-
-        assertEquals("run-1", worker.getProperty("agentRunId"));
-        assertEquals("mission-1", worker.getProperty("missionId"));
-        assertEquals("persona-a", worker.getProperty("personaId"));
-        assertEquals(FrameworkFixtures.PROFILE_GAMMA, worker.getProperty("toolProfile"));
-        assertEquals("act", worker.getProperty("primitive"));
-        assertEquals("assignment-review", worker.getProperty("primitiveId"));
-        assertEquals("low-pass", worker.getProperty("laneId"));
-        assertEquals(LlmPassType.ACTION, worker.getProperty("passType"));
+        var invocation = LlmExecutionContext.require(worker);
+        assertEquals("run-1", invocation.agentRunId());
+        assertEquals("mission-1", invocation.missionId());
+        assertEquals("persona-a", invocation.personaId());
+        assertEquals(FrameworkFixtures.PROFILE_GAMMA, invocation.toolProfile());
+        assertEquals("act", invocation.primitive());
+        assertEquals("assignment-review", invocation.primitiveId());
+        assertEquals("low-pass", invocation.laneId());
+        assertEquals(LlmPassType.ACTION, invocation.passType());
+        assertNull(worker.getProperty("agentRunId"));
+        assertNull(worker.getProperty("passType"));
         assertEquals("persona-a", restoredEnvelope.metadata().get("personaId"));
         assertEquals(FrameworkFixtures.PROFILE_GAMMA, restoredEnvelope.metadata().get("toolProfile"));
         assertEquals("low-pass", restoredEnvelope.laneId());
@@ -74,7 +80,7 @@ class LlmJobMetadataBoundaryTest {
         LlmExecutionContext context = LlmExecutionContext.on(worker);
         assertEquals(restoredEnvelope.jobId(), context.jobId());
         assertEquals(5, context.capacityMaximum());
-        assertEquals(true, context.forceProviderSchema());
+        assertEquals(true, context.providerSchemaEnabled());
         assertEquals(Map.of("retry", List.of(1, true)), restoredEnvelope.metadata().get("extension"));
         assertNull(worker.getProperty("extension"));
         var child = worker.copy();
@@ -102,15 +108,14 @@ class LlmJobMetadataBoundaryTest {
                 "system",
                 null,
                 Map.of("personaId", "persona-a"),
-                null).normalized();
-        LlmJobEnvelope envelope = LlmJobEnvelope.queued(request);
+                null);
+        LlmJobEnvelope envelope = FrameworkFixtures.queuedJob(request);
         Exchange worker = new DefaultExchange(new DefaultCamelContext());
 
-        new LlmJobFactory(FrameworkFixtures.inferenceLaneRegistry(), FrameworkFixtures.personaCatalog())
-                .restoreFrameworkMetadata(worker, envelope);
+        FrameworkFixtures.restoreJob(worker, envelope);
 
-        assertEquals("PA", worker.getProperty("agentLabel"));
-        assertEquals("38;2;106;169;255", worker.getProperty("agentLogColor"));
+        assertEquals("PA", LlmExecutionContext.require(worker).logLabel());
+        assertEquals("38;2;106;169;255", LlmExecutionContext.require(worker).logColor());
     }
 
     static class CapturingMcpClientFactory extends McpClientFactory {
@@ -118,7 +123,7 @@ class LlmJobMetadataBoundaryTest {
         ToolProfile profile;
 
         @Override
-        public List<ServerClient> clientsFor(Persona persona, ToolProfile profile) {
+        public List<dev.langchain4j.service.tool.ToolProvider> toolProvidersFor(Persona persona, ToolProfile profile) {
             this.persona = persona;
             this.profile = profile;
             return List.of();

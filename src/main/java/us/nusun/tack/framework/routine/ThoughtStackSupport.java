@@ -3,7 +3,6 @@ package us.nusun.tack.framework.routine;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.Exchange;
-import org.apache.camel.Processor;
 import us.nusun.tack.framework.model.ThoughtFrame;
 import us.nusun.tack.framework.projection.AgentRunProjectionManager;
 import us.nusun.tack.framework.state.ThoughtStack;
@@ -18,25 +17,6 @@ public class ThoughtStackSupport {
     public static final String STACK_PROPERTY = "thoughtStack";
 
     @Inject AgentRunProjectionManager projections;
-
-    public Processor push(String context, int maxTokens) {
-        return exchange -> push(exchange, null, context, maxTokens);
-    }
-
-    public Processor push(String name, String context, int maxTokens) {
-        return exchange -> push(exchange, name, context, maxTokens);
-    }
-
-    public Processor pop() {
-        return exchange -> {
-            ThoughtFrame popped = stack(exchange).pop();
-            record(exchange, "THOUGHT_EXITED", thoughtDetails(popped));
-        };
-    }
-
-    public ThoughtFrame push(Exchange exchange, String context, int maxTokens) {
-        return push(exchange, null, context, maxTokens);
-    }
 
     public ThoughtFrame push(Exchange exchange, String name, String context, int maxTokens) {
         if (context == null || context.isBlank()) {

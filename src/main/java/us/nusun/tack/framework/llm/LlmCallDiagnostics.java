@@ -1,7 +1,5 @@
 package us.nusun.tack.framework.llm;
 
-import static us.nusun.tack.framework.model.FrameworkText.firstNonBlank;
-
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
@@ -18,9 +16,11 @@ import org.slf4j.LoggerFactory;
 
 /** Measurements from one tool-capable model invocation. */
 final class LlmCallDiagnostics {
+    static final String FINAL_SUMMARY = "llmFinalDiagnostics";
     private static final Logger LOG = LoggerFactory.getLogger(LlmCallDiagnostics.class);
 
     private final Exchange exchange;
+    private final LlmExecutionContext invocation;
     private final TokenCountEstimator tokenCountEstimator;
     private final int contextWindow;
     private final int maxOutputTokens;
@@ -30,6 +30,7 @@ final class LlmCallDiagnostics {
     LlmCallDiagnostics(Exchange exchange, TokenCountEstimator tokenCountEstimator,
                        int contextWindow, int maxOutputTokens, int transcriptMaxTokens) {
         this.exchange = exchange;
+        this.invocation = LlmExecutionContext.require(exchange);
         this.tokenCountEstimator = tokenCountEstimator;
         this.contextWindow = contextWindow;
         this.maxOutputTokens = maxOutputTokens;
@@ -42,36 +43,17 @@ final class LlmCallDiagnostics {
         String text = aiMessage == null ? null : aiMessage.text();
         String thinking = aiMessage == null ? null : aiMessage.thinking();
 
-        exchange.setProperty("llmFinalTextChars", text == null ? 0 : text.length());
-        exchange.setProperty("llmFinalThinkingChars", thinking == null ? 0 : thinking.length());
-        exchange.setProperty("llmIntermediateResponses",
-                result == null || result.intermediateResponses() == null ? 0 : result.intermediateResponses().size());
-        exchange.setProperty("llmToolExecutions",
+        var usage = finalResponse == null ? null : finalResponse.tokenUsage();
+        Integer reasoning = usage instanceof OpenAiTokenUsage openAi && openAi.outputTokensDetails() != null
+                ? openAi.outputTokensDetails().reasoningTokens() : null;
+        String summary = ("finalTextChars=%d finalThinkingChars=%d finalInputTokens=%s finalOutputTokens=%s "
+                + "finalReasoningTokens=%s intermediateResponses=%d toolExecutions=%d").formatted(
+                text == null ? 0 : text.length(), thinking == null ? 0 : thinking.length(),
+                usage == null ? null : usage.inputTokenCount(), usage == null ? null : usage.outputTokenCount(), reasoning,
+                result == null || result.intermediateResponses() == null ? 0 : result.intermediateResponses().size(),
                 result == null || result.toolExecutions() == null ? 0 : result.toolExecutions().size());
-
-        if (finalResponse != null && finalResponse.tokenUsage() != null) {
-            exchange.setProperty("llmFinalInputTokens", finalResponse.tokenUsage().inputTokenCount());
-            exchange.setProperty("llmFinalOutputTokens", finalResponse.tokenUsage().outputTokenCount());
-            exchange.setProperty("llmFinalTotalTokens", finalResponse.tokenUsage().totalTokenCount());
-            if (finalResponse.tokenUsage() instanceof OpenAiTokenUsage openAiTokenUsage
-                    && openAiTokenUsage.outputTokensDetails() != null) {
-                exchange.setProperty("llmFinalReasoningTokens",
-                        openAiTokenUsage.outputTokensDetails().reasoningTokens());
-            }
-        }
-
-        LOG.info("LLM final response diagnostics: lane={} passType={} textChars={} thinkingChars={} "
-                        + "finalInputTokens={} finalOutputTokens={} finalReasoningTokens={} "
-                        + "intermediateResponses={} toolExecutions={}",
-                exchange.getProperty("laneId"),
-                exchange.getProperty("passType"),
-                exchange.getProperty("llmFinalTextChars"),
-                exchange.getProperty("llmFinalThinkingChars"),
-                exchange.getProperty("llmFinalInputTokens"),
-                exchange.getProperty("llmFinalOutputTokens"),
-                exchange.getProperty("llmFinalReasoningTokens"),
-                exchange.getProperty("llmIntermediateResponses"),
-                exchange.getProperty("llmToolExecutions"));
+        exchange.setProperty(FINAL_SUMMARY, summary);
+        LOG.info("LLM final response diagnostics: lane={} passType={} {}", invocation.laneId(), invocation.passType(), summary);
     }
 
     void logBudget(ChatRequest request) {
@@ -118,11 +100,10 @@ final class LlmCallDiagnostics {
         int inputCeiling = Math.max(0, contextWindow - maxOutputTokens);
         cumulativeEstimatedInputTokens += inputTokens;
 
-        String label = firstNonBlank(exchange.getProperty("agentLabel", String.class), "LLM");
         LOG.info("[{}] TOKEN BUDGET lane={} input={}/{} ({}%) | prompt={} tools={} response={} transcript={}/{} ({}%) "
                         + "| transcriptParts messages={} thinking={} toolCalls={} toolResults={} | compacted={} cumulativeInput={}",
-                label,
-                exchange.getProperty("laneId"),
+                invocation.logLabel(),
+                invocation.laneId(),
                 inputTokens,
                 inputCeiling,
                 percent(inputTokens, inputCeiling),

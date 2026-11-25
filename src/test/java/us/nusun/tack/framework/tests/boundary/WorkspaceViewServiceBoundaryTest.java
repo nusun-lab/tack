@@ -55,10 +55,12 @@ class WorkspaceViewServiceBoundaryTest {
         String serialized = mapper.writeValueAsString(service.view());
         var publicProfile = mapper.readTree(serialized).path("toolProfiles").get(0);
 
-        assertEquals(mapper.valueToTree(Map.of("mcp", Map.of("workitem", Map.of("action", List.of("list", "retrieve"))))),
-                publicProfile.path("permittedArgumentValues"));
-        assertEquals("list", publicProfile.at("/defaultArguments/mcp/workitem/action").asText());
-        assertEquals("pql", publicProfile.at("/hiddenArguments/mcp/workitem/0").asText());
+        var arguments = publicProfile.at("/servers/mcp/arguments/workitem");
+        assertEquals(mapper.valueToTree(List.of("list", "retrieve")), arguments.at("/permittedValues/action"));
+        assertEquals("list", arguments.at("/defaults/action").asText());
+        assertEquals("pql", arguments.at("/hidden/0").asText());
+        assertEquals("X-Private", publicProfile.at("/servers/mcp/connection/extraHeaderNames/0").asText());
+        assertFalse(publicProfile.has("mcpServers"));
         assertFalse(serialized.contains("SENTINEL_"));
         assertTrue(serialized.contains("@developer"));
         assertTrue(serialized.contains("blue"));
@@ -83,7 +85,8 @@ class WorkspaceViewServiceBoundaryTest {
         child.currentPrimitive("act");
         child.currentId("implement");
         childExchange.setProperty("agentRun", child);
-        new us.nusun.tack.framework.routine.ThoughtStackSupport().push("Child implementation context", 200).process(childExchange);
+        FrameworkFixtures.primitiveExecutor(store).enterThought(childExchange,
+                new us.nusun.tack.framework.tack.PrimitiveExecutor.ThoughtEnterRequest(null, "Child implementation context", 200));
         manager.record(childExchange, "CHILD_STARTED");
 
         List<AgentRunProjection> projections = service.view().agentRunProjections();
@@ -95,10 +98,14 @@ class WorkspaceViewServiceBoundaryTest {
         assertEquals(2, projections.size());
         assertEquals("parent-run", childProjection.parentAgentRunId());
         assertTrue(childProjection.current().isEmpty());
-        assertEquals("Child implementation context", childProjection.thoughtStack().getFirst().get("context"));
-        assertEquals("(unnamed)", childProjection.thoughtStack().getFirst().get("name"));
-        assertEquals("(unnamed)", childProjection.thoughtStack().getFirst().get("displayId"));
-        assertTrue(childProjection.thoughtStack().getFirst().containsKey("updatedAt"));
+        assertEquals("Child implementation context", childProjection.thoughtStack().getFirst().context());
+        assertEquals("(unnamed)", childProjection.thoughtStack().getFirst().name());
+        var json = new ObjectMapper().findAndRegisterModules().valueToTree(childProjection);
+        var thought = json.at("/thoughtStack/0");
+        assertTrue(thought.has("updatedAt"));
+        assertFalse(thought.has("displayId"));
+        assertFalse(thought.has("contentPreview"));
+        assertFalse(thought.has("truncated"));
     }
 
     private static WorkspaceViewService service(ProjectionStore store) {

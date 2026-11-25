@@ -107,11 +107,16 @@ and creating built-in relations, so the routine does not attempt relation deleti
 
 ## Runtime boundaries
 
-- Workspace and prompt inventory use credential-free views. Tool-server views expose header
-  names for diagnostics and persona views expose public handles.
-- Camel binds HTTP JSON to request types. Direct routes carry typed requests, and Kafka retains
-  its job, result, and scheduling event contracts. Typed per-pass fields are restored from the
-  existing Kafka envelope, with an immutable enqueue-time metadata snapshot.
+- Workspace and prompt inventory use credential-free views. Workspace profiles expose a
+  `servers` object keyed by server ID, with connection details, tool grants and per-tool
+  argument rules under each server. Connections expose header names. Persona views expose
+  public handles. The dashboard derives thought presentation from the retained frames.
+- Camel binds HTTP JSON to request types. Mission and child routes validate a complete batch,
+  prepare its sandboxes and commit accepted runs before publishing scheduled events from the
+  accepted handles. Kafka retains its job, result, and scheduling event contracts.
+- The LLM route admits a typed envelope and resolves its per-pass context once. The worker
+  restores that context from the Kafka metadata snapshot. Agent setup, partitioning, projection
+  and diagnostics read the typed context.
 - A normalized schema drives the creation prompt, provider constraints when enabled, and local
   validation before returning a queued response. The provider and local validator enforce
   different boundaries even when they share the same schema.
@@ -119,8 +124,9 @@ and creating built-in relations, so the routine does not attempt relation deleti
   dispatches, and completion updates that operation by ID. The latest completed primitive is
   tracked separately from the most recent act used for decision context. The timeline keeps
   ten events, and retained thought events remain available after a frame exits.
-- LangChain4j supplies MCP filtering, specification mapping, and tool execution wrapping.
-  Tack owns connection lifecycle, persona credentials, and enforcement at execution time.
+- LangChain4j supplies MCP discovery, filtering, specification mapping, and dispatch.
+  Tack opens the persona connection on the first tool discovery and owns its shutdown and
+  execution-time policy.
 
 ## Near-term decisions
 
