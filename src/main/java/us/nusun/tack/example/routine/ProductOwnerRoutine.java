@@ -1,7 +1,6 @@
 package us.nusun.tack.example.routine;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import org.apache.camel.ExchangePropertyKey;
 import org.apache.camel.builder.RouteBuilder;
 import us.nusun.tack.example.tool.ProductOwnershipToolProfile;
 import us.nusun.tack.example.tool.TeamChatToolProfile;
@@ -111,8 +110,8 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .loopDoWhile(and(exchangeProperty("poEpicWorkIterations").isLessThan(6),
                         or(exchangeProperty("poEpicWorkIterations").isEqualTo(0),
                             exchangeProperty("act.po-epic-work.durableProgress").isEqualTo(true))))
-                    .process(exchange -> exchange.setProperty("poEpicWorkIterations",
-                            exchange.getProperty(ExchangePropertyKey.LOOP_INDEX, Integer.class) + 1))
+                    .setProperty("poEpicWorkIterations",
+                            simple("${exchangeProperty.poEpicWorkIterations}++", Integer.class))
                     .to("direct:po-epic-definition")
                 .end();
 
