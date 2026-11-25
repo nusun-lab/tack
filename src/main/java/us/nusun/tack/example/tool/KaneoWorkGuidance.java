@@ -8,7 +8,8 @@ final class KaneoWorkGuidance {
             - Use the verified current-mission project in the Tack Software Team workspace. Start with list_tasks
               scoped to that project, filtering by status and exact assignee ID where applicable. Check columns,
               plannedTasks, or archivedTasks as needed. Resolve people by whoami or exact configured email in
-              list_workspace_members. Preserve the returned user IDs.
+              list_workspace_members. Copy IDs verbatim, including case and repeated characters. If Kaneo reports
+              a locator missing, compare the argument with the original response before drawing a conclusion.
             - Classify by the exact attached label name: epic, story, test, or defect. Task details can omit labels
               and list descriptions can be deferred. Use list evidence for classification, including when resolving
               a PR-linked ticket. Follow task and related-data pagination independently as far as needed. Missing

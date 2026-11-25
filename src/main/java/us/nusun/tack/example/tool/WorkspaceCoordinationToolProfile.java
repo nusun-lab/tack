@@ -56,9 +56,10 @@ public class WorkspaceCoordinationToolProfile implements ToolProfileProvider {
                         "get_user_by_username",
                         "search_users")
                 .promptGuidance("""
-                        - Resolve the Tack Software Team workspace by exact name. Find the mission project by its unique
-                          anchor and the Mattermost channel by team and name before creating either. Use a unique project
-                          key and the default columns. Keep the project private.
+                        - Resolve the Tack Software Team workspace by exact name and copy its ID verbatim, including
+                          case and repeated characters. Find the project by its mission anchor and the Mattermost channel
+                          by team and name before creating either. Use a unique project key and the default columns.
+                          Keep the project private.
                         - Verify inherited access using the workspace member roster. Report missing Kaneo access as a
                           provisioning blocker. Reconcile Mattermost channel membership with the active mission roster.
                         """)
