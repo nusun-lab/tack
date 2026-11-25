@@ -14,19 +14,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class InferenceLaneRegistryTest {
     @Test
-    void lanesDefaultToSingleWorkerAgentRunPartitioning() {
-        InferenceLaneRegistry registry = FrameworkFixtures.inferenceLaneRegistry();
+    void exposesBuilderDefaultsAndKeepsTheSuppliedLaneConfiguration() {
+        var lane = InferenceLaneDefinition.builder("synthetic")
+                .requestTopic("test.requests.synthetic")
+                .responseTopic("test.replies.synthetic")
+                .endpoint("http://synthetic-model.example/v1")
+                .apiKeyEnvVariable("TEST_SYNTHETIC_API_KEY")
+                .build();
+        var registered = new InferenceLaneRegistry(List.of(lane)).getRequired("synthetic");
 
-        assertEquals(1, registry.getRequired("low-pass").parallelism());
-        assertEquals(1, registry.getRequired("high-pass").parallelism());
-        assertEquals(PartitionKeyStrategy.AGENT_RUN, registry.getRequired("low-pass").partitionKeyStrategy());
-        assertEquals(PartitionKeyStrategy.AGENT_RUN, registry.getRequired("high-pass").partitionKeyStrategy());
-        assertEquals("llm.requests.low", registry.getRequired("low-pass").requestTopic());
-        assertEquals("llm.requests.high", registry.getRequired("high-pass").requestTopic());
-        assertEquals("http://low-vllm.example/v1", registry.getRequired("low-pass").endpoint());
-        assertEquals("http://high-vllm.example/v1", registry.getRequired("high-pass").endpoint());
-        assertEquals("LLM_LOW_API_KEY", registry.getRequired("low-pass").apiKeyEnvVariable());
-        assertEquals("LLM_HIGH_API_KEY", registry.getRequired("high-pass").apiKeyEnvVariable());
+        assertEquals(1, registered.parallelism());
+        assertEquals(PartitionKeyStrategy.AGENT_RUN, registered.partitionKeyStrategy());
+        assertEquals("test.requests.synthetic", registered.requestTopic());
+        assertEquals("test.replies.synthetic", registered.responseTopic());
+        assertEquals("http://synthetic-model.example/v1", registered.endpoint());
+        assertEquals("TEST_SYNTHETIC_API_KEY", registered.apiKeyEnvVariable());
     }
 
     @Test

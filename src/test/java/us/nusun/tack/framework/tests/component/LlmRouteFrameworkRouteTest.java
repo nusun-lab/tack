@@ -58,8 +58,8 @@ class LlmRouteFrameworkRouteTest {
             assertEquals("high-pass", body.laneId());
             assertEquals(LlmPassType.ACTION, body.passType());
             assertEquals("{\"result\":\"ok\"}", body.content());
-            assertEquals(List.of("llm.requests.high"), kafka.sentTopics());
-            assertEquals("run:/high?partition=stable", kafka.sentTo("llm.requests.high").getFirst().getIn().getHeader(KafkaConstants.KEY));
+            assertEquals(List.of("test.llm.requests.high"), kafka.sentTopics());
+            assertEquals("run:/high?partition=stable", kafka.sentTo("test.llm.requests.high").getFirst().getIn().getHeader(KafkaConstants.KEY));
             assertEquals(0, replies.inFlightCount());
         }
     }
@@ -78,7 +78,7 @@ class LlmRouteFrameworkRouteTest {
             assertTrue(requestUri.contains("RecipientList"));
             assertTrue(requestUri.contains("kafka:${exchangeProperty.laneRequestTopic}"));
             assertTrue(!requestUri.contains("language:simple"));
-            assertTrue(replyInput.contains("kafka:llm.replies.low"));
+            assertTrue(replyInput.contains("kafka:test.llm.replies.low"));
             assertTrue(deadLetterOutput.contains("kafka:{{llm.topic.dead-letter:llm.dead-letter}}"));
             assertTrue(!requestUri.contains("?key="));
             assertTrue(!replyInput.contains("?key="));
@@ -197,10 +197,10 @@ class LlmRouteFrameworkRouteTest {
                     null));
             String json = TestJson.write(queued);
 
-            kafka.emit("llm.requests.low", json);
+            kafka.emit("test.llm.requests.low", json);
 
-            await(() -> kafka.sentTopics().contains("llm.replies.low"));
-            String replyJson = kafka.sentTo("llm.replies.low").getFirst().getIn().getBody(String.class);
+            await(() -> kafka.sentTopics().contains("test.llm.replies.low"));
+            String replyJson = kafka.sentTo("test.llm.replies.low").getFirst().getIn().getBody(String.class);
             assertTrue(replyJson.contains("\"jobId\":\"" + queued.jobId() + "\""));
             assertTrue(replyJson.contains("\"status\":\"SUCCEEDED\""));
             assertTrue(replyJson.contains("\"content\":\"{\\\"result\\\":\\\"worker-ok\\\"}\""));
@@ -227,10 +227,10 @@ class LlmRouteFrameworkRouteTest {
                     Map.of("primitive", "test-synthesis"),
                     null));
 
-            kafka.emit("llm.requests.low", TestJson.write(queued));
+            kafka.emit("test.llm.requests.low", TestJson.write(queued));
 
-            await(() -> kafka.sentTopics().contains("llm.replies.low") && kafka.sentTopics().contains("llm.dead-letter"));
-            String replyJson = kafka.sentTo("llm.replies.low").getFirst().getIn().getBody(String.class);
+            await(() -> kafka.sentTopics().contains("test.llm.replies.low") && kafka.sentTopics().contains("llm.dead-letter"));
+            String replyJson = kafka.sentTo("test.llm.replies.low").getFirst().getIn().getBody(String.class);
             assertTrue(replyJson.contains("\"jobId\":\"" + queued.jobId() + "\""));
             assertTrue(replyJson.contains("\"status\":\"FAILED\""));
             assertTrue(replyJson.contains("LLM response failure: reason=empty-final-content"));

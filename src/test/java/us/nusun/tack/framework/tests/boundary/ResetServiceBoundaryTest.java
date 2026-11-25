@@ -23,14 +23,14 @@ class ResetServiceBoundaryTest {
         ProjectionStore projections = new ProjectionStore();
         AgentRunStore agentRuns = new AgentRunStore();
         seedRun(projections, agentRuns);
-        TestKafkaTopicProvisioner kafkaTopics = new TestKafkaTopicProvisioner(List.of("agent-runs.scheduled", "llm.requests.low"));
+        TestKafkaTopicProvisioner kafkaTopics = new TestKafkaTopicProvisioner(List.of("agent-runs.scheduled", "test.llm.requests.low"));
         TestPersonaSandboxManager sandboxes = new TestPersonaSandboxManager(List.of("tack-a", "tack-b"));
         ResetService reset = resetService(projections, agentRuns, kafkaTopics, sandboxes);
 
         Map<String, Object> response = reset.reset();
 
         assertEquals("RESET", response.get("status"));
-        assertEquals(List.of("agent-runs.scheduled", "llm.requests.low"), response.get("kafkaTopicsPurged"));
+        assertEquals(List.of("agent-runs.scheduled", "test.llm.requests.low"), response.get("kafkaTopicsPurged"));
         assertEquals(List.of("tack-a", "tack-b"), response.get("sandboxesDestroyed"));
         assertEquals(1, kafkaTopics.purgeCalls);
         assertEquals(1, sandboxes.destroyCalls);
@@ -41,7 +41,7 @@ class ResetServiceBoundaryTest {
 
     @Test
     void resetRequestIncludesRequestIdAfterKafkaPurge() throws Exception {
-        TestKafkaTopicProvisioner kafkaTopics = new TestKafkaTopicProvisioner(List.of("llm.requests.low"));
+        TestKafkaTopicProvisioner kafkaTopics = new TestKafkaTopicProvisioner(List.of("test.llm.requests.low"));
         TestPersonaSandboxManager sandboxes = new TestPersonaSandboxManager(List.of());
         ResetService reset = resetService(new ProjectionStore(), new AgentRunStore(), kafkaTopics, sandboxes);
 
@@ -49,7 +49,7 @@ class ResetServiceBoundaryTest {
 
         assertEquals("RESET", response.get("status"));
         assertEquals("request-1", response.get("requestId"));
-        assertEquals(List.of("llm.requests.low"), response.get("kafkaTopicsPurged"));
+        assertEquals(List.of("test.llm.requests.low"), response.get("kafkaTopicsPurged"));
         assertEquals(List.of(), response.get("sandboxesDestroyed"));
         assertEquals(1, sandboxes.destroyCalls);
     }

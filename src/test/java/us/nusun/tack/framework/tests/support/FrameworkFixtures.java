@@ -126,20 +126,16 @@ public final class FrameworkFixtures {
     public static List<InferenceLaneDefinition> inferenceLanes() {
         return List.of(
                 InferenceLaneDefinition.builder("low-pass")
-                        .requestTopic("llm.requests.low")
-                        .responseTopic("llm.replies.low")
+                        .requestTopic("test.llm.requests.low")
+                        .responseTopic("test.llm.replies.low")
                         .parallelism(1)
                         .endpoint("http://low-vllm.example/v1")
-                        .apiKeyConfigKey("llm.inference-lane.low.api-key")
-                        .apiKeyEnvVariable("LLM_LOW_API_KEY")
                         .build(),
                 InferenceLaneDefinition.builder("high-pass")
-                        .requestTopic("llm.requests.high")
-                        .responseTopic("llm.replies.high")
+                        .requestTopic("test.llm.requests.high")
+                        .responseTopic("test.llm.replies.high")
                         .parallelism(1)
                         .endpoint("http://high-vllm.example/v1")
-                        .apiKeyConfigKey("llm.inference-lane.high.api-key")
-                        .apiKeyEnvVariable("LLM_HIGH_API_KEY")
                         .build());
     }
 

@@ -631,15 +631,15 @@ class LlmQueueLifecycleTest {
     private static InferenceLaneRegistry registryWithModels(String lowLaneModel, String highLaneModel) {
         return new InferenceLaneRegistry(List.of(
                 InferenceLaneDefinition.builder("low-pass")
-                        .requestTopic("llm.requests.low")
-                        .responseTopic("llm.replies.low")
+                        .requestTopic("test.llm.requests.low")
+                        .responseTopic("test.llm.replies.low")
                         .parallelism(1)
                         .endpoint("http://shared-openai.example/v1")
                         .model(lowLaneModel)
                         .build(),
                 InferenceLaneDefinition.builder("high-pass")
-                        .requestTopic("llm.requests.high")
-                        .responseTopic("llm.replies.high")
+                        .requestTopic("test.llm.requests.high")
+                        .responseTopic("test.llm.replies.high")
                         .parallelism(1)
                         .endpoint("http://shared-openai.example/v1")
                         .model(highLaneModel)
@@ -649,16 +649,16 @@ class LlmQueueLifecycleTest {
     private static InferenceLaneRegistry registryWithLowLaneParallelism(int parallelism) {
         return new InferenceLaneRegistry(List.of(
                 InferenceLaneDefinition.builder("low-pass")
-                        .requestTopic("llm.requests.low")
-                        .responseTopic("llm.replies.low")
+                        .requestTopic("test.llm.requests.low")
+                        .responseTopic("test.llm.replies.low")
                         .parallelism(parallelism)
                         .build()));
     }
 
     private static InferenceLaneRegistry registryWithPartitionStrategy(PartitionKeyStrategy strategy) {
         return new InferenceLaneRegistry(List.of(InferenceLaneDefinition.builder("low-pass")
-                .requestTopic("llm.requests.low")
-                .responseTopic("llm.replies.low")
+                .requestTopic("test.llm.requests.low")
+                .responseTopic("test.llm.replies.low")
                 .partitionKeyStrategy(strategy)
                 .build()));
     }

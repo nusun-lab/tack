@@ -194,6 +194,16 @@
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
                 <version>${jacoco-plugin.version}</version>
+                <configuration>
+                    <includes>
+                        <include>us/nusun/tack/framework/**</include>
+                    </includes>
+                    <excludes>
+                        <exclude>us/nusun/tack/framework/sandbox/grpc/**</exclude>
+                        <exclude>us/nusun/tack/framework/tests/**</exclude>
+                        <exclude>us/nusun/tack/framework/**/*Test*</exclude>
+                    </excludes>
+                </configuration>
                 <executions>
                     <execution>
                         <goals>

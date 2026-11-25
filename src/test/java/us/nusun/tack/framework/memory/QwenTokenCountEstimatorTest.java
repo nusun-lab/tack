@@ -20,7 +20,7 @@ class QwenTokenCountEstimatorTest {
     @Test
     void scalesWithTypicalStructuredContent() {
         String json = """
-                {"tool":"plane","arguments":{"query":"find active project work"}}
+                {"tool":"catalog","arguments":{"query":"find active project work"}}
                 """;
         assertTrue(estimator.estimateTokenCountInText(json) > 10);
     }

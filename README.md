@@ -581,7 +581,9 @@ Run the full verification lifecycle:
 ./mvnw verify
 ```
 
-Framework tests should use synthetic personas, routines, tool profiles, routes, and external boundaries. The bundled example demonstrates composition and is not a framework test fixture. Live vLLM, Kafka, Plane, Gitea, Mattermost, and OpenShell belong in explicit environment/integration validation rather than ordinary framework unit tests.
+Framework tests use synthetic personas, routines, tool profiles, routes, and test-owned configuration. Keep example providers and application settings out of test setup. Live services belong in explicit environment validation.
+
+JaCoCo reports handwritten framework code in `target/site/jacoco`, including sandbox clients, manager, and tool. The report excludes the example and generated protobuf and gRPC code.
 
 ## Troubleshooting
 

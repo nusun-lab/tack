@@ -11,10 +11,6 @@ import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.chat.request.json.JsonEnumSchema;
 import dev.langchain4j.service.tool.ToolExecutionResult;
 import org.junit.jupiter.api.Test;
-import us.nusun.tack.example.tool.MattermostMcpServer;
-import us.nusun.tack.example.tool.GiteaMcpServer;
-import us.nusun.tack.example.tool.PlaneMcpServer;
-import us.nusun.tack.example.tool.WorkspaceReadonlyToolProfile;
 import us.nusun.tack.framework.inventory.ToolProfileRegistry;
 import us.nusun.tack.framework.logging.LogTokens;
 import us.nusun.tack.framework.mcp.McpToolPolicy;
@@ -62,27 +58,27 @@ class ToolProfileSemanticsTest {
     }
 
     @Test
-    void readOnlyPlaneToolsRejectMutationsBeforeDispatch() {
-        var readOnly = new WorkspaceReadonlyToolProfile(
-                new PlaneMcpServer("", ""),
-                new GiteaMcpServer(""),
-                new MattermostMcpServer(""),
-                4000).toolProfiles().getFirst();
-        var delegate = new FakeMcpClient(List.of(ToolSpecification.builder().name("workitem").build()));
-        var policy = policy(delegate, "plane", readOnly, null, null, 0, TOKEN_ESTIMATOR);
+    void permittedArgumentValuesAreAdvertisedAndEnforcedBeforeDispatch() throws Exception {
+        var profile = ToolProfile.builder("restricted")
+                .allowTool("catalog", "lookup")
+                .permitArgumentValues("catalog", "lookup", "format", "brief", "full")
+                .build();
+        var delegate = new FakeMcpClient(List.of(ToolSpecification.builder().name("lookup").build()));
+        var policy = policy(delegate, "catalog", profile);
         var parameters = tools(policy).getFirst().parameters();
-        var action = assertInstanceOf(JsonEnumSchema.class, parameters.properties().get("action"));
-        assertEquals(List.of("list", "retrieve", "retrieve_by_identifier", "search"), action.enumValues());
-        assertTrue(parameters.required().contains("action"));
+        var format = assertInstanceOf(JsonEnumSchema.class, parameters.properties().get("format"));
+        assertEquals(List.of("brief", "full"), format.enumValues());
+        assertTrue(parameters.required().contains("format"));
 
-        for (String arguments : List.of("{\"action\":\"update\"}", "{\"action\":null}", "{}")) {
-            var request = ToolExecutionRequest.builder().name("plane__workitem").arguments(arguments).build();
+        for (String arguments : List.of("{\"format\":\"raw\"}", "{\"format\":null}", "{}")) {
+            var request = ToolExecutionRequest.builder().name("lookup").arguments(arguments).build();
             assertThrows(IllegalArgumentException.class, () -> execute(policy, request));
             assertNull(delegate.lastRequest);
         }
-        execute(policy, ToolExecutionRequest.builder().name("plane__workitem")
-                .arguments("{\"action\":\"list\"}").build());
-        assertEquals("workitem", delegate.lastToolName());
+
+        execute(policy, ToolExecutionRequest.builder().name("lookup").arguments("{\"format\":\"brief\"}").build());
+        assertEquals("lookup", delegate.lastToolName());
+        assertEquals("brief", OBJECT_MAPPER.readTree(delegate.lastRequest.arguments()).get("format").asText());
     }
 
     @Test
@@ -103,16 +99,16 @@ class ToolProfileSemanticsTest {
     @Test
     void permittedValuesAreCheckedAfterApplyingProfileDefaults() throws Exception {
         var profile = ToolProfile.builder("read")
-                .allowTool("plane", "workitem")
-                .permitArgumentValues("plane", "workitem", "action", "list")
-                .defaultArgument("plane", "workitem", "action", "list")
+                .allowTool("catalog", "lookup")
+                .permitArgumentValues("catalog", "lookup", "format", "brief")
+                .defaultArgument("catalog", "lookup", "format", "brief")
                 .build();
-        var delegate = new FakeMcpClient(List.of(ToolSpecification.builder().name("workitem").build()));
-        var policy = policy(delegate, "plane", profile);
+        var delegate = new FakeMcpClient(List.of(ToolSpecification.builder().name("lookup").build()));
+        var policy = policy(delegate, "catalog", profile);
 
-        assertFalse(tools(policy).getFirst().parameters().required().contains("action"));
-        execute(policy, ToolExecutionRequest.builder().name("workitem").arguments("{}").build());
-        assertEquals("list", OBJECT_MAPPER.readTree(delegate.lastRequest.arguments()).get("action").asText());
+        assertFalse(tools(policy).getFirst().parameters().required().contains("format"));
+        execute(policy, ToolExecutionRequest.builder().name("lookup").arguments("{}").build());
+        assertEquals("brief", OBJECT_MAPPER.readTree(delegate.lastRequest.arguments()).get("format").asText());
     }
 
     @Test

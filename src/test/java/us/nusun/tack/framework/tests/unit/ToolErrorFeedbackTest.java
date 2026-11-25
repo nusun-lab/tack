@@ -14,19 +14,19 @@ class ToolErrorFeedbackTest {
     void executionFeedbackPreservesUsefulCause() {
         RuntimeException error = new RuntimeException("MCP tool execution failed", new IllegalStateException("get dir content err: not found"));
 
-        String feedback = ToolErrorFeedback.execution(error, context("gitea__get_dir_contents")).text();
+        String feedback = ToolErrorFeedback.execution(error, context("catalog__get_dir_contents")).text();
 
         assertEquals(
-                "Tool 'gitea__get_dir_contents' failed. Reason: MCP tool execution failed Caused by: get dir content err: not found",
+                "Tool 'catalog__get_dir_contents' failed. Reason: MCP tool execution failed Caused by: get dir content err: not found",
                 feedback);
     }
 
     @Test
     void executionFeedbackHandlesBlankErrors() {
-        String feedback = ToolErrorFeedback.execution(new RuntimeException(), context("gitea__get_dir_contents")).text();
+        String feedback = ToolErrorFeedback.execution(new RuntimeException(), context("catalog__get_dir_contents")).text();
 
         assertEquals(
-                "Tool 'gitea__get_dir_contents' failed. Reason: No error detail was provided by the tool (RuntimeException).",
+                "Tool 'catalog__get_dir_contents' failed. Reason: No error detail was provided by the tool (RuntimeException).",
                 feedback);
     }
 
@@ -34,10 +34,10 @@ class ToolErrorFeedbackTest {
     void argumentFeedbackReturnsValidationFailure() {
         String feedback = ToolErrorFeedback.arguments(
                 new IllegalArgumentException("missing required property 'path'"),
-                context("gitea__get_dir_contents")).text();
+                context("catalog__get_dir_contents")).text();
 
         assertEquals(
-                "Tool 'gitea__get_dir_contents' received invalid arguments. Reason: missing required property 'path'",
+                "Tool 'catalog__get_dir_contents' received invalid arguments. Reason: missing required property 'path'",
                 feedback);
     }
 

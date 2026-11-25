@@ -24,12 +24,12 @@ class ToolLoopGuardChatMemoryTest {
         RecordingMemory delegate = new RecordingMemory();
         ToolLoopGuardChatMemory memory = new ToolLoopGuardChatMemory(delegate);
 
-        addExecution(memory, "1", "plane.search_work_items", "{\"query\":\"matchbox\"}", "{\"issues\":[]}");
-        addExecution(memory, "2", "plane.search_work_items", "{\"query\":\"matchbox\"}", "{\"issues\":[]}");
+        addExecution(memory, "1", "catalog.search", "{\"query\":\"matchbox\"}", "{\"issues\":[]}");
+        addExecution(memory, "2", "catalog.search", "{\"query\":\"matchbox\"}", "{\"issues\":[]}");
 
         ToolLoopGuardChatMemory.RepeatedToolExecutionException failure = assertThrows(
                 ToolLoopGuardChatMemory.RepeatedToolExecutionException.class,
-                () -> memory.add(AiMessage.from(request("3", "plane.search_work_items", "{\"query\":\"matchbox\"}"))));
+                () -> memory.add(AiMessage.from(request("3", "catalog.search", "{\"query\":\"matchbox\"}"))));
 
         assertTrue(failure.getMessage().contains("third execution was refused"));
         assertEquals(4, delegate.messages().size());
@@ -42,14 +42,14 @@ class ToolLoopGuardChatMemoryTest {
         String publicSearch = "{\"query\":\"matchbox-race-night-app\",\"isPrivate\":false}";
         String privateSearch = "{\"query\":\"matchbox-race-night-app\",\"isPrivate\":true}";
 
-        addExecution(memory, "1", "gitea.search_repos", publicSearch, "[]");
-        addExecution(memory, "2", "gitea.search_repos", privateSearch, "[]");
-        addExecution(memory, "3", "gitea.search_repos", publicSearch, "[]");
-        addExecution(memory, "4", "gitea.search_repos", privateSearch, "[]");
+        addExecution(memory, "1", "catalog.discover", publicSearch, "[]");
+        addExecution(memory, "2", "catalog.discover", privateSearch, "[]");
+        addExecution(memory, "3", "catalog.discover", publicSearch, "[]");
+        addExecution(memory, "4", "catalog.discover", privateSearch, "[]");
 
         ToolLoopGuardChatMemory.RepeatedToolExecutionException failure = assertThrows(
                 ToolLoopGuardChatMemory.RepeatedToolExecutionException.class,
-                () -> memory.add(AiMessage.from(request("5", "gitea.search_repos", publicSearch))));
+                () -> memory.add(AiMessage.from(request("5", "catalog.discover", publicSearch))));
 
         assertTrue(failure.getMessage().contains("TACK_RUNTIME_REPEATED_CYCLE"));
         assertTrue(failure.getMessage().contains("2-step tool cycle"));

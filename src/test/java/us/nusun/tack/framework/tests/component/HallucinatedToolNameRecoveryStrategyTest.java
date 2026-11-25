@@ -110,11 +110,11 @@ class HallucinatedToolNameRecoveryStrategyTest {
                     null));
             String json = TestJson.write(job);
 
-            assertDoesNotThrow(() -> kafka.emit("llm.requests.low", json));
+            assertDoesNotThrow(() -> kafka.emit("test.llm.requests.low", json));
 
-            await(() -> kafka.sentTopics().contains("llm.replies.low"));
+            await(() -> kafka.sentTopics().contains("test.llm.replies.low"));
             assertFalse(kafka.sentTopics().contains("llm.dead-letter"));
-            Exchange replyExchange = kafka.sentTo("llm.replies.low").getFirst();
+            Exchange replyExchange = kafka.sentTo("test.llm.replies.low").getFirst();
             assertFalse(replyExchange.isFailed());
             LlmJobResult result = TestJson.read(replyExchange.getIn().getBody(String.class), LlmJobResult.class);
             assertNotNull(result);

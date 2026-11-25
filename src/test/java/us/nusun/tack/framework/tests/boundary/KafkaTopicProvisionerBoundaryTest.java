@@ -31,15 +31,15 @@ class KafkaTopicProvisionerBoundaryTest {
         List<String> topics = provisioner.configuredTopicNames();
 
         assertEquals(Set.of(
-                "llm.requests.low",
-                "llm.replies.low",
-                "llm.requests.high",
-                "llm.replies.high",
+                "test.llm.requests.low",
+                "test.llm.replies.low",
+                "test.llm.requests.high",
+                "test.llm.replies.high",
                 "agent-runs.scheduled",
                 "llm.dead-letter"), Set.copyOf(topics));
         assertEquals(6, topics.size());
-        assertTrue(topics.indexOf("llm.requests.low") < topics.indexOf("llm.replies.low"));
-        assertTrue(topics.indexOf("llm.requests.high") < topics.indexOf("llm.replies.high"));
+        assertTrue(topics.indexOf("test.llm.requests.low") < topics.indexOf("test.llm.replies.low"));
+        assertTrue(topics.indexOf("test.llm.requests.high") < topics.indexOf("test.llm.replies.high"));
         assertEquals("agent-runs.scheduled", topics.get(topics.size() - 2));
         assertEquals("llm.dead-letter", topics.getLast());
     }
@@ -47,15 +47,15 @@ class KafkaTopicProvisionerBoundaryTest {
     @Test
     void configuredTopicNamesDeduplicateDeadLetterWhenItMatchesLaneTopic() {
         KafkaTopicProvisioner provisioner = provisioner(true);
-        FrameworkFixtures.set(provisioner, "deadLetterTopic", "llm.requests.low");
+        FrameworkFixtures.set(provisioner, "deadLetterTopic", "test.llm.requests.low");
 
         List<String> topics = provisioner.configuredTopicNames();
 
         assertEquals(Set.of(
-                "llm.requests.low",
-                "llm.replies.low",
-                "llm.requests.high",
-                "llm.replies.high",
+                "test.llm.requests.low",
+                "test.llm.replies.low",
+                "test.llm.requests.high",
+                "test.llm.replies.high",
                 "agent-runs.scheduled"), Set.copyOf(topics));
         assertEquals(5, topics.size());
     }
@@ -71,10 +71,10 @@ class KafkaTopicProvisionerBoundaryTest {
                 .collect(java.util.stream.Collectors.toMap(NewTopic::name, NewTopic::numPartitions));
 
         assertEquals(Set.copyOf(provisioner.configuredTopicNames()), Set.copyOf(topics.stream().map(NewTopic::name).toList()));
-        assertEquals(3, partitionsByTopic.get("llm.requests.low"));
-        assertEquals(1, partitionsByTopic.get("llm.replies.low"));
-        assertEquals(1, partitionsByTopic.get("llm.requests.high"));
-        assertEquals(1, partitionsByTopic.get("llm.replies.high"));
+        assertEquals(3, partitionsByTopic.get("test.llm.requests.low"));
+        assertEquals(1, partitionsByTopic.get("test.llm.replies.low"));
+        assertEquals(1, partitionsByTopic.get("test.llm.requests.high"));
+        assertEquals(1, partitionsByTopic.get("test.llm.replies.high"));
         assertEquals(4, partitionsByTopic.get("agent-runs.scheduled"));
         assertEquals(4, partitionsByTopic.get("llm.dead-letter"));
         assertTrue(topics.stream().allMatch(topic -> topic.replicationFactor() == 2));
@@ -111,14 +111,14 @@ class KafkaTopicProvisionerBoundaryTest {
     @Test
     void ensureTopicsCreatesOnlyTopicsMissingFromKafka() throws Exception {
         TestableProvisioner provisioner = provisionerWithExistingTopics(Set.of(
-                "llm.requests.low",
-                "llm.replies.low",
+                "test.llm.requests.low",
+                "test.llm.replies.low",
                 "llm.dead-letter"));
 
         List<String> ensured = provisioner.ensureTopics();
 
         assertEquals(provisioner.configuredTopicNames(), ensured);
-        assertEquals(Set.of("llm.requests.high", "llm.replies.high", "agent-runs.scheduled"), Set.copyOf(provisioner.createdTopicNames()));
+        assertEquals(Set.of("test.llm.requests.high", "test.llm.replies.high", "agent-runs.scheduled"), Set.copyOf(provisioner.createdTopicNames()));
         assertEquals(3, provisioner.createdTopicNames().size());
         assertEquals(1, provisioner.closeCount);
     }
@@ -137,13 +137,13 @@ class KafkaTopicProvisionerBoundaryTest {
     @Test
     void ensureTopicsFailsClearlyWhenExistingRequestTopicHasTooFewPartitions() {
         TestableProvisioner provisioner = provisionerWithExistingTopics(
-                Set.of("llm.requests.low"),
+                Set.of("test.llm.requests.low"),
                 registryWithLowLaneParallelism(3));
-        provisioner.existingPartitions = Map.of("llm.requests.low", 1);
+        provisioner.existingPartitions = Map.of("test.llm.requests.low", 1);
 
         IllegalStateException failure = assertThrows(IllegalStateException.class, provisioner::ensureTopics);
 
-        assertTrue(failure.getMessage().contains("llm.requests.low"));
+        assertTrue(failure.getMessage().contains("test.llm.requests.low"));
         assertTrue(failure.getMessage().contains("has 1 partitions"));
         assertTrue(failure.getMessage().contains("requires at least 3"));
         assertEquals(List.of(), provisioner.createdTopicNames());
@@ -179,23 +179,23 @@ class KafkaTopicProvisionerBoundaryTest {
     @Test
     void purgeConfiguredTopicsDeletesRecordsToHighWatermarkForExistingConfiguredPartitions() throws Exception {
         TestableProvisioner provisioner = provisionerWithExistingTopics(Set.of(
-                "llm.requests.low",
-                "llm.replies.high",
+                "test.llm.requests.low",
+                "test.llm.replies.high",
                 "agent-runs.scheduled",
                 "not-configured"));
         provisioner.existingPartitions = Map.of(
-                "llm.requests.low", 2,
-                "llm.replies.high", 1,
+                "test.llm.requests.low", 2,
+                "test.llm.replies.high", 1,
                 "agent-runs.scheduled", 3,
                 "not-configured", 5);
 
         List<String> purged = provisioner.purgeConfiguredTopics();
 
-        assertEquals(Set.of("llm.requests.low", "llm.replies.high", "agent-runs.scheduled"), Set.copyOf(purged));
+        assertEquals(Set.of("test.llm.requests.low", "test.llm.replies.high", "agent-runs.scheduled"), Set.copyOf(purged));
         assertEquals(6, provisioner.deletedRecords.size());
-        assertEquals(RecordsToDelete.beforeOffset(-1), provisioner.deletedRecords.get(new TopicPartition("llm.requests.low", 0)));
-        assertEquals(RecordsToDelete.beforeOffset(-1), provisioner.deletedRecords.get(new TopicPartition("llm.requests.low", 1)));
-        assertEquals(RecordsToDelete.beforeOffset(-1), provisioner.deletedRecords.get(new TopicPartition("llm.replies.high", 0)));
+        assertEquals(RecordsToDelete.beforeOffset(-1), provisioner.deletedRecords.get(new TopicPartition("test.llm.requests.low", 0)));
+        assertEquals(RecordsToDelete.beforeOffset(-1), provisioner.deletedRecords.get(new TopicPartition("test.llm.requests.low", 1)));
+        assertEquals(RecordsToDelete.beforeOffset(-1), provisioner.deletedRecords.get(new TopicPartition("test.llm.replies.high", 0)));
         assertEquals(RecordsToDelete.beforeOffset(-1), provisioner.deletedRecords.get(new TopicPartition("agent-runs.scheduled", 2)));
         assertTrue(provisioner.deletedRecords.keySet().stream().noneMatch(partition -> "not-configured".equals(partition.topic())));
         assertEquals(1, provisioner.closeCount);
@@ -248,13 +248,13 @@ class KafkaTopicProvisionerBoundaryTest {
         return new InferenceLaneRegistry(
                 List.of(
                         InferenceLaneDefinition.builder("low-pass")
-                                .requestTopic("llm.requests.low")
-                                .responseTopic("llm.replies.low")
+                                .requestTopic("test.llm.requests.low")
+                                .responseTopic("test.llm.replies.low")
                                 .parallelism(parallelism)
                                 .build(),
                         InferenceLaneDefinition.builder("high-pass")
-                                .requestTopic("llm.requests.high")
-                                .responseTopic("llm.replies.high")
+                                .requestTopic("test.llm.requests.high")
+                                .responseTopic("test.llm.replies.high")
                                 .parallelism(1)
                                 .build()));
     }

@@ -3,76 +3,72 @@ package us.nusun.tack.framework.tests.unit;
 import io.smallrye.config.PropertiesConfigSource;
 import io.smallrye.config.SmallRyeConfigBuilder;
 import org.junit.jupiter.api.Test;
-import us.nusun.tack.example.runtime.HighPassLane;
-import us.nusun.tack.example.runtime.LowPassLane;
 import us.nusun.tack.framework.config.EffectiveLaneSettings;
 import us.nusun.tack.framework.config.LaneConfiguration;
 import us.nusun.tack.framework.config.ModelConfiguration;
-import us.nusun.tack.framework.model.PartitionKeyStrategy;
+import us.nusun.tack.framework.model.InferenceLaneDefinition;
 
 import java.util.Map;
 
+import static java.util.Map.entry;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class EffectiveLaneSettingsTest {
     @Test
-    void laneDeclarationsKeepTheirOwnTopicAndPartitionFallbacks() {
-        var config = new SmallRyeConfigBuilder()
-                .withSources(new PropertiesConfigSource(Map.of(
-                        "llm.inference-lane.low.model", "low-model",
-                        "llm.inference-lane.high.model", "high-model"), "lanes", 100))
-                .withMapping(LaneConfiguration.class)
-                .build().getConfigMapping(LaneConfiguration.class);
-
-        var low = new LowPassLane(config).inferenceLane();
-        assertEquals("low-pass", low.id());
-        assertEquals("llm.requests.low", low.requestTopic());
-        assertEquals("llm.replies.low", low.responseTopic());
-        assertEquals(1, low.parallelism());
-        assertEquals(PartitionKeyStrategy.AGENT_RUN, low.partitionKeyStrategy());
-
-        var high = new HighPassLane(config).inferenceLane();
-        assertEquals("high-pass", high.id());
-        assertEquals("llm.requests.high", high.requestTopic());
-        assertEquals("llm.replies.high", high.responseTopic());
-        assertEquals(1, high.parallelism());
-        assertEquals(PartitionKeyStrategy.JOB, high.partitionKeyStrategy());
-    }
-
-    @Test
-    void retainsEffectiveDefaultsAndLaneEnvironmentAliases() throws Exception {
-        var properties = new PropertiesConfigSource(getClass().getResource("/application.properties"));
+    void resolvesGlobalDefaultsAndSyntheticLaneOverrides() {
         var config = new SmallRyeConfigBuilder()
                 .addDefaultInterceptors()
-                .withSources(properties, new PropertiesConfigSource(Map.of(
-                        "LLM_MODEL_DEFAULT_OPENAI_MODEL", "global-model",
-                        "LLM_MODEL_DEFAULT_OPENAI_TEMPERATURE", "0.2",
-                        "LLM_HIGH_API_KEY", "test-lane-credential",
-                        "LLM_HIGH_MODEL", "high-model",
-                        "LLM_HIGH_ENDPOINT", "http://inference.example/v1",
-                        "LLM_HIGH_PARALLELISM", "4",
-                        "LLM_HIGH_TOOL_MEMORY_MAX_TOKENS", "7000"), "aliases", 400))
+                .withSources(new PropertiesConfigSource(Map.ofEntries(
+                        entry("llm.model-default.openai.base-url", "http://default-model.example/v1"),
+                        entry("llm.model-default.openai.api-key", "global-test-key"),
+                        entry("llm.model-default.openai.model", "default-model"),
+                        entry("llm.model-default.openai.temperature", "0.3"),
+                        entry("llm.model-default.openai.top-p", "0.9"),
+                        entry("llm.model-default.openai.presence-penalty", "0.1"),
+                        entry("llm.model-default.openai.top-k", "24"),
+                        entry("llm.model-default.openai.min-p", "0.05"),
+                        entry("llm.model-default.openai.repetition-penalty", "1.1"),
+                        entry("llm.model-default.openai.max-tokens", "2048"),
+                        entry("llm.model-default.openai.timeout-ms", "10000"),
+                        entry("llm.model-default.openai.thinking-off.enabled", "true"),
+                        entry("llm.inference-lane.review.api-key", "${TEST_REVIEW_API_KEY}"),
+                        entry("llm.inference-lane.review.temperature", "0.6"),
+                        entry("llm.inference-lane.review.tool-memory.max-tokens", "7000"),
+                        entry("test.credentials.import", "import-test-key")),
+                        "framework-test-settings", 100),
+                        new PropertiesConfigSource(Map.of("TEST_REVIEW_API_KEY", "review-test-key"), "test-alias", 200))
                 .withMapping(ModelConfiguration.class)
                 .withMapping(LaneConfiguration.class)
                 .build();
         var defaults = config.getConfigMapping(ModelConfiguration.class);
         var lanes = config.getConfigMapping(LaneConfiguration.class);
-        var lowLane = new LowPassLane(lanes).inferenceLane();
-        var highLane = new HighPassLane(lanes).inferenceLane();
 
-        var low = EffectiveLaneSettings.resolve(lowLane, defaults, lanes, config);
-        var high = EffectiveLaneSettings.resolve(highLane, defaults, lanes, config);
-        assertEquals("global-model", low.model());
-        assertEquals(0.2, low.temperature());
-        assertEquals(50000, low.toolPass().memoryTokens());
-        assertEquals(50, low.toolPass().maxToolCalls());
-        assertEquals(PartitionKeyStrategy.AGENT_RUN, lowLane.partitionKeyStrategy());
-        assertEquals("high-model", high.model());
-        assertEquals("http://inference.example/v1", high.baseUrl());
-        assertEquals(4, highLane.parallelism());
-        assertEquals(0.7, high.temperature());
-        assertEquals("test-lane-credential", high.apiKey());
-        assertEquals(7000, high.toolPass().memoryTokens());
-        assertEquals(PartitionKeyStrategy.JOB, highLane.partitionKeyStrategy());
+        var inherited = EffectiveLaneSettings.resolve(lane("baseline").build(), defaults, lanes, config);
+        assertEquals("default-model", inherited.model());
+        assertEquals("http://default-model.example/v1", inherited.baseUrl());
+        assertEquals("global-test-key", inherited.apiKey());
+        assertEquals(0.3, inherited.temperature());
+        // No tool-memory or round-trip settings were supplied for this lane or globally.
+        assertEquals(12000, inherited.toolPass().memoryTokens());
+        assertEquals(4, inherited.toolPass().maxToolCalls());
+
+        var reviewLane = lane("review").configName("review")
+                .model("review-model").endpoint("http://review-model.example/v1").build();
+        var review = EffectiveLaneSettings.resolve(reviewLane, defaults, lanes, config);
+        assertEquals("review-model", review.model());
+        assertEquals("http://review-model.example/v1", review.baseUrl());
+        assertEquals(0.6, review.temperature());
+        assertEquals("review-test-key", review.apiKey());
+        assertEquals(7000, review.toolPass().memoryTokens());
+        assertEquals(inherited.toolPass().compactionThreshold(), review.toolPass().compactionThreshold());
+
+        var importLane = lane("import").apiKeyConfigKey("test.credentials.import").build();
+        assertEquals("import-test-key", EffectiveLaneSettings.resolve(importLane, defaults, lanes, config).apiKey());
+    }
+
+    private static InferenceLaneDefinition.Builder lane(String id) {
+        return InferenceLaneDefinition.builder(id)
+                .requestTopic("test.requests." + id)
+                .responseTopic("test.replies." + id);
     }
 }
