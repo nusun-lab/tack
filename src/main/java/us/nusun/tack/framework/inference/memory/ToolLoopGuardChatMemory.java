@@ -7,7 +7,6 @@ import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.model.TokenCountEstimator;
 import us.nusun.tack.framework.inference.lane.ToolPassSettings;
 
-import java.util.LinkedList;
 import java.util.List;
 
 /**
@@ -17,10 +16,8 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
     private static final System.Logger LOG = System.getLogger(ToolLoopGuardChatMemory.class.getName());
     private static final int MAX_CYCLE_LENGTH = 5;
 
-    private final ChatMemory delegate;
+    private final ToolAwareTokenWindowChatMemory transcript;
     private final int maxToolCalls;
-    private final ToolInteractions interactions = new ToolInteractions();
-    private int acceptedToolCalls;
     private int assistantRounds;
 
     public static ChatMemory forPass(Object id, ToolPassSettings settings, TokenCountEstimator estimator) {
@@ -28,24 +25,21 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
                 settings.compactionThreshold(), settings.recentToolInteractions()), settings.maxToolCalls());
     }
 
-    public ToolLoopGuardChatMemory(ChatMemory delegate) {
-        this(delegate, 0);
-    }
-
-    public ToolLoopGuardChatMemory(ChatMemory delegate, int maxToolCalls) {
-        this.delegate = delegate;
+    private ToolLoopGuardChatMemory(ToolAwareTokenWindowChatMemory transcript, int maxToolCalls) {
+        this.transcript = transcript;
         this.maxToolCalls = Math.max(0, maxToolCalls);
     }
 
     @Override
     public Object id() {
-        return delegate.id();
+        return transcript.id();
     }
 
     @Override
     public synchronized void add(ChatMessage message) {
         if (message instanceof AiMessage aiMessage) {
             assistantRounds++;
+            int acceptedToolCalls = transcript.interactions().requested().size();
             List<ToolExecutionRequest> requests = aiMessage.toolExecutionRequests();
             LOG.log(System.Logger.Level.INFO,
                     "LLM tool-loop assistant round={0} thinkingChars={1} textChars={2} toolCalls={3} acceptedToolCalls={4}/{5}",
@@ -56,10 +50,6 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
                     acceptedToolCalls,
                     maxToolCalls);
 
-            if (!aiMessage.hasToolExecutionRequests()) {
-                delegate.add(message);
-                return;
-            }
             if (maxToolCalls > 0 && acceptedToolCalls + requests.size() > maxToolCalls) {
                 throw new ToolCallBudgetExceededException(maxToolCalls, acceptedToolCalls, requests.size());
             }
@@ -70,14 +60,9 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
                     throw new RepeatedToolExecutionException(signature.toolName(), cycleLength);
                 }
             }
-            delegate.add(message);
-            acceptedToolCalls += requests.size();
-            interactions.record(message);
-            return;
         }
 
-        delegate.add(message);
-        interactions.record(message);
+        transcript.add(message);
     }
 
     @Override
@@ -88,19 +73,17 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
 
     @Override
     public synchronized List<ChatMessage> messages() {
-        return new LinkedList<>(delegate.messages());
+        return transcript.messages();
     }
 
     @Override
     public synchronized void clear() {
-        delegate.clear();
-        interactions.clear();
-        acceptedToolCalls = 0;
+        transcript.clear();
         assistantRounds = 0;
     }
 
     private int repeatedCycleLength(ToolInteractions.Signature nextRequest) {
-        List<ToolInteractions.Execution> completedExecutions = interactions.completed();
+        List<ToolInteractions.Execution> completedExecutions = transcript.interactions().completed();
         int completed = completedExecutions.size();
         for (int cycleLength = 1; cycleLength <= MAX_CYCLE_LENGTH; cycleLength++) {
             if (completed < cycleLength * 2) {
@@ -108,15 +91,9 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
             }
             int firstCycleStart = completed - cycleLength * 2;
             int secondCycleStart = completed - cycleLength;
-            boolean sameCycle = true;
-            for (int i = 0; i < cycleLength; i++) {
-                if (!completedExecutions.get(firstCycleStart + i)
-                        .equals(completedExecutions.get(secondCycleStart + i))) {
-                    sameCycle = false;
-                    break;
-                }
-            }
-            if (sameCycle && completedExecutions.get(secondCycleStart).request().equals(nextRequest)) {
+            if (completedExecutions.get(secondCycleStart).request().equals(nextRequest)
+                    && completedExecutions.subList(firstCycleStart, secondCycleStart)
+                            .equals(completedExecutions.subList(secondCycleStart, completed))) {
                 return cycleLength;
             }
         }

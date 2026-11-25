@@ -11,9 +11,7 @@ import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.model.TokenCountEstimator;
 
 import java.util.ArrayList;
-import java.util.LinkedList;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * Ephemeral tool-pass memory that keeps the complete tool execution history internally while projecting a
@@ -33,7 +31,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
     private final double compactionThreshold;
     private final int recentToolInteractions;
 
-    private List<ChatMessage> messages = new ArrayList<>();
+    private final List<ChatMessage> messages = new ArrayList<>();
     private final ToolInteractions interactions = new ToolInteractions();
     private boolean compacted;
     private boolean degradationNoticeSent;
@@ -70,24 +68,25 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
 
     @Override
     public synchronized void set(Iterable<ChatMessage> iter) {
-        this.messages = new ArrayList<>();
-        this.interactions.clear();
-        this.compacted = false;
-        this.degradationNoticeSent = false;
+        clear();
         iter.forEach(this::add);
     }
 
     @Override
     public synchronized List<ChatMessage> messages() {
-        return new LinkedList<>(project(messages));
+        return new ArrayList<>(project(messages));
     }
 
     @Override
     public synchronized void clear() {
-        this.messages = new ArrayList<>();
+        messages.clear();
         this.interactions.clear();
         this.compacted = false;
         this.degradationNoticeSent = false;
+    }
+
+    ToolInteractions interactions() {
+        return interactions;
     }
 
     private List<ChatMessage> project(List<ChatMessage> rawMessages) {
@@ -165,11 +164,7 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
     private static List<ChatMessage> protectedPrefix(List<ChatMessage> rawMessages) {
         List<ChatMessage> result = new ArrayList<>();
         SystemMessage.findFirst(rawMessages).ifPresent(result::add);
-        originalUserMessage(rawMessages).ifPresent(message -> {
-            if (!result.contains(message)) {
-                result.add(message);
-            }
-        });
+        rawMessages.stream().filter(UserMessage.class::isInstance).findFirst().ifPresent(result::add);
         return result;
     }
 
@@ -193,10 +188,6 @@ public final class ToolAwareTokenWindowChatMemory implements ChatMemory {
             }
         }
         return 0;
-    }
-
-    private static Optional<UserMessage> originalUserMessage(List<ChatMessage> messages) {
-        return messages.stream().filter(UserMessage.class::isInstance).map(UserMessage.class::cast).findFirst();
     }
 
     private static double validThreshold(double value) {

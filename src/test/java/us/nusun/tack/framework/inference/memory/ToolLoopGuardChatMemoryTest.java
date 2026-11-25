@@ -2,14 +2,12 @@ package us.nusun.tack.framework.inference.memory;
 
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.data.message.AiMessage;
-import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.ChatMemory;
 import org.junit.jupiter.api.Test;
-
-import java.util.ArrayList;
-import java.util.LinkedList;
-import java.util.List;
+import us.nusun.tack.framework.inference.lane.ToolPassSettings;
+import us.nusun.tack.framework.tests.support.TestTokenCountEstimator;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -20,8 +18,7 @@ class ToolLoopGuardChatMemoryTest {
 
     @Test
     void thirdIdenticalRequestIsRejectedBeforeExecution() {
-        RecordingMemory delegate = new RecordingMemory();
-        ToolLoopGuardChatMemory memory = new ToolLoopGuardChatMemory(delegate);
+        ChatMemory memory = memory(0);
 
         addExecution(memory, "1", "catalog.search", "{\"query\":\"matchbox\"}", "{\"issues\":[]}");
         addExecution(memory, "2", "catalog.search", "{\"query\":\"matchbox\"}", "{\"issues\":[]}");
@@ -31,13 +28,12 @@ class ToolLoopGuardChatMemoryTest {
                 () -> memory.add(AiMessage.from(request("3", "catalog.search", "{\"query\":\"matchbox\"}"))));
 
         assertTrue(failure.getMessage().contains("third execution was refused"));
-        assertEquals(4, delegate.messages().size());
+        assertEquals(4, memory.messages().size());
     }
 
     @Test
     void alternatingTwoStepCycleIsRejectedBeforeFifthExecution() {
-        RecordingMemory delegate = new RecordingMemory();
-        ToolLoopGuardChatMemory memory = new ToolLoopGuardChatMemory(delegate);
+        ChatMemory memory = memory(0);
         String publicSearch = "{\"query\":\"matchbox-race-night-app\",\"isPrivate\":false}";
         String privateSearch = "{\"query\":\"matchbox-race-night-app\",\"isPrivate\":true}";
 
@@ -52,13 +48,12 @@ class ToolLoopGuardChatMemoryTest {
 
         assertTrue(failure.getMessage().contains("TACK_RUNTIME_REPEATED_CYCLE"));
         assertTrue(failure.getMessage().contains("2-step tool cycle"));
-        assertEquals(8, delegate.messages().size());
+        assertEquals(8, memory.messages().size());
     }
 
     @Test
     void repeatedFiveStepCycleIsRejectedBeforeEleventhExecution() {
-        RecordingMemory delegate = new RecordingMemory();
-        ToolLoopGuardChatMemory memory = new ToolLoopGuardChatMemory(delegate);
+        ChatMemory memory = memory(0);
 
         for (int repetition = 0; repetition < 2; repetition++) {
             for (int step = 0; step < 5; step++) {
@@ -73,12 +68,12 @@ class ToolLoopGuardChatMemoryTest {
 
         assertTrue(failure.getMessage().contains("TACK_RUNTIME_REPEATED_CYCLE"));
         assertTrue(failure.getMessage().contains("5-step tool cycle"));
-        assertEquals(20, delegate.messages().size());
+        assertEquals(20, memory.messages().size());
     }
 
     @Test
     void changedRequestBreaksTheLoopAndMayExecute() {
-        ToolLoopGuardChatMemory memory = new ToolLoopGuardChatMemory(new RecordingMemory());
+        ChatMemory memory = memory(0);
         addExecution(memory, "1", "search", "{\"q\":\"matchbox\"}", "[]");
         addExecution(memory, "2", "search", "{\"q\":\"matchbox\"}", "[]");
 
@@ -87,7 +82,7 @@ class ToolLoopGuardChatMemoryTest {
 
     @Test
     void sameRequestWithDifferentResultsDoesNotTripTheGuard() {
-        ToolLoopGuardChatMemory memory = new ToolLoopGuardChatMemory(new RecordingMemory());
+        ChatMemory memory = memory(0);
         addExecution(memory, "1", "status", "{}", "pending");
         addExecution(memory, "2", "status", "{}", "ready");
 
@@ -96,8 +91,7 @@ class ToolLoopGuardChatMemoryTest {
 
     @Test
     void individualToolBudgetIsEnforcedBeforeExecution() {
-        RecordingMemory delegate = new RecordingMemory();
-        ToolLoopGuardChatMemory memory = new ToolLoopGuardChatMemory(delegate, 2);
+        ChatMemory memory = memory(2);
         addExecution(memory, "1", "search", "{\"q\":\"one\"}", "[]");
         addExecution(memory, "2", "search", "{\"q\":\"two\"}", "[]");
 
@@ -106,17 +100,30 @@ class ToolLoopGuardChatMemoryTest {
                 () -> memory.add(AiMessage.from(request("3", "search", "{\"q\":\"three\"}"))));
 
         assertTrue(failure.getMessage().contains("TACK_RUNTIME_TOOL_BUDGET_EXHAUSTED"));
-        assertEquals(4, delegate.messages().size());
+        assertEquals(4, memory.messages().size());
     }
 
     @Test
     void toolPressureDoesNotModifyToolResults() {
-        ToolLoopGuardChatMemory memory = new ToolLoopGuardChatMemory(new RecordingMemory(), 4);
+        ChatMemory memory = memory(4);
         addExecution(memory, "1", "search", "{\"q\":\"one\"}", "[]");
 
         ToolExecutionResultMessage result = (ToolExecutionResultMessage) memory.messages().getLast();
 
         assertEquals("[]", result.text());
+    }
+
+    @Test
+    void compactionKeepsTheCompleteHistoryAvailableToTheGuard() {
+        ChatMemory memory = ToolLoopGuardChatMemory.forPass("test",
+                new ToolPassSettings(1000, 5, 0.001, 1, 20000, 2000), new TestTokenCountEstimator());
+        memory.add(UserMessage.from("Check the current status."));
+        addExecution(memory, "1", "status", "{}", "pending");
+        addExecution(memory, "2", "status", "{}", "pending");
+
+        assertEquals(1, memory.messages().stream().filter(ToolExecutionResultMessage.class::isInstance).count());
+        assertThrows(ToolLoopGuardChatMemory.RepeatedToolExecutionException.class,
+                () -> memory.add(AiMessage.from(request("3", "status", "{}"))));
     }
 
     private static void addExecution(ChatMemory memory, String id, String name, String arguments, String result) {
@@ -133,33 +140,8 @@ class ToolLoopGuardChatMemoryTest {
         return ToolExecutionRequest.builder().id(id).name(name).arguments(arguments).build();
     }
 
-    private static final class RecordingMemory implements ChatMemory {
-        private final List<ChatMessage> messages = new ArrayList<>();
-
-        @Override
-        public Object id() {
-            return "test";
-        }
-
-        @Override
-        public void add(ChatMessage message) {
-            messages.add(message);
-        }
-
-        @Override
-        public void set(Iterable<ChatMessage> messages) {
-            this.messages.clear();
-            messages.forEach(this.messages::add);
-        }
-
-        @Override
-        public List<ChatMessage> messages() {
-            return new LinkedList<>(messages);
-        }
-
-        @Override
-        public void clear() {
-            messages.clear();
-        }
+    private static ChatMemory memory(int maxCalls) {
+        return ToolLoopGuardChatMemory.forPass("test", new ToolPassSettings(10000, maxCalls, 1.0, 3, 20000, 2000),
+                new TestTokenCountEstimator());
     }
 }
