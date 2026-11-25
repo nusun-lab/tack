@@ -3,7 +3,7 @@ package us.nusun.tack.example.tool;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
-import us.nusun.tack.framework.model.McpServerDefinition;
+import us.nusun.tack.framework.tool.McpServerDefinition;
 
 @ApplicationScoped
 public class GiteaMcpServer {

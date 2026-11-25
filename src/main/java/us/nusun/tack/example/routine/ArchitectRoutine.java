@@ -1,17 +1,16 @@
 package us.nusun.tack.example.routine;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import org.apache.camel.ExchangePropertyKey;
 import org.apache.camel.builder.RouteBuilder;
 import us.nusun.tack.example.tool.ArchitectSourceControlWriteToolProfile;
 import us.nusun.tack.example.tool.EngineeringWorkToolProfile;
 import us.nusun.tack.example.tool.IntegrationToolProfile;
 import us.nusun.tack.example.tool.TeamChatToolProfile;
 import us.nusun.tack.example.tool.WorkspaceReadonlyToolProfile;
-import us.nusun.tack.framework.inventory.RoutineProvider;
-import us.nusun.tack.framework.model.LlmPassType;
-import us.nusun.tack.framework.model.RoutineDefinition;
-import us.nusun.tack.framework.tack.TackHeaders;
+import us.nusun.tack.framework.routine.RoutineProvider;
+import us.nusun.tack.framework.inference.LlmPassType;
+import us.nusun.tack.framework.routine.RoutineDefinition;
+import us.nusun.tack.framework.routine.TackHeaders;
 
 import java.util.List;
 
@@ -197,8 +196,8 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
                         or(exchangeProperty("architectIntegrationIterations").isEqualTo(0),
                             or(exchangeProperty("act.architect-integration-batch.durableProgress").isEqualTo(true),
                                exchangeProperty("act.architect-conflict-recovery.durableProgress").isEqualTo(true)))))
-                    .process(exchange -> exchange.setProperty("architectIntegrationIterations",
-                            exchange.getProperty(ExchangePropertyKey.LOOP_INDEX, Integer.class) + 1))
+                    .setProperty("architectIntegrationIterations",
+                            simple("${exchangeProperty.architectIntegrationIterations}++", Integer.class))
                     .to("direct:architect-integration")
                 .end();
 

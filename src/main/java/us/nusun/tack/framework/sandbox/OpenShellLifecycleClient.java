@@ -1,36 +1,25 @@
 package us.nusun.tack.framework.sandbox;
 
+import static us.nusun.tack.framework.sandbox.OpenShellGrpcClient.WORKSPACE;
+
 import io.grpc.StatusRuntimeException;
-import io.quarkus.grpc.GrpcClient;
 import jakarta.enterprise.context.ApplicationScoped;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import us.nusun.tack.framework.sandbox.grpc.DeleteSandboxRequest;
 import us.nusun.tack.framework.sandbox.grpc.ListSandboxesRequest;
-import us.nusun.tack.framework.sandbox.grpc.OpenShellGrpc;
 import us.nusun.tack.framework.sandbox.grpc.Sandbox;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 @ApplicationScoped
 public class OpenShellLifecycleClient {
-    private static final String WORKSPACE = "default";
     private static final int PAGE_SIZE = 100;
 
-    @GrpcClient("openshell")
-    OpenShellGrpc.OpenShellBlockingStub stub;
-
     private final OpenShellGrpcClient openshell;
-    private final Duration controlTimeout;
 
-    public OpenShellLifecycleClient(
-            OpenShellGrpcClient openshell,
-            @ConfigProperty(name = "agent.sandbox.openshell.control-timeout-seconds", defaultValue = "180") long controlTimeoutSeconds) {
+    public OpenShellLifecycleClient(OpenShellGrpcClient openshell) {
         this.openshell = openshell;
-        this.controlTimeout = Duration.ofSeconds(controlTimeoutSeconds);
     }
 
     public List<String> deleteTackSandboxes() {
@@ -50,7 +39,7 @@ public class OpenShellLifecycleClient {
         while (true) {
             List<Sandbox> page;
             try {
-                page = controlStub().listSandboxes(ListSandboxesRequest.newBuilder()
+                page = openshell.controlStub().listSandboxes(ListSandboxesRequest.newBuilder()
                         .setWorkspace(WORKSPACE)
                         .setLimit(PAGE_SIZE)
                         .setOffset(offset)
@@ -72,7 +61,7 @@ public class OpenShellLifecycleClient {
 
     private void deleteAndAwait(String name) {
         try {
-            controlStub().deleteSandbox(DeleteSandboxRequest.newBuilder()
+            openshell.controlStub().deleteSandbox(DeleteSandboxRequest.newBuilder()
                     .setName(name)
                     .setWorkspace(WORKSPACE)
                     .build());
@@ -83,7 +72,7 @@ public class OpenShellLifecycleClient {
             return;
         }
 
-        long deadline = System.nanoTime() + controlTimeout.toNanos();
+        long deadline = System.nanoTime() + openshell.controlTimeout().toNanos();
         while (System.nanoTime() < deadline) {
             if (openshell.getSandbox(name).isEmpty()) {
                 return;
@@ -96,10 +85,6 @@ public class OpenShellLifecycleClient {
             }
         }
         throw new IllegalStateException("Timed out waiting for OpenShell sandbox deletion: " + name);
-    }
-
-    private OpenShellGrpc.OpenShellBlockingStub controlStub() {
-        return stub.withDeadlineAfter(controlTimeout.toSeconds(), TimeUnit.SECONDS);
     }
 
     private static boolean isTackOwned(Sandbox sandbox) {

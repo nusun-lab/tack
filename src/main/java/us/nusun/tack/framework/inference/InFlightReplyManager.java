@@ -1,0 +1,55 @@
+package us.nusun.tack.framework.inference;
+
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Named;
+
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+
+@ApplicationScoped
+@Named("inFlightReplyManager")
+public class InFlightReplyManager {
+    private final ConcurrentMap<UUID, CompletableFuture<LlmJobResult>> replies = new ConcurrentHashMap<>();
+
+    void register(UUID jobId) {
+        CompletableFuture<LlmJobResult> previous = replies.putIfAbsent(jobId, new CompletableFuture<>());
+        if (previous != null) {
+            throw new IllegalStateException("Duplicate in-flight jobId " + jobId);
+        }
+    }
+
+    public LlmJobResult await(UUID jobId, long timeoutMs) throws Exception {
+        CompletableFuture<LlmJobResult> future = replies.get(jobId);
+        if (future == null) {
+            throw new IllegalStateException("No in-flight reply registered for " + jobId);
+        }
+        try {
+            return future.get(timeoutMs, TimeUnit.MILLISECONDS);
+        } catch (TimeoutException e) {
+            throw new IllegalStateException("Timed out waiting for LLM reply for " + jobId + " after " + timeoutMs + "ms", e);
+        } finally {
+            replies.remove(jobId);
+        }
+    }
+
+    public void discard(UUID jobId) {
+        if (jobId != null) {
+            replies.remove(jobId);
+        }
+    }
+
+    int inFlightCount() {
+        return replies.size();
+    }
+
+    public void complete(LlmJobResult result) {
+        CompletableFuture<LlmJobResult> future = replies.get(result.jobId());
+        if (future != null) {
+            future.complete(result);
+        }
+    }
+}

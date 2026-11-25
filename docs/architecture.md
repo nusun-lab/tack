@@ -107,6 +107,9 @@ and creating built-in relations, so the routine does not attempt relation deleti
 
 ## Runtime boundaries
 
+- A capability package owns its declarations, registration and behavior. A routine declares
+  steps and thought scopes, a run manages one execution, and inference manages one model pass.
+  The workspace assembles views from those capabilities and owns HTTP, reset and topic setup.
 - Workspace and prompt inventory use credential-free views. Workspace profiles expose a
   `servers` object keyed by server ID, with connection details, tool grants and per-tool
   argument rules under each server. Connections expose header names. Persona views expose
@@ -116,7 +119,8 @@ and creating built-in relations, so the routine does not attempt relation deleti
   accepted handles. Kafka retains its job, result, and scheduling event contracts.
 - The LLM route admits a typed envelope and resolves its per-pass context once. The worker
   restores that context from the Kafka metadata snapshot. Agent setup, partitioning, projection
-  and diagnostics read the typed context.
+  and diagnostics read the typed context. The LangChain4j request transformer observes the
+  prepared request and applies tool choice and provider response format on the configured model.
 - A normalized schema drives the creation prompt, provider constraints when enabled, and local
   validation before returning a queued response. The provider and local validator enforce
   different boundaries even when they share the same schema.

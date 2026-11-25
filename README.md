@@ -555,17 +555,23 @@ Tack is presently optimized for a local or single-orchestrator deployment.
 
 | Path | Purpose |
 | --- | --- |
-| `src/main/java/us/nusun/tack/framework/tack` | `tack:` component and primitive execution |
-| `src/main/java/us/nusun/tack/framework/route` | Mission, AgentRun, API, and LLM runtime routes |
-| `src/main/java/us/nusun/tack/framework/llm` | LLM jobs, workers, correlation, topic provisioning, and model setup |
-| `src/main/java/us/nusun/tack/framework/mcp` | MCP client construction, filtering, and result limits |
-| `src/main/java/us/nusun/tack/framework/sandbox` | OpenShell sandbox identity, lifecycle, providers, policy, and execution |
-| `src/main/java/us/nusun/tack/framework/state` | Mission/AgentRun working state and thought stack |
-| `src/main/java/us/nusun/tack/framework/projection` | Observable AgentRun projection history |
-| `src/main/java/us/nusun/tack/framework/inventory` | Persona, routine, tool-profile, and lane catalogs |
+| `framework.persona` | Persona declarations, external accounts, catalog and safe views |
+| `framework.routine` | Routine declarations and catalog, `tack:` component, prompts, thought scopes and primitive results |
+| `framework.run` | Mission and run admission, scheduling, state, roster and projections |
+| `framework.inference` | LLM jobs, queue routes, replies, model execution and schemas |
+| `framework.inference.lane` | Lane declarations, registry, configuration and effective settings |
+| `framework.inference.memory` | Transcript compaction, tool-loop guards and token counting |
+| `framework.tool` | Tool profiles, safe views and MCP server declarations |
+| `framework.tool.mcp` | MCP connections, tool discovery and dispatch, argument policy and result limits |
+| `framework.sandbox` | OpenShell readiness, lifecycle, policy and execution |
+| `framework.workspace` | HTTP endpoints, workspace views, topic provisioning and reset |
+| `framework.logging` | Shared logging helpers |
 | `src/main/java/us/nusun/tack/example` | Bundled software-team example |
 | `docs/architecture.md` | Additional architecture notes |
 | `docs/openshell-sandboxes.md` | OpenShell execution model and troubleshooting |
+
+Framework packages are under `src/main/java/us/nusun/tack`. Tests mirror the capability packages under
+`src/test/java` and use test-owned consumers and configuration.
 
 ## Development
 

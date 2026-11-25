@@ -1,0 +1,102 @@
+package us.nusun.tack.framework.sandbox;
+
+import org.junit.jupiter.api.Test;
+import us.nusun.tack.framework.run.Mission;
+import us.nusun.tack.framework.persona.Persona;
+import us.nusun.tack.framework.sandbox.grpc.ObjectMeta;
+import us.nusun.tack.framework.sandbox.grpc.Sandbox;
+import us.nusun.tack.framework.sandbox.grpc.SandboxPhase;
+import us.nusun.tack.framework.sandbox.grpc.SandboxStatus;
+import us.nusun.tack.framework.run.AgentRun;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+
+class PersonaSandboxManagerTest {
+
+    @Test
+    void reusesOneSandboxAcrossAgentRunsForTheSameMissionAndPersona() {
+        FakeOpenShellClient openshell = new FakeOpenShellClient();
+        PersonaSandboxManager manager = new PersonaSandboxManager(openshell, null, null, "");
+        Mission mission = mission("mission-a");
+        Persona persona = persona("persona-a");
+        AgentRun first = run("run-1", mission, persona);
+        AgentRun second = run("run-2", mission, persona);
+
+        manager.ensureReady(mission, persona, first);
+        manager.ensureReady(mission, persona, second);
+
+        String name = manager.sandboxNameFor(mission.id(), persona.id());
+        assertEquals(name, first.workingState().get(PersonaSandboxManager.WORKING_STATE_SANDBOX_NAME));
+        assertEquals(name, second.workingState().get(PersonaSandboxManager.WORKING_STATE_SANDBOX_NAME));
+        assertEquals(1, openshell.createCalls);
+    }
+
+    @Test
+    void sandboxIdentityChangesWithMissionOrPersona() {
+        PersonaSandboxManager manager = new PersonaSandboxManager(new FakeOpenShellClient(), null, null, "");
+
+        String base = manager.sandboxNameFor("mission-a", "persona-a");
+
+        assertNotEquals(base, manager.sandboxNameFor("mission-b", "persona-a"));
+        assertNotEquals(base, manager.sandboxNameFor("mission-a", "persona-b"));
+        assertNull(manager.sandboxNameFor("", "persona-a"));
+        assertNull(manager.sandboxNameFor("mission-a", null));
+    }
+
+    private static Mission mission(String id) {
+        return new Mission(id, "Test mission", List.of(), "active", Instant.now());
+    }
+
+    private static Persona persona(String id) {
+        return Persona.builder(id).name(id).build();
+    }
+
+    private static AgentRun run(String id, Mission mission, Persona persona) {
+        return new AgentRun(id, mission.id(), persona.id(), "routine-a", Map.of());
+    }
+
+    private static final class FakeOpenShellClient extends OpenShellGrpcClient {
+        private int createCalls;
+        private Sandbox sandbox;
+
+        private FakeOpenShellClient() {
+            super(true, 1, 1, 1, "test-sandbox-image");
+        }
+
+        @Override
+        public boolean enabled() {
+            return true;
+        }
+
+        @Override
+        public Optional<Sandbox> getSandbox(String name) {
+            return Optional.ofNullable(sandbox);
+        }
+
+        @Override
+        public Sandbox createSandbox(
+                String name, List<String> providers, Map<String, String> labels) {
+            createCalls++;
+            sandbox = Sandbox.newBuilder()
+                    .setMetadata(ObjectMeta.newBuilder().setId(name).setName(name))
+                    .setStatus(SandboxStatus.newBuilder().setPhase(SandboxPhase.SANDBOX_PHASE_READY))
+                    .build();
+            return sandbox;
+        }
+
+        @Override
+        public void authorizeDeveloperPackages(String name) {
+        }
+
+        @Override
+        public void prepareMaven(String name) {
+        }
+    }
+}

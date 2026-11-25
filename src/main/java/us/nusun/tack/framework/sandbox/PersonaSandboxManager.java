@@ -4,11 +4,11 @@ import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 import us.nusun.tack.framework.logging.LogTokens;
-import us.nusun.tack.framework.model.ExternalIdentity;
-import us.nusun.tack.framework.model.Mission;
-import us.nusun.tack.framework.model.Persona;
+import us.nusun.tack.framework.persona.ExternalIdentity;
+import us.nusun.tack.framework.run.Mission;
+import us.nusun.tack.framework.persona.Persona;
 import us.nusun.tack.framework.sandbox.grpc.Sandbox;
-import us.nusun.tack.framework.state.AgentRun;
+import us.nusun.tack.framework.run.AgentRun;
 
 import java.net.URI;
 import java.security.MessageDigest;
@@ -17,7 +17,6 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @ApplicationScoped
 public class PersonaSandboxManager {
@@ -29,7 +28,6 @@ public class PersonaSandboxManager {
     private final OpenShellLifecycleClient lifecycle;
     private final LogTokens logTokens;
     private final String configuredGiteaUrl;
-    private final ConcurrentHashMap<String, Persona> personasBySandbox = new ConcurrentHashMap<>();
     private final Object giteaProfileLock = new Object();
     private volatile String installedGiteaProfileEndpoint;
 
@@ -44,24 +42,22 @@ public class PersonaSandboxManager {
         this.configuredGiteaUrl = configuredGiteaUrl == null ? "" : configuredGiteaUrl.strip();
     }
 
-    public SandboxRef ensureReady(Mission mission, Persona persona, AgentRun run) {
+    public void ensureReady(Mission mission, Persona persona, AgentRun run) {
         if (!openshell.enabled()) {
-            return null;
+            return;
         }
         if (mission == null || persona == null || run == null) {
             throw new IllegalArgumentException("Mission, persona, and AgentRun are required for sandbox admission");
         }
-        SandboxRef ref = provision(mission, persona, run);
-        personasBySandbox.put(ref.name(), persona);
-        run.workingState().put(WORKING_STATE_SANDBOX_NAME, ref.name());
-        return ref;
+        String name = provision(mission, persona, run);
+        run.workingState().put(WORKING_STATE_SANDBOX_NAME, name);
     }
 
-    public SandboxExecTool tool(String sandboxName) {
+    public SandboxExecTool tool(String sandboxName, Persona persona) {
         if (!openshell.enabled() || sandboxName == null || sandboxName.isBlank()) {
             return null;
         }
-        return new SandboxExecTool(openshell, sandboxName, personasBySandbox.get(sandboxName), logTokens);
+        return new SandboxExecTool(openshell, sandboxName, persona, logTokens);
     }
 
     public String sandboxNameFor(String missionId, String personaId) {
@@ -72,14 +68,10 @@ public class PersonaSandboxManager {
     }
 
     public List<String> destroyAll() {
-        try {
-            return lifecycle.deleteTackSandboxes();
-        } finally {
-            personasBySandbox.clear();
-        }
+        return lifecycle.deleteTackSandboxes();
     }
 
-    private SandboxRef provision(Mission mission, Persona persona, AgentRun run) {
+    private String provision(Mission mission, Persona persona, AgentRun run) {
         String sandboxName = sandboxName(mission.id(), persona.id());
         String context = "mission=" + mission.id() + " persona=" + persona.id() + " sandbox=" + sandboxName;
         long preparationStarted = System.nanoTime();
@@ -146,7 +138,7 @@ public class PersonaSandboxManager {
             openshell.prepareMaven(sandboxName);
 
             LOG.infof("OpenShell sandbox prepared %s elapsedMs=%d", context, elapsedMillis(preparationStarted));
-            return new SandboxRef(sandboxName);
+            return sandboxName;
         } catch (RuntimeException e) {
             String message = "OpenShell sandbox preparation failed " + context + " stage=" + stage
                     + " elapsedMs=" + elapsedMillis(stageStarted) + " timeoutSeconds=" + timeout.toSeconds()
@@ -260,8 +252,4 @@ public class PersonaSandboxManager {
     private static boolean blank(String value) {
         return value == null || value.isBlank();
     }
-
-    public record SandboxRef(String name) {
-    }
-
 }

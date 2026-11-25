@@ -1,7 +1,6 @@
 package us.nusun.tack.example.routine;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import org.apache.camel.ExchangePropertyKey;
 import org.apache.camel.builder.RouteBuilder;
 import us.nusun.tack.example.tool.EngineeringWorkToolProfile;
 import us.nusun.tack.example.tool.IntegrationToolProfile;
@@ -9,10 +8,10 @@ import us.nusun.tack.example.tool.SourceControlToolProfile;
 import us.nusun.tack.example.tool.SourceControlWriteToolProfile;
 import us.nusun.tack.example.tool.TeamChatToolProfile;
 import us.nusun.tack.example.tool.WorkspaceReadonlyToolProfile;
-import us.nusun.tack.framework.inventory.RoutineProvider;
-import us.nusun.tack.framework.model.LlmPassType;
-import us.nusun.tack.framework.model.RoutineDefinition;
-import us.nusun.tack.framework.tack.TackHeaders;
+import us.nusun.tack.framework.routine.RoutineProvider;
+import us.nusun.tack.framework.inference.LlmPassType;
+import us.nusun.tack.framework.routine.RoutineDefinition;
+import us.nusun.tack.framework.routine.TackHeaders;
 
 import java.util.List;
 
@@ -265,8 +264,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .loopDoWhile(and(exchangeProperty("devProductiveIterations").isLessThan(6),
                         or(exchangeProperty("devProductiveIterations").isEqualTo(0),
                             exchangeProperty("devImplementationMadeProgress").isEqualTo(true))))
-                    .process(exchange -> exchange.setProperty("devProductiveIterations",
-                            exchange.getProperty(ExchangePropertyKey.LOOP_INDEX, Integer.class) + 1))
+                    .setProperty("devProductiveIterations",
+                            simple("${exchangeProperty.devProductiveIterations}++", Integer.class))
                     .setProperty("devImplementationMadeProgress", constant(false))
                     .setProperty("devSourceCloseoutAllowed", constant(false))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
@@ -370,8 +369,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .setProperty("devImplementationStepProgress", constant(true))
                 .setProperty("decision.developer-implementation-complete.result", constant("no"))
                 .loopDoWhile(simple("${exchangeProperty.devImplementationStepProgress} == true && ${exchangeProperty.developerImplementationCycle} < 6"))
-                    .process(exchange -> exchange.setProperty("developerImplementationCycle",
-                            exchange.getProperty(ExchangePropertyKey.LOOP_INDEX, Integer.class) + 1))
+                    .setProperty("developerImplementationCycle",
+                            simple("${exchangeProperty.developerImplementationCycle}++", Integer.class))
                     .setProperty("devImplementationStepProgress", constant(false))
                     .setProperty("decision.developer-has-valid-task-context.result", constant("no"))
                     .setProperty("decision.developer-is-topology-investigation.result", constant("no"))

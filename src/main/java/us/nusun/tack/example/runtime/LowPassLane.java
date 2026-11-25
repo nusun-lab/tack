@@ -1,10 +1,10 @@
 package us.nusun.tack.example.runtime;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import us.nusun.tack.framework.config.LaneConfiguration;
-import us.nusun.tack.framework.inventory.InferenceLaneProvider;
-import us.nusun.tack.framework.model.InferenceLaneDefinition;
-import us.nusun.tack.framework.model.PartitionKeyStrategy;
+import us.nusun.tack.framework.inference.lane.LaneConfiguration;
+import us.nusun.tack.framework.inference.lane.InferenceLaneProvider;
+import us.nusun.tack.framework.inference.lane.InferenceLaneDefinition;
+import us.nusun.tack.framework.inference.lane.PartitionKeyStrategy;
 
 @ApplicationScoped
 public class LowPassLane implements InferenceLaneProvider {

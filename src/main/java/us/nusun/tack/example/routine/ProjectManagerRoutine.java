@@ -1,17 +1,16 @@
 package us.nusun.tack.example.routine;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import org.apache.camel.ExchangePropertyKey;
 import org.apache.camel.builder.RouteBuilder;
 import us.nusun.tack.example.tool.DeliveryManagementToolProfile;
 import us.nusun.tack.example.tool.ProjectDocumentationToolProfile;
 import us.nusun.tack.example.tool.TeamChatToolProfile;
 import us.nusun.tack.example.tool.WorkspaceCoordinationToolProfile;
 import us.nusun.tack.example.tool.WorkspaceReadonlyToolProfile;
-import us.nusun.tack.framework.inventory.RoutineProvider;
-import us.nusun.tack.framework.model.LlmPassType;
-import us.nusun.tack.framework.model.RoutineDefinition;
-import us.nusun.tack.framework.tack.TackHeaders;
+import us.nusun.tack.framework.routine.RoutineProvider;
+import us.nusun.tack.framework.inference.LlmPassType;
+import us.nusun.tack.framework.routine.RoutineDefinition;
+import us.nusun.tack.framework.routine.TackHeaders;
 
 import java.util.List;
 
@@ -217,8 +216,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .loopDoWhile(and(exchangeProperty("pmActiveFlowIterations").isLessThan(6),
                         or(exchangeProperty("pmActiveFlowIterations").isEqualTo(0),
                             exchangeProperty("act.pm-flow.durableProgress").isEqualTo(true))))
-                    .process(exchange -> exchange.setProperty("pmActiveFlowIterations",
-                            exchange.getProperty(ExchangePropertyKey.LOOP_INDEX, Integer.class) + 1))
+                    .setProperty("pmActiveFlowIterations",
+                            simple("${exchangeProperty.pmActiveFlowIterations}++", Integer.class))
                     .to("direct:pm-flow")
                 .end();
 
@@ -277,8 +276,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .loopDoWhile(and(exchangeProperty("pmPlanningIterations").isLessThan(5),
                         or(exchangeProperty("pmPlanningIterations").isEqualTo(0),
                             exchangeProperty("act.pm-planning.durableProgress").isEqualTo(true))))
-                    .process(exchange -> exchange.setProperty("pmPlanningIterations",
-                            exchange.getProperty(ExchangePropertyKey.LOOP_INDEX, Integer.class) + 1))
+                    .setProperty("pmPlanningIterations",
+                            simple("${exchangeProperty.pmPlanningIterations}++", Integer.class))
                     .to("direct:pm-planning")
                 .end();
 

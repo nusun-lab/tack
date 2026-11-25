@@ -1,12 +1,13 @@
 package us.nusun.tack.framework.sandbox;
 
+import static us.nusun.tack.framework.logging.LogTokens.abbreviateToolValue;
+
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import us.nusun.tack.framework.logging.LogTokens;
-import us.nusun.tack.framework.model.Persona;
+import us.nusun.tack.framework.persona.Persona;
 
 public final class SandboxExecTool {
-    private static final int MAX_LOG_VALUE_LENGTH = 4000;
 
     private final OpenShellGrpcClient openshell;
     private final String sandboxName;
@@ -28,38 +29,17 @@ public final class SandboxExecTool {
             throw new IllegalArgumentException("sandbox_exec requires a command");
         }
         String effectiveWorkdir = workdir == null || workdir.isBlank() ? "/sandbox" : workdir;
-        logDim("TOOL sandbox_exec REQUEST command=" + abbreviate(command) + " workdir=" + abbreviate(effectiveWorkdir));
+        logTokens.printTool(persona, "TOOL sandbox_exec REQUEST command=" + abbreviateToolValue(command) + " workdir=" + abbreviateToolValue(effectiveWorkdir));
         try {
             OpenShellGrpcClient.SandboxExecResult result = openshell.exec(sandboxName, command, effectiveWorkdir);
-            logDim("TOOL sandbox_exec RESPONSE exitCode=" + result.exitCode()
-                    + " stdout=" + abbreviate(result.stdout())
-                    + " stderr=" + abbreviate(result.stderr()));
+            logTokens.printTool(persona, "TOOL sandbox_exec RESPONSE exitCode=" + result.exitCode()
+                    + " stdout=" + abbreviateToolValue(result.stdout())
+                    + " stderr=" + abbreviateToolValue(result.stderr()));
             return result;
         } catch (RuntimeException e) {
-            logDim("TOOL sandbox_exec ERROR " + abbreviate(e.getMessage()));
+            logTokens.printTool(persona, "TOOL sandbox_exec ERROR " + abbreviateToolValue(e.getMessage()));
             throw e;
         }
     }
 
-    private void logDim(String message) {
-        if (persona == null || logTokens == null) {
-            return;
-        }
-        logTokens.print(logTokens.wrapDim(label(), persona.color(), message));
-    }
-
-    private String label() {
-        if (persona.label() != null && !persona.label().isBlank()) {
-            return persona.label();
-        }
-        return persona.name();
-    }
-
-    private static String abbreviate(Object value) {
-        if (value == null) {
-            return "null";
-        }
-        String text = String.valueOf(value);
-        return text.length() <= MAX_LOG_VALUE_LENGTH ? text : text.substring(0, MAX_LOG_VALUE_LENGTH) + "...(truncated)";
-    }
 }
