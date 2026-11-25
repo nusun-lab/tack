@@ -3,8 +3,8 @@ package us.nusun.tack.example.tool;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
-import us.nusun.tack.framework.inventory.ToolProfileProvider;
-import us.nusun.tack.framework.model.ToolProfile;
+import us.nusun.tack.framework.tool.ToolProfileProvider;
+import us.nusun.tack.framework.tool.ToolProfile;
 
 import java.util.List;
 

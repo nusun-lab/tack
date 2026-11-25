@@ -3,7 +3,7 @@ package us.nusun.tack.framework.sandbox;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import us.nusun.tack.framework.logging.LogTokens;
-import us.nusun.tack.framework.model.Persona;
+import us.nusun.tack.framework.persona.Persona;
 
 public final class SandboxExecTool {
     private static final int MAX_LOG_VALUE_LENGTH = 4000;

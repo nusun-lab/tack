@@ -4,11 +4,11 @@ import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 import us.nusun.tack.framework.logging.LogTokens;
-import us.nusun.tack.framework.model.ExternalIdentity;
-import us.nusun.tack.framework.model.Mission;
-import us.nusun.tack.framework.model.Persona;
+import us.nusun.tack.framework.persona.ExternalIdentity;
+import us.nusun.tack.framework.run.Mission;
+import us.nusun.tack.framework.persona.Persona;
 import us.nusun.tack.framework.sandbox.grpc.Sandbox;
-import us.nusun.tack.framework.state.AgentRun;
+import us.nusun.tack.framework.run.AgentRun;
 
 import java.net.URI;
 import java.security.MessageDigest;

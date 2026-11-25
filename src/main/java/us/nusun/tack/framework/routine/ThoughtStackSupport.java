@@ -3,9 +3,7 @@ package us.nusun.tack.framework.routine;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.Exchange;
-import us.nusun.tack.framework.model.ThoughtFrame;
-import us.nusun.tack.framework.projection.AgentRunProjectionManager;
-import us.nusun.tack.framework.state.ThoughtStack;
+import us.nusun.tack.framework.run.AgentRunProjectionManager;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
