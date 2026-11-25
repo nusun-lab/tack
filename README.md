@@ -459,19 +459,20 @@ The `us.nusun.tack.example` package is a demonstration catalog, not part of Tack
 
 ### Delivery model
 
-Plane labels plus parent/child hierarchy carry the durable product/delivery model. Tack does not depend on native Plane work-item types for this example. Every classified work item carries exactly one attached classification label from this closed set. These labels are unrelated to Plane's native work-item type/type_id:
+Kaneo tasks carry exactly one classification label. Each task has its own attached label record.
 
-- **`epic`:** PO-owned product lifecycle object. PO defines, prioritizes, activates, and accepts it.
-- **`story`:** PM-planned engineering delivery beneath an Epic. DEV or ARCH owns assigned lifecycle through Done.
-- **`test`:** QE-owned test/evidence work beneath an Epic.
-- **`defect`:** QE-raised product-failure claim. QE creates it unparented in Backlog with evidence; PO validates or rejects it, records whether it blocks Epic acceptance, and assigns product priority; PM routes accepted Todo Defects; DEV/ARCH repairs; QE retests and closes.
+- **`epic`** is an independently valuable product outcome with PO-authored Gherkin and evidence-based acceptance.
+- **`story`** is PM-planned engineering work under an Epic. DEV or ARCH closes it after verified integration.
+- **`test`** is QA-owned coverage and evidence under an Epic.
+- **`defect`** starts as a planned, unassigned QA finding related to its originating Test. PO validates it, links it to its Epic, and records its priority and acceptance impact. PM routes repairs and QA closes proven fixes.
 
-Plane state carries lifecycle, assignment carries ownership, parent/sub-work-item hierarchy carries decomposition, and relations carry blocking/order. Plane native `type_id` is not used for Tack classification. Classification is never inferred from title, wording, state, hierarchy, or role.
+Tack uses `planned`, `to-do`, `in-progress`, `done`, and `archived`. Archived work requires a reason and cannot satisfy acceptance or dependencies. Gitea PR state governs integration. A `subtask` relation points from an Epic to its child. A `blocks` relation points from a prerequisite to its dependent. PM verifies direction and repairs incorrect relations before feeding executable queues.
 
-The team normally keeps roughly 2-3 Epics In Progress with a deeper Todo runway when downstream capacity supports it. Todo is the preparation boundary: PM may pre-decompose Backlog Stories, and once repository architecture is ready Director staffs DEV and QE without waiting for the Epic to become In Progress. PM targets roughly 2-3 active engineering units plus 2-3 executable Todo Stories per delivery role when independent work exists; QE uses the same practical 2-3 active plus 2-3 queued target for Tests. Story dependencies must remain acyclic. PM owns cancellation of obsolete Stories; QE owns Test promotion, clarified-retest resets, and cancellation of obsolete Tests. These are flow targets, not hard ceilings.
+PM creates the mission project with default columns and reconciles active roster access to the Mattermost channel. Kaneo workspace grants are provisioned once and inherited by mission projects. PM maintains `docs/project-basics.md` in the system repository with the project, channel, and Gitea locators.
 
-PM bootstrap establishes the Plane project and shared team channel. Team onboarding is a first-class recurring PM responsibility. On every PM orientation, onboarding status is observed directly by comparing the authoritative active roster with current Plane project membership and current shared Mattermost channel membership. Any missing active identity makes onboarding the highest-priority PM focus. PM does not rely on prior memory to establish parity and does not evict members based on roster absence. Architect provisions and baselines source control after that foundation exists. Once the system repository exists, PM reads its documentation and maintains `docs/project-basics.md` as compact canonical navigation linking the mission, Plane project, shared channel, repository map, role responsibilities, and stable delivery conventions.
- DEV and QE are staffed once a PO-owned Epic is Todo or In Progress and repository architecture is ready. QE test-code PRs use the same Architect integration path as implementation PRs, and a Test stays In Progress until required test code is merged. The repository model is deliberately simple:
+The Director keeps PM active, adds PO and ARCH after the project and channel are usable, and adds DEV and QA after the system/component repository map is established and a PO-owned Epic is `to-do` or `in-progress`. PM prepares planned Stories under `to-do` Epics and feeds assigned `to-do` work under `in-progress` Epics. Assignment goes to persistent personas and stands on its own as the engineering handoff.
+
+The repository model is deliberately simple:
 
 ```text
 system-repo/
@@ -499,21 +500,21 @@ The system repository is the single home for system GitOps, system documentation
 
 ### Tool ownership
 
-- **Plane:** projects, label-classified work items, hierarchy, assignments, lifecycle, dependencies, priorities, blockers, and evidence comments.
+- **Kaneo:** projects, label-classified tasks, relations, assignments, lifecycle, dependencies, priorities, blockers, and evidence comments.
 - **Gitea:** repositories, branches, commits, pull requests, releases, and integration evidence.
 - **OpenShell:** local repository contents, builds, tests, diffs, commits, conflict recovery, and pushes.
 - **Mattermost:** the shared current-mission channel for ordinary questions, handoffs, blockers, decisions, and awareness; DMs are reserved for genuinely private exchanges.
 
-Gitea issue tracking, labels, milestones, and time tracking are intentionally excluded so Plane remains the delivery source of truth.
+Gitea issue tracking, labels, milestones, and time tracking are intentionally excluded so Kaneo remains the delivery source of truth.
 
 ### Example tool profiles
 
 | Profile | Scope |
 | --- | --- |
-| `workspace-readonly` | Read-only orientation across Plane, Gitea, and Mattermost |
+| `workspace-readonly` | Read-only orientation across Kaneo, Gitea, and Mattermost |
 | `workspace-coordination` | PM-only project/channel bootstrap and access alignment |
 | `product-ownership` | PO Epic lifecycle/acceptance plus validation and prioritization of `defect` findings |
-| `delivery-management` | PM Story planning, dependency/assignment flow, and routing of accepted Todo Defects |
+| `delivery-management` | PM Story planning, dependency/assignment flow, and routing of validated `to-do` Defects |
 | `quality-management` | QE `test` lifecycle, `defect` creation/retest evidence, and Epic evidence |
 | `engineering-work` | DEV/ARCH execution updates for already-assigned `story` or `defect` work |
 | `source-control` | Read-only Gitea source discovery and evidence |

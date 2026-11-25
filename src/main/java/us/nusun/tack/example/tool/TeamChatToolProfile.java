@@ -47,8 +47,8 @@ public class TeamChatToolProfile implements ToolProfileProvider {
                         - read only the recent relevant context needed for the current exchange
                         - shared-channel conversation is the default for ordinary team coordination; use direct messages
                           only when the calling routine intentionally requires a private exchange
-                        - messages provide conversational evidence/context and are not authoritative Plane or Gitea state
-                        - link authoritative Plane/Gitea/documentation resources when useful instead of recreating them
+                        - messages provide conversational evidence/context and are not authoritative Kaneo or Gitea state
+                        - link authoritative Kaneo/Gitea/documentation resources when useful instead of recreating them
                         - avoid duplicate notifications, generic status chatter, and broad channel reads
                         """)
                 .build());

@@ -57,7 +57,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                               active AgentRun roster.
                             - guidance: a fresh cross-role blocker, mission interpretation, or PO product-viability
                               question needs Director judgment.
-                            - complete: all required epic product outcomes are accepted Done and no unresolved
+                            - complete: all required Epic outcomes are accepted and done and no unresolved
                               delivery, architecture, QA, product, or mission blocker remains.
                             - wait: the mission is not complete and neither staffing nor Director judgment is useful now.
                             Director does not arbitrate routine merge authority or integrate pull requests. Architect owns
@@ -80,7 +80,7 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         verified repository readiness and exact locators when this orientation finds no contradictory evidence.
                         Do not audit normal Story/Test queue depth, assignment, merge readiness, dependency sequencing,
                         or role-local blockers; PM, ARCH, DEV, QA, and PO own those. Do not invent a mission-level blocker
-                        from ordinary Backlog/Todo state. External artifacts never prove active AgentRun coverage.
+                        from ordinary planned/to-do state. External artifacts never prove active AgentRun coverage.
                         Do not mutate.
                         """))
                 .to("tack:act?id=director-orientation&toolProfile=" + WorkspaceReadonlyToolProfile.ID);
@@ -95,23 +95,20 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         """))
                 .to("tack:thought-enter?name=director-staffing-focus&maxTokens=400")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Determine and report each applicable staffing condition:
-                        - Active roles and remaining capacity from the current authoritative AgentRun roster.
-                        - Coordination foundation readiness: a usable Plane project and team channel.
-                        - Repository architecture readiness: exactly one verified mission system repository and the component
-                          repositories required by Architect's documented architecture. Use the component map in the system docs.
-                          One deployable component is sufficient when that is the documented design, regardless of product domain
-                          count. Implementation completion, finalized domain contracts, and Architect approval messages are
-                          outside this gate. Do not require repositories before Architect is staffed.
-                        - At least one PO-owned work item in Todo or In Progress with the epic label attached. Check the label
-                          directly; type_id, title, and ownership do not establish Epic classification.
+                        Resolve each applicable staffing condition using the current mission and verified facts.
+                        - Read mission_roster coverage for active roles and capacity. PM is always required.
+                        - Verify a usable Kaneo mission project and team channel. These foundations make PO and ARCH required.
+                        - Verify the mission system repository and the component repositories in Architect's documented map.
+                          A single deployable component is sufficient when the map calls for one. Repository readiness is a gate
+                          for DEV and QA only.
+                        - Find a PO-owned Epic in to-do or in-progress. Match the PO's roster Kaneo email to the exact member ID.
+                          Use list_tasks on the mission project filtered by that assignee and each relevant status. The exact
+                          attached epic label establishes classification.
 
-                        Record each applicable gate and its evidence in the staffing thought as verified ready, verified missing,
-                        or unknown. Reuse verified durable facts and exact locators unless newer evidence invalidates them.
-                        When evaluating Developer and Quality Engineer staffing, resolve both repository readiness and the Epic
-                        gate. Make the fewest reads needed, even when that takes more than the normal 1–3 calls, then stop.
-                        If any required condition remains unknown, name it and the evidence still needed in the report and
-                        synthesis summary. Treat the read as incomplete and use PARTIAL or BLOCKED as appropriate.
+                        When evaluating DEV and QA, resolve both the repository and Epic gates. Use additional calls beyond the
+                        normal 1–3 target if needed. For each gate record verified ready, verified missing, or unknown and its evidence.
+                        Preserve verified durable readiness and exact locators. Name missing evidence in the report and synthesis
+                        and return PARTIAL or BLOCKED for unresolved required conditions.
                         """))
                 .to("tack:act?id=director-staffing-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, simple("""
@@ -123,13 +120,14 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
 
                         Phase policy for an unfinished mission:
                         - Project Manager is always required.
-                        - Once Plane project and team channel are usable, Product Owner and Architect are required.
-                        - Once at least one PO-owned work item carrying the epic label is Todo or In Progress AND Architect has established
+                        - Once Kaneo project and team channel are usable, Product Owner and Architect are required.
+                        - Once a PO-owned Epic with the epic label is to-do or in-progress AND Architect has established
                           the system repository plus the required component repository set, Developer and Quality Engineer
-                          are required. Todo is the staffing/preparation boundary; do not wait for Epic activation.
+                          are required. Staffing can proceed while the Epic is still to-do.
                         - Keep already-required roles active through mission completion.
                         - Never duplicate an already-active role.
-                        - Start one run for every missing required role that remaining mission capacity allows.
+                        - Start one run for every missing required role that capacity allows. When a missing role has verified gates
+                        and capacity remains, agentRuns must include it. If PM is missing, include it first.
                         Return {"agentRuns":[]} when no missing role is eligible or capacity prevents another start.
                         """))
                 .to("tack:create?id=planned-agent-runs&schemaId=agent-run-request-list&schema=classpath:schemas/example/software-team/agent-run-requests-schema.json")

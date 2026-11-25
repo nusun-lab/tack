@@ -36,7 +36,7 @@ public class QuinnPersona implements PersonaProvider {
                 .color("38;2;196;153;255")
                 .identity("mattermost", account.token("mattermost"), "@qa-agent")
                 .identity("gitea", account.token("gitea"), "qa-agent")
-                .identity("plane", account.token("plane"), "QA")
+                .identity("kaneo", account.token("kaneo"), account.email().orElse(""))
                 .build();
     }
 }
