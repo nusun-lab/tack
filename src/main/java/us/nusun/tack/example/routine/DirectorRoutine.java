@@ -53,8 +53,9 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                     .to("direct:director-orientation")
                     .setHeader(TackHeaders.PROMPT, constant("""
                             Choose exactly one highest-value Director focus.
-                            - staffing: a role required by the current mission phase is missing from the authoritative
-                              active AgentRun roster.
+                            - staffing: PM or an already-required role is missing, or fresh evidence warrants checking
+                              a missing role's gate. Check project and channel readiness for PO and ARCH. Check the
+                              documented repository architecture and a PO-owned to-do or in-progress Epic for DEV and QA.
                             - guidance: a fresh cross-role blocker, mission interpretation, or PO product-viability
                               question needs Director judgment.
                             - complete: all required Epic outcomes are accepted and done and no unresolved
