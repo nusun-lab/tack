@@ -2,6 +2,7 @@ package us.nusun.tack.framework.tool.mcp;
 
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
+import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.invocation.InvocationContext;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.mcp.client.*;
@@ -94,7 +95,7 @@ class ToolProfileSemanticsTest {
 
         assertEquals(request.toBuilder().name(spec.name()).build(), alpha.lastRequest);
         assertSame(context, alpha.lastContext);
-        assertSame(completeResult, result);
+        assertTrue(result.attributes().isEmpty());
         assertEquals(payload, result.resultText());
         assertNull(beta.lastRequest);
     }
@@ -129,7 +130,9 @@ class ToolProfileSemanticsTest {
     void serverErrorPayloadAndExceptionsKeepTheirSemantics() {
         var profile = ToolProfile.builder("limited").allowTool("catalog", "lookup").build();
         var spec = ToolSpecification.builder().name("lookup").build();
-        var error = ToolExecutionResult.builder().isError(true).resultText("error-detail".repeat(5000)).build();
+        var error = ToolExecutionResult.builder().isError(true)
+                .resultContents(List.of(TextContent.from("lookup failed"), TextContent.from("error-detail".repeat(5000))))
+                .build();
         var client = new FakeMcpClient(error, List.of(spec));
         var logs = new CapturingLogTokens();
         var persona = FrameworkFixtures.personaCatalog().getRequired(FrameworkFixtures.PERSONA_A);
@@ -139,7 +142,10 @@ class ToolProfileSemanticsTest {
         var context = InvocationContext.builder().chatMemoryId("test").build();
 
         assertSame(error, executor.executeWithContext(request, context));
-        assertTrue(logs.messages.stream().anyMatch(message -> message.contains("RESPONSE isError=true")));
+        String responseLog = logs.messages.getLast();
+        assertTrue(responseLog.contains("RESPONSE isError=true"));
+        assertTrue(responseLog.contains("lookup failed"));
+        assertTrue(responseLog.endsWith("...(truncated)"));
         var failure = new ToolExecutionException("MCP protocol error");
         client.failure = failure;
         assertSame(failure, assertThrows(ToolExecutionException.class, () -> executor.executeWithContext(request, context)));

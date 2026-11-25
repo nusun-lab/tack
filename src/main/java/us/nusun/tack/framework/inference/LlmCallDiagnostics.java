@@ -4,14 +4,12 @@ import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
-import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.TokenCountEstimator;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.openai.OpenAiTokenUsage;
 import dev.langchain4j.service.Result;
-import dev.langchain4j.service.tool.ToolExecution;
 import org.apache.camel.Exchange;
 import us.nusun.tack.framework.inference.lane.ToolPassSettings;
 import org.slf4j.Logger;
@@ -28,7 +26,6 @@ final class LlmCallDiagnostics {
     private final int contextWindow;
     private final int maxOutputTokens;
     private final int transcriptMaxTokens;
-    private int toolResultBudget;
     private long cumulativeEstimatedInputTokens;
 
     LlmCallDiagnostics(Exchange exchange, TokenCountEstimator tokenCountEstimator, ToolPassSettings settings) {
@@ -59,7 +56,7 @@ final class LlmCallDiagnostics {
         LOG.info("LLM final response diagnostics: lane={} passType={} {}", invocation.laneId(), invocation.passType(), summary);
     }
 
-    void recordRequestBudget(ChatRequest request) {
+    void logBudget(ChatRequest request) {
         int promptTokens = 0;
         int messageTokens = 0;
         int thinkingTokens = 0;
@@ -101,9 +98,6 @@ final class LlmCallDiagnostics {
                 .map(UserMessage.class::cast)
                 .anyMatch(message -> "tack-runtime".equals(message.name()));
         int inputCeiling = Math.max(0, contextWindow - maxOutputTokens);
-        // A single result must fit alongside the protected prompt even after compaction.
-        toolResultBudget = Math.max(0, Math.min(transcriptMaxTokens - promptTokens,
-                inputCeiling - promptTokens - toolSchemaTokens - responseTokens));
         cumulativeEstimatedInputTokens += inputTokens;
 
         LOG.info("[{}] TOKEN BUDGET lane={} input={}/{} ({}%) | prompt={} tools={} response={} transcript={}/{} ({}%) "
@@ -125,19 +119,6 @@ final class LlmCallDiagnostics {
                 toolResultTokens,
                 compacted,
                 cumulativeEstimatedInputTokens);
-    }
-
-    void requireToolResultFits(ToolExecution execution) {
-        int tokens = execution.resultContents().stream()
-                .filter(TextContent.class::isInstance)
-                .map(TextContent.class::cast)
-                .mapToInt(content -> tokenCountEstimator.estimateTokenCountInText(content.text()))
-                .sum();
-        if (tokens > toolResultBudget) {
-            throw new IllegalStateException("Tool " + execution.request().name() + " returned approximately " + tokens
-                    + " tokens, exceeding the available inference budget of " + toolResultBudget
-                    + " tokens for lane " + invocation.laneId());
-        }
     }
 
     private static int percent(long used, long max) {

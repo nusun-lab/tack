@@ -34,8 +34,7 @@ final class McpToolPolicy {
         String prefix = multipleServers ? server.replaceAll("[^A-Za-z0-9_]", "_") + "__" : "";
         var builder = McpToolProvider.builder()
                 .mcpClients(client)
-                .filter((delegate, tool) -> profile.allowsTool(server, tool.name()))
-                .returnToolResultAttributes(true);
+                .filter((delegate, tool) -> profile.allowsTool(server, tool.name()));
         if (multipleServers) {
             builder.toolNameMapper((delegate, tool) -> prefix + tool.name());
         }
@@ -66,7 +65,8 @@ final class McpToolPolicy {
                 log(tool + " REQUEST " + abbreviateToolValue(request.arguments()));
                 try {
                     ToolExecutionResult result = executor.executeWithContext(request, context);
-                    log(tool + " RESPONSE isError=" + result.isError());
+                    log(tool + " RESPONSE isError=" + result.isError()
+                            + " " + abbreviateToolValue(result.resultContents()));
                     return result;
                 } catch (RuntimeException failure) {
                     log(tool + " ERROR " + abbreviateToolValue(failure.getMessage()));

@@ -130,8 +130,8 @@ and creating built-in relations, so the routine does not attempt relation deleti
   ten events, and retained thought events remain available after a frame exits.
 - LangChain4j supplies MCP discovery, namespacing and dispatch. Tack opens the persona
   connection on first discovery, checks tool grants at dispatch, and passes through the
-  native schema, arguments and result. The inference pass reports an explicit error when
-  an individual result exceeds the available budget.
+  native schema, arguments and result content. The persona execution log includes an
+  abbreviated preview of the response.
 - The example checks read-only Plane actions before dispatch from workspace observation
   and integration profiles. Plane supplies its native schemas, including PQL.
 

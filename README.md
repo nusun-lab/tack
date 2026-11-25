@@ -608,7 +608,7 @@ See [OpenShell persona sandboxes](docs/openshell-sandboxes.md#troubleshooting) f
 
 ### A tool response exceeds the inference budget
 
-MCP results enter inference in LangChain4j's native representation. An oversized tool response fails the pass with a budget error. Use a narrower query when the server supports one, such as a smaller page or an explicit field selection.
+MCP result content enters inference in LangChain4j's native representation. Check the lane's token budget logs and use a narrower query when the server supports one, such as a smaller page or an explicit field selection.
 
 ### Jobs from one AgentRun execute out of order
 
