@@ -25,7 +25,7 @@ class ResetServiceBoundaryTest {
         TestPersonaSandboxManager sandboxes = new TestPersonaSandboxManager(List.of("tack-a", "tack-b"));
         ResetService reset = resetService(projections, agentRuns, kafkaTopics, sandboxes);
 
-        Map<String, Object> response = reset.reset();
+        Map<String, Object> response = reset.reset(null);
 
         assertEquals("RESET", response.get("status"));
         assertEquals(List.of("agent-runs.scheduled", "test.llm.requests.low"), response.get("kafkaTopicsPurged"));
@@ -43,7 +43,7 @@ class ResetServiceBoundaryTest {
         TestPersonaSandboxManager sandboxes = new TestPersonaSandboxManager(List.of());
         ResetService reset = resetService(new ProjectionStore(), new AgentRunStore(), kafkaTopics, sandboxes);
 
-        Map<String, Object> response = reset.resetRequest("request-1");
+        Map<String, Object> response = reset.reset("request-1");
 
         assertEquals("RESET", response.get("status"));
         assertEquals("request-1", response.get("requestId"));
@@ -62,7 +62,7 @@ class ResetServiceBoundaryTest {
         TestPersonaSandboxManager sandboxes = new TestPersonaSandboxManager(List.of("tack-a"));
         ResetService reset = resetService(projections, agentRuns, kafkaTopics, sandboxes);
 
-        IllegalStateException failure = assertThrows(IllegalStateException.class, reset::reset);
+        IllegalStateException failure = assertThrows(IllegalStateException.class, () -> reset.reset(null));
 
         assertEquals("broker unavailable", failure.getMessage());
         assertEquals(0, sandboxes.destroyCalls);

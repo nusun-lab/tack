@@ -70,8 +70,7 @@ public class TackProducer extends DefaultProducer {
     }
 
     private static String consumeRequiredHeader(Exchange exchange, String header, String operation) {
-        Object raw = exchange.getMessage().getHeader(header);
-        exchange.getMessage().removeHeader(header);
+        Object raw = exchange.getMessage().removeHeader(header);
         String text = raw == null ? null : String.valueOf(raw).strip();
         if (text == null || text.isBlank()) {
             throw new IllegalArgumentException("Missing required " + header + " header for tack:" + operation);

@@ -5,6 +5,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.Body;
 import org.apache.camel.Exchange;
+import org.apache.camel.ExchangeProperty;
 import org.apache.camel.LoggingLevel;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.kafka.KafkaConstants;
@@ -29,11 +30,11 @@ public class AgentRunRoute extends RouteBuilder {
 
         from("direct:start-agent-run")
                 .routeId("start-agent-run")
-                .process(exchange -> {
+                .setBody(exchange -> {
                     Object input = exchange.getMessage().getBody();
                     AgentRunRequest request = input instanceof AgentRunRequest typed
                             ? typed : mapper.convertValue(input, AgentRunRequest.class);
-                    exchange.getMessage().setBody(List.of(request));
+                    return List.of(request);
                 })
                 .to("direct:start-agent-runs")
                 .setBody(simple("${body[0]}"));
@@ -68,7 +69,7 @@ public class AgentRunRoute extends RouteBuilder {
                 .routeId("handle-agent-run-scheduled")
                 .validate(body().isInstanceOf(AgentRunScheduled.class))
                 .choice()
-                    .when(method(this, "claimScheduledRun"))
+                    .when(method(agentRuns, "startIfEligible"))
                         .wireTap("direct:execute-agent-run")
                         .endChoice()
                     .otherwise()
@@ -91,16 +92,14 @@ public class AgentRunRoute extends RouteBuilder {
         return new AgentRunScheduled(handle.missionId(), handle.agentRunId());
     }
 
-    public void completeAgentRun(Exchange exchange) {
-        AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
+    public void completeAgentRun(@ExchangeProperty("agentRun") AgentRun run, Exchange exchange) {
         if (run != null && !AgentRun.STATUS_COMPLETE.equals(run.status()) && !AgentRun.STATUS_FAILED.equals(run.status())) {
             run.status(AgentRun.STATUS_COMPLETE);
             projections.record(exchange, "AGENT_RUN_COMPLETED");
         }
     }
 
-    public void failAgentRun(Exchange exchange) {
-        AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
+    public void failAgentRun(@ExchangeProperty("agentRun") AgentRun run, Exchange exchange) {
         Exception failure = exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class);
         if (run != null) {
             run.status(AgentRun.STATUS_FAILED);
@@ -109,10 +108,6 @@ public class AgentRunRoute extends RouteBuilder {
             }
             projections.record(exchange, "AGENT_RUN_FAILED");
         }
-    }
-
-    public boolean claimScheduledRun(@Body AgentRunScheduled scheduled) {
-        return agentRuns.startIfEligible(scheduled);
     }
 
     public void restoreAgentRunContext(@Body AgentRunScheduled scheduled, Exchange exchange) {

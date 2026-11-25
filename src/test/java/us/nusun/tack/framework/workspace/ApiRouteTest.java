@@ -2,6 +2,7 @@ package us.nusun.tack.framework.workspace;
 
 import org.apache.camel.Exchange;
 import org.apache.camel.ExchangePattern;
+import org.apache.camel.Header;
 import org.apache.camel.Processor;
 import org.apache.camel.component.platform.http.PlatformHttpComponent;
 import org.apache.camel.component.platform.http.PlatformHttpEndpoint;
@@ -57,18 +58,22 @@ class ApiRouteTest {
             var mapper = new ObjectMapper();
             assertEquals("mission-1", mapper.readTree(httpRequest(endpoints.get("/missions"), "POST", 202, """
                     {"goal":"Build","agentRuns":[{"personaId":"persona-a","routineId":"routine-a","input":{"items":[3,"note"]}}]}
-                    """)).get("missionId").textValue());
-            assertEquals("OK", mapper.readTree(httpRequest(endpoints.get("/workspace/view"), "GET", 200, null))
+                    """, Map.of())).get("missionId").textValue());
+            assertEquals("OK", mapper.readTree(httpRequest(endpoints.get("/workspace/view"), "GET", 200, null, Map.of()))
                     .get("status").textValue());
-            assertEquals("RESET", mapper.readTree(httpRequest(endpoints.get("/workspace/reset"), "POST", 200, null))
+            assertEquals("RESET", mapper.readTree(httpRequest(endpoints.get("/workspace/reset"), "POST", 200, null, Map.of()))
                     .get("status").textValue());
+            assertEquals("request-1", mapper.readTree(httpRequest(endpoints.get("/workspace/reset"), "POST", 200, null,
+                    Map.of("requestId", "request-1"))).get("requestId").textValue());
         }
     }
 
-    private static String httpRequest(HttpConsumer consumer, String method, int status, String input) throws Exception {
+    private static String httpRequest(HttpConsumer consumer, String method, int status, String input,
+                                      Map<String, Object> headers) throws Exception {
         Exchange exchange = consumer.getEndpoint().createExchange(ExchangePattern.InOut);
         exchange.getMessage().setHeader(Exchange.HTTP_METHOD, method);
         exchange.getMessage().setHeader(Exchange.CONTENT_TYPE, "application/json");
+        headers.forEach(exchange.getMessage()::setHeader);
         exchange.getMessage().setBody(input);
         consumer.getProcessor().process(exchange);
         if (exchange.getException() != null) {
@@ -184,12 +189,8 @@ class ApiRouteTest {
     }
 
     public static final class TestResetService {
-        public Map<String, Object> reset() {
-            return Map.of("status", "RESET");
-        }
-
-        public Map<String, Object> resetRequest(String requestId) {
-            return Map.of("status", "RESET", "requestId", requestId);
+        public Map<String, Object> reset(@Header("requestId") String requestId) {
+            return requestId == null ? Map.of("status", "RESET") : Map.of("status", "RESET", "requestId", requestId);
         }
     }
 

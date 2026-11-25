@@ -68,11 +68,10 @@ public class LlmRouteSupport {
         }
     }
 
-    public void prepareAgentCall(@ExchangeProperty("llmJob") LlmJobEnvelope job, Exchange exchange) {
-        exchange.setProperty("llmStartedAt", Instant.now());
-        exchange.getMessage().setBody(new AiAgentBody<>(job.prompt(), firstNonBlank(job.systemPrompt(), """
+    public AiAgentBody<?> agentBody(@ExchangeProperty("llmJob") LlmJobEnvelope job) {
+        return new AiAgentBody<>(job.prompt(), firstNonBlank(job.systemPrompt(), """
                 You are a precise worker in a shared LLM queue. Return only what the requester asked for.
-                """.strip()), job.jobId()));
+                """.strip()), job.jobId());
     }
 
     public void logPrompt(LlmJobEnvelope job, Exchange exchange) {

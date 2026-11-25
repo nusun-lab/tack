@@ -29,12 +29,7 @@ public class ApiRoute extends RouteBuilder {
 
         from("direct:perform-llm-reset")
                 .routeId("perform-llm-reset")
-                .choice()
-                    .when(header("requestId").isNotNull())
-                        .bean("resetService", "resetRequest(${header.requestId})")
-                    .otherwise()
-                        .bean("resetService", "reset")
-                .end()
+                .bean("resetService", "reset")
                 .setHeader(Exchange.HTTP_RESPONSE_CODE, constant(200))
                 .setHeader(Exchange.CONTENT_TYPE, constant("application/json"));
 

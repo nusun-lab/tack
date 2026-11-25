@@ -11,6 +11,8 @@ import us.nusun.tack.framework.inference.lane.InferenceLaneRegistry;
 import us.nusun.tack.framework.inference.memory.ToolLoopGuardChatMemory;
 import us.nusun.tack.framework.inference.lane.InferenceLaneDefinition;
 
+import java.time.Instant;
+
 @ApplicationScoped
 public class LlmRoute extends RouteBuilder {
     @Inject InferenceLaneRegistry lanes;
@@ -45,9 +47,8 @@ public class LlmRoute extends RouteBuilder {
                 .setProperty("llmFailureContext", method(deadLetterFactory, "contextSummary"))
                 .log(LoggingLevel.WARN, "LLM queue failure: ${exchangeProperty.llmFailureContext} reason=${exchangeProperty.llmFailureMessage}")
                 .bean(routeSupport, "discardReply")
-                .choice()
-                    .when(exchangeProperty("llmJob").isNotNull())
-                        .wireTap("direct:publish-failed-llm-job-dlq")
+                .filter(exchangeProperty("llmJob").isNotNull())
+                    .wireTap("direct:publish-failed-llm-job-dlq")
                 .end();
 
         from("direct:llm")
@@ -84,7 +85,8 @@ public class LlmRoute extends RouteBuilder {
         from("direct:call-llm-agent")
                 .routeId("call-llm-agent")
                 .bean(jobFactory, "restore")
-                .bean(routeSupport, "prepareAgentCall")
+                .setProperty("llmStartedAt", Instant::now)
+                .setBody(method(routeSupport, "agentBody"))
                 .to("langchain4j-agent:dynamic?agentFactory=#dynamicAgentFactory")
                 .log(
                         LoggingLevel.INFO,
