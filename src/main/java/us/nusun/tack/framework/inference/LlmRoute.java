@@ -2,6 +2,7 @@ package us.nusun.tack.framework.inference;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import org.apache.camel.ExchangePropertyKey;
 import org.apache.camel.LoggingLevel;
 import org.apache.camel.ValidationException;
 import org.apache.camel.builder.RouteBuilder;
@@ -40,26 +41,26 @@ public class LlmRoute extends RouteBuilder {
                 .logExhausted(false)
                 .log(LoggingLevel.WARN, "${exception.message}");
 
-        onCompletion()
-                .onWhen(exchangeProperty("llmQueueFailureHandling").isEqualTo(true))
-                .onFailureOnly()
-                .setProperty("llmFailureMessage", simple("${exception.message}"))
-                .setProperty("llmFailureContext", method(deadLetterFactory, "contextSummary"))
-                .log(LoggingLevel.WARN, "LLM queue failure: ${exchangeProperty.llmFailureContext} reason=${exchangeProperty.llmFailureMessage}")
-                .bean(routeSupport, "discardReply")
-                .filter(exchangeProperty("llmJob").isNotNull())
-                    .wireTap("direct:publish-failed-llm-job-dlq")
-                .end();
-
         from("direct:llm")
                 .routeId("llm")
-                .setProperty("llmQueueFailureHandling", constant(true))
+                .onCompletion().onFailureOnly()
+                    // A direct caller can share the unit of work and fail after inference succeeds.
+                    .onWhen(exchangeProperty(ExchangePropertyKey.FAILURE_ROUTE_ID.getName()).isEqualTo("llm"))
+                    .setProperty("llmFailureMessage", simple("${exception.message}"))
+                    .setProperty("llmFailureContext", method(deadLetterFactory, "contextSummary"))
+                    .log(LoggingLevel.WARN, "LLM queue failure: ${exchangeProperty.llmFailureContext} reason=${exchangeProperty.llmFailureMessage}")
+                    .bean(routeSupport, "discardReply")
+                    .filter(exchangeProperty("llmJob").isNotNull())
+                        .wireTap("direct:publish-failed-llm-job-dlq")
+                        .end()
+                    .end()
+                .end()
                 .bean(jobFactory, "prepare")
                 .bean(routeSupport, "registerReply")
                 .bean(routeSupport, "verifySelectedRoutesAvailable")
                 .marshal(llmJson(LlmJobEnvelope.class))
                 .setHeader(KafkaConstants.KEY, method(jobFactory, "requestKafkaKey"))
-                .recipientList(simple("kafka:${exchangeProperty.laneRequestTopic}"))
+                .toD("kafka:${exchangeProperty.laneRequestTopic}")
                 .bean(routeSupport, "awaitReply")
                 .bean(routeSupport, "logModelResponse")
                 .bean(routeSupport, "validateResponseSchema")
@@ -80,7 +81,7 @@ public class LlmRoute extends RouteBuilder {
                 .log(LoggingLevel.WARN, "Publishing failed LLM job to DLQ: jobId=${body.jobId} lane=${body.laneId} passType=${body.passType} reason=${body.failureMessage}")
                 .setHeader(KafkaConstants.KEY, simple("${body.jobId}"))
                 .marshal(llmJson(LlmJobDeadLetter.class))
-                .toD("kafka:{{llm.topic.dead-letter:llm.dead-letter}}");
+                .to("kafka:{{llm.topic.dead-letter:llm.dead-letter}}");
 
         from("direct:call-llm-agent")
                 .routeId("call-llm-agent")

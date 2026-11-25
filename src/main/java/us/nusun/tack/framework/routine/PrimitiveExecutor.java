@@ -245,7 +245,6 @@ public class PrimitiveExecutor {
     private void clearLlmExchangeState(Exchange exchange) {
         exchange.removeProperty("llmJob");
         exchange.removeProperty(LlmExecutionContext.PROPERTY);
-        exchange.removeProperty("llmQueueFailureHandling");
     }
 
     private LlmJobResult requireSucceeded(LlmJobResult llm, String pass) {

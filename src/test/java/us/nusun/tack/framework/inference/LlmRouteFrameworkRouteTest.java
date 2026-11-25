@@ -4,10 +4,12 @@ import dev.langchain4j.service.Result;
 import org.apache.camel.CamelContext;
 import org.apache.camel.CamelExecutionException;
 import org.apache.camel.Exchange;
+import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.langchain4j.agent.api.Agent;
 import org.apache.camel.component.langchain4j.agent.api.AgentFactory;
 import org.apache.camel.component.kafka.KafkaConstants;
 import org.apache.camel.impl.DefaultCamelContext;
+import org.apache.camel.model.ToDynamicDefinition;
 import org.jboss.logmanager.LogContext;
 import org.jboss.logmanager.Logger;
 import org.junit.jupiter.api.Test;
@@ -30,7 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LlmRouteFrameworkRouteTest {
     @Test
-    void directLlmRouteQueuesKafkaRequestAwaitsReplyAndReturnsSuccessfulResult() throws Exception {
+    void nestedLlmRouteReturnsResultWithoutDeadLetterForCallerFailure() throws Exception {
         InFlightReplyManager replies = new InFlightReplyManager();
         StubKafkaComponent kafka = new StubKafkaComponent((topic, exchange) -> {
             LlmJobEnvelope queued = exchange.getProperty("llmJob", LlmJobEnvelope.class);
@@ -40,17 +42,29 @@ class LlmRouteFrameworkRouteTest {
         });
 
         try (DefaultCamelContext context = context(replies, kafka)) {
+            context.addRoutes(new RouteBuilder() {
+                @Override
+                public void configure() {
+                    from("direct:caller")
+                            .to("direct:llm")
+                            .throwException(new IllegalStateException("Caller failed after inference"));
+                }
+            });
             context.start();
 
-            LlmJobResult body = context.createProducerTemplate().requestBody("direct:llm",
-                    new LlmJobEnvelope(null, "high-pass", LlmPassType.ACTION, null, null, 0, "Return a JSON result.",
-                            null, "classpath:schemas/framework/text-result-schema.json",
-                            Map.of("personaId", FrameworkFixtures.PERSONA_A, "agentRunId", "run:/high?partition=stable",
-                                    "toolProfile", FrameworkFixtures.PROFILE_GAMMA), null), LlmJobResult.class);
+            var request = new LlmJobEnvelope(null, "high-pass", LlmPassType.ACTION, null, null, 0, "Return a JSON result.",
+                    null, "classpath:schemas/framework/text-result-schema.json",
+                    Map.of("personaId", FrameworkFixtures.PERSONA_A, "agentRunId", "run:/high?partition=stable",
+                            "toolProfile", FrameworkFixtures.PROFILE_GAMMA), null);
+            Exchange result = context.createProducerTemplate().request("direct:caller",
+                    exchange -> exchange.getMessage().setBody(request));
+            assertEquals("Caller failed after inference", result.getException().getMessage());
+            LlmJobResult body = result.getMessage().getBody(LlmJobResult.class);
             assertEquals(LlmJobStatus.SUCCEEDED, body.status());
             assertEquals("high-pass", body.laneId());
             assertEquals(LlmPassType.ACTION, body.passType());
             assertEquals("{\"result\":\"ok\"}", body.content());
+            context.stop();
             assertEquals(List.of("test.llm.requests.high"), kafka.sentTopics());
             assertEquals("run:/high?partition=stable", kafka.sentTo("test.llm.requests.high").getFirst().getIn().getHeader(KafkaConstants.KEY));
             assertEquals(0, replies.inFlightCount());
@@ -61,16 +75,15 @@ class LlmRouteFrameworkRouteTest {
     void kafkaPublishEndpointsDoNotInterpolateDynamicKeysIntoUris() throws Exception {
         try (DefaultCamelContext context = context(new InFlightReplyManager(), new StubKafkaComponent())) {
             String requestUri = context.getRouteDefinition("llm").getOutputs().stream()
-                    .map(Object::toString)
-                    .filter(value -> value.contains("kafka:${exchangeProperty.laneRequestTopic}"))
+                    .filter(ToDynamicDefinition.class::isInstance)
+                    .map(ToDynamicDefinition.class::cast)
+                    .map(ToDynamicDefinition::getUri)
                     .findFirst()
-                    .orElse("");
+                    .orElseThrow();
             String replyInput = context.getRouteDefinition("publish-llm-result-low-pass").getOutputs().toString();
             String deadLetterOutput = context.getRouteDefinition("publish-failed-llm-job-dlq").getOutputs().toString();
 
-            assertTrue(requestUri.contains("RecipientList"));
-            assertTrue(requestUri.contains("kafka:${exchangeProperty.laneRequestTopic}"));
-            assertTrue(!requestUri.contains("language:simple"));
+            assertEquals("kafka:${exchangeProperty.laneRequestTopic}", requestUri);
             assertTrue(replyInput.contains("kafka:test.llm.replies.low"));
             assertTrue(deadLetterOutput.contains("kafka:{{llm.topic.dead-letter:llm.dead-letter}}"));
             assertTrue(!requestUri.contains("?key="));
@@ -94,11 +107,17 @@ class LlmRouteFrameworkRouteTest {
         java.util.logging.Level previousLevel = camelErrorHandler.getLevel();
         camelErrorHandler.setLevel(java.util.logging.Level.OFF);
         try (DefaultCamelContext context = context(replies, kafka)) {
+            context.addRoutes(new RouteBuilder() {
+                @Override
+                public void configure() {
+                    from("direct:caller").to("direct:llm");
+                }
+            });
             context.start();
 
             CamelExecutionException failure = assertThrows(
                     CamelExecutionException.class,
-                    () -> context.createProducerTemplate().requestBody("direct:llm", structuredRequest("Return invalid JSON for the schema.")));
+                    () -> context.createProducerTemplate().requestBody("direct:caller", structuredRequest("Return invalid JSON for the schema.")));
 
             assertTrue(failure.getMessage().contains("Exception occurred during execution"));
             assertEquals(0, replies.inFlightCount());

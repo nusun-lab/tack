@@ -5,6 +5,7 @@ import org.apache.camel.Endpoint;
 import org.apache.camel.Exchange;
 import org.apache.camel.Processor;
 import org.apache.camel.Producer;
+import org.apache.camel.component.kafka.KafkaConstants;
 import org.apache.camel.support.DefaultComponent;
 import org.apache.camel.support.DefaultConsumer;
 import org.apache.camel.support.DefaultEndpoint;
@@ -77,8 +78,10 @@ public final class StubKafkaComponent extends DefaultComponent {
             return new DefaultProducer(this) {
                 @Override
                 public void process(Exchange exchange) throws Exception {
-                    component.sent.add(new SentExchange(topic, exchange.copy()));
-                    component.observer.sent(topic, exchange);
+                    Object overrideTopic = exchange.getMessage().removeHeader(KafkaConstants.OVERRIDE_TOPIC);
+                    String destination = overrideTopic == null ? topic : overrideTopic.toString();
+                    component.sent.add(new SentExchange(destination, exchange.copy()));
+                    component.observer.sent(destination, exchange);
                 }
             };
         }
