@@ -1,9 +1,10 @@
 package us.nusun.tack.framework.sandbox;
 
-import io.grpc.Context;
 import io.grpc.Deadline;
 import io.grpc.Status;
+import io.grpc.StatusException;
 import io.grpc.StatusRuntimeException;
+import io.grpc.stub.ClientCalls;
 import io.quarkus.grpc.GrpcClient;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -487,40 +488,40 @@ public class OpenShellGrpcClient {
                 .setFollowStatus(true)
                 .setStopOnTerminal(true)
                 .build();
-        while (!deadline.isExpired()) {
-            // Cancel a stream we stop consuming as soon as we have the state we need.
-            try (Context.CancellableContext watch = Context.current().withCancellation()) {
-                Context parent = watch.attach();
+        try {
+            while (!deadline.isExpired()) {
                 try {
-                    Iterator<SandboxStreamEvent> events = stub.withDeadline(deadline).watchSandbox(request);
-                    while (events.hasNext()) {
-                        SandboxStreamEvent event = events.next();
-                        if (event.hasSandbox()) {
-                            latest = event.getSandbox();
-                            if (isReady(latest)) {
-                                return latest;
+                    var watch = ClientCalls.blockingV2ServerStreamingCall(stub.getChannel(),
+                            OpenShellGrpc.getWatchSandboxMethod(), stub.getCallOptions().withDeadline(deadline), request);
+                    try {
+                        SandboxStreamEvent event;
+                        while ((event = watch.read()) != null) {
+                            if (event.hasSandbox()) {
+                                latest = event.getSandbox();
+                                if (isReady(latest)) {
+                                    return latest;
+                                }
                             }
                         }
+                    } finally {
+                        watch.cancel("Finished watching sandbox readiness", null);
                     }
-                } finally {
-                    watch.detach(parent);
+                } catch (StatusException | StatusRuntimeException e) {
+                    Status.Code code = Status.fromThrowable(e).getCode();
+                    if (code == Status.Code.DEADLINE_EXCEEDED) {
+                        throw readinessTimeout(latest, e);
+                    }
+                    if (code != Status.Code.UNAVAILABLE) {
+                        throw failure("watch sandbox " + describe(latest), e);
+                    }
                 }
-            } catch (StatusRuntimeException e) {
-                if (e.getStatus().getCode() == Status.Code.DEADLINE_EXCEEDED) {
-                    throw readinessTimeout(latest, e);
-                }
-                if (e.getStatus().getCode() != Status.Code.UNAVAILABLE) {
-                    throw failure("watch sandbox " + describe(latest), e);
-                }
-            }
-            // A reconnect receives a fresh snapshot from the gateway.
-            try {
+                // A reconnect receives a fresh snapshot from the gateway.
                 TimeUnit.NANOSECONDS.sleep(Math.min(
                         TimeUnit.MILLISECONDS.toNanos(100), deadline.timeRemaining(TimeUnit.NANOSECONDS)));
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException("Interrupted waiting for " + describe(latest), e);
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted waiting for " + describe(latest), e);
         }
         throw readinessTimeout(latest, null);
     }
@@ -597,8 +598,8 @@ public class OpenShellGrpcClient {
         stream.writeBytes(value);
     }
 
-    private static IllegalStateException failure(String operation, StatusRuntimeException e) {
-        return new IllegalStateException("OpenShell failed to " + operation + ": " + e.getStatus(), e);
+    private static IllegalStateException failure(String operation, Exception e) {
+        return new IllegalStateException("OpenShell failed to " + operation + ": " + Status.fromThrowable(e), e);
     }
 
     public record Endpoint(String host, int port) {

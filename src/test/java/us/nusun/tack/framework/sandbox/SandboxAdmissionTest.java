@@ -6,7 +6,10 @@ import io.grpc.ManagedChannelBuilder;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.Status;
+import io.grpc.stub.ServerCallStreamObserver;
 import io.grpc.stub.StreamObserver;
+import io.smallrye.common.vertx.VertxContext;
+import io.vertx.core.Vertx;
 import org.apache.camel.Exchange;
 import org.apache.camel.impl.DefaultCamelContext;
 import org.junit.jupiter.api.Test;
@@ -68,10 +71,44 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static us.nusun.tack.framework.tests.support.AgentRunRouteTestSupport.SCHEDULED_TOPIC;
 
 class SandboxAdmissionTest {
+    @Test
+    void readinessCancelsOnlyTheWatchOnADuplicatedVertxWorker() throws Exception {
+        Gateway gateway = new Gateway();
+        gateway.keepReadyWatchOpen = true;
+        try (var fixture = new Fixture(gateway, 10)) {
+            Vertx vertx = Vertx.vertx();
+            try {
+                var worker = VertxContext.getOrCreateDuplicatedContext(vertx);
+                worker.executeBlocking(() -> {
+                    assertTrue(io.vertx.core.Context.isOnWorkerThread());
+                    assertTrue(VertxContext.isOnDuplicatedContext());
+                    assertSame(Context.ROOT, Context.current());
+                    Sandbox sandbox = fixture.openshell.createSandbox("tack-watch-test", List.of(), Map.of());
+                    assertSame(Context.ROOT, Context.current());
+                    Sandbox ready = fixture.openshell.awaitProvisionedReady(sandbox);
+                    assertEquals(SandboxPhase.SANDBOX_PHASE_READY, ready.getStatus().getPhase());
+                    Context afterWatch = Context.current();
+
+                    fixture.openshell.authorizeDeveloperPackages(ready.getMetadata().getName());
+
+                    assertSame(Context.ROOT, afterWatch);
+                    assertFalse(afterWatch.isCancelled());
+                    assertSame(afterWatch, Context.current());
+                    return null;
+                }).toCompletionStage().toCompletableFuture().get(15, TimeUnit.SECONDS);
+                assertTrue(gateway.watchCancelled.await(2, TimeUnit.SECONDS));
+                assertTrue(gateway.rules.contains("tack-developer-packages"));
+            } finally {
+                vertx.close().toCompletionStage().toCompletableFuture().get(5, TimeUnit.SECONDS);
+            }
+        }
+    }
+
     @Test
     void initialAndLaterAdmissionsWaitForReadinessPolicyAndGit() throws Exception {
         for (boolean initial : List.of(true, false)) {
@@ -175,6 +212,7 @@ class SandboxAdmissionTest {
         private final ManagedChannel channel;
         private final AgentRunStore store = new AgentRunStore();
         private final StubKafkaComponent kafka = new StubKafkaComponent();
+        private final OpenShellGrpcClient openshell;
         private final DefaultCamelContext camel;
         private final AgentRunRequest run =
                 new AgentRunRequest("developer", FrameworkFixtures.ROUTINE_A, Map.of("repositoryUrl", "https://git.example/project"));
@@ -183,7 +221,7 @@ class SandboxAdmissionTest {
         private Fixture(Gateway gateway, long provisionSeconds) throws Exception {
             server = ServerBuilder.forPort(0).addService(gateway).build().start();
             channel = ManagedChannelBuilder.forAddress("127.0.0.1", server.getPort()).usePlaintext().build();
-            var openshell = new OpenShellGrpcClient(true, 4, provisionSeconds, 4, "test-image");
+            openshell = new OpenShellGrpcClient(true, 4, provisionSeconds, 4, "test-image");
             FrameworkFixtures.set(openshell, "stub", OpenShellGrpc.newBlockingStub(channel));
 
             var developer = Persona.builder("developer").name("Developer").identity("gitea", "test-token", "dev").build();
@@ -260,11 +298,13 @@ class SandboxAdmissionTest {
         private final AtomicInteger attachments = new AtomicInteger();
         private final AtomicLong firstWatchBudget = new AtomicLong();
         private final AtomicLong secondWatchBudget = new AtomicLong();
+        private final CountDownLatch watchCancelled = new CountDownLatch(1);
         private final Set<String> rules = ConcurrentHashMap.newKeySet();
         private volatile Sandbox sandbox;
         private volatile Provider provider;
         private volatile boolean gatePreparation;
         private volatile boolean holdReadiness;
+        private boolean keepReadyWatchOpen;
         private volatile boolean disconnectFirstWatch;
         private volatile boolean terminal;
         private volatile boolean failPolicy;
@@ -299,6 +339,9 @@ class SandboxAdmissionTest {
 
         @Override
         public void watchSandbox(WatchSandboxRequest request, StreamObserver<SandboxStreamEvent> response) {
+            if (keepReadyWatchOpen) {
+                ((ServerCallStreamObserver<SandboxStreamEvent>) response).setOnCancelHandler(watchCancelled::countDown);
+            }
             long remaining = Context.current().getDeadline().timeRemaining(TimeUnit.MILLISECONDS);
             if (watches.incrementAndGet() == 1) {
                 firstWatchBudget.set(remaining);
@@ -317,7 +360,10 @@ class SandboxAdmissionTest {
                 readiness.block();
             }
             markReady();
-            send(response, SandboxStreamEvent.newBuilder().setSandbox(sandbox).build());
+            response.onNext(SandboxStreamEvent.newBuilder().setSandbox(sandbox).build());
+            if (!keepReadyWatchOpen) {
+                response.onCompleted();
+            }
         }
 
         private void markReady() {
