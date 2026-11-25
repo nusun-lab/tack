@@ -496,7 +496,7 @@
       const servers = Object.entries(obj(p.servers));
       const mcpServerIds = servers.filter(([, policy]) => policy.connection).map(([id]) => id);
       return `<article class="card">
-        <div class="inventory-title"><h3>${esc(p.id)}</h3><span class="label">max ${esc(p.maxResultTokens || 0)} tokens</span></div>
+        <div class="inventory-title"><h3>${esc(p.id)}</h3></div>
         <dl class="kv">
           <dt>Profile ID</dt><dd class="mono">${esc(p.id)}</dd>
           <dt>MCP servers</dt><dd>${mcpServerIds.map(s => `<span class="label mono">${esc(s)}</span>`).join(' ') || '<span class="muted">none</span>'}</dd>
@@ -512,19 +512,12 @@
       const denied = arr(policy.deniedTools);
       const explicit = !policy.allowAll && allowed.length > 0;
       const mode = explicit ? `explicit allow list (${allowed.length})` : `broad access (${denied.length} denied)`;
-      const argumentsByTool = Object.entries(obj(policy.arguments));
       return `<details class="policy-server" data-global-detail ${detailAttrs(`tool-profile:${profileId}:policy:${server}`)}>
         <summary><span class="policy-summary"><span class="policy-summary-name"><strong class="mono">${esc(server)}</strong></span><span class="policy-mode ${explicit ? 'allow' : 'deny'}">${esc(mode)}</span></span></summary>
         <h4>Allowed tools</h4>
         ${explicit ? renderToolChips(allowed) : '<p class="muted">All discovered tools except denied tools.</p>'}
         <h4>Denied tools (${denied.length})</h4>
         ${renderToolChips(denied) || '<p class="muted">None.</p>'}
-        <h4>Argument rules</h4>
-        ${argumentsByTool.map(([tool, rules]) => `<h4 class="mono">${esc(tool)}</h4><dl class="kv">
-          <dt>Defaults</dt><dd>${Object.keys(obj(rules.defaults)).length ? `<pre>${json(rules.defaults)}</pre>` : 'None.'}</dd>
-          <dt>Hidden</dt><dd>${arr(rules.hidden).length ? renderToolChips(rules.hidden) : 'None.'}</dd>
-          <dt>Permitted values</dt><dd>${Object.keys(obj(rules.permittedValues)).length ? `<pre>${json(rules.permittedValues)}</pre>` : 'None.'}</dd>
-        </dl>`).join('') || '<p class="muted">None.</p>'}
       </details>`;
     }
 

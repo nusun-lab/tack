@@ -8,26 +8,23 @@ import java.util.stream.Collectors;
 public record ToolProfileView(
         String id,
         Map<String, ServerPolicy> servers,
-        String promptGuidance,
-        int maxResultTokens
+        String promptGuidance
 ) {
     public static ToolProfileView of(ToolProfile profile) {
         Map<String, ServerPolicy> servers = profile.policies().entrySet().stream()
-                .filter(entry -> entry.getValue().declared())
                 .collect(Collectors.toUnmodifiableMap(Map.Entry::getKey, entry -> ServerPolicy.of(entry.getValue())));
-        return new ToolProfileView(profile.id(), servers, profile.promptGuidance(), profile.maxResultTokens());
+        return new ToolProfileView(profile.id(), servers, profile.promptGuidance());
     }
 
     public record ServerPolicy(
             Connection connection,
             Set<String> allowedTools,
             Set<String> deniedTools,
-            boolean allowAll,
-            Map<String, ToolProfile.Arguments> arguments
+            boolean allowAll
     ) {
         private static ServerPolicy of(ToolProfile.ServerPolicy policy) {
             Connection connection = policy.connection() == null ? null : Connection.of(policy.connection());
-            return new ServerPolicy(connection, policy.allowed(), policy.denied(), policy.allowAll(), policy.arguments());
+            return new ServerPolicy(connection, policy.allowed(), policy.denied(), policy.allowAll());
         }
     }
 

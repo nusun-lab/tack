@@ -2,7 +2,6 @@ package us.nusun.tack.example.tool;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import us.nusun.tack.framework.tool.ToolProfileProvider;
 import us.nusun.tack.framework.tool.ToolProfile;
 
@@ -13,15 +12,11 @@ public class ProductOwnershipToolProfile implements ToolProfileProvider {
     public static final String ID = "product-ownership";
 
     private final PlaneMcpServer plane;
-    private final int maxResultTokens;
 
     @Inject
     public ProductOwnershipToolProfile(
-            PlaneMcpServer plane,
-            @ConfigProperty(name = "agent.tool.profile.project-management.max-result-tokens", defaultValue = "5000")
-            int maxResultTokens) {
+            PlaneMcpServer plane) {
         this.plane = plane;
-        this.maxResultTokens = maxResultTokens;
     }
 
     @Override
@@ -30,7 +25,6 @@ public class ProductOwnershipToolProfile implements ToolProfileProvider {
                 .mcpServer(plane.definition())
                 .allowTools(PlaneMcpServer.ID,
                         "project", "member", "workitem", "workitem_activity", "workitem_comment", "label", "state")
-                .hideArgument(PlaneMcpServer.ID, "workitem", "pql")
                 .promptGuidance("""
                         - this profile creates and updates Plane product work; the calling routine owns product policy,
                           lifecycle decisions, acceptance criteria, prioritization decisions, and WIP policy
@@ -45,7 +39,6 @@ public class ProductOwnershipToolProfile implements ToolProfileProvider {
                         - comments preserve evidence/context and are not lifecycle states
 
                         """ + PlaneWorkGuidance.QUERIES)
-                .maxResultTokens(maxResultTokens)
                 .build());
     }
 }

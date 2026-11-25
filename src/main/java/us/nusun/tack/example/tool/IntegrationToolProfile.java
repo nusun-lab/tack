@@ -2,7 +2,6 @@ package us.nusun.tack.example.tool;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import us.nusun.tack.framework.tool.ToolProfileProvider;
 import us.nusun.tack.framework.tool.ToolProfile;
 
@@ -14,16 +13,13 @@ public class IntegrationToolProfile implements ToolProfileProvider {
 
     private final PlaneMcpServer plane;
     private final GiteaMcpServer gitea;
-    private final int maxResultTokens;
 
     @Inject
     public IntegrationToolProfile(
             PlaneMcpServer plane,
-            GiteaMcpServer gitea,
-            @ConfigProperty(name = "agent.tool.profile.source-control.max-result-tokens", defaultValue = "6000") int maxResultTokens) {
+            GiteaMcpServer gitea) {
         this.plane = plane;
         this.gitea = gitea;
-        this.maxResultTokens = maxResultTokens;
     }
 
     @Override
@@ -34,6 +30,7 @@ public class IntegrationToolProfile implements ToolProfileProvider {
                 .allowTools(PlaneMcpServer.ID,
                         "workitem",
                         "workitem_comment")
+                .authorizeMcpExecution(PlaneMcpServer.ID, plane::requireReadAction)
                 .allowTools(GiteaMcpServer.ID,
                         "search_repos",
                         "list_pull_requests",
@@ -68,8 +65,6 @@ public class IntegrationToolProfile implements ToolProfileProvider {
                         - if a PR is already closed/merged or an operation is unsupported, stop rather than retrying an
                           equivalent mutation
                         """)
-                .hideArgument(PlaneMcpServer.ID, "workitem", "pql")
-                .maxResultTokens(maxResultTokens)
                 .build());
     }
 }

@@ -174,6 +174,9 @@ public class LlmAgentFactory {
             ResponseFormat responseFormat = providerFormat(exchange, invocation, job);
             AgentConfiguration configuration = new AgentConfiguration().withChatModel(lane.model())
                     .withAiServicesCustomizer(builder -> {
+                        if (diagnostics != null) {
+                            builder.afterToolExecution(diagnostics::requireToolResultFits);
+                        }
                         AtomicBoolean firstRequest = new AtomicBoolean(true);
                         builder.chatRequestTransformer(request -> {
                             boolean initial = firstRequest.getAndSet(false);
@@ -192,7 +195,7 @@ public class LlmAgentFactory {
                             }
                             request = effectiveRequest.build();
                             if (diagnostics != null) {
-                                diagnostics.logBudget(request);
+                                diagnostics.recordRequestBudget(request);
                             }
                             return request;
                         });

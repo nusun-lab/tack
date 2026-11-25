@@ -111,8 +111,8 @@ and creating built-in relations, so the routine does not attempt relation deleti
   steps and thought scopes, a run manages one execution, and inference manages one model pass.
   The workspace assembles views from those capabilities and owns HTTP, reset and topic setup.
 - Workspace and prompt inventory use credential-free views. Workspace profiles expose a
-  `servers` object keyed by server ID, with connection details, tool grants and per-tool
-  argument rules under each server. Connections expose header names. Persona views expose
+  `servers` object keyed by server ID, with connection details and tool grants under each server.
+  Connections expose header names. Persona views expose
   public handles. The dashboard derives thought presentation from the retained frames.
 - Camel binds HTTP JSON to request types. Mission and child routes validate a complete batch,
   prepare its sandboxes and commit accepted runs before publishing scheduled events from the
@@ -128,9 +128,12 @@ and creating built-in relations, so the routine does not attempt relation deleti
   dispatches, and completion updates that operation by ID. The latest completed primitive is
   tracked separately from the most recent act used for decision context. The timeline keeps
   ten events, and retained thought events remain available after a frame exits.
-- LangChain4j supplies MCP discovery, filtering, specification mapping, and dispatch.
-  Tack opens the persona connection on the first tool discovery and owns its shutdown and
-  execution-time policy.
+- LangChain4j supplies MCP discovery, namespacing and dispatch. Tack opens the persona
+  connection on first discovery, checks tool grants at dispatch, and passes through the
+  native schema, arguments and result. The inference pass reports an explicit error when
+  an individual result exceeds the available budget.
+- The example checks read-only Plane actions before dispatch from workspace observation
+  and integration profiles. Plane supplies its native schemas, including PQL.
 
 ## Near-term decisions
 

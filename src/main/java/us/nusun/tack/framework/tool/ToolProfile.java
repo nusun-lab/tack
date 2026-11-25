@@ -1,20 +1,15 @@
 package us.nusun.tack.framework.tool;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
+import java.util.function.BiConsumer;
 
 public record ToolProfile(
         String id,
         Map<String, ServerPolicy> policies,
-        String promptGuidance,
-        int maxResultTokens
+        String promptGuidance
 ) {
     public ToolProfile {
         policies = Map.copyOf(policies);
@@ -26,57 +21,37 @@ public record ToolProfile(
     }
 
     public boolean none() {
-        return "none".equals(id) || policies.values().stream().noneMatch(ServerPolicy::declared);
+        return "none".equals(id) || policies.isEmpty();
     }
 
     public boolean allowsTool(String server, String toolName) {
         ServerPolicy policy = policies.get(server);
-        return policy != null && policy.declared() && !policy.denied().contains(toolName)
+        return policy != null && !policy.denied().contains(toolName)
                 && (policy.allowAll() || policy.allowed().isEmpty() || policy.allowed().contains(toolName));
     }
 
-    public Arguments arguments(String server, String toolName) {
-        ServerPolicy policy = policies.get(server);
-        return policy == null ? Arguments.NONE : policy.arguments().getOrDefault(toolName, Arguments.NONE);
+    public void checkExecution(String server, String tool, String arguments) {
+        if (!allowsTool(server, tool)) {
+            throw new IllegalArgumentException("Tool " + tool + " is not allowed by profile " + id);
+        }
+        var authorizer = policies.get(server).authorizer();
+        if (authorizer != null) {
+            authorizer.accept(tool, arguments);
+        }
     }
 
     public record ServerPolicy(McpServerDefinition connection, Set<String> allowed, Set<String> denied,
-                               boolean allowAll, boolean declared, Map<String, Arguments> arguments) {
+                               boolean allowAll, BiConsumer<String, String> authorizer) {
         public ServerPolicy {
             allowed = Set.copyOf(allowed);
             denied = Set.copyOf(denied);
-            arguments = Map.copyOf(arguments);
-        }
-    }
-
-    public record Arguments(Map<String, JsonNode> defaults, Set<String> hidden, Map<String, List<String>> permittedValues) {
-        private static final Arguments NONE = new Arguments(Map.of(), Set.of(), Map.of());
-
-        public Arguments {
-            defaults = copyDefaults(defaults);
-            hidden = Set.copyOf(hidden);
-            permittedValues = permittedValues.entrySet().stream().collect(Collectors.toUnmodifiableMap(
-                    Map.Entry::getKey, entry -> List.copyOf(entry.getValue())));
-        }
-
-        @Override
-        public Map<String, JsonNode> defaults() {
-            return copyDefaults(defaults);
-        }
-
-        private static Map<String, JsonNode> copyDefaults(Map<String, JsonNode> defaults) {
-            return defaults.entrySet().stream().collect(Collectors.toUnmodifiableMap(
-                    Map.Entry::getKey, entry -> entry.getValue().deepCopy()));
         }
     }
 
     public static final class Builder {
-        private static final ObjectMapper ARGUMENT_MAPPER = new ObjectMapper();
-
         private final String id;
         private final Map<String, ServerBuilder> policies = new LinkedHashMap<>();
         private String promptGuidance = "";
-        private int maxResultTokens;
 
         private Builder(String id) {
             this.id = id;
@@ -88,7 +63,7 @@ public record ToolProfile(
 
         /** Declares a logical server for rules. Use mcpServer to register a connection. */
         public Builder server(String server) {
-            policy(server).declared = true;
+            policy(server);
             return this;
         }
 
@@ -102,14 +77,12 @@ public record ToolProfile(
         public Builder mcpServer(McpServerDefinition server) {
             if (server != null && server.id() != null && !server.id().isBlank()) {
                 policy(server.id()).connection = server;
-                server(server.id());
             }
             return this;
         }
 
         public Builder allowTool(String server, String toolName) {
             policy(server).allowed.add(toolName);
-            server(server);
             return this;
         }
 
@@ -122,7 +95,6 @@ public record ToolProfile(
 
         public Builder denyTool(String server, String toolName) {
             policy(server).denied.add(toolName);
-            server(server);
             return this;
         }
 
@@ -135,41 +107,16 @@ public record ToolProfile(
 
         public Builder allowAllTools(String server) {
             policy(server).allowAll = true;
-            server(server);
             return this;
         }
 
-        public Builder defaultArgumentJson(String server, String tool, String name, String json) {
-            try {
-                return defaultArgument(server, tool, name, ARGUMENT_MAPPER.readTree(json));
-            } catch (Exception failure) {
-                throw new IllegalArgumentException("Invalid JSON default argument for " + server + "." + tool + "." + name, failure);
+        /** Adds an MCP dispatch check receiving the server's tool name and original arguments. */
+        public Builder authorizeMcpExecution(String server, BiConsumer<String, String> authorizer) {
+            ServerBuilder policy = policies.get(server);
+            if (policy == null || policy.connection == null) {
+                throw new IllegalArgumentException("No MCP connection declared for " + server);
             }
-        }
-
-        public Builder defaultArgument(String server, String tool, String name, Object value) {
-            JsonNode node = value instanceof JsonNode json ? json : ARGUMENT_MAPPER.valueToTree(value);
-            policy(server).arguments(tool).defaults.put(name, node.deepCopy());
-            return this;
-        }
-
-        public Builder hideArgument(String server, String tool, String name) {
-            policy(server).arguments(tool).hidden.add(name);
-            server(server);
-            return this;
-        }
-
-        public Builder permitArgumentValues(String server, String tool, String name, String... values) {
-            List<String> permitted = List.of(values);
-            if (permitted.isEmpty()) {
-                throw new IllegalArgumentException("Expected at least one permitted value for " + name);
-            }
-            policy(server).arguments(tool).permittedValues.put(name, permitted);
-            return this;
-        }
-
-        public Builder maxResultTokens(int maxResultTokens) {
-            this.maxResultTokens = maxResultTokens;
+            policy.authorizer = authorizer;
             return this;
         }
 
@@ -181,7 +128,7 @@ public record ToolProfile(
         public ToolProfile build() {
             Map<String, ServerPolicy> built = new LinkedHashMap<>();
             policies.forEach((name, policy) -> built.put(name, policy.build()));
-            return new ToolProfile(id, built, promptGuidance, maxResultTokens);
+            return new ToolProfile(id, built, promptGuidance);
         }
 
         private static final class ServerBuilder {
@@ -189,24 +136,11 @@ public record ToolProfile(
             private final Set<String> allowed = new LinkedHashSet<>();
             private final Set<String> denied = new LinkedHashSet<>();
             private boolean allowAll;
-            private boolean declared;
-            private final Map<String, ArgumentBuilder> arguments = new LinkedHashMap<>();
-
-            private ArgumentBuilder arguments(String tool) {
-                return arguments.computeIfAbsent(tool, ignored -> new ArgumentBuilder());
-            }
+            private BiConsumer<String, String> authorizer;
 
             private ServerPolicy build() {
-                Map<String, Arguments> built = new LinkedHashMap<>();
-                arguments.forEach((tool, settings) -> built.put(tool, new Arguments(settings.defaults, settings.hidden, settings.permittedValues)));
-                return new ServerPolicy(connection, allowed, denied, allowAll, declared, built);
+                return new ServerPolicy(connection, allowed, denied, allowAll, authorizer);
             }
-        }
-
-        private static final class ArgumentBuilder {
-            private final Map<String, JsonNode> defaults = new LinkedHashMap<>();
-            private final Set<String> hidden = new LinkedHashSet<>();
-            private final Map<String, List<String>> permittedValues = new LinkedHashMap<>();
         }
     }
 }

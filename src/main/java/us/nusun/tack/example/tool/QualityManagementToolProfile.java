@@ -2,7 +2,6 @@ package us.nusun.tack.example.tool;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import us.nusun.tack.framework.tool.ToolProfileProvider;
 import us.nusun.tack.framework.tool.ToolProfile;
 
@@ -13,15 +12,11 @@ public class QualityManagementToolProfile implements ToolProfileProvider {
     public static final String ID = "quality-management";
 
     private final PlaneMcpServer plane;
-    private final int maxResultTokens;
 
     @Inject
     public QualityManagementToolProfile(
-            PlaneMcpServer plane,
-            @ConfigProperty(name = "agent.tool.profile.project-management.max-result-tokens", defaultValue = "5000")
-            int maxResultTokens) {
+            PlaneMcpServer plane) {
         this.plane = plane;
-        this.maxResultTokens = maxResultTokens;
     }
 
     @Override
@@ -30,7 +25,6 @@ public class QualityManagementToolProfile implements ToolProfileProvider {
                 .mcpServer(plane.definition())
                 .allowTools(PlaneMcpServer.ID,
                         "project", "member", "workitem", "workitem_activity", "workitem_comment", "label", "state")
-                .hideArgument(PlaneMcpServer.ID, "workitem", "pql")
                 .promptGuidance("""
                         - this profile creates and updates Plane QA work and defect evidence; the calling routine owns QA
                           lifecycle, test-planning, defect, retest, and completion policy
@@ -45,7 +39,6 @@ public class QualityManagementToolProfile implements ToolProfileProvider {
                         - comments preserve evidence/context and are not lifecycle states
 
                         """ + PlaneWorkGuidance.QUERIES)
-                .maxResultTokens(maxResultTokens)
                 .build());
     }
 }

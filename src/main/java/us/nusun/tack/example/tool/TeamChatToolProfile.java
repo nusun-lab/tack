@@ -2,7 +2,6 @@ package us.nusun.tack.example.tool;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import us.nusun.tack.framework.tool.ToolProfileProvider;
 import us.nusun.tack.framework.tool.ToolProfile;
 
@@ -13,14 +12,11 @@ public class TeamChatToolProfile implements ToolProfileProvider {
     public static final String ID = "team-chat";
 
     private final MattermostMcpServer mattermost;
-    private final int maxResultTokens;
 
     @Inject
     public TeamChatToolProfile(
-            MattermostMcpServer mattermost,
-            @ConfigProperty(name = "agent.tool.profile.team-chat.max-result-tokens", defaultValue = "3000") int maxResultTokens) {
+            MattermostMcpServer mattermost) {
         this.mattermost = mattermost;
-        this.maxResultTokens = maxResultTokens;
     }
 
     @Override
@@ -55,7 +51,6 @@ public class TeamChatToolProfile implements ToolProfileProvider {
                         - link authoritative Plane/Gitea/documentation resources when useful instead of recreating them
                         - avoid duplicate notifications, generic status chatter, and broad channel reads
                         """)
-                .maxResultTokens(maxResultTokens)
                 .build());
     }
 }

@@ -2,7 +2,6 @@ package us.nusun.tack.example.tool;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import us.nusun.tack.framework.tool.ToolProfileProvider;
 import us.nusun.tack.framework.tool.ToolProfile;
 
@@ -14,17 +13,13 @@ public class DeliveryManagementToolProfile implements ToolProfileProvider {
 
     private final PlaneMcpServer plane;
     private final GiteaMcpServer gitea;
-    private final int maxResultTokens;
 
     @Inject
     public DeliveryManagementToolProfile(
             PlaneMcpServer plane,
-            GiteaMcpServer gitea,
-            @ConfigProperty(name = "agent.tool.profile.project-management.max-result-tokens", defaultValue = "5000")
-            int maxResultTokens) {
+            GiteaMcpServer gitea) {
         this.plane = plane;
         this.gitea = gitea;
-        this.maxResultTokens = maxResultTokens;
     }
 
     @Override
@@ -35,7 +30,6 @@ public class DeliveryManagementToolProfile implements ToolProfileProvider {
                 .allowTools(PlaneMcpServer.ID,
                         "project", "member", "workitem", "workitem_activity", "workitem_comment",
                         "workitem_relation", "label", "state")
-                .hideArgument(PlaneMcpServer.ID, "workitem", "pql")
                 .allowTools(GiteaMcpServer.ID,
                         "get_me",
                         "search_repos",
@@ -72,7 +66,6 @@ public class DeliveryManagementToolProfile implements ToolProfileProvider {
                           dependency state as unknown when it cannot be verified
 
                         """ + PlaneWorkGuidance.QUERIES)
-                .maxResultTokens(maxResultTokens)
                 .build());
     }
 }

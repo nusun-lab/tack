@@ -43,9 +43,6 @@ class WorkspaceViewServiceBoundaryTest {
                 .authHeaderValueFormat("SENTINEL_AUTH_FORMAT %s")
                 .extraHeader("X-Private", "SENTINEL_EXTRA_HEADER").build())
                 .allowTool("mcp", "workitem")
-                .permitArgumentValues("mcp", "workitem", "action", "list", "retrieve")
-                .defaultArgument("mcp", "workitem", "action", "list")
-                .hideArgument("mcp", "workitem", "pql")
                 .build();
         var service = new WorkspaceViewService(new PersonaCatalog(List.of(persona)), FrameworkFixtures.routineCatalog(),
                 FrameworkFixtures.inferenceLaneRegistry(), new ToolProfileRegistry(List.of(profile)),
@@ -55,10 +52,7 @@ class WorkspaceViewServiceBoundaryTest {
         String serialized = mapper.writeValueAsString(service.view());
         var publicProfile = mapper.readTree(serialized).path("toolProfiles").get(0);
 
-        var arguments = publicProfile.at("/servers/mcp/arguments/workitem");
-        assertEquals(mapper.valueToTree(List.of("list", "retrieve")), arguments.at("/permittedValues/action"));
-        assertEquals("list", arguments.at("/defaults/action").asText());
-        assertEquals("pql", arguments.at("/hidden/0").asText());
+        assertEquals("workitem", publicProfile.at("/servers/mcp/allowedTools/0").asText());
         assertEquals("X-Private", publicProfile.at("/servers/mcp/connection/extraHeaderNames/0").asText());
         assertFalse(publicProfile.has("mcpServers"));
         assertFalse(serialized.contains("SENTINEL_"));

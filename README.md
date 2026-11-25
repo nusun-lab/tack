@@ -63,7 +63,7 @@ Tack owns:
 - Kafka request and reply routes for every inference lane;
 - model-worker routes and LLM correlation;
 - primitive execution and thought management;
-- MCP client construction and tool-result limiting;
+- MCP connections, tool discovery and execution;
 - profile-gated OpenShell sandbox execution and lifecycle;
 - workspace projection updates.
 
@@ -129,9 +129,8 @@ A `ToolProfile` defines the capabilities available during an act. Profiles can:
 - attach MCP server definitions;
 - allow or deny MCP tools;
 - allow framework-provided tools such as `sandbox_exec`;
-- add default tool arguments;
-- provide prompt guidance;
-- cap tool-result tokens.
+- authorize a tool call before dispatch;
+- provide prompt guidance.
 
 When `tack:act` omits a profile, Tack uses the built-in no-tools profile.
 
@@ -322,7 +321,6 @@ public class SourceControlToolProfile implements ToolProfileProvider {
         return List.of(ToolProfile.builder("source-control")
                 .mcpServer(repository.definition())
                 .allowTools("repository", "pull_request_read", "pull_request_write")
-                .maxResultTokens(6000)
                 .build());
     }
 }
@@ -443,7 +441,6 @@ Reply correlation is currently in memory by `jobId`, so one active orchestrator 
 | --- | --- |
 | `AGENT_MCP_TRANSPORT_TIMEOUT_MS` | `60000` |
 | `AGENT_MCP_INITIALIZATION_TIMEOUT_MS` | `30000` |
-| `AGENT_MCP_MAX_TOOL_RESULT_TOKENS` | `1000` |
 | `AGENT_MCP_LOG_TRANSPORT_REQUESTS` | `false` |
 | `AGENT_MCP_LOG_TRANSPORT_RESPONSES` | `false` |
 
@@ -562,7 +559,7 @@ Tack is presently optimized for a local or single-orchestrator deployment.
 | `framework.inference.lane` | Lane declarations, registry, configuration and effective settings |
 | `framework.inference.memory` | Transcript compaction, tool-loop guards and token counting |
 | `framework.tool` | Tool profiles, safe views and MCP server declarations |
-| `framework.tool.mcp` | MCP connections, tool discovery and dispatch, argument policy and result limits |
+| `framework.tool.mcp` | MCP connections, tool discovery, dispatch and logging |
 | `framework.sandbox` | OpenShell readiness, lifecycle, policy and execution |
 | `framework.workspace` | HTTP endpoints, workspace views, topic provisioning and reset |
 | `framework.logging` | Shared logging helpers |
@@ -609,9 +606,9 @@ Confirm the selected profile includes the server, the server URL is present, the
 
 See [OpenShell persona sandboxes](docs/openshell-sandboxes.md#troubleshooting) for sandbox creation, profile exposure, Git provider/authentication, package egress, execution timeouts, and reset/orphan cleanup.
 
-### Tool results are truncated
+### A tool response exceeds the inference budget
 
-The selected profile's `maxResultTokens` takes precedence. Otherwise Tack uses `AGENT_MCP_MAX_TOOL_RESULT_TOKENS`.
+MCP results enter inference in LangChain4j's native representation. An oversized tool response fails the pass with a budget error. Use a narrower query when the server supports one, such as a smaller page or an explicit field selection.
 
 ### Jobs from one AgentRun execute out of order
 

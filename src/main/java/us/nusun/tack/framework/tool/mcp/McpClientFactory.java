@@ -5,7 +5,6 @@ import static us.nusun.tack.framework.FrameworkText.isBlank;
 import dev.langchain4j.mcp.client.DefaultMcpClient;
 import dev.langchain4j.mcp.client.McpClient;
 import dev.langchain4j.mcp.client.transport.http.StreamableHttpMcpTransport;
-import dev.langchain4j.model.TokenCountEstimator;
 import dev.langchain4j.service.IllegalConfigurationException;
 import dev.langchain4j.service.tool.ToolProvider;
 import dev.langchain4j.service.tool.ToolProviderResult;
@@ -38,9 +37,6 @@ public class McpClientFactory {
     @ConfigProperty(name = "agent.mcp.initialization-timeout-ms", defaultValue = "30000")
     long initializationTimeoutMs = 30000;
 
-    @ConfigProperty(name = "agent.mcp.max-tool-result-tokens", defaultValue = "1000")
-    int maxToolResultTokens = 1000;
-
     @ConfigProperty(name = "agent.mcp.logging.transport-requests", defaultValue = "false")
     boolean logTransportRequests;
 
@@ -48,7 +44,6 @@ public class McpClientFactory {
     boolean logTransportResponses;
 
     @Inject LogTokens logTokens;
-    @Inject TokenCountEstimator tokenCountEstimator;
 
     private final Map<ClientCacheKey, CachedMcpConnection> connections = new LinkedHashMap<>();
     private boolean closed;
@@ -81,8 +76,7 @@ public class McpClientFactory {
                         server.id(), persona.id(), profile.id(), rootMessage(unavailable));
                 return ToolProviderResult.builder().build();
             }
-            return new McpToolPolicy(client, server.id(), profile, persona, logTokens,
-                    maxToolResultTokens, tokenCountEstimator).provider().provideTools(request);
+            return McpToolPolicy.provider(client, server.id(), profile, persona, logTokens).provideTools(request);
         };
     }
 

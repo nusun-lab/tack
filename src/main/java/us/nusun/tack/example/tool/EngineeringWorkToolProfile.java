@@ -2,7 +2,6 @@ package us.nusun.tack.example.tool;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import us.nusun.tack.framework.tool.ToolProfileProvider;
 import us.nusun.tack.framework.tool.ToolProfile;
 
@@ -13,15 +12,11 @@ public class EngineeringWorkToolProfile implements ToolProfileProvider {
     public static final String ID = "engineering-work";
 
     private final PlaneMcpServer plane;
-    private final int maxResultTokens;
 
     @Inject
     public EngineeringWorkToolProfile(
-            PlaneMcpServer plane,
-            @ConfigProperty(name = "agent.tool.profile.project-management.max-result-tokens", defaultValue = "5000")
-            int maxResultTokens) {
+            PlaneMcpServer plane) {
         this.plane = plane;
-        this.maxResultTokens = maxResultTokens;
     }
 
     @Override
@@ -30,7 +25,6 @@ public class EngineeringWorkToolProfile implements ToolProfileProvider {
                 .mcpServer(plane.definition())
                 .allowTools(PlaneMcpServer.ID,
                         "project", "member", "workitem", "workitem_activity", "workitem_comment", "label", "state")
-                .hideArgument(PlaneMcpServer.ID, "workitem", "pql")
                 .promptGuidance("""
                         - this profile updates already-created engineering work; the calling routine owns selection,
                           lifecycle policy, and completion criteria
@@ -43,7 +37,6 @@ public class EngineeringWorkToolProfile implements ToolProfileProvider {
                         - do not create work items, labels, projects, test tasks, or defects in this profile
 
                         """ + PlaneWorkGuidance.CLASSIFICATION + "\n" + PlaneWorkGuidance.QUERIES)
-                .maxResultTokens(maxResultTokens)
                 .build());
     }
 }

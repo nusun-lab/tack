@@ -111,18 +111,14 @@ public final class FrameworkFixtures {
                 ToolProfile.builder(PROFILE_ALPHA)
                         .allowTools(SERVER_ALPHA, "alpha_post", "alpha_get")
                         .promptGuidance("Read recent synthetic context before posting.")
-                        .maxResultTokens(1500)
                         .build(),
                 ToolProfile.builder(PROFILE_BETA)
                         .allowTools(SERVER_BETA, "beta_list", "beta_create")
-                        .defaultArgument(SERVER_BETA, "beta_list", "fields", "id,name,identifier")
                         .promptGuidance("Find existing synthetic work before creating new items.")
-                        .maxResultTokens(1500)
                         .build(),
                 ToolProfile.builder(PROFILE_GAMMA)
                         .allowTools(SERVER_GAMMA, "gamma_get_repository", "gamma_get_pull_request")
                         .promptGuidance("Read before writing and avoid duplicate branches or pull requests.")
-                        .maxResultTokens(1500)
                         .build());
     }
 

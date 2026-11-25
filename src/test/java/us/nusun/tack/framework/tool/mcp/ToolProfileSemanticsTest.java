@@ -1,7 +1,5 @@
 package us.nusun.tack.framework.tool.mcp;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.invocation.InvocationContext;
@@ -10,104 +8,33 @@ import dev.langchain4j.mcp.client.*;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.chat.request.json.JsonEnumSchema;
 import dev.langchain4j.service.tool.ToolExecutionResult;
+import dev.langchain4j.service.tool.ToolProvider;
+import dev.langchain4j.exception.ToolExecutionException;
 import org.junit.jupiter.api.Test;
 import us.nusun.tack.framework.tool.ToolProfileRegistry;
 import us.nusun.tack.framework.logging.LogTokens;
 import dev.langchain4j.service.tool.ToolProviderRequest;
-import dev.langchain4j.model.TokenCountEstimator;
 import us.nusun.tack.framework.tool.McpServerDefinition;
 import us.nusun.tack.framework.persona.Persona;
 import us.nusun.tack.framework.tool.ToolProfile;
 import us.nusun.tack.framework.tests.support.FrameworkFixtures;
-import us.nusun.tack.framework.tests.support.TestTokenCountEstimator;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class ToolProfileSemanticsTest {
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-    private static final TestTokenCountEstimator TOKEN_ESTIMATOR = new TestTokenCountEstimator();
+    private static final ToolProviderRequest DISCOVERY =
+            new ToolProviderRequest("test-memory", UserMessage.from("List available tools"));
 
-    private static McpToolPolicy policy(McpClient client, String server, ToolProfile profile) {
-        return policy(client, server, profile, null, null, 0, null);
+    private static ToolProvider policy(McpClient client, String server, ToolProfile profile) {
+        return McpToolPolicy.provider(client, server, profile, null, null);
     }
 
-    private static McpToolPolicy policy(McpClient client, String server, ToolProfile profile,
-                                        Persona persona, LogTokens logs, int maximum) {
-        return policy(client, server, profile, persona, logs, maximum, null);
-    }
-
-    private static McpToolPolicy policy(McpClient client, String server, ToolProfile profile,
-                                        Persona persona, LogTokens logs, int maximum, TokenCountEstimator estimator) {
-        return new McpToolPolicy(client, server, profile, persona, logs, maximum, estimator);
-    }
-
-    private static List<ToolSpecification> tools(McpToolPolicy policy) {
-        return List.copyOf(policy.provider().provideTools(new ToolProviderRequest("test-memory", UserMessage.from("List available tools"))).tools().keySet());
-    }
-
-    private static ToolExecutionResult execute(McpToolPolicy policy, ToolExecutionRequest request) {
-        return policy.provider().provideTools(new ToolProviderRequest("test-memory", UserMessage.from("List available tools")))
-                .toolExecutorByName(request.name()).executeWithContext(request, InvocationContext.builder().userMessage(UserMessage.from("List available tools")).build());
-    }
-
-    @Test
-    void permittedArgumentValuesAreAdvertisedAndEnforcedBeforeDispatch() throws Exception {
-        var profile = ToolProfile.builder("restricted")
-                .allowTool("catalog", "lookup")
-                .permitArgumentValues("catalog", "lookup", "format", "brief", "full")
-                .build();
-        var delegate = new FakeMcpClient(List.of(ToolSpecification.builder().name("lookup").build()));
-        var policy = policy(delegate, "catalog", profile);
-        var parameters = tools(policy).getFirst().parameters();
-        var format = assertInstanceOf(JsonEnumSchema.class, parameters.properties().get("format"));
-        assertEquals(List.of("brief", "full"), format.enumValues());
-        assertTrue(parameters.required().contains("format"));
-
-        for (String arguments : List.of("{\"format\":\"raw\"}", "{\"format\":null}", "{}")) {
-            var request = ToolExecutionRequest.builder().name("lookup").arguments(arguments).build();
-            assertThrows(IllegalArgumentException.class, () -> execute(policy, request));
-            assertNull(delegate.lastRequest);
-        }
-
-        execute(policy, ToolExecutionRequest.builder().name("lookup").arguments("{\"format\":\"brief\"}").build());
-        assertEquals("lookup", delegate.lastToolName());
-        assertEquals("brief", OBJECT_MAPPER.readTree(delegate.lastRequest.arguments()).get("format").asText());
-    }
-
-    @Test
-    void permittedArgumentValuesSnapshotTheMapAndEachList() {
-        var actions = new ArrayList<>(List.of("list", "retrieve"));
-        var rules = new LinkedHashMap<String, List<String>>();
-        rules.put("action", actions);
-        var arguments = new ToolProfile.Arguments(Map.of(), Set.of(), rules);
-
-        actions.add("delete");
-        rules.clear();
-
-        assertEquals(Map.of("action", List.of("list", "retrieve")), arguments.permittedValues());
-        assertThrows(UnsupportedOperationException.class, () -> arguments.permittedValues().get("action").add("update"));
-        assertThrows(UnsupportedOperationException.class, () -> arguments.permittedValues().clear());
-    }
-
-    @Test
-    void permittedValuesAreCheckedAfterApplyingProfileDefaults() throws Exception {
-        var profile = ToolProfile.builder("read")
-                .allowTool("catalog", "lookup")
-                .permitArgumentValues("catalog", "lookup", "format", "brief")
-                .defaultArgument("catalog", "lookup", "format", "brief")
-                .build();
-        var delegate = new FakeMcpClient(List.of(ToolSpecification.builder().name("lookup").build()));
-        var policy = policy(delegate, "catalog", profile);
-
-        assertFalse(tools(policy).getFirst().parameters().required().contains("format"));
-        execute(policy, ToolExecutionRequest.builder().name("lookup").arguments("{}").build());
-        assertEquals("brief", OBJECT_MAPPER.readTree(delegate.lastRequest.arguments()).get("format").asText());
+    private static List<ToolSpecification> tools(ToolProvider policy) {
+        return policy.provideTools(DISCOVERY).aiServiceTools().stream().map(tool -> tool.toolSpecification()).toList();
     }
 
     @Test
@@ -132,104 +59,90 @@ class ToolProfileSemanticsTest {
                 .build();
 
         assertEquals(2, profile.policies().size());
-        assertTrue(profile.policies().get(FrameworkFixtures.SERVER_ALPHA).declared());
-        assertTrue(profile.policies().get(FrameworkFixtures.SERVER_BETA).declared());
+        assertTrue(profile.policies().containsKey(FrameworkFixtures.SERVER_ALPHA));
+        assertTrue(profile.policies().containsKey(FrameworkFixtures.SERVER_BETA));
     }
 
     @Test
-    void configuredDefaultArgumentsAreAppliedBeforeToolExecution() throws Exception {
-        ToolProfile profile = FrameworkFixtures.toolProfileRegistry().getRequired(FrameworkFixtures.PROFILE_BETA);
-        McpToolPolicy client = policy(null, FrameworkFixtures.SERVER_BETA, profile);
-
-        ToolExecutionRequest request = ToolExecutionRequest.builder().id("1").name("beta_list").arguments("{}").build();
-
-        JsonNode arguments = OBJECT_MAPPER.readTree(client.prepareRequest(request).arguments());
-
-        assertEquals("id,name,identifier", arguments.get("fields").asText());
-    }
-
-    @Test
-    void hiddenArgumentIsRemovedFromAdvertisedToolSchema() {
-        ToolProfile profile = ToolProfile.builder("hidden-argument")
-                .server(FrameworkFixtures.SERVER_ALPHA)
-                .allowTool(FrameworkFixtures.SERVER_ALPHA, "search")
-                .hideArgument(FrameworkFixtures.SERVER_ALPHA, "search", "pql")
-                .build();
-        ToolSpecification search = ToolSpecification.builder()
-                .name("search")
-                .description("Search")
-                .parameters(JsonObjectSchema.builder()
-                        .addStringProperty("query")
-                        .addStringProperty("pql")
-                        .required("query", "pql")
-                        .build())
-                .build();
-        McpToolPolicy client = policy(
-                new FakeMcpClient(List.of(search)),
-                FrameworkFixtures.SERVER_ALPHA,
-                profile);
-
-        ToolSpecification exposed = tools(client).getFirst();
-
-        assertTrue(exposed.parameters().properties().containsKey("query"));
-        assertFalse(exposed.parameters().properties().containsKey("pql"));
-        assertEquals(List.of("query"), exposed.parameters().required());
-    }
-
-    @Test
-    void hiddenArgumentIsRejectedAtExecution() {
-        ToolProfile profile = ToolProfile.builder("hidden-argument")
-                .server(FrameworkFixtures.SERVER_ALPHA)
-                .allowTool(FrameworkFixtures.SERVER_ALPHA, "search")
-                .hideArgument(FrameworkFixtures.SERVER_ALPHA, "search", "pql")
-                .build();
-        McpToolPolicy client = policy(
-                new FakeMcpClient(List.of(ToolSpecification.builder().name("search").description("Search").build())),
-                FrameworkFixtures.SERVER_ALPHA,
-                profile);
-        ToolExecutionRequest request = ToolExecutionRequest.builder()
-                .id("1")
-                .name("search")
-                .arguments("{\"query\":\"open\",\"pql\":\"priority = high\"}")
-                .build();
-
-        IllegalArgumentException failure =
-                assertThrows(IllegalArgumentException.class, () -> client.prepareRequest(request));
-
-        assertEquals(
-                "Argument pql is hidden by profile hidden-argument for tool search",
-                failure.getMessage());
-    }
-
-    @Test
-    void compositeProfilesExposeServerQualifiedToolNamesAndExecuteOriginalNames() throws Exception {
+    void nativeSchemaAndCompletePayloadSurviveNamespacedDispatch() {
         ToolProfile profile = ToolProfile.builder("composite")
-                .mcpServer(McpServerDefinition.builder(FrameworkFixtures.SERVER_ALPHA).url("http://alpha.example/mcp").build())
-                .mcpServer(McpServerDefinition.builder(FrameworkFixtures.SERVER_BETA).url("http://beta.example/mcp").build())
-                .allowTool(FrameworkFixtures.SERVER_ALPHA, "get_me")
-                .allowTool(FrameworkFixtures.SERVER_BETA, "get_me")
-                .defaultArgument(FrameworkFixtures.SERVER_ALPHA, "get_me", "fields", "id,name")
+                .mcpServer(McpServerDefinition.builder(FrameworkFixtures.SERVER_ALPHA).build())
+                .mcpServer(McpServerDefinition.builder(FrameworkFixtures.SERVER_BETA).build())
+                .allowTool(FrameworkFixtures.SERVER_ALPHA, "search")
+                .allowTool(FrameworkFixtures.SERVER_BETA, "search")
                 .build();
-        FakeMcpClient alphaDelegate = new FakeMcpClient(List.of(ToolSpecification.builder().name("get_me").description("Current user").build()));
-        FakeMcpClient betaDelegate = new FakeMcpClient(List.of(ToolSpecification.builder().name("get_me").description("Current user").build()));
-        McpToolPolicy alpha = policy(alphaDelegate, FrameworkFixtures.SERVER_ALPHA, profile);
-        McpToolPolicy beta = policy(betaDelegate, FrameworkFixtures.SERVER_BETA, profile);
+        var schema = JsonObjectSchema.builder().description("Original request")
+                .addProperty("action", JsonEnumSchema.builder().enumValues("search", "update").build())
+                .addStringProperty("pql").required("action").additionalProperties(false).build();
+        var spec = ToolSpecification.builder().name("search").description("Original description").parameters(schema).build();
+        String payload = "{\"rows\":[\"" + "large-result".repeat(6000) + "\"],\"complete\":true}";
+        var completeResult = ToolExecutionResult.builder().resultText(payload)
+                .attributes(Map.of("cursor", "last")).build();
+        var alpha = new FakeMcpClient(completeResult, List.of(spec));
+        var beta = new FakeMcpClient(List.of(spec));
+        var exposed = policy(alpha, FrameworkFixtures.SERVER_ALPHA, profile).provideTools(DISCOVERY);
+        var advertised = exposed.toolSpecificationByName("alpha_mcp__search");
+        assertEquals(spec.toBuilder().name("alpha_mcp__search").build(), advertised);
+        assertSame(schema, advertised.parameters());
+        assertEquals(List.of("beta_mcp__search"), tools(policy(beta, FrameworkFixtures.SERVER_BETA, profile))
+                .stream().map(ToolSpecification::name).toList());
 
-        assertEquals(List.of("alpha_mcp__get_me"), tools(alpha).stream().map(ToolSpecification::name).toList());
-        assertEquals(List.of("beta_mcp__get_me"), tools(beta).stream().map(ToolSpecification::name).toList());
+        var request = ToolExecutionRequest.builder().id("call-1").name(advertised.name())
+                .arguments(" { \"action\": \"search\", \"pql\": \"priority = high\", \"extra\": null } ").build();
+        var context = InvocationContext.builder().chatMemoryId("run-1").build();
+        var result = exposed.toolExecutorByName(advertised.name()).executeWithContext(request, context);
 
-        ToolExecutionRequest exposedRequest = ToolExecutionRequest.builder()
-                .id("1")
-                .name("alpha_mcp__get_me")
-                .arguments("{}")
-                .build();
-        ToolExecutionRequest delegateRequest = alpha.prepareRequest(exposedRequest);
+        assertEquals(request.toBuilder().name(spec.name()).build(), alpha.lastRequest);
+        assertSame(context, alpha.lastContext);
+        assertSame(completeResult, result);
+        assertEquals(payload, result.resultText());
+        assertNull(beta.lastRequest);
+    }
 
-        assertEquals("get_me", delegateRequest.name());
-        assertEquals("id,name", OBJECT_MAPPER.readTree(delegateRequest.arguments()).get("fields").asText());
+    @Test
+    void executionCheckRejectsBeforeDispatchAndKeepsSuccessfulArgumentsUnchanged() {
+        var spec = ToolSpecification.builder().name("lookup").build();
+        var client = new FakeMcpClient(List.of(spec));
+        var profile = ToolProfile.builder("restricted")
+                .mcpServer(McpServerDefinition.builder("catalog").build())
+                .allowTool("catalog", "lookup")
+                .denyTool("catalog", "delete")
+                .authorizeMcpExecution("catalog", (tool, raw) -> {
+                    assertEquals("lookup", tool);
+                    if (!"read only".equals(raw)) {
+                        throw new IllegalArgumentException("Read access only");
+                    }
+                }).build();
+        var exposed = policy(client, "catalog", profile).provideTools(DISCOVERY);
+        var executor = exposed.toolExecutorByName("lookup");
+        var request = ToolExecutionRequest.builder().name("lookup").arguments("write").build();
 
-        execute(alpha, exposedRequest);
-        assertEquals("get_me", alphaDelegate.lastToolName());
+        assertThrows(IllegalArgumentException.class, () -> executor.execute(request, "memory"));
+        assertThrows(IllegalArgumentException.class, () -> executor.execute(request.toBuilder().name("delete").build(), "memory"));
+        assertNull(client.lastRequest);
+        var read = request.toBuilder().arguments("read only").build();
+        executor.execute(read, "memory");
+        assertEquals(read, client.lastRequest);
+    }
+
+    @Test
+    void serverErrorPayloadAndExceptionsKeepTheirSemantics() {
+        var profile = ToolProfile.builder("limited").allowTool("catalog", "lookup").build();
+        var spec = ToolSpecification.builder().name("lookup").build();
+        var error = ToolExecutionResult.builder().isError(true).resultText("error-detail".repeat(5000)).build();
+        var client = new FakeMcpClient(error, List.of(spec));
+        var logs = new CapturingLogTokens();
+        var persona = FrameworkFixtures.personaCatalog().getRequired(FrameworkFixtures.PERSONA_A);
+        var executor = McpToolPolicy.provider(client, "catalog", profile, persona, logs)
+                .provideTools(DISCOVERY).toolExecutorByName("lookup");
+        var request = ToolExecutionRequest.builder().name("lookup").arguments("{}").build();
+        var context = InvocationContext.builder().chatMemoryId("test").build();
+
+        assertSame(error, executor.executeWithContext(request, context));
+        assertTrue(logs.messages.stream().anyMatch(message -> message.contains("RESPONSE isError=true")));
+        var failure = new ToolExecutionException("MCP protocol error");
+        client.failure = failure;
+        assertSame(failure, assertThrows(ToolExecutionException.class, () -> executor.executeWithContext(request, context)));
     }
 
     @Test
@@ -238,40 +151,12 @@ class ToolProfileSemanticsTest {
                 .mcpServer(McpServerDefinition.builder(FrameworkFixtures.SERVER_ALPHA).url("http://alpha.example/mcp").build())
                 .allowTool(FrameworkFixtures.SERVER_ALPHA, "get_me")
                 .build();
-        McpToolPolicy client = policy(
+        ToolProvider client = policy(
                 new FakeMcpClient(List.of(ToolSpecification.builder().name("get_me").description("Current user").build())),
                 FrameworkFixtures.SERVER_ALPHA,
                 profile);
 
         assertEquals(List.of("get_me"), tools(client).stream().map(ToolSpecification::name).toList());
-    }
-
-    @Test
-    void jsonDefaultArgumentsSupportScalarsAndArrays() throws Exception {
-        var callerOwned = OBJECT_MAPPER.createArrayNode().add("first");
-        var builder = ToolProfile.builder("json-defaults")
-                .server(FrameworkFixtures.SERVER_ALPHA)
-                .defaultArgument(FrameworkFixtures.SERVER_ALPHA, "alpha_search", "includeClosed", true)
-                .defaultArgument(FrameworkFixtures.SERVER_ALPHA, "alpha_search", "limit", 5)
-                .defaultArgument(FrameworkFixtures.SERVER_ALPHA, "alpha_search", "query", "parking")
-                .defaultArgument(FrameworkFixtures.SERVER_ALPHA, "alpha_search", "literal", "[]")
-                .defaultArgument(FrameworkFixtures.SERVER_ALPHA, "alpha_search", "optional", null)
-                .defaultArgument(FrameworkFixtures.SERVER_ALPHA, "alpha_search", "selection", callerOwned)
-                .defaultArgumentJson(FrameworkFixtures.SERVER_ALPHA, "alpha_search", "states", "[\"open\",\"started\"]");
-        callerOwned.add("added later");
-        ToolProfile profile = builder.build();
-        McpToolPolicy client = policy(null, FrameworkFixtures.SERVER_ALPHA, profile);
-
-        ToolExecutionRequest request = ToolExecutionRequest.builder().id("1").name("alpha_search").arguments("{}").build();
-
-        JsonNode arguments = OBJECT_MAPPER.readTree(client.prepareRequest(request).arguments());
-        assertTrue(arguments.get("includeClosed").asBoolean());
-        assertEquals(5, arguments.get("limit").asInt());
-        assertEquals("parking", arguments.get("query").asText());
-        assertEquals("[]", arguments.get("literal").textValue());
-        assertTrue(arguments.get("optional").isNull());
-        assertEquals(1, arguments.get("selection").size());
-        assertEquals("open", arguments.get("states").get(0).asText());
     }
 
     @Test
@@ -283,23 +168,10 @@ class ToolProfileSemanticsTest {
                 .mcpServer(McpServerDefinition.builder(FrameworkFixtures.SERVER_GAMMA).url("http://gamma.example/mcp").build())
                 .build();
 
-        assertTrue(logicalOnly.policies().get(FrameworkFixtures.SERVER_GAMMA).declared());
+        assertTrue(logicalOnly.policies().containsKey(FrameworkFixtures.SERVER_GAMMA));
         assertNull(logicalOnly.policies().get(FrameworkFixtures.SERVER_GAMMA).connection());
-        assertTrue(buildable.policies().get(FrameworkFixtures.SERVER_GAMMA).declared());
+        assertTrue(buildable.policies().containsKey(FrameworkFixtures.SERVER_GAMMA));
         assertEquals("http://gamma.example/mcp", buildable.policies().get(FrameworkFixtures.SERVER_GAMMA).connection().url());
-    }
-
-    @Test
-    void profileDefaultsDoNotOverrideCallerProvidedArguments() throws Exception {
-        ToolProfile profile = FrameworkFixtures.toolProfileRegistry().getRequired(FrameworkFixtures.PROFILE_BETA);
-        McpToolPolicy client = policy(null, FrameworkFixtures.SERVER_BETA, profile);
-
-        ToolExecutionRequest request = ToolExecutionRequest.builder().id("1").name("beta_list").arguments("{\"fields\":\"id,name\",\"limit\":5}").build();
-
-        JsonNode arguments = OBJECT_MAPPER.readTree(client.prepareRequest(request).arguments());
-
-        assertEquals("id,name", arguments.get("fields").asText());
-        assertEquals(5, arguments.get("limit").asInt());
     }
 
     @Test
@@ -321,7 +193,7 @@ class ToolProfileSemanticsTest {
                 .server(FrameworkFixtures.SERVER_GAMMA)
                 .allowTool(FrameworkFixtures.SERVER_GAMMA, "gamma_get_pull_request")
                 .build();
-        McpToolPolicy client = policy(new FakeMcpClient(), FrameworkFixtures.SERVER_GAMMA, profile);
+        ToolProvider client = policy(new FakeMcpClient(), FrameworkFixtures.SERVER_GAMMA, profile);
 
         assertEquals(List.of("gamma_get_pull_request"), tools(client).stream().map(ToolSpecification::name).toList());
     }
@@ -332,7 +204,7 @@ class ToolProfileSemanticsTest {
                 .server(FrameworkFixtures.SERVER_GAMMA)
                 .denyTool(FrameworkFixtures.SERVER_GAMMA, "delete_repository")
                 .build();
-        McpToolPolicy client = policy(new FakeMcpClient(), FrameworkFixtures.SERVER_GAMMA, profile);
+        ToolProvider client = policy(new FakeMcpClient(), FrameworkFixtures.SERVER_GAMMA, profile);
 
         assertEquals(List.of("alpha_read", "alpha_write", "alpha_delete", "beta_read", "gamma_get_pull_request"), tools(client).stream().map(ToolSpecification::name).toList());
         assertTrue(profile.allowsTool(FrameworkFixtures.SERVER_GAMMA, "gamma_get_pull_request"));
@@ -356,39 +228,10 @@ class ToolProfileSemanticsTest {
         ToolProfile profile = ToolProfile.builder("other-server")
                 .server(FrameworkFixtures.SERVER_BETA)
                 .build();
-        McpToolPolicy client = policy(new FakeMcpClient(), FrameworkFixtures.SERVER_ALPHA, profile);
+        ToolProvider client = policy(new FakeMcpClient(), FrameworkFixtures.SERVER_ALPHA, profile);
 
         assertTrue(tools(client).isEmpty());
         assertFalse(profile.allowsTool(FrameworkFixtures.SERVER_ALPHA, "alpha_read"));
-    }
-
-    @Test
-    void profileRejectsToolsOutsideTheDeclaredToolSurface() {
-        ToolProfile profile = ToolProfile.builder("safe-default")
-                .server(FrameworkFixtures.SERVER_GAMMA)
-                .denyTool(FrameworkFixtures.SERVER_GAMMA, "delete_repository")
-                .build();
-        McpToolPolicy client = policy(new FakeMcpClient(), FrameworkFixtures.SERVER_GAMMA, profile);
-        ToolExecutionRequest request = ToolExecutionRequest.builder().id("1").name("delete_repository").arguments("{}").build();
-
-        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class, () -> client.prepareRequest(request));
-
-        assertEquals("Tool delete_repository is not allowed by profile safe-default", failure.getMessage());
-    }
-
-    @Test
-    void defaultArgumentsRemainScopedByServerAndTool() {
-        ToolProfile profile = ToolProfile.builder("scoped-defaults")
-                .server(FrameworkFixtures.SERVER_ALPHA)
-                .server(FrameworkFixtures.SERVER_BETA)
-                .defaultArgument(FrameworkFixtures.SERVER_ALPHA, "search", "query", "alpha")
-                .defaultArgument(FrameworkFixtures.SERVER_BETA, "search", "query", "beta")
-                .defaultArgument(FrameworkFixtures.SERVER_BETA, "list", "limit", 5)
-                .build();
-
-        assertEquals("alpha", profile.arguments(FrameworkFixtures.SERVER_ALPHA, "search").defaults().get("query").asText());
-        assertEquals("beta", profile.arguments(FrameworkFixtures.SERVER_BETA, "search").defaults().get("query").asText());
-        assertTrue(profile.arguments(FrameworkFixtures.SERVER_ALPHA, "list").defaults().isEmpty());
     }
 
     @Test
@@ -414,92 +257,13 @@ class ToolProfileSemanticsTest {
     }
 
     @Test
-    void toolResultsAreLimitedByActiveProfile() {
-        ToolProfile profile = ToolProfile.builder("tiny")
-                .server(FrameworkFixtures.SERVER_GAMMA)
-                .allowTool(FrameworkFixtures.SERVER_GAMMA, "gamma_get_pull_request")
-                .maxResultTokens(10)
-                .build();
-        McpToolPolicy client = policy(new FakeMcpClient("x".repeat(100)), FrameworkFixtures.SERVER_GAMMA, profile, null, null, 0, TOKEN_ESTIMATOR);
-
-        ToolExecutionResult result = execute(client, ToolExecutionRequest.builder().id("1").name("gamma_get_pull_request").arguments("{}").build());
-
-        assertTrue(TOKEN_ESTIMATOR.estimateTokenCountInText(result.resultText()) <= 10);
-        assertTrue(result.resultText().contains("...(truncated, original 25 tokens)"));
-    }
-
-    @Test
-    void globalLimitAppliesWhenProfileDoesNotOverrideIt() {
-        ToolProfile profile = ToolProfile.builder("global-limited")
-                .server(FrameworkFixtures.SERVER_GAMMA)
-                .allowTool(FrameworkFixtures.SERVER_GAMMA, "gamma_get_pull_request")
-                .build();
-        McpToolPolicy client = policy(new FakeMcpClient("x".repeat(100)), FrameworkFixtures.SERVER_GAMMA, profile, null, null, 10, TOKEN_ESTIMATOR);
-
-        ToolExecutionResult result = execute(client, ToolExecutionRequest.builder().id("1").name("gamma_get_pull_request").arguments("{}").build());
-
-        assertTrue(TOKEN_ESTIMATOR.estimateTokenCountInText(result.resultText()) <= 10);
-        assertTrue(result.resultText().contains("...(truncated, original 25 tokens)"));
-    }
-
-    @Test
-    void profileSpecificLimitOverridesGlobalDefault() {
-        String longResult = "x".repeat(1500);
-        ToolProfile profile = ToolProfile.builder("large")
-                .server(FrameworkFixtures.SERVER_GAMMA)
-                .allowTool(FrameworkFixtures.SERVER_GAMMA, "gamma_get_pull_request")
-                .maxResultTokens(5000)
-                .build();
-        McpToolPolicy client = policy(new FakeMcpClient(longResult), FrameworkFixtures.SERVER_GAMMA, profile, null, null, 100, TOKEN_ESTIMATOR);
-
-        ToolExecutionResult result = execute(client, ToolExecutionRequest.builder().id("1").name("gamma_get_pull_request").arguments("{}").build());
-
-        assertEquals(longResult, result.resultText());
-    }
-
-    @Test
-    void disabledGlobalLimitAllowsUnlimitedResultsWhenProfileDoesNotSetLimit() {
-        String longResult = "x".repeat(1500);
-        ToolProfile profile = ToolProfile.builder("unlimited")
-                .server(FrameworkFixtures.SERVER_GAMMA)
-                .allowTool(FrameworkFixtures.SERVER_GAMMA, "gamma_get_pull_request")
-                .build();
-        McpToolPolicy client = policy(new FakeMcpClient(longResult), FrameworkFixtures.SERVER_GAMMA, profile, null, null, 0);
-
-        ToolExecutionResult result = execute(client, ToolExecutionRequest.builder().id("1").name("gamma_get_pull_request").arguments("{}").build());
-
-        assertEquals(longResult, result.resultText());
-    }
-
-    @Test
-    void dimmedToolResponseLogUsesLimitedResultText() {
-        String hugeResult = "x".repeat(100);
-        ToolProfile profile = ToolProfile.builder("logged")
-                .server(FrameworkFixtures.SERVER_GAMMA)
-                .allowTool(FrameworkFixtures.SERVER_GAMMA, "gamma_get_pull_request")
-                .build();
-        CapturingLogTokens logs = new CapturingLogTokens();
-        Persona persona = FrameworkFixtures.personaCatalog().getRequired(FrameworkFixtures.PERSONA_A);
-        McpToolPolicy client = policy(new FakeMcpClient(hugeResult), FrameworkFixtures.SERVER_GAMMA, profile, persona, logs, 10, TOKEN_ESTIMATOR);
-
-        ToolExecutionResult result = execute(client, ToolExecutionRequest.builder().id("1").name("gamma_get_pull_request").arguments("{}").build());
-
-        assertTrue(TOKEN_ESTIMATOR.estimateTokenCountInText(result.resultText()) <= 10);
-        assertTrue(result.resultText().contains("...(truncated, original 25 tokens)"));
-        assertTrue(logs.messages.stream().anyMatch(message -> message.contains("RESPONSE")));
-        assertFalse(String.join("\n", logs.messages).contains(hugeResult));
-        assertTrue(String.join("\n", logs.messages).contains("...(truncated"));
-    }
-
-    @Test
     void genericToolProfilesDeclareToolSurfaceWithoutScenarioSpecificProfiles() {
         ToolProfile profile = FrameworkFixtures.toolProfileRegistry().getRequired(FrameworkFixtures.PROFILE_BETA);
 
-        assertTrue(profile.policies().get(FrameworkFixtures.SERVER_BETA).declared());
+        assertTrue(profile.policies().containsKey(FrameworkFixtures.SERVER_BETA));
         assertTrue(profile.allowsTool(FrameworkFixtures.SERVER_BETA, "beta_list"));
         assertTrue(profile.allowsTool(FrameworkFixtures.SERVER_BETA, "beta_create"));
         assertFalse(profile.allowsTool(FrameworkFixtures.SERVER_BETA, "beta_delete"));
-        assertEquals("id,name,identifier", profile.arguments(FrameworkFixtures.SERVER_BETA, "beta_list").defaults().get("fields").asText());
     }
 
     @Test
@@ -522,36 +286,39 @@ class ToolProfileSemanticsTest {
     }
 
     static class FakeMcpClient implements McpClient {
-        private final String resultText;
+        private final ToolExecutionResult result;
         private final List<ToolSpecification> tools;
         private ToolExecutionRequest lastRequest;
+        private InvocationContext lastContext;
+        private RuntimeException failure;
 
         FakeMcpClient() {
-            this("abcdefghijklmnopqrstuvwxyz0123456789");
-        }
-
-        FakeMcpClient(String resultText) {
-            this(resultText, defaultTools());
+            this(defaultTools());
         }
 
         FakeMcpClient(List<ToolSpecification> tools) {
-            this("abcdefghijklmnopqrstuvwxyz0123456789", tools);
+            this(ToolExecutionResult.builder().resultText("ok").build(), tools);
         }
 
-        FakeMcpClient(String resultText, List<ToolSpecification> tools) {
-            this.resultText = resultText;
+        FakeMcpClient(ToolExecutionResult result, List<ToolSpecification> tools) {
+            this.result = result;
             this.tools = tools;
-        }
-
-        String lastToolName() {
-            return lastRequest == null ? null : lastRequest.name();
         }
 
         @Override public String key() { return "fake"; }
         @Override public List<ToolSpecification> listTools() { return tools; }
-        @Override public List<ToolSpecification> listTools(InvocationContext invocationContext) { return listTools(); }
-        @Override public ToolExecutionResult executeTool(ToolExecutionRequest executionRequest) { this.lastRequest = executionRequest; return ToolExecutionResult.builder().isError(false).resultText(resultText).build(); }
-        @Override public ToolExecutionResult executeTool(ToolExecutionRequest executionRequest, InvocationContext invocationContext) { return executeTool(executionRequest); }
+        @Override public List<ToolSpecification> listTools(InvocationContext context) { return listTools(); }
+        @Override public ToolExecutionResult executeTool(ToolExecutionRequest request) { return executeTool(request, null); }
+
+        @Override
+        public ToolExecutionResult executeTool(ToolExecutionRequest request, InvocationContext context) {
+            lastRequest = request;
+            lastContext = context;
+            if (failure != null) {
+                throw failure;
+            }
+            return result;
+        }
 
         private static List<ToolSpecification> defaultTools() {
             return List.of(

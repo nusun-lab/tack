@@ -2,7 +2,6 @@ package us.nusun.tack.example.tool;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import us.nusun.tack.framework.tool.ToolProfileProvider;
 import us.nusun.tack.framework.tool.ToolProfile;
 
@@ -15,15 +14,11 @@ public class ArchitectSourceControlWriteToolProfile implements ToolProfileProvid
     public static final String SANDBOX_EXEC = "sandbox_exec";
 
     private final GiteaMcpServer gitea;
-    private final int maxResultTokens;
 
     @Inject
     public ArchitectSourceControlWriteToolProfile(
-            GiteaMcpServer gitea,
-            @ConfigProperty(name = "agent.tool.profile.source-control.max-result-tokens", defaultValue = "6000")
-            int maxResultTokens) {
+            GiteaMcpServer gitea) {
         this.gitea = gitea;
-        this.maxResultTokens = maxResultTokens;
     }
 
     @Override
@@ -61,7 +56,6 @@ public class ArchitectSourceControlWriteToolProfile implements ToolProfileProvid
                         - validate directly in the sandbox; Gitea Actions/CI are not enabled
                         - never claim repository/source mutations or validation without direct evidence
                         """)
-                .maxResultTokens(maxResultTokens)
                 .build());
     }
 }

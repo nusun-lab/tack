@@ -30,6 +30,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ForcedToolChoiceTest {
@@ -55,6 +56,21 @@ class ForcedToolChoiceTest {
         assertEquals(ToolChoice.REQUIRED, model.requests.get(0).toolChoice());
         assertEquals(ToolChoice.AUTO, model.requests.get(1).toolChoice());
         assertTrue(model.requests.get(1).messages().stream().anyMatch(ToolExecutionResultMessage.class::isInstance));
+    }
+
+    @Test
+    void oversizedToolResponseFailsBeforeAnotherModelRequest() {
+        var model = new RecordingChatModel(true);
+        var agent = factory("low-pass", model).createAgent(exchange("low-pass", LlmPassType.ACTION));
+        var spec = ToolSpecification.builder().name("probe_tool").build();
+        ToolProvider tool = request -> ToolProviderResult.builder()
+                .add(spec, (call, memoryId) -> "oversized payload ".repeat(10_000)).build();
+
+        var failure = assertThrows(IllegalStateException.class,
+                () -> agent.chat(new AiAgentBody<>("Inspect state.", "You are a tester.", "large-result"), tool));
+
+        assertTrue(failure.getMessage().contains("exceeding the available inference budget"));
+        assertEquals(1, model.requests.size());
     }
 
     @Test

@@ -2,7 +2,6 @@ package us.nusun.tack.example.tool;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import us.nusun.tack.framework.tool.ToolProfileProvider;
 import us.nusun.tack.framework.tool.ToolProfile;
 
@@ -13,15 +12,11 @@ public class QualitySourceControlWriteToolProfile implements ToolProfileProvider
     public static final String ID = "quality-source-control-write";
 
     private final GiteaMcpServer gitea;
-    private final int maxResultTokens;
 
     @Inject
     public QualitySourceControlWriteToolProfile(
-            GiteaMcpServer gitea,
-            @ConfigProperty(name = "agent.tool.profile.source-control.max-result-tokens", defaultValue = "6000")
-            int maxResultTokens) {
+            GiteaMcpServer gitea) {
         this.gitea = gitea;
-        this.maxResultTokens = maxResultTokens;
     }
 
     @Override
@@ -43,7 +38,6 @@ public class QualitySourceControlWriteToolProfile implements ToolProfileProvider
                         - validate directly in the sandbox; Gitea Actions/CI are not enabled
                         - never claim source changes, validation, commits, or pushes without direct evidence
                         """)
-                .maxResultTokens(maxResultTokens)
                 .build());
     }
 }

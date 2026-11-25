@@ -23,14 +23,6 @@ Endpoint variables:
 - `PLANE_MCP_URL`
 - `PLANE_WORKSPACE_SLUG`
 
-Profile result budgets:
-
-- `AGENT_TOOL_PROFILE_WORKSPACE_READONLY_MAX_RESULT_TOKENS` default `4000`
-- `AGENT_TOOL_PROFILE_WORKSPACE_COORDINATION_MAX_RESULT_TOKENS` default `5000`
-- `AGENT_TOOL_PROFILE_TEAM_CHAT_MAX_RESULT_TOKENS` default `3000`
-- `AGENT_TOOL_PROFILE_SOURCE_CONTROL_MAX_RESULT_TOKENS` default `60000`
-- `AGENT_TOOL_PROFILE_PROJECT_MANAGEMENT_MAX_RESULT_TOKENS` default `50000`
-
 The example server definitions use streamable HTTP. Auth formats are fixed in code:
 
 - Mattermost: `Authorization: Bearer <token>`

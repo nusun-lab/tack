@@ -2,7 +2,6 @@ package us.nusun.tack.example.tool;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import us.nusun.tack.framework.tool.ToolProfileProvider;
 import us.nusun.tack.framework.tool.ToolProfile;
 
@@ -15,18 +14,15 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
     private final PlaneMcpServer plane;
     private final GiteaMcpServer gitea;
     private final MattermostMcpServer mattermost;
-    private final int maxResultTokens;
 
     @Inject
     public WorkspaceReadonlyToolProfile(
             PlaneMcpServer plane,
             GiteaMcpServer gitea,
-            MattermostMcpServer mattermost,
-            @ConfigProperty(name = "agent.tool.profile.workspace-readonly.max-result-tokens", defaultValue = "4000") int maxResultTokens) {
+            MattermostMcpServer mattermost) {
         this.plane = plane;
         this.gitea = gitea;
         this.mattermost = mattermost;
-        this.maxResultTokens = maxResultTokens;
     }
 
     @Override
@@ -37,14 +33,7 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                 .mcpServer(mattermost.definition())
                 .allowTools(PlaneMcpServer.ID,
                         "project", "member", "workitem", "workitem_activity", "workitem_comment", "label", "state")
-                .hideArgument(PlaneMcpServer.ID, "workitem", "pql")
-                .permitArgumentValues(PlaneMcpServer.ID, "project", "action", "list", "retrieve")
-                .permitArgumentValues(PlaneMcpServer.ID, "member", "action", "me", "list_workspace", "list_project")
-                .permitArgumentValues(PlaneMcpServer.ID, "workitem", "action", "list", "retrieve", "retrieve_by_identifier", "search")
-                .permitArgumentValues(PlaneMcpServer.ID, "workitem_activity", "action", "list")
-                .permitArgumentValues(PlaneMcpServer.ID, "workitem_comment", "action", "list", "retrieve")
-                .permitArgumentValues(PlaneMcpServer.ID, "label", "action", "list")
-                .permitArgumentValues(PlaneMcpServer.ID, "state", "action", "list")
+                .authorizeMcpExecution(PlaneMcpServer.ID, plane::requireReadAction)
                 .allowTools(GiteaMcpServer.ID,
                         "get_me",
                         "search_repos",
@@ -70,7 +59,7 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                         "get_user_by_username",
                         "search_users")
                 .promptGuidance("""
-                        - Plane access is read-only; select an explicit action from the tool schema
+                        - Plane access is read-only; specify an explicit read action
                         - the calling routine determines which observations matter and what policy to apply to them
                         - use only artifacts that can be verified as belonging to the current mission; unrelated resources
                           are not evidence
@@ -105,7 +94,6 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                         - do not repeat an equivalent failed call without new evidence
                         - distinguish verified observations from assumptions
                         """)
-                .maxResultTokens(maxResultTokens)
                 .build());
     }
 }
