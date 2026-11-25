@@ -17,18 +17,8 @@ public class MissionRoute extends RouteBuilder {
         from("direct:start-mission")
                 .routeId("start-mission")
                 .validate(body().isInstanceOf(MissionRequest.class))
-                .bean(admissions, "prepareMission")
-                .setProperty("missionAdmissionPlan", body())
-                .setProperty("mission", simple("${body.mission}"))
-                .bean(admissions, "commitMission")
-                .setProperty("agentRunHandles", method(admissions, "handles"))
-                .split(body())
-                    .setBody(simple("${body.event}"))
-                    .to("direct:publish-agent-run-scheduled")
-                .end()
-                .bean(admissions, "acceptedMissionResponse")
-                .removeProperty("missionAdmissionPlan")
-                .removeProperty("agentRunHandles");
+                .bean(admissions, "admitMission")
+                .to("direct:publish-accepted-agent-runs")
+                .bean(admissions, "acceptedMissionResponse");
     }
-
 }

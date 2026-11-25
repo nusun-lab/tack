@@ -8,10 +8,8 @@ import org.apache.camel.ExchangeProperty;
 import org.apache.camel.Header;
 import us.nusun.tack.framework.inventory.PersonaCatalog;
 import us.nusun.tack.framework.inventory.RoutineCatalog;
-import us.nusun.tack.framework.model.AgentRunAdmission;
 import us.nusun.tack.framework.model.AgentRunHandle;
 import us.nusun.tack.framework.model.AgentRunRequest;
-import us.nusun.tack.framework.model.AgentRunScheduled;
 import us.nusun.tack.framework.model.Mission;
 import us.nusun.tack.framework.model.MissionRequest;
 import us.nusun.tack.framework.projection.AgentRunProjectionManager;
@@ -20,7 +18,6 @@ import us.nusun.tack.framework.state.AgentRun;
 import us.nusun.tack.framework.state.AgentRunStore;
 
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -35,15 +32,7 @@ public class AgentRunAdmissionService {
     @Inject AgentRunStore agentRuns;
     @Inject PersonaSandboxManager sandboxes;
 
-    public AgentRunAdmission admit(
-            @Body AgentRunRequest request,
-            @ExchangeProperty("mission") Mission mission,
-            @ExchangeProperty("agentRun") AgentRun parent,
-            Exchange exchange) {
-        return admitAll(List.of(request), mission, parent, exchange).getFirst();
-    }
-
-    public List<AgentRunAdmission> admitAll(
+    public List<AgentRunHandle> admitAll(
             @Body List<AgentRunRequest> requests,
             @ExchangeProperty("mission") Mission mission,
             @ExchangeProperty("agentRun") AgentRun parent,
@@ -51,21 +40,11 @@ public class AgentRunAdmissionService {
         if (mission == null) {
             throw new IllegalArgumentException("AgentRun admission requires mission exchange property");
         }
-        if (requests == null) {
-            throw new IllegalArgumentException("AgentRun admission requires AgentRunRequest list");
-        }
-        if (requests.isEmpty()) {
-            agentRuns.putMission(mission);
-            return List.of();
-        }
-
-        List<PreparedAgentRun> prepared = requests.stream()
-                .map(request -> prepareAgentRun(mission, parent, request))
-                .toList();
-        return commitPrepared(mission, prepared, capacityMaximum(exchange));
+        return admit(mission, parent, requests, capacityMaximum(exchange));
     }
 
-    public MissionAdmissionPlan prepareMission(@Body MissionRequest request, @Header("requestId") String requestedId) {
+    public List<AgentRunHandle> admitMission(@Body MissionRequest request, @Header("requestId") String requestedId,
+                                             Exchange exchange) {
         if (request == null) {
             throw new IllegalArgumentException("Mission request is required");
         }
@@ -82,23 +61,35 @@ public class AgentRunAdmissionService {
                 List.of(),
                 "active",
                 Instant.now());
-        List<PreparedAgentRun> prepared = request.agentRuns().stream()
-                .map(agentRunRequest -> prepareAgentRun(mission, null, agentRunRequest))
-                .toList();
-        return new MissionAdmissionPlan(mission, prepared);
+        List<AgentRunHandle> handles = admit(mission, null, request.agentRuns(), capacityMaximum(exchange));
+        exchange.setProperty("mission", mission);
+        return handles;
     }
 
-    public List<AgentRunAdmission> commitMission(@Body MissionAdmissionPlan plan, Exchange exchange) {
-        if (plan == null) {
-            throw new IllegalArgumentException("Mission admission plan is required");
+    private List<AgentRunHandle> admit(Mission mission, AgentRun parent, List<AgentRunRequest> requests, Integer maximum) {
+        if (requests == null) {
+            throw new IllegalArgumentException("AgentRun admission requires AgentRunRequest list");
         }
-        return commitPrepared(plan.mission(), plan.agentRuns(), capacityMaximum(exchange));
+        List<AgentRun> runs = requests.stream().map(request -> prepareRun(mission, parent, request)).toList();
+
+        synchronized (agentRuns) {
+            validateCapacity(mission, runs.size(), maximum);
+            if (sandboxes != null) {
+                for (AgentRun run : runs) {
+                    sandboxes.ensureReady(mission, personas.getRequired(run.personaId()), run);
+                }
+            }
+            agentRuns.putMission(mission);
+            for (AgentRun run : runs) {
+                run.status(AgentRun.STATUS_ACCEPTED);
+                agentRuns.putRun(run);
+                projections.recordAccepted(mission, run);
+            }
+            return runs.stream().map(AgentRunAdmissionService::acceptedHandle).toList();
+        }
     }
 
-    private PreparedAgentRun prepareAgentRun(Mission mission, AgentRun parent, AgentRunRequest request) {
-        if (mission == null) {
-            throw new IllegalArgumentException("AgentRun preparation requires mission");
-        }
+    private AgentRun prepareRun(Mission mission, AgentRun parent, AgentRunRequest request) {
         if (request == null) {
             throw new IllegalArgumentException("AgentRun request is required");
         }
@@ -109,7 +100,7 @@ public class AgentRunAdmissionService {
             routine.requireSubroutine(request.subroutineId());
         }
 
-        AgentRun run = new AgentRun(
+        return new AgentRun(
                 "run-" + UUID.randomUUID(),
                 mission.id(),
                 parent == null ? null : parent.id(),
@@ -117,35 +108,10 @@ public class AgentRunAdmissionService {
                 request.routineId(),
                 request.subroutineId(),
                 request.workingState());
-        run.status(AgentRun.STATUS_ACCEPTED);
-
-        return new PreparedAgentRun(
-                run,
-                handle(run, AgentRun.STATUS_ACCEPTED),
-                new AgentRunScheduled(run.missionId(), run.id()));
     }
 
-    private List<AgentRunAdmission> commitPrepared(Mission mission, List<PreparedAgentRun> preparedRuns, Integer capacityMaximum) {
-        List<AgentRunAdmission> admissions = new ArrayList<>();
-        synchronized (agentRuns) {
-            validateCapacity(mission, preparedRuns, capacityMaximum);
-            if (sandboxes != null) {
-                for (PreparedAgentRun prepared : preparedRuns) {
-                    sandboxes.ensureReady(mission, personas.getRequired(prepared.run().personaId()), prepared.run());
-                }
-            }
-            agentRuns.putMission(mission);
-            for (PreparedAgentRun prepared : preparedRuns) {
-                agentRuns.putRun(prepared.run());
-                projections.recordAccepted(mission, prepared.run());
-                admissions.add(new AgentRunAdmission(prepared.handle(), prepared.event()));
-            }
-        }
-        return List.copyOf(admissions);
-    }
-
-    private void validateCapacity(Mission mission, List<PreparedAgentRun> preparedRuns, Integer maximum) {
-        if (maximum == null || preparedRuns == null || preparedRuns.isEmpty()) {
+    private void validateCapacity(Mission mission, int requested, Integer maximum) {
+        if (maximum == null || requested == 0) {
             return;
         }
         if (maximum < 0) {
@@ -153,9 +119,9 @@ public class AgentRunAdmissionService {
         }
         int active = agentRuns.activeRunCount(mission.id());
         int remaining = Math.max(0, maximum - active);
-        if (preparedRuns.size() > remaining) {
+        if (requested > remaining) {
             throw new IllegalStateException("Mission " + mission.id() + " active run capacity exceeded: maximum "
-                    + maximum + ", active " + active + ", requested " + preparedRuns.size());
+                    + maximum + ", active " + active + ", requested " + requested);
         }
     }
 
@@ -180,60 +146,13 @@ public class AgentRunAdmissionService {
         return Integer.parseInt(text.trim());
     }
 
-    public List<AgentRunHandle> handles(@Body List<AgentRunAdmission> admissions) {
-        if (admissions == null || admissions.isEmpty()) {
-            return List.of();
-        }
-        return admissions.stream().map(AgentRunAdmission::handle).toList();
+    public Map<String, Object> acceptedMissionResponse(@ExchangeProperty("mission") Mission mission,
+                                                       @Body List<AgentRunHandle> handles) {
+        return Map.of("missionId", mission.id(), "status", "accepted", "agentRuns", handles);
     }
 
-    public Map<String, Object> acceptedMissionResponse(
-            @ExchangeProperty("missionAdmissionPlan") MissionAdmissionPlan plan,
-            @ExchangeProperty("agentRunHandles") List<AgentRunHandle> handles) {
-        return Map.of(
-                "missionId", plan.mission().id(),
-                "status", "accepted",
-                "agentRuns", handles == null ? List.of() : List.copyOf(handles));
-    }
-
-    public static AgentRunHandle handle(AgentRun run, String status) {
-        return new AgentRunHandle(
-                run == null ? "" : run.id(),
-                run == null ? "" : run.missionId(),
-                run == null ? null : run.parentAgentRunId(),
-                run == null ? "" : run.personaId(),
-                run == null ? "" : run.routineId(),
-                run == null ? null : run.subroutineId(),
-                status);
-    }
-
-    public record MissionAdmissionPlan(
-            Mission mission,
-            List<PreparedAgentRun> agentRuns
-    ) {
-        public MissionAdmissionPlan {
-            if (mission == null) {
-                throw new IllegalArgumentException("MissionAdmissionPlan missing mission");
-            }
-            agentRuns = agentRuns == null ? List.of() : List.copyOf(agentRuns);
-        }
-    }
-
-    public record PreparedAgentRun(
-            AgentRun run,
-            AgentRunHandle handle,
-            AgentRunScheduled event
-    ) {
-        public PreparedAgentRun {
-            if (run == null) {
-                throw new IllegalArgumentException("PreparedAgentRun missing run");
-            }
-            if (handle == null) {
-                throw new IllegalArgumentException("PreparedAgentRun missing handle");
-            }
-            if (event == null) {
-                throw new IllegalArgumentException("PreparedAgentRun missing event");
-            }
-        }
+    private static AgentRunHandle acceptedHandle(AgentRun run) {
+        return new AgentRunHandle(run.id(), run.missionId(), run.parentAgentRunId(), run.personaId(),
+                run.routineId(), run.subroutineId(), AgentRun.STATUS_ACCEPTED);
     }
 }

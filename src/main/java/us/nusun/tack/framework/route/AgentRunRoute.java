@@ -11,12 +11,12 @@ import org.apache.camel.component.kafka.KafkaConstants;
 import org.apache.camel.model.dataformat.JsonLibrary;
 import us.nusun.tack.framework.inventory.PersonaCatalog;
 import us.nusun.tack.framework.inventory.RoutineCatalog;
+import us.nusun.tack.framework.model.AgentRunHandle;
 import us.nusun.tack.framework.model.AgentRunRequest;
 import us.nusun.tack.framework.model.AgentRunScheduled;
 import us.nusun.tack.framework.model.Mission;
 import us.nusun.tack.framework.model.RoutineDefinition;
 import us.nusun.tack.framework.projection.AgentRunProjectionManager;
-import us.nusun.tack.framework.sandbox.PersonaSandboxManager;
 import us.nusun.tack.framework.service.AgentRunAdmissionService;
 import us.nusun.tack.framework.state.AgentRun;
 import us.nusun.tack.framework.state.AgentRunStore;
@@ -39,44 +39,30 @@ public class AgentRunRoute extends RouteBuilder {
 
         from("direct:start-agent-run")
                 .routeId("start-agent-run")
-                .doTry()
-                    .validate(exchangeProperty("mission").isNotNull())
-                    .process(exchange -> {
-                        Object request = exchange.getMessage().getBody();
-                        if (!(request instanceof AgentRunRequest)) {
-                            exchange.getMessage().setBody(mapper.convertValue(request, AgentRunRequest.class));
-                        }
-                    })
-                    .bean(admissions, "admit")
-                    .setProperty("agentRunAdmission", body())
-                    .setBody(simple("${body.event}"))
-                    .to("direct:publish-agent-run-scheduled")
-                    .setBody(simple("${exchangeProperty.agentRunAdmission.handle}"))
-                .doFinally()
-                    .removeProperty("agentRunAdmission")
-                .end();
-
+                .process(exchange -> {
+                    Object input = exchange.getMessage().getBody();
+                    AgentRunRequest request = input instanceof AgentRunRequest typed
+                            ? typed : mapper.convertValue(input, AgentRunRequest.class);
+                    exchange.getMessage().setBody(List.of(request));
+                })
+                .to("direct:start-agent-runs")
+                .setBody(simple("${body[0]}"));
 
         from("direct:start-agent-runs")
                 .routeId("start-agent-runs")
                 .validate(exchangeProperty("mission").isNotNull())
                 .validate(body().isInstanceOf(List.class))
                 .bean(admissions, "admitAll")
-                .setProperty("agentRunAdmissions", body())
-                .split(body())
-                    .setBody(simple("${body.event}"))
-                    .to("direct:publish-agent-run-scheduled")
-                .end()
-                .setBody(simple("${exchangeProperty.agentRunAdmissions}"))
-                .setBody(method(admissions, "handles"))
-                .removeProperty("agentRunAdmissions");
+                .to("direct:publish-accepted-agent-runs");
 
-        from("direct:publish-agent-run-scheduled")
-                .routeId("publish-agent-run-scheduled")
-                .validate(body().isInstanceOf(AgentRunScheduled.class))
-                .setHeader(KafkaConstants.KEY, simple("${body.agentRunId}"))
-                .marshal().json(JsonLibrary.Jackson, AgentRunScheduled.class)
-                .toD("kafka:{{agent-run.scheduled.topic:agent-runs.scheduled}}");
+        from("direct:publish-accepted-agent-runs")
+                .routeId("publish-accepted-agent-runs")
+                .split(body())
+                    .setBody(method(this, "scheduledEvent"))
+                    .setHeader(KafkaConstants.KEY, simple("${body.agentRunId}"))
+                    .marshal().json(JsonLibrary.Jackson, AgentRunScheduled.class)
+                    .to("kafka:{{agent-run.scheduled.topic:agent-runs.scheduled}}")
+                .end();
 
         from("kafka:{{agent-run.scheduled.topic:agent-runs.scheduled}}"
                 + "?groupId={{agent-run.scheduled.consumer.group:agent-run-scheduler}}"
@@ -111,6 +97,10 @@ public class AgentRunRoute extends RouteBuilder {
                 .doCatch(Exception.class)
                     .bean(this, "failAgentRun")
                 .end();
+    }
+
+    public AgentRunScheduled scheduledEvent(@Body AgentRunHandle handle) {
+        return new AgentRunScheduled(handle.missionId(), handle.agentRunId());
     }
 
     public void completeAgentRun(Exchange exchange) {
@@ -155,10 +145,6 @@ public class AgentRunRoute extends RouteBuilder {
         exchange.setProperty("routine", routine);
         exchange.setProperty("subroutine", run.subroutineId() == null ? null : routine.requireSubroutine(run.subroutineId()));
         exchange.setProperty("agentRunRouteUri", routines.routeUriFor(run));
-        Object sandboxName = run.workingState().get(PersonaSandboxManager.WORKING_STATE_SANDBOX_NAME);
-        if (sandboxName != null && !String.valueOf(sandboxName).isBlank()) {
-            exchange.setProperty(PersonaSandboxManager.WORKING_STATE_SANDBOX_NAME, String.valueOf(sandboxName));
-        }
         exchange.getIn().setBody(initialRoutineBody(run));
     }
 

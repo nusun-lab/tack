@@ -380,7 +380,9 @@ Mission admission and child scheduling use `AgentRunRequest`. Framework entry po
 .to("direct:start-agent-runs")
 ```
 
-Scheduling validates the request, enforces any caller-supplied capacity constraint, records the run as accepted, publishes `AgentRunScheduled`, and returns accepted handle data without waiting for routine completion.
+Scheduling validates the full batch, checks mission capacity, and prepares required sandboxes. It
+commits all accepted runs before publishing `AgentRunScheduled` events from their handles. The
+caller gets accepted handle data without waiting for routine completion.
 
 The Kafka consumer restores authoritative state, transitions eligible runs to `running`, launches routine execution asynchronously with `wireTap`, and returns so Kafka can commit. Ordering a list of requests controls event publication order, not a guaranteed execution head start between accepted AgentRuns.
 
