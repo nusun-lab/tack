@@ -8,6 +8,7 @@ import us.nusun.tack.framework.inference.LlmAgentFactory;
 import us.nusun.tack.framework.inference.LlmRouteSupport;
 import us.nusun.tack.framework.tool.mcp.McpClientFactory;
 import org.apache.camel.Exchange;
+import org.apache.camel.ProducerTemplate;
 import us.nusun.tack.framework.inference.LlmJobFactory;
 import us.nusun.tack.framework.inference.LlmJobEnvelope;
 import org.apache.camel.impl.DefaultCamelContext;
@@ -28,7 +29,6 @@ import us.nusun.tack.framework.run.AgentRunProjectionManager;
 import us.nusun.tack.framework.run.ProjectionStore;
 import us.nusun.tack.framework.routine.PrimitiveExecutor;
 import us.nusun.tack.framework.run.MissionRosterService;
-import us.nusun.tack.framework.routine.ThoughtStackSupport;
 import us.nusun.tack.framework.run.AgentRun;
 import us.nusun.tack.framework.run.AgentRunStore;
 
@@ -142,8 +142,8 @@ public final class FrameworkFixtures {
     public static LlmAgentFactory.DynamicAgentFactory agentFactory(
             String lane, ChatModel model, McpClientFactory clients, TokenCountEstimator estimator,
             int memoryTokens, int maxToolCalls, LlmRouteSupport routeSupport) {
-        return new LlmAgentFactory.DynamicAgentFactory(Map.of(lane, model),
-                Map.of(lane, new ToolPassSettings(memoryTokens, maxToolCalls, 0.50, 3, 69632, 4092)),
+        return new LlmAgentFactory.DynamicAgentFactory(Map.of(lane, new LlmAgentFactory.LaneRuntime(model,
+                new ToolPassSettings(memoryTokens, maxToolCalls, 0.50, 3, 69632, 4092))),
                 clients, toolProfileRegistry(), personaCatalog(), estimator, null, null, routeSupport, new ObjectMapper());
     }
 
@@ -151,22 +151,9 @@ public final class FrameworkFixtures {
         return new InferenceLaneRegistry(inferenceLanes());
     }
 
-    public static PrimitiveExecutor primitiveExecutor() {
-        return primitiveExecutor(defaultAgentRunStore(), new NoopProjectionManager());
-    }
-
-    public static PrimitiveExecutor primitiveExecutor(ProjectionStore store) {
-        return primitiveExecutor(defaultAgentRunStore(), projectionManager(store));
-    }
-
-    public static PrimitiveExecutor primitiveExecutor(AgentRunStore agentRuns, AgentRunProjectionManager projections) {
-        ObjectMapper objectMapper = new ObjectMapper();
-        PersonaCatalog personas = personaCatalog();
-        RoutineCatalog routines = routineCatalog();
-        ThoughtStackSupport thoughts = new ThoughtStackSupport();
-        set(thoughts, "projections", projections);
-        return new PrimitiveExecutor(objectMapper, thoughts, personas, routines, toolProfileRegistry(),
-                projections);
+    public static PrimitiveExecutor primitiveExecutor(ProjectionStore store, ProducerTemplate template) {
+        return new PrimitiveExecutor(new ObjectMapper(), template, personaCatalog(), toolProfileRegistry(),
+                projectionManager(store));
     }
 
     public static AgentRunStore defaultAgentRunStore() {
@@ -201,6 +188,7 @@ public final class FrameworkFixtures {
         DefaultExchange exchange = new DefaultExchange(new DefaultCamelContext());
         exchange.setProperty("mission", new Mission("mission-1", "Test mission", List.of(), "active", Instant.now()));
         exchange.setProperty("agentRun", new AgentRun("run-1", "mission-1", personaId, routineId, Map.of("input", Map.of("brief", "Test run input"))));
+        exchange.setProperty("routine", routineCatalog().getRequired(routineId));
         return exchange;
     }
 
@@ -264,9 +252,5 @@ public final class FrameworkFixtures {
         throw new NoSuchFieldException(name);
     }
 
-    private static class NoopProjectionManager extends AgentRunProjectionManager {
-        @Override
-        public void record(Exchange exchange, String eventType) {
-        }
-    }
+
 }

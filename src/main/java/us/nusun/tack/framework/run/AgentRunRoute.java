@@ -9,7 +9,6 @@ import org.apache.camel.LoggingLevel;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.kafka.KafkaConstants;
 import org.apache.camel.model.dataformat.JsonLibrary;
-import us.nusun.tack.framework.persona.PersonaCatalog;
 import us.nusun.tack.framework.routine.RoutineCatalog;
 import us.nusun.tack.framework.routine.RoutineDefinition;
 
@@ -18,7 +17,6 @@ import java.util.Map;
 
 @ApplicationScoped
 public class AgentRunRoute extends RouteBuilder {
-    @Inject PersonaCatalog personas;
     @Inject RoutineCatalog routines;
     @Inject AgentRunProjectionManager projections;
     @Inject AgentRunStore agentRuns;
@@ -69,15 +67,13 @@ public class AgentRunRoute extends RouteBuilder {
         from("direct:handle-agent-run-scheduled")
                 .routeId("handle-agent-run-scheduled")
                 .validate(body().isInstanceOf(AgentRunScheduled.class))
-                .setProperty("agentRunStartAccepted", method(this, "startScheduledAgentRun"))
                 .choice()
-                    .when(exchangeProperty("agentRunStartAccepted").isEqualTo(true))
+                    .when(method(this, "claimScheduledRun"))
                         .wireTap("direct:execute-agent-run")
                         .endChoice()
                     .otherwise()
                         .log(LoggingLevel.DEBUG, "Ignoring duplicate or ineligible AgentRunScheduled missionId=${body.missionId} agentRunId=${body.agentRunId}")
-                .end()
-                .removeProperty("agentRunStartAccepted");
+                .end();
 
         from("direct:execute-agent-run")
                 .routeId("execute-agent-run")
@@ -115,32 +111,18 @@ public class AgentRunRoute extends RouteBuilder {
         }
     }
 
-    public boolean startScheduledAgentRun(@Body AgentRunScheduled scheduled, Exchange exchange) {
-        if (scheduled == null || !agentRuns.startIfEligible(scheduled)) {
-            return false;
-        }
-        restoreAgentRunContext(scheduled, exchange);
-        projections.record(exchange, "AGENT_RUN_STARTED");
-        return true;
+    public boolean claimScheduledRun(@Body AgentRunScheduled scheduled) {
+        return agentRuns.startIfEligible(scheduled);
     }
 
     public void restoreAgentRunContext(@Body AgentRunScheduled scheduled, Exchange exchange) {
-        if (scheduled == null) {
-            throw new IllegalArgumentException("AgentRunScheduled event is required");
-        }
-        Mission mission = agentRuns.requireMission(scheduled.missionId());
         AgentRun run = agentRuns.requireRun(scheduled);
-        RoutineDefinition routine = routines.getRequired(run.routineId());
-        exchange.setProperty("mission", mission);
         exchange.setProperty("agentRun", run);
-        exchange.setProperty("persona", personas.getRequired(run.personaId()));
+        exchange.setProperty("mission", agentRuns.requireMission(scheduled.missionId()));
+        RoutineDefinition routine = routines.getRequired(run.routineId());
         exchange.setProperty("routine", routine);
-        exchange.setProperty("subroutine", run.subroutineId() == null ? null : routine.requireSubroutine(run.subroutineId()));
-        exchange.setProperty("agentRunRouteUri", routines.routeUriFor(run));
-        exchange.getIn().setBody(initialRoutineBody(run));
-    }
-
-    private Object initialRoutineBody(AgentRun run) {
-        return run.workingState().getOrDefault("input", Map.of());
+        exchange.setProperty("agentRunRouteUri", routine.routeUri(run.subroutineId()));
+        exchange.getMessage().setBody(run.workingState().getOrDefault("input", Map.of()));
+        projections.record(exchange, "AGENT_RUN_STARTED");
     }
 }

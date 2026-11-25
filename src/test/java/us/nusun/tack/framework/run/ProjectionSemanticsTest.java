@@ -11,7 +11,7 @@ import us.nusun.tack.framework.inference.LlmPassType;
 import us.nusun.tack.framework.routine.RoutineDefinition;
 import us.nusun.tack.framework.routine.StepResult;
 import us.nusun.tack.framework.routine.ThoughtFrame;
-import us.nusun.tack.framework.routine.ThoughtStackSupport;
+import us.nusun.tack.framework.routine.PrimitiveExecutor;
 import us.nusun.tack.framework.routine.ThoughtStack;
 import us.nusun.tack.framework.tests.support.FrameworkFixtures;
 import us.nusun.tack.framework.tests.support.TestJson;
@@ -87,7 +87,7 @@ class ProjectionSemanticsTest {
                 Map.of("toolProfile", FrameworkFixtures.PROFILE_BETA), null)));
         ThoughtStack stack = new ThoughtStack();
         stack.push(new ThoughtFrame("pm", "pm-cycle", "Project Manager routine context", 900, "Current state: ".repeat(120)));
-        exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
+        exchange.setProperty(ThoughtStack.PROPERTY, stack);
 
         manager.record(exchange, "ACT_COMPLETED");
 
@@ -302,13 +302,13 @@ class ProjectionSemanticsTest {
     void thoughtLifecycleEventsRemainInspectableAfterActiveStackChanges() throws Exception {
         ProjectionStore store = FrameworkFixtures.projectionStore();
         AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
-        ThoughtStackSupport thoughts = new ThoughtStackSupport();
-        FrameworkFixtures.set(thoughts, "projections", manager);
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
         AgentRun run = exchange.getProperty("agentRun", AgentRun.class);
 
-        ThoughtFrame frame = thoughts.push(exchange, "pm-cycle", "PM cycle.", 300);
-        exchange.getProperty(ThoughtStackSupport.STACK_PROPERTY, ThoughtStack.class)
+        var executor = FrameworkFixtures.primitiveExecutor(store, null);
+        executor.enterThought(exchange, new PrimitiveExecutor.ThoughtEnterRequest("pm-cycle", "PM cycle.", 300));
+        ThoughtFrame frame = exchange.getMessage().getBody(ThoughtFrame.class);
+        exchange.getProperty(ThoughtStack.PROPERTY, ThoughtStack.class)
                 .rewrite(frame.id(), "durable child content");
         manager.record(exchange, "THOUGHT_REWRITTEN", Map.of(
                 "thoughtName", frame.name(),
@@ -316,8 +316,7 @@ class ProjectionSemanticsTest {
                 "content", "durable child content",
                 "primitive", "act",
                 "timestamp", java.time.Instant.now().toString()));
-        FrameworkFixtures.primitiveExecutor(store).exitThought(exchange,
-                new us.nusun.tack.framework.routine.PrimitiveExecutor.ThoughtExitRequest(frame.name(), null), null);
+        executor.exitThought(exchange, new PrimitiveExecutor.ThoughtExitRequest(frame.name(), null));
 
         AgentRunProjection projection = store.get(run.id());
         assertTrue(projection.thoughtStack().isEmpty());
@@ -336,7 +335,7 @@ class ProjectionSemanticsTest {
         String fullThought = "Complete delivery thought content. ".repeat(100);
         ThoughtStack stack = new ThoughtStack();
         stack.push(new ThoughtFrame("pm", "Project Manager routine context", 900, fullThought));
-        exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
+        exchange.setProperty(ThoughtStack.PROPERTY, stack);
         exchange.setProperty("authorization", "Bearer SECRET_TOKEN");
         exchange.setProperty("mcpHeaders", Map.of("Authorization", "Bearer SECRET_TOKEN"));
         exchange.setProperty("toolPassResult", "RAW_TOOL_PAYLOAD_" + "x".repeat(5000) + "_SECRET_TOKEN");

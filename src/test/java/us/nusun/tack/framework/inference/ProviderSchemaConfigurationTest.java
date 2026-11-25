@@ -2,10 +2,12 @@ package us.nusun.tack.framework.inference;
 
 import dev.langchain4j.model.chat.request.ResponseFormat;
 import dev.langchain4j.model.chat.request.ResponseFormatType;
-import dev.langchain4j.model.openai.OpenAiChatModel;
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.request.ChatRequest;
+import dev.langchain4j.model.chat.response.ChatResponse;
 import org.apache.camel.Exchange;
-import org.apache.camel.component.langchain4j.agent.api.AbstractAgent;
-import org.apache.camel.component.langchain4j.agent.api.Agent;
+import org.apache.camel.component.langchain4j.agent.api.AiAgentBody;
 import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.support.DefaultExchange;
 import org.junit.jupiter.api.Test;
@@ -34,43 +36,42 @@ class ProviderSchemaConfigurationTest {
     @Test
     void schemaJobSetsProviderResponseFormatOnAgentFactoryAgent() throws Exception {
         try (DefaultCamelContext context = new DefaultCamelContext()) {
-            Agent agent = factory(context).createAgent(exchange(context, job("low-pass", SCHEMA), true));
+            ResponseFormat format = requestFormat(exchange(context, job("low-pass", SCHEMA), true));
 
-            ResponseFormat responseFormat = ((AbstractAgent<?>) agent).getResponseFormat();
-            assertNotNull(responseFormat);
-            assertEquals(ResponseFormatType.JSON, responseFormat.type());
-            assertNotNull(responseFormat.jsonSchema());
-            assertEquals("camel_schema", responseFormat.jsonSchema().name());
+            assertNotNull(format);
+            assertEquals(ResponseFormatType.JSON, format.type());
+            assertNotNull(format.jsonSchema());
+            assertEquals("camel_schema", format.jsonSchema().name());
         }
     }
 
     @Test
     void nonSchemaJobDoesNotSetProviderResponseFormat() throws Exception {
         try (DefaultCamelContext context = new DefaultCamelContext()) {
-            Agent agent = factory(context).createAgent(exchange(context, job("low-pass", null), true));
+            ResponseFormat format = requestFormat(exchange(context, job("low-pass", null), true));
 
-            assertNull(((AbstractAgent<?>) agent).getResponseFormat());
+            assertNull(format);
         }
     }
 
     @Test
     void disabledProviderSchemaDoesNotSetResponseFormatEvenWhenResponseSchemaExists() throws Exception {
         try (DefaultCamelContext context = new DefaultCamelContext()) {
-            Agent agent = factory(context).createAgent(exchange(context, job("low-pass", SCHEMA), false));
+            ResponseFormat format = requestFormat(exchange(context, job("low-pass", SCHEMA), false));
 
-            assertNull(((AbstractAgent<?>) agent).getResponseFormat());
+            assertNull(format);
         }
     }
 
     @Test
     void forceProviderSchemaMetadataSetsResponseFormatWhenDefaultIsDisabled() throws Exception {
         try (DefaultCamelContext context = new DefaultCamelContext()) {
-            Agent agent = factory(context).createAgent(exchange(context, job(
+            ResponseFormat format = requestFormat(exchange(context, job(
                     "low-pass",
                     SCHEMA,
                     Map.of("llmForceProviderSchema", true)), false));
 
-            assertNotNull(((AbstractAgent<?>) agent).getResponseFormat());
+            assertNotNull(format);
         }
     }
 
@@ -84,7 +85,7 @@ class ProviderSchemaConfigurationTest {
             Exchange worker = new DefaultExchange(context);
             worker.setProperty("llmJob", queued);
             FrameworkFixtures.jobFactory(FrameworkFixtures.inferenceLaneRegistry(), "test-model", true).restore(worker);
-            assertNotNull(((AbstractAgent<?>) factory(context).createAgent(worker)).getResponseFormat());
+            assertNotNull(requestFormat(worker));
         }
     }
 
@@ -114,18 +115,20 @@ class ProviderSchemaConfigurationTest {
                 null);
     }
 
-    private static LlmAgentFactory.DynamicAgentFactory factory(DefaultCamelContext context) {
-        LlmAgentFactory.DynamicAgentFactory factory = FrameworkFixtures.agentFactory(
-                "low-pass", chatModel(), new us.nusun.tack.framework.tool.mcp.McpClientFactory(), new TestTokenCountEstimator(), 12000, 4, null);
-        factory.setCamelContext(context);
-        return factory;
-    }
+    private static ResponseFormat requestFormat(Exchange exchange) {
+        var model = new ChatModel() {
+            ResponseFormat responseFormat;
 
-    private static OpenAiChatModel chatModel() {
-        return OpenAiChatModel.builder()
-                .baseUrl("http://localhost:9999/v1")
-                .apiKey("test-key")
-                .modelName("test-model")
-                .build();
+            @Override
+            public ChatResponse doChat(ChatRequest request) {
+                responseFormat = request.responseFormat();
+                return ChatResponse.builder().aiMessage(AiMessage.from("{\"result\":\"ok\"}")).build();
+            }
+        };
+        var agent = FrameworkFixtures.agentFactory("low-pass", model,
+                new us.nusun.tack.framework.tool.mcp.McpClientFactory(), new TestTokenCountEstimator(), 12000, 4, null)
+                .createAgent(exchange);
+        agent.chat(new AiAgentBody<>("Return the result.", "Return JSON.", null), null);
+        return model.responseFormat;
     }
 }

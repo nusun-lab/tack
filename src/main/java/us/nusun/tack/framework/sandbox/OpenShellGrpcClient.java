@@ -54,7 +54,7 @@ import java.util.concurrent.TimeUnit;
 
 @ApplicationScoped
 public class OpenShellGrpcClient {
-    private static final String WORKSPACE = "default";
+    static final String WORKSPACE = "default";
     private static final List<String> DEVELOPER_PACKAGE_HOSTS = List.of(
             "repo.maven.apache.org",
             "maven.repository.redhat.com",
@@ -420,22 +420,7 @@ public class OpenShellGrpcClient {
                     .setAllowEncodedSlash("registry.npmjs.org".equals(host))
                     .build());
         }
-        int version;
-        try {
-            version = controlStub().updateConfig(UpdateConfigRequest.newBuilder()
-                    .setName(sandboxName)
-                    .setWorkspace(WORKSPACE)
-                    .addMergeOperations(PolicyMergeOperation.newBuilder()
-                            .setAddRule(AddNetworkRule.newBuilder()
-                                    .setRuleName("tack-developer-packages")
-                                    .setRule(rule.build())
-                                    .build())
-                            .build())
-                    .build()).getVersion();
-        } catch (StatusRuntimeException e) {
-            throw failure("authorize developer package egress for sandbox " + sandboxName, e);
-        }
-        awaitPolicyLoaded(sandboxName, version);
+        applyNetworkRule(sandboxName, rule.build(), "developer package");
     }
 
     public void authorizeGit(String sandboxName, Endpoint endpoint) {
@@ -451,6 +436,10 @@ public class OpenShellGrpcClient {
                         .build())
                 .addBinaries(NetworkBinary.newBuilder().setPath("/usr/bin/git").build())
                 .build();
+        applyNetworkRule(sandboxName, rule, "git");
+    }
+
+    private void applyNetworkRule(String sandboxName, NetworkPolicyRule rule, String egress) {
         int version;
         try {
             version = controlStub().updateConfig(UpdateConfigRequest.newBuilder()
@@ -458,13 +447,13 @@ public class OpenShellGrpcClient {
                     .setWorkspace(WORKSPACE)
                     .addMergeOperations(PolicyMergeOperation.newBuilder()
                             .setAddRule(AddNetworkRule.newBuilder()
-                                    .setRuleName("tack-gitea")
+                                    .setRuleName(rule.getName())
                                     .setRule(rule)
                                     .build())
                             .build())
                     .build()).getVersion();
         } catch (StatusRuntimeException e) {
-            throw failure("authorize git egress for sandbox " + sandboxName, e);
+            throw failure("authorize " + egress + " egress for sandbox " + sandboxName, e);
         }
         awaitPolicyLoaded(sandboxName, version);
     }
@@ -578,7 +567,7 @@ public class OpenShellGrpcClient {
                 + " to load for sandbox " + sandboxName);
     }
 
-    private OpenShellGrpc.OpenShellBlockingStub controlStub() {
+    OpenShellGrpc.OpenShellBlockingStub controlStub() {
         return stub.withDeadlineAfter(controlTimeout.toSeconds(), TimeUnit.SECONDS);
     }
 

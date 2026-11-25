@@ -1,5 +1,7 @@
 package us.nusun.tack.framework.tool.mcp;
 
+import static us.nusun.tack.framework.logging.LogTokens.abbreviateToolValue;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -26,7 +28,6 @@ import java.util.Set;
 
 public final class McpToolPolicy {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-    private static final int MAX_LOG_VALUE_LENGTH = 4000;
 
     private final McpClient delegate;
     private final String server;
@@ -67,14 +68,14 @@ public final class McpToolPolicy {
             @Override
             public ToolExecutionResult executeWithContext(ToolExecutionRequest request, InvocationContext context) {
                 ToolExecutionRequest profiled = prepareRequest(request);
-                logDim("TOOL " + server + "." + profiled.name() + " REQUEST " + abbreviate(profiled.arguments()));
+                logDim("TOOL " + server + "." + profiled.name() + " REQUEST " + abbreviateToolValue(profiled.arguments()));
                 try {
                     ToolExecutionResult result = limitResult(executor.executeWithContext(profiled, context));
                     logDim("TOOL " + server + "." + profiled.name() + " RESPONSE isError=" + result.isError()
-                            + " " + abbreviate(McpToolResultLimiter.resultText(result)));
+                            + " " + abbreviateToolValue(McpToolResultLimiter.resultText(result)));
                     return result;
                 } catch (RuntimeException failure) {
-                    logDim("TOOL " + server + "." + profiled.name() + " ERROR " + abbreviate(failure.getMessage()));
+                    logDim("TOOL " + server + "." + profiled.name() + " ERROR " + abbreviateToolValue(failure.getMessage()));
                     throw failure;
                 }
             }
@@ -189,25 +190,9 @@ public final class McpToolPolicy {
     }
 
     private void logDim(String message) {
-        if (persona == null || logTokens == null) {
-            return;
+        if (logTokens != null) {
+            logTokens.printTool(persona, message);
         }
-        logTokens.print(logTokens.wrapDim(label(), persona.color(), message));
-    }
-
-    private String label() {
-        if (persona.label() != null && !persona.label().isBlank()) {
-            return persona.label();
-        }
-        return persona.name();
-    }
-
-    private static String abbreviate(Object value) {
-        if (value == null) {
-            return "null";
-        }
-        String text = String.valueOf(value);
-        return text.length() <= MAX_LOG_VALUE_LENGTH ? text : text.substring(0, MAX_LOG_VALUE_LENGTH) + "...(truncated)";
     }
 
     private static ObjectNode parseArgumentsObject(String arguments) {

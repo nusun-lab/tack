@@ -47,7 +47,7 @@ class TackComponentContractTest {
                             .to("tack:thought-enter?name=contract&maxTokens=200")
                             .setHeader(TackHeaders.PROMPT, constant("Inspect contract state."))
                             .to("tack:act?id=contract-act&toolProfile=" + FrameworkFixtures.PROFILE_GAMMA)
-                            .process(exchange -> exchange.setProperty("afterActContent", exchange.getProperty(ThoughtStackSupport.STACK_PROPERTY, ThoughtStack.class).leaf().content()))
+                            .process(exchange -> exchange.setProperty("afterActContent", exchange.getProperty(ThoughtStack.PROPERTY, ThoughtStack.class).leaf().content()))
                             .setProperty("promptAfterAct", header(TackHeaders.PROMPT));
                 }
             });
@@ -88,7 +88,7 @@ class TackComponentContractTest {
 
             Exchange result = send(context, "direct:bounded-thought");
             StepResult completed = assertInstanceOf(StepResult.class, result.getMessage().getBody());
-            String retained = result.getProperty(ThoughtStackSupport.STACK_PROPERTY, ThoughtStack.class).leaf().content();
+            String retained = result.getProperty(ThoughtStack.PROPERTY, ThoughtStack.class).leaf().content();
 
             assertTrue(retained.endsWith(" [truncated]"));
             assertTrue(retained.length() < generated.length());
@@ -126,7 +126,7 @@ class TackComponentContractTest {
             context.start();
 
             Exchange result = send(context, "direct:dynamic-act");
-            assertEquals("dynamic memory", result.getProperty(ThoughtStackSupport.STACK_PROPERTY, ThoughtStack.class).leaf().content());
+            assertEquals("dynamic memory", result.getProperty(ThoughtStack.PROPERTY, ThoughtStack.class).leaf().content());
 
             Exchange missingId = send(context, "direct:missing-id");
             assertTrue(missingId.isFailed());
@@ -224,7 +224,7 @@ class TackComponentContractTest {
 
             Exchange result = send(context, "direct:loop");
 
-            ThoughtStack stack = result.getProperty(ThoughtStackSupport.STACK_PROPERTY, ThoughtStack.class);
+            ThoughtStack stack = result.getProperty(ThoughtStack.PROPERTY, ThoughtStack.class);
             assertEquals(1, stack.frames().size());
             assertEquals("root", stack.leaf().name());
             assertEquals("root memory after turn 2", stack.leaf().content());
@@ -269,7 +269,7 @@ class TackComponentContractTest {
             ThoughtStack stack = new ThoughtStack();
             stack.push(new ThoughtFrame("parent-id", "parent", "Parent purpose", 100, "parent before"));
             stack.push(new ThoughtFrame("child-id", "child", "Child purpose", 100, "child final"));
-            exchange.setProperty(ThoughtStackSupport.STACK_PROPERTY, stack);
+            exchange.setProperty(ThoughtStack.PROPERTY, stack);
 
             Exchange failure = context.createProducerTemplate().send("direct:failed-exit", exchange);
 
@@ -310,10 +310,10 @@ class TackComponentContractTest {
             context.start();
 
             Exchange root = send(context, "direct:root-exit");
-            assertTrue(root.getProperty(ThoughtStackSupport.STACK_PROPERTY, ThoughtStack.class).frames().isEmpty());
+            assertTrue(root.getProperty(ThoughtStack.PROPERTY, ThoughtStack.class).frames().isEmpty());
 
             Exchange child = send(context, "direct:empty-child-exit");
-            ThoughtStack stack = child.getProperty(ThoughtStackSupport.STACK_PROPERTY, ThoughtStack.class);
+            ThoughtStack stack = child.getProperty(ThoughtStack.PROPERTY, ThoughtStack.class);
             assertEquals(1, stack.frames().size());
             assertEquals("root", stack.leaf().name());
             assertEquals("", stack.leaf().content());
@@ -336,13 +336,16 @@ class TackComponentContractTest {
         Exchange seeded = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
         exchange.setProperty("mission", seeded.getProperty("mission", Mission.class));
         exchange.setProperty("agentRun", seeded.getProperty("agentRun", AgentRun.class));
+        exchange.setProperty("routine", seeded.getProperty("routine", RoutineDefinition.class));
     }
 
     private static DefaultCamelContext context(ProjectionStore store, ScriptedLlm llm) throws Exception {
         DefaultCamelContext context = TestCamelContexts.quiet();
         context.setAutowiredEnabled(false);
         context.getShutdownStrategy().setTimeout(1);
-        context.addComponent("tack", new TackComponent(FrameworkFixtures.primitiveExecutor(store)));
+        var template = context.createProducerTemplate();
+        context.addService(template);
+        context.addComponent("tack", new TackComponent(FrameworkFixtures.primitiveExecutor(store, template)));
         AgentRunProjectionManager projections = FrameworkFixtures.projectionManager(store);
         context.addRoutes(new RouteBuilder() {
             @Override

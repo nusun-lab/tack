@@ -84,7 +84,7 @@ class WorkspaceViewServiceBoundaryTest {
         child.currentPrimitive("act");
         child.currentId("implement");
         childExchange.setProperty("agentRun", child);
-        FrameworkFixtures.primitiveExecutor(store).enterThought(childExchange,
+        FrameworkFixtures.primitiveExecutor(store, null).enterThought(childExchange,
                 new us.nusun.tack.framework.routine.PrimitiveExecutor.ThoughtEnterRequest(null, "Child implementation context", 200));
         manager.record(childExchange, "CHILD_STARTED");
 

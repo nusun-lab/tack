@@ -7,7 +7,6 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import jakarta.inject.Named;
-import us.nusun.tack.framework.run.AgentRun;
 
 import java.util.Comparator;
 import java.util.List;
@@ -39,13 +38,6 @@ public class RoutineCatalog {
             throw new IllegalArgumentException("Unknown routine: " + id);
         }
         return routine;
-    }
-
-    public String routeUriFor(AgentRun run) {
-        if (run == null) {
-            throw new IllegalArgumentException("AgentRun route resolution requires run");
-        }
-        return getRequired(run.routineId()).routeUri(run.subroutineId());
     }
 
     public List<RoutineDefinition> all() {

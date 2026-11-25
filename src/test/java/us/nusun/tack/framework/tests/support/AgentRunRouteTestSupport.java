@@ -64,7 +64,6 @@ public final class AgentRunRouteTestSupport {
         FrameworkFixtures.set(admissions, "agentRuns", agentRuns);
 
         AgentRunRoute agentRunRoute = new AgentRunRoute();
-        FrameworkFixtures.set(agentRunRoute, "personas", personas);
         FrameworkFixtures.set(agentRunRoute, "routines", routines);
         FrameworkFixtures.set(agentRunRoute, "projections", manager);
         FrameworkFixtures.set(agentRunRoute, "agentRuns", agentRuns);

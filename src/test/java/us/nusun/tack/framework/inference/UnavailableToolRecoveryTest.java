@@ -37,7 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class HallucinatedToolNameRecoveryStrategyTest {
+class UnavailableToolRecoveryTest {
     private static final String HALLUCINATED_TOOL = "list_project_members";
 
     @Test
@@ -66,7 +66,7 @@ class HallucinatedToolNameRecoveryStrategyTest {
                 .arguments("{}")
                 .build();
 
-        ToolExecutionResultMessage result = new HallucinatedToolNameRecoveryStrategy().apply(request);
+        ToolExecutionResultMessage result = ToolErrorFeedback.unavailableTool(request);
 
         assertEquals("call-42", result.id());
         assertEquals(HALLUCINATED_TOOL, result.toolName());

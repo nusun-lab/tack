@@ -16,7 +16,6 @@ import us.nusun.tack.framework.routine.DecisionResult;
 import us.nusun.tack.framework.routine.CreateResult;
 import us.nusun.tack.framework.routine.RoutineDefinition;
 import us.nusun.tack.framework.routine.SubroutineDefinition;
-import us.nusun.tack.framework.routine.ThoughtStackSupport;
 import us.nusun.tack.framework.routine.ThoughtStack;
 
 import java.time.Instant;
@@ -56,7 +55,7 @@ public class AgentRunProjectionManager {
 
     private void record(Exchange exchange, AgentRun run, ProjectionEvent event, String response) {
         Mission mission = exchange.getProperty("mission", Mission.class);
-        ThoughtStack stack = exchange.getProperty(ThoughtStackSupport.STACK_PROPERTY, ThoughtStack.class);
+        ThoughtStack stack = exchange.getProperty(ThoughtStack.PROPERTY, ThoughtStack.class);
         var invocation = LlmExecutionContext.on(exchange);
         String profile = invocation == null ? null : invocation.toolProfile();
         String lane = invocation == null ? null : invocation.laneId();

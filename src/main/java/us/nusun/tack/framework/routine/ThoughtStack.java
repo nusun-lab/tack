@@ -1,12 +1,23 @@
 package us.nusun.tack.framework.routine;
 
+import org.apache.camel.Exchange;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
 public class ThoughtStack {
+    public static final String PROPERTY = "thoughtStack";
     private final List<ThoughtFrame> frames = new ArrayList<>();
+
+    static ThoughtStack on(Exchange exchange) {
+        ThoughtStack stack = exchange.getProperty(PROPERTY, ThoughtStack.class);
+        if (stack == null) {
+            stack = new ThoughtStack();
+            exchange.setProperty(PROPERTY, stack);
+        }
+        return stack;
+    }
 
     public void push(ThoughtFrame frame) {
         frames.add(frame);

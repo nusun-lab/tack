@@ -11,6 +11,7 @@ import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.openai.OpenAiTokenUsage;
 import dev.langchain4j.service.Result;
 import org.apache.camel.Exchange;
+import us.nusun.tack.framework.inference.lane.ToolPassSettings;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -27,14 +28,13 @@ final class LlmCallDiagnostics {
     private final int transcriptMaxTokens;
     private long cumulativeEstimatedInputTokens;
 
-    LlmCallDiagnostics(Exchange exchange, TokenCountEstimator tokenCountEstimator,
-                       int contextWindow, int maxOutputTokens, int transcriptMaxTokens) {
+    LlmCallDiagnostics(Exchange exchange, TokenCountEstimator tokenCountEstimator, ToolPassSettings settings) {
         this.exchange = exchange;
         this.invocation = LlmExecutionContext.require(exchange);
         this.tokenCountEstimator = tokenCountEstimator;
-        this.contextWindow = contextWindow;
-        this.maxOutputTokens = maxOutputTokens;
-        this.transcriptMaxTokens = transcriptMaxTokens;
+        this.contextWindow = settings.contextWindow();
+        this.maxOutputTokens = settings.maxOutputTokens();
+        this.transcriptMaxTokens = settings.memoryTokens();
     }
 
     void capture(Result<String> result) {

@@ -40,12 +40,6 @@ public class TackEndpoint extends DefaultEndpoint {
     @UriParam(description = "Create result schema JSON or URI")
     private String schema;
 
-    @UriParam(description = "Inline create result schema JSON")
-    private String schemaJson;
-
-    @UriParam(description = "Create result schema URI")
-    private String schemaUri;
-
     public TackEndpoint(String endpointUri, TackComponent component, PrimitiveExecutor executor) {
         super(endpointUri, component);
         this.executor = executor;
@@ -84,8 +78,4 @@ public class TackEndpoint extends DefaultEndpoint {
     public void setSchemaId(String schemaId) { this.schemaId = schemaId; }
     public String getSchema() { return schema; }
     public void setSchema(String schema) { this.schema = schema; }
-    public String getSchemaJson() { return schemaJson; }
-    public void setSchemaJson(String schemaJson) { this.schemaJson = schemaJson; }
-    public String getSchemaUri() { return schemaUri; }
-    public void setSchemaUri(String schemaUri) { this.schemaUri = schemaUri; }
 }

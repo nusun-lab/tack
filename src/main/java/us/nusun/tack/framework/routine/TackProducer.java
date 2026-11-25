@@ -1,33 +1,16 @@
 package us.nusun.tack.framework.routine;
 
 import org.apache.camel.Exchange;
-import org.apache.camel.ProducerTemplate;
 import org.apache.camel.support.DefaultProducer;
-import org.apache.camel.support.service.ServiceHelper;
 
 public class TackProducer extends DefaultProducer {
     private final TackEndpoint endpoint;
     private final PrimitiveExecutor executor;
-    private ProducerTemplate producerTemplate;
 
     public TackProducer(TackEndpoint endpoint, PrimitiveExecutor executor) {
         super(endpoint);
         this.endpoint = endpoint;
         this.executor = executor;
-    }
-
-    @Override
-    protected void doStart() throws Exception {
-        super.doStart();
-        producerTemplate = endpoint.getCamelContext().createProducerTemplate();
-        producerTemplate.start();
-    }
-
-    @Override
-    protected void doStop() throws Exception {
-        ServiceHelper.stopAndShutdownService(producerTemplate);
-        producerTemplate = null;
-        super.doStop();
     }
 
     @Override
@@ -41,26 +24,25 @@ public class TackProducer extends DefaultProducer {
                     requiredParameter("id", endpoint.getId(), operation),
                     consumeRequiredHeader(exchange, TackHeaders.PROMPT, operation),
                     endpoint.getToolProfile(),
-                    endpoint.getLane()), producerTemplate);
+                    endpoint.getLane()));
             case "decide" -> executor.decide(exchange, new PrimitiveExecutor.DecideRequest(
                     requiredParameter("id", endpoint.getId(), operation),
                     consumeRequiredHeader(exchange, TackHeaders.PROMPT, operation),
                     endpoint.getChoices(),
-                    endpoint.getLane()), producerTemplate);
+                    endpoint.getLane()));
             case "create" -> executor.create(exchange, new PrimitiveExecutor.CreateRequest(
                     requiredParameter("id", endpoint.getId(), operation),
                     consumeRequiredHeader(exchange, TackHeaders.PROMPT, operation),
                     endpoint.getSchemaId(),
-                    us.nusun.tack.framework.FrameworkText.firstNonBlank(
-                            endpoint.getSchemaJson(), endpoint.getSchemaUri(), endpoint.getSchema()),
-                    endpoint.getLane()), producerTemplate);
+                    endpoint.getSchema(),
+                    endpoint.getLane()));
             case "thought-enter" -> executor.enterThought(exchange, new PrimitiveExecutor.ThoughtEnterRequest(
                     requiredParameter("name", endpoint.getName(), operation),
                     consumeRequiredHeader(exchange, TackHeaders.THOUGHT_PURPOSE, operation),
                     requiredPositiveInteger("maxTokens", endpoint.getMaxTokens(), operation)));
             case "thought-exit" -> executor.exitThought(exchange, new PrimitiveExecutor.ThoughtExitRequest(
                     requiredParameter("name", endpoint.getName(), operation),
-                    endpoint.getLane()), producerTemplate);
+                    endpoint.getLane()));
             default -> throw new IllegalArgumentException("Unknown tack operation: " + operation);
         }
     }

@@ -23,6 +23,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @ApplicationScoped
 public class PrimitiveExecutor {
@@ -30,23 +31,21 @@ public class PrimitiveExecutor {
     private static final String ACT_SYNTHESIS_SCHEMA = "classpath:schemas/act-synthesis-result-schema.json";
 
     private final ObjectMapper objectMapper;
-    private final ThoughtStackSupport thoughts;
+    private final ProducerTemplate llm;
     private final PersonaCatalog personas;
-    private final RoutineCatalog routines;
     private final ToolProfileRegistry toolProfiles;
     private final AgentRunProjectionManager projections;
     private final PrimitivePrompts prompts;
 
-    public PrimitiveExecutor(ObjectMapper objectMapper, ThoughtStackSupport thoughts, PersonaCatalog personas,
-                             RoutineCatalog routines, ToolProfileRegistry toolProfiles,
+    public PrimitiveExecutor(ObjectMapper objectMapper, ProducerTemplate llm, PersonaCatalog personas,
+                             ToolProfileRegistry toolProfiles,
                              AgentRunProjectionManager projections) {
         this.objectMapper = objectMapper;
-        this.thoughts = thoughts;
+        this.llm = llm;
         this.personas = personas;
-        this.routines = routines;
         this.toolProfiles = toolProfiles;
         this.projections = projections;
-        this.prompts = new PrimitivePrompts(objectMapper, thoughts, personas, routines);
+        this.prompts = new PrimitivePrompts(objectMapper, personas);
     }
 
     public record ActRequest(String id, String prompt, String toolProfile, String lane) {
@@ -74,8 +73,8 @@ public class PrimitiveExecutor {
         public FrameworkPrimitiveException(String message, Throwable cause) { super(message, cause); }
     }
 
-    public void act(Exchange exchange, ActRequest request, ProducerTemplate llm) throws Exception {
-        ThoughtStack stack = stack(exchange);
+    public void act(Exchange exchange, ActRequest request) throws Exception {
+        ThoughtStack stack = ThoughtStack.on(exchange);
         ThoughtFrame leaf = requireLeaf(stack, "tack:act");
         AgentRun run = currentRun(exchange);
         String toolProfileId = firstNonBlank(request.toolProfile(), ToolProfileRegistry.NONE_ID);
@@ -84,7 +83,6 @@ public class PrimitiveExecutor {
 
         LlmJobResult toolResult = callLlm(
                 exchange,
-                llm,
                 llmRequest(exchange, request.lane(), LlmPassType.ACTION, request.prompt(),
                         prompts.renderToolPassPrompt(exchange, request, profile), null, profile.id()),
                 "tool/action pass");
@@ -93,7 +91,6 @@ public class PrimitiveExecutor {
 
         LlmJobResult synthesisResult = callLlm(
                 exchange,
-                llm,
                 llmRequest(exchange, request.lane(), LlmPassType.SYNTHESIS, request.prompt(),
                         prompts.renderActSynthesisPrompt(exchange, request, leaf, toolResult, observedAt),
                         ACT_SYNTHESIS_SCHEMA, profile.id()),
@@ -122,13 +119,12 @@ public class PrimitiveExecutor {
         projections.recordPrimitiveCompleted(exchange, "ACT_COMPLETED", "act", request.id(), result.summary());
     }
 
-    public void decide(Exchange exchange, DecideRequest request, ProducerTemplate llm) throws Exception {
+    public void decide(Exchange exchange, DecideRequest request) throws Exception {
         List<String> choices = decisionChoices(request.choices());
         String schema = decisionSchema(choices);
         markCurrent(exchange, "decide", request.id());
         LlmJobResult llmResult = callLlm(
                 exchange,
-                llm,
                 llmRequest(exchange, request.lane(), LlmPassType.DECISION, request.prompt(),
                         prompts.renderDecisionPrompt(exchange, request, choices), schema, null),
                 "decision synthesis pass");
@@ -151,12 +147,11 @@ public class PrimitiveExecutor {
                 "result: " + result.result() + "\nreason: " + result.reason());
     }
 
-    public void create(Exchange exchange, CreateRequest request, ProducerTemplate llm) throws Exception {
+    public void create(Exchange exchange, CreateRequest request) throws Exception {
         SchemaContract schema = SchemaContract.resolve(exchange.getContext(), objectMapper, request.schema());
         markCurrent(exchange, "create", request.id());
         LlmJobResult llmResult = callLlm(
                 exchange,
-                llm,
                 llmRequest(exchange, request.lane(), LlmPassType.CREATION, request.prompt(),
                         prompts.renderCreatePrompt(exchange, request, schema), schema.json(), null),
                 "create synthesis pass");
@@ -171,13 +166,25 @@ public class PrimitiveExecutor {
 
     public void enterThought(Exchange exchange, ThoughtEnterRequest request) {
         markCurrent(exchange, "thought-enter", request.name());
-        ThoughtFrame frame = thoughts.push(exchange, request.name(), request.purpose(), request.maxTokens());
+        if (request.purpose() == null || request.purpose().isBlank()) {
+            throw new IllegalArgumentException("thought purpose is required");
+        }
+        if (request.maxTokens() <= 0) {
+            throw new IllegalArgumentException("thought maxTokens must be positive");
+        }
+        String id = "t_" + UUID.randomUUID().toString().substring(0, 8);
+        ThoughtFrame frame = new ThoughtFrame(id, request.name(), request.purpose(), request.maxTokens(), "", Instant.now());
+        ThoughtStack.on(exchange).push(frame);
+        var details = thoughtEventDetails(frame);
+        details.put("purpose", frame.context());
+        details.put("maxTokens", frame.maxTokens());
+        projections.record(exchange, "THOUGHT_ENTERED", details);
         exchange.getMessage().setBody(frame);
     }
 
-    public void exitThought(Exchange exchange, ThoughtExitRequest request, ProducerTemplate llm) throws Exception {
+    public void exitThought(Exchange exchange, ThoughtExitRequest request) throws Exception {
         markCurrent(exchange, "thought-exit", request.name());
-        ThoughtStack stack = stack(exchange);
+        ThoughtStack stack = ThoughtStack.on(exchange);
         ThoughtFrame child = stack.leaf();
         if (child == null) {
             throw new IllegalStateException("Cannot exit thought " + request.name() + " because no thought is active");
@@ -201,7 +208,6 @@ public class PrimitiveExecutor {
 
         LlmJobResult llmResult = callLlm(
                 exchange,
-                llm,
                 llmRequest(exchange, request.lane(), LlmPassType.CONSOLIDATION, null,
                         prompts.renderConsolidationPrompt(exchange, parent, child), THOUGHT_CONTENT_SCHEMA, null),
                 "thought consolidation pass");
@@ -217,7 +223,7 @@ public class PrimitiveExecutor {
         exchange.getMessage().setBody(popped);
     }
 
-    private LlmJobResult callLlm(Exchange exchange, ProducerTemplate llm, LlmJobEnvelope request, String passDescription) {
+    private LlmJobResult callLlm(Exchange exchange, LlmJobEnvelope request, String passDescription) {
         try {
             clearLlmExchangeState(exchange);
             exchange.getMessage().setBody(request);
@@ -271,7 +277,7 @@ public class PrimitiveExecutor {
             metadata.put(LlmExecutionContext.FORCE_SCHEMA, true);
         }
         if (passType == LlmPassType.CONSOLIDATION) {
-            ThoughtStack stack = stack(exchange);
+            ThoughtStack stack = ThoughtStack.on(exchange);
             metadata.put("thoughtConsolidationDetails", consolidationDetails(stack.leaf(), stack.parentOfLeaf(), null));
         }
         return new LlmJobEnvelope(null, lane, passType, run.currentPrimitive() + ":" + run.currentId(),
@@ -287,25 +293,26 @@ public class PrimitiveExecutor {
     }
 
     private void recordThoughtRewritten(Exchange exchange, ThoughtFrame frame, String primitive, String cause) {
-        LinkedHashMap<String, Object> details = new LinkedHashMap<>();
-        details.put("thoughtName", frame.name());
-        details.put("thoughtId", frame.id());
-        details.put("content", frame.content());
+        var details = thoughtEventDetails(frame);
         details.put("primitive", primitive);
         details.put("cause", cause);
-        details.put("timestamp", Instant.now().toString());
         projections.record(exchange, "THOUGHT_REWRITTEN", details);
     }
 
     private void recordThoughtExited(Exchange exchange, ThoughtFrame frame, boolean root, boolean emptyChild) {
+        var details = thoughtEventDetails(frame);
+        details.put("root", root);
+        details.put("emptyChild", emptyChild);
+        projections.record(exchange, "THOUGHT_EXITED", details);
+    }
+
+    private static LinkedHashMap<String, Object> thoughtEventDetails(ThoughtFrame frame) {
         LinkedHashMap<String, Object> details = new LinkedHashMap<>();
         details.put("thoughtName", frame.name());
         details.put("thoughtId", frame.id());
         details.put("content", frame.content());
-        details.put("root", root);
-        details.put("emptyChild", emptyChild);
         details.put("timestamp", Instant.now().toString());
-        projections.record(exchange, "THOUGHT_EXITED", details);
+        return details;
     }
 
     private Map<String, Object> consolidationDetails(ThoughtFrame child, ThoughtFrame parent, String resultingParentContent) {
@@ -377,12 +384,8 @@ public class PrimitiveExecutor {
         return run;
     }
 
-    private RoutineDefinition currentRoutine(Exchange exchange) {
-        return routines.getRequired(currentRun(exchange).routineId());
-    }
-
-    private ThoughtStack stack(Exchange exchange) {
-        return thoughts.stack(exchange);
+    static RoutineDefinition currentRoutine(Exchange exchange) {
+        return exchange.getProperty("routine", RoutineDefinition.class);
     }
 
     private <T> T parse(String content, Class<T> type) throws Exception {

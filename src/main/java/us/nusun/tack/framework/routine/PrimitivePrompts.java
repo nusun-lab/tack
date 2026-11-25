@@ -1,5 +1,6 @@
 package us.nusun.tack.framework.routine;
 
+import static us.nusun.tack.framework.routine.PrimitiveExecutor.currentRoutine;
 import static us.nusun.tack.framework.routine.PrimitiveExecutor.currentRun;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -23,19 +24,11 @@ import java.util.Map;
 
 final class PrimitivePrompts {
     private final ObjectMapper objectMapper;
-    private final ThoughtStackSupport thoughts;
     private final PersonaCatalog personas;
-    private final RoutineCatalog routines;
 
-    PrimitivePrompts(ObjectMapper objectMapper, ThoughtStackSupport thoughts, PersonaCatalog personas, RoutineCatalog routines) {
+    PrimitivePrompts(ObjectMapper objectMapper, PersonaCatalog personas) {
         this.objectMapper = objectMapper;
-        this.thoughts = thoughts;
         this.personas = personas;
-        this.routines = routines;
-    }
-
-    private ThoughtStack stack(Exchange exchange) {
-        return thoughts.stack(exchange);
     }
 
     String primitiveSystemPrompt(Exchange exchange, LlmPassType passType) {
@@ -156,8 +149,8 @@ final class PrimitivePrompts {
                 missionLevelContext(exchange),
                 safeText(request.id()),
                 safeText(profile.id()),
-                renderCurrentThought(stack(exchange).leaf()),
-                renderAncestorThoughts(stack(exchange).frames()),
+                renderCurrentThought(ThoughtStack.on(exchange).leaf()),
+                renderAncestorThoughts(ThoughtStack.on(exchange).frames()),
                 profile.promptGuidance().isBlank() ? "(none)" : profile.promptGuidance(),
                 safeText(request.prompt()));
     }
@@ -224,7 +217,7 @@ final class PrimitivePrompts {
                 safeText(leaf.context()),
                 safeText(leaf.content()),
                 leaf.maxTokens(),
-                renderAncestorThoughts(stack(exchange).frames()));
+                renderAncestorThoughts(ThoughtStack.on(exchange).frames()));
     }
 
     String renderDecisionPrompt(Exchange exchange, DecideRequest request, List<String> choices) {
@@ -257,7 +250,7 @@ final class PrimitivePrompts {
                 missionLevelContext(exchange),
                 safeText(request.id()),
                 String.join(", ", choices),
-                renderThoughtFramesForModel(stack(exchange).frames()),
+                renderThoughtFramesForModel(ThoughtStack.on(exchange).frames()),
                 renderStepResultForModel(currentRun(exchange).latestStepResult()),
                 safeText(request.prompt()));
     }
@@ -286,7 +279,7 @@ final class PrimitivePrompts {
                 """.formatted(
                 missionLevelContext(exchange),
                 safeText(request.id()),
-                renderThoughtFramesForModel(stack(exchange).frames()),
+                renderThoughtFramesForModel(ThoughtStack.on(exchange).frames()),
                 safeText(request.prompt()),
                 schema.json());
     }
@@ -352,7 +345,7 @@ final class PrimitivePrompts {
                 %s""".formatted(
                 mission == null ? "(none)" : safeText(mission.goal()),
                 renderAgentRunInput(currentRun(exchange)),
-                renderRoutineSummary(routines.getRequired(currentRun(exchange).routineId())));
+                renderRoutineSummary(currentRoutine(exchange)));
     }
 
     private String renderCurrentThought(ThoughtFrame frame) {
