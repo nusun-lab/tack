@@ -5,6 +5,7 @@ import us.nusun.tack.framework.run.Mission;
 import us.nusun.tack.framework.run.ProjectionStore;
 import us.nusun.tack.framework.sandbox.PersonaSandboxManager;
 import us.nusun.tack.framework.run.AgentRun;
+import us.nusun.tack.framework.run.AgentRunRequest;
 import us.nusun.tack.framework.run.AgentRunStore;
 import us.nusun.tack.framework.tests.support.FrameworkFixtures;
 
@@ -85,7 +86,8 @@ class ResetServiceBoundaryTest {
 
     private static void seedRun(ProjectionStore projections, AgentRunStore agentRuns) {
         var mission = new Mission("mission-1", "Build", List.of(), "active", Instant.now());
-        var run = new AgentRun("run-1", mission.id(), FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A, Map.of());
+        var run = new AgentRun("run-1", mission.id(), null,
+                new AgentRunRequest(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A, Map.of()));
         agentRuns.putMission(mission);
         agentRuns.putRun(run);
         FrameworkFixtures.projectionManager(projections).recordAccepted(mission, run);

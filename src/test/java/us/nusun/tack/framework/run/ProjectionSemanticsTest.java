@@ -243,14 +243,8 @@ class ProjectionSemanticsTest {
                 .build()));
         FrameworkFixtures.set(manager, "routines", routines);
         Exchange exchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
-        AgentRun run = new AgentRun(
-                "run-focused",
-                "mission-1",
-                null,
-                FrameworkFixtures.PERSONA_A,
-                FrameworkFixtures.ROUTINE_A,
-                "phase-a",
-                Map.of("input", Map.of("focus", "phase A only")));
+        AgentRun run = new AgentRun("run-focused", "mission-1", null,
+                new AgentRunRequest(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A, "phase-a", Map.of("focus", "phase A only")));
         exchange.setProperty("agentRun", run);
 
         manager.record(exchange, "AGENT_RUN_ACCEPTED");
@@ -267,10 +261,12 @@ class ProjectionSemanticsTest {
         ProjectionStore store = FrameworkFixtures.projectionStore();
         AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);
         Exchange first = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
-        first.setProperty("agentRun", new AgentRun("run-first", "mission-1", FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A, Map.of()));
+        first.setProperty("agentRun", new AgentRun("run-first", "mission-1", null,
+                new AgentRunRequest(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A, Map.of())));
         Thread.sleep(2);
         Exchange second = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
-        second.setProperty("agentRun", new AgentRun("run-second", "mission-1", FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A, Map.of()));
+        second.setProperty("agentRun", new AgentRun("run-second", "mission-1", null,
+                new AgentRunRequest(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A, Map.of())));
         second.getProperty("agentRun", AgentRun.class).currentId("second");
 
         manager.record(first, "FIRST");

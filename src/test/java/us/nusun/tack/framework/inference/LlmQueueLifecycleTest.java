@@ -11,6 +11,7 @@ import us.nusun.tack.framework.inference.lane.InferenceLaneDefinition;
 import us.nusun.tack.framework.run.Mission;
 import us.nusun.tack.framework.inference.lane.PartitionKeyStrategy;
 import us.nusun.tack.framework.run.AgentRun;
+import us.nusun.tack.framework.run.AgentRunRequest;
 import us.nusun.tack.framework.tests.support.FrameworkFixtures;
 import us.nusun.tack.framework.logging.LogTokens;
 import us.nusun.tack.framework.tests.support.TestCamelContexts;
@@ -202,7 +203,8 @@ class LlmQueueLifecycleTest {
         LlmJobFactory jobs = jobFactory();
         UUID jobId = UUID.randomUUID();
         Exchange exchange = new DefaultExchange(context);
-        exchange.setProperty("agentRun", new AgentRun("run-1", "mission-1", "persona-a", "routine-a", Map.of()));
+        exchange.setProperty("agentRun", new AgentRun("run-1", "mission-1", null,
+                new AgentRunRequest("persona-a", "routine-a", Map.of())));
         exchange.setProperty("mission", new Mission("mission-1", "goal", List.of(), "active", Instant.now()));
         exchange.getMessage().setBody(queuedJob(jobId));
 
@@ -227,7 +229,8 @@ class LlmQueueLifecycleTest {
         LlmJobFactory jobs = jobFactory(registryWithPartitionStrategy(PartitionKeyStrategy.MISSION));
         UUID jobId = UUID.randomUUID();
         Exchange exchange = new DefaultExchange(context);
-        exchange.setProperty("agentRun", new AgentRun("run-1", "mission-1", "persona-a", "routine-a", Map.of()));
+        exchange.setProperty("agentRun", new AgentRun("run-1", "mission-1", null,
+                new AgentRunRequest("persona-a", "routine-a", Map.of())));
         exchange.setProperty("mission", new Mission("mission-1", "goal", List.of(), "active", Instant.now()));
         exchange.getMessage().setBody(queuedJob(jobId));
 
@@ -235,7 +238,8 @@ class LlmQueueLifecycleTest {
         assertEquals("mission-1", jobs.requestKafkaKey(exchange));
 
         Exchange runFallback = new DefaultExchange(context);
-        runFallback.setProperty("agentRun", new AgentRun("run-2", "mission-2", "persona-a", "routine-a", Map.of()));
+        runFallback.setProperty("agentRun", new AgentRun("run-2", "mission-2", null,
+                new AgentRunRequest("persona-a", "routine-a", Map.of())));
         runFallback.getMessage().setBody(queuedJob(jobId));
         jobs.prepare(runFallback);
         assertEquals("run-2", jobs.requestKafkaKey(runFallback));
@@ -252,7 +256,8 @@ class LlmQueueLifecycleTest {
         LlmJobFactory jobs = jobFactory(registryWithPartitionStrategy(PartitionKeyStrategy.JOB));
         UUID jobId = UUID.randomUUID();
         Exchange exchange = new DefaultExchange(context);
-        exchange.setProperty("agentRun", new AgentRun("run-1", "mission-1", "persona-a", "routine-a", Map.of()));
+        exchange.setProperty("agentRun", new AgentRun("run-1", "mission-1", null,
+                new AgentRunRequest("persona-a", "routine-a", Map.of())));
         exchange.setProperty("mission", new Mission("mission-1", "goal", List.of(), "active", Instant.now()));
         exchange.getMessage().setBody(queuedJob(jobId));
 

@@ -36,6 +36,7 @@ import us.nusun.tack.framework.run.ProjectionStore;
 import us.nusun.tack.framework.routine.PrimitiveExecutor;
 import us.nusun.tack.framework.run.MissionRosterService;
 import us.nusun.tack.framework.run.AgentRun;
+import us.nusun.tack.framework.run.AgentRunRequest;
 import us.nusun.tack.framework.run.AgentRunStore;
 
 import java.lang.reflect.Field;
@@ -201,7 +202,8 @@ public final class FrameworkFixtures {
     public static Exchange exchangeWithRun(String personaId, String routineId) {
         DefaultExchange exchange = new DefaultExchange(new DefaultCamelContext());
         exchange.setProperty("mission", new Mission("mission-1", "Test mission", List.of(), "active", Instant.now()));
-        exchange.setProperty("agentRun", new AgentRun("run-1", "mission-1", personaId, routineId, Map.of("input", Map.of("brief", "Test run input"))));
+        exchange.setProperty("agentRun", new AgentRun("run-1", "mission-1", null,
+                new AgentRunRequest(personaId, routineId, Map.of("brief", "Test run input"))));
         exchange.setProperty("routine", routineCatalog().getRequired(routineId));
         return exchange;
     }

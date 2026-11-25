@@ -9,7 +9,6 @@ import us.nusun.tack.framework.inference.lane.InferenceLaneRegistry;
 import us.nusun.tack.framework.persona.PersonaCatalog;
 import us.nusun.tack.framework.run.Mission;
 import us.nusun.tack.framework.persona.Persona;
-import us.nusun.tack.framework.sandbox.PersonaSandboxManager;
 import us.nusun.tack.framework.run.AgentRun;
 
 import java.time.Instant;
@@ -56,7 +55,6 @@ public class LlmJobFactory {
         var requester = firstNonBlankStripped(request.requester(), "framework");
         var personaId = run == null ? text(metadata, "personaId") : run.personaId();
         var persona = persona(personaId);
-        var sandbox = run == null ? null : run.workingState().get(PersonaSandboxManager.WORKING_STATE_SANDBOX_NAME);
         var force = flag(propertyOrHeader(exchange, FORCE_SCHEMA));
         if (force == null) {
             force = flag(metadata.get(FORCE_SCHEMA));
@@ -69,7 +67,7 @@ public class LlmJobFactory {
                 firstNonBlank(lane.model(), defaultModel), lane.partitionKeyStrategy(),
                 firstNonBlank(mission == null ? null : mission.id(), text(metadata, "missionId")),
                 run == null ? text(metadata, "agentRunId") : run.id(), personaId, text(metadata, "toolProfile"),
-                firstNonBlank(sandbox instanceof String name ? name : null, text(metadata, "sandboxName")),
+                firstNonBlank(run == null ? null : run.sandboxName(), text(metadata, "sandboxName")),
                 run == null ? text(metadata, "primitive") : run.currentPrimitive(),
                 run == null ? text(metadata, "primitiveId") : run.currentId(), text(metadata, "primitivePrompt"),
                 capacity == null ? integer(metadata.get(CAPACITY_MAXIMUM_PROPERTY)) : capacity,

@@ -20,7 +20,6 @@ import java.util.Map;
 
 @ApplicationScoped
 public class PersonaSandboxManager {
-    public static final String WORKING_STATE_SANDBOX_NAME = "sandboxName";
     private static final Logger LOG = Logger.getLogger(PersonaSandboxManager.class);
     private static final String GITEA_PROFILE_ID = "tack-gitea";
 
@@ -49,8 +48,7 @@ public class PersonaSandboxManager {
         if (mission == null || persona == null || run == null) {
             throw new IllegalArgumentException("Mission, persona, and AgentRun are required for sandbox admission");
         }
-        String name = provision(mission, persona, run);
-        run.workingState().put(WORKING_STATE_SANDBOX_NAME, name);
+        run.sandboxName(provision(mission, persona, run));
     }
 
     public SandboxExecTool tool(String sandboxName, Persona persona) {
@@ -187,11 +185,8 @@ public class PersonaSandboxManager {
     }
 
     private static String repositoryUrl(AgentRun run) {
-        Object input = run.input();
-        if (!(input instanceof Map<?, ?> map)) {
-            return null;
-        }
-        Object value = map.get("repositoryUrl");
+        var input = run.input();
+        Object value = input == null ? null : input.get("repositoryUrl");
         return value == null ? null : String.valueOf(value);
     }
 

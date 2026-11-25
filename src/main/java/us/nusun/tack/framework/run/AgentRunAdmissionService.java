@@ -95,10 +95,7 @@ public class AgentRunAdmissionService {
                 "run-" + UUID.randomUUID(),
                 mission.id(),
                 parent == null ? null : parent.id(),
-                request.personaId(),
-                request.routineId(),
-                request.subroutineId(),
-                request.workingState());
+                request);
     }
 
     private void validateCapacity(Mission mission, int requested, Integer maximum) {

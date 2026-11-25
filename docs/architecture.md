@@ -49,7 +49,7 @@ OpenShell provides an execution boundary for tools that need a real working envi
 
 A sandbox is owned by one mission + persona pair. The sandbox name is deterministic for that pair and the same sandbox is reused across that persona's AgentRuns in the mission. Repository checkouts and other working state therefore survive routine boundaries while different missions and personas remain isolated.
 
-`sandbox_exec` is not globally available. `LlmAgentFactory` injects it only when the selected `ToolProfile` explicitly allows logical server `sandbox` and tool `sandbox_exec`. The sandbox name is also written into AgentRun working state so later execution can reconnect to the same environment.
+`LlmAgentFactory` injects `sandbox_exec` when the selected `ToolProfile` explicitly allows logical server `sandbox` and tool `sandbox_exec`. The AgentRun stores the sandbox name so later execution can reconnect to the same environment.
 
 When a persona has Gitea credentials, the sandbox manager prepares an OpenShell provider and configures Git identity and credentials. Repository contents are then manipulated with ordinary Git, filesystem, build, and test commands inside `/sandbox/repos`. Gitea MCP remains the remote control surface for repository discovery/provisioning, branch and commit metadata, pull requests, releases, and remote verification.
 

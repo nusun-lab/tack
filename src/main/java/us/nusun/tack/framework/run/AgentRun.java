@@ -24,26 +24,19 @@ public class AgentRun {
     private String currentId;
     private StepResult latestStepResult;
     private PrimitiveResult latestResult;
-    private final Map<String, Object> workingState;
+    private final Map<String, Object> input;
+    private String sandboxName;
     private final Instant startedAt;
 
-    public AgentRun(String id, String missionId, String personaId, String routineId, Map<String, Object> workingState) {
-        this(id, missionId, null, personaId, routineId, null, workingState);
-    }
-
-    public AgentRun(String id, String missionId, String parentAgentRunId, String personaId, String routineId, Map<String, Object> workingState) {
-        this(id, missionId, parentAgentRunId, personaId, routineId, null, workingState);
-    }
-
-    public AgentRun(String id, String missionId, String parentAgentRunId, String personaId, String routineId, String subroutineId, Map<String, Object> workingState) {
+    public AgentRun(String id, String missionId, String parentAgentRunId, AgentRunRequest request) {
         this.id = id;
         this.missionId = missionId;
         this.parentAgentRunId = parentAgentRunId;
-        this.personaId = personaId;
-        this.routineId = routineId;
-        this.subroutineId = subroutineId == null || subroutineId.isBlank() ? null : subroutineId.trim();
+        this.personaId = request.personaId();
+        this.routineId = request.routineId();
+        this.subroutineId = request.subroutineId();
         this.status = STATUS_RUNNING;
-        this.workingState = workingState == null ? new java.util.LinkedHashMap<>() : new java.util.LinkedHashMap<>(workingState);
+        this.input = request.input().isEmpty() ? null : request.input();
         this.startedAt = Instant.now();
     }
 
@@ -61,8 +54,9 @@ public class AgentRun {
     public void currentId(String currentId) { this.currentId = currentId; }
     public StepResult latestStepResult() { return latestStepResult; }
     public PrimitiveResult latestResult() { return latestResult; }
-    public Map<String, Object> workingState() { return workingState; }
-    public Object input() { return workingState.get("input"); }
+    public Map<String, Object> input() { return input; }
+    public String sandboxName() { return sandboxName; }
+    public void sandboxName(String sandboxName) { this.sandboxName = sandboxName; }
     public Instant startedAt() { return startedAt; }
 
     public void apply(PrimitiveResult result) {

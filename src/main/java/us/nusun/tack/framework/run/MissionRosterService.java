@@ -175,12 +175,9 @@ public class MissionRosterService {
                 renderIdentities(persona, platforms)).strip();
     }
 
-    private String renderInput(Object input) {
+    private String renderInput(Map<String, Object> input) {
         if (input == null) {
             return "(none)";
-        }
-        if (input instanceof CharSequence text) {
-            return text.isEmpty() ? "(empty text)" : text.toString();
         }
         try {
             return objectMapper.writeValueAsString(input);

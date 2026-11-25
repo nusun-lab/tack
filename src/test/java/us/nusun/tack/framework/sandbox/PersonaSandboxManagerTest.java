@@ -8,6 +8,7 @@ import us.nusun.tack.framework.sandbox.grpc.Sandbox;
 import us.nusun.tack.framework.sandbox.grpc.SandboxPhase;
 import us.nusun.tack.framework.sandbox.grpc.SandboxStatus;
 import us.nusun.tack.framework.run.AgentRun;
+import us.nusun.tack.framework.run.AgentRunRequest;
 
 import java.time.Instant;
 import java.util.List;
@@ -33,8 +34,8 @@ class PersonaSandboxManagerTest {
         manager.ensureReady(mission, persona, second);
 
         String name = manager.sandboxNameFor(mission.id(), persona.id());
-        assertEquals(name, first.workingState().get(PersonaSandboxManager.WORKING_STATE_SANDBOX_NAME));
-        assertEquals(name, second.workingState().get(PersonaSandboxManager.WORKING_STATE_SANDBOX_NAME));
+        assertEquals(name, first.sandboxName());
+        assertEquals(name, second.sandboxName());
         assertEquals(1, openshell.createCalls);
     }
 
@@ -59,7 +60,7 @@ class PersonaSandboxManagerTest {
     }
 
     private static AgentRun run(String id, Mission mission, Persona persona) {
-        return new AgentRun(id, mission.id(), persona.id(), "routine-a", Map.of());
+        return new AgentRun(id, mission.id(), null, new AgentRunRequest(persona.id(), "routine-a", Map.of()));
     }
 
     private static final class FakeOpenShellClient extends OpenShellGrpcClient {

@@ -11,6 +11,7 @@ import us.nusun.tack.framework.run.AgentRunProjection;
 import us.nusun.tack.framework.run.AgentRunProjectionManager;
 import us.nusun.tack.framework.run.ProjectionStore;
 import us.nusun.tack.framework.run.AgentRun;
+import us.nusun.tack.framework.run.AgentRunRequest;
 import us.nusun.tack.framework.tests.support.FrameworkFixtures;
 
 import java.util.List;
@@ -73,14 +74,16 @@ class WorkspaceViewServiceBoundaryTest {
         WorkspaceViewService service = service(store);
 
         var parentExchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
-        AgentRun parent = new AgentRun("parent-run", "mission-1", FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A, Map.of());
+        AgentRun parent = new AgentRun("parent-run", "mission-1", null,
+                new AgentRunRequest(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A, Map.of()));
         parent.currentPrimitive("act");
         parent.currentId("review");
         parentExchange.setProperty("agentRun", parent);
         manager.record(parentExchange, "PARENT_STARTED");
 
         var childExchange = FrameworkFixtures.exchangeWithRun(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A);
-        AgentRun child = new AgentRun("child-run", "mission-1", "parent-run", FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A, Map.of());
+        AgentRun child = new AgentRun("child-run", "mission-1", "parent-run",
+                new AgentRunRequest(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A, Map.of()));
         child.currentPrimitive("act");
         child.currentId("implement");
         childExchange.setProperty("agentRun", child);

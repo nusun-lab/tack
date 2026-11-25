@@ -31,11 +31,4 @@ public record AgentRunRequest(
         subroutineId = RoutineDefinition.normalizeSubroutineId(subroutineId);
         input = JsonValues.snapshot(input);
     }
-
-    public Map<String, Object> workingState() {
-        if (input.isEmpty()) {
-            return Map.of();
-        }
-        return Map.of("input", input);
-    }
 }

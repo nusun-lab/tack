@@ -6,7 +6,7 @@ Tack can use OpenShell as the execution boundary for repository work without mov
 
 A sandbox belongs to one **mission + persona** pair. The same persona reuses that sandbox across its AgentRuns for the mission, so repository checkouts and other working state survive routine boundaries. Different missions or personas get different sandboxes.
 
-Tack records the sandbox name in AgentRun working state and uses `/sandbox/repos` as the repository working area.
+Tack records the sandbox name on the AgentRun and uses `/sandbox/repos` as the repository working area.
 
 Tack prepares the sandbox synchronously during admission for both initial mission runs and later AgentRuns. It waits for OpenShell readiness, activates the developer package policy, prepares the Java and Maven environment, and completes any required Gitea provider attachment, Git network authorization, identity, and credential setup before publishing `AgentRunScheduled`. If preparation fails or times out, the affected admission publishes no scheduled events.
 

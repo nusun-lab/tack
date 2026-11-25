@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static us.nusun.tack.framework.tests.support.AgentRunRouteTestSupport.SCHEDULED_TOPIC;
@@ -45,7 +46,10 @@ class MissionRouteAsyncTest {
                 public void configure() {
                     from("direct:slow-root-routine")
                             .delay(500)
-                            .process(exchange -> routineCompleted.countDown());
+                            .process(exchange -> {
+                                assertEquals(Map.of(), exchange.getMessage().getBody());
+                                routineCompleted.countDown();
+                            });
                 }
             });
             context.start();
@@ -69,6 +73,7 @@ class MissionRouteAsyncTest {
             assertEquals(1, agentRuns.missions().size());
             assertEquals(1, agentRuns.runs().size());
             assertNotNull(store.get(handle.agentRunId()));
+            assertNull(store.get(handle.agentRunId()).input());
             assertEquals(List.of("AGENT_RUN_ACCEPTED"), events(store.get(handle.agentRunId())));
             assertEquals(List.of(SCHEDULED_TOPIC), kafka.sentTopics());
             AgentRunScheduled scheduled = scheduledEvent(kafka, 0);
@@ -308,8 +313,8 @@ class MissionRouteAsyncTest {
     void claimedRunRecordsStartupFailureWhenMissionContextIsMissing() throws Exception {
         ProjectionStore store = FrameworkFixtures.projectionStore();
         AgentRunStore runs = new AgentRunStore();
-        AgentRun run = new AgentRun("run-without-mission", "missing-mission", FrameworkFixtures.PERSONA_A,
-                FrameworkFixtures.ROUTINE_A, Map.of());
+        AgentRun run = new AgentRun("run-without-mission", "missing-mission", null,
+                new AgentRunRequest(FrameworkFixtures.PERSONA_A, FrameworkFixtures.ROUTINE_A, Map.of()));
         run.status(AgentRun.STATUS_ACCEPTED);
         runs.putRun(run);
 

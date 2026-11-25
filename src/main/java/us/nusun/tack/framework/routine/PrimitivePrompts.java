@@ -401,19 +401,8 @@ final class PrimitivePrompts {
     }
 
     private String renderAgentRunInput(AgentRun run) {
-        Object input = run == null ? null : run.workingState().get("input");
-        if (isEmptyInput(input)) {
-            return "(empty)";
-        }
-        return asJson(input);
-    }
-
-    private static boolean isEmptyInput(Object input) {
-        if (input == null) return true;
-        if (input instanceof String text) return text.isBlank();
-        if (input instanceof Map<?, ?> map) return map.isEmpty();
-        if (input instanceof Iterable<?> iterable) return !iterable.iterator().hasNext();
-        return false;
+        var input = run.input();
+        return input == null ? "(empty)" : asJson(input);
     }
 
     private static String renderRoutineSummary(RoutineDefinition routine) {

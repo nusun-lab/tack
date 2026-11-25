@@ -50,8 +50,10 @@ class MissionRosterServiceTest {
     void missionRosterSupportsDuplicatePersonasWithRunMetadata() {
         AgentRunStore store = new AgentRunStore();
         store.putMission(new Mission("mission-1", "Build", List.of(), "active", Instant.now()));
-        store.putRun(new AgentRun("run-a-1", "mission-1", "persona-a", "routine-a", Map.of()));
-        store.putRun(new AgentRun("run-a-2", "mission-1", "persona-a", "routine-b", Map.of()));
+        store.putRun(new AgentRun("run-a-1", "mission-1", null,
+                new AgentRunRequest("persona-a", "routine-a", Map.of())));
+        store.putRun(new AgentRun("run-a-2", "mission-1", null,
+                new AgentRunRequest("persona-a", "routine-b", Map.of())));
         MissionRosterService service = service(store);
 
         String roster = service.rosterView("mission-1", "history", "full", null, null, null, null);
@@ -104,14 +106,8 @@ class MissionRosterServiceTest {
     void missionRosterIncludesSubroutineAndFocusedInput() {
         AgentRunStore store = new AgentRunStore();
         store.putMission(new Mission("mission-1", "Build", List.of(), "active", Instant.now()));
-        AgentRun run = new AgentRun(
-                "run-phase-a",
-                "mission-1",
-                null,
-                "persona-a",
-                "routine-a",
-                "phase-a",
-                Map.of("input", Map.of("focus", "Validate phase A behavior.")));
+        AgentRun run = new AgentRun("run-phase-a", "mission-1", null,
+                new AgentRunRequest("persona-a", "routine-a", "phase-a", Map.of("focus", "Validate phase A behavior.")));
         run.status(AgentRun.STATUS_SCHEDULED);
         store.putRun(run);
         MissionRosterService service = service(store);
@@ -127,7 +123,8 @@ class MissionRosterServiceTest {
     @Test
     void activeMissionRosterExcludesTerminalRuns() {
         AgentRunStore store = storeWithRuns();
-        AgentRun complete = new AgentRun("run-complete", "mission-1", "persona-a", "routine-a", Map.of());
+        AgentRun complete = new AgentRun("run-complete", "mission-1", null,
+                new AgentRunRequest("persona-a", "routine-a", Map.of()));
         complete.status(AgentRun.STATUS_COMPLETE);
         store.putRun(complete);
         MissionRosterService service = service(store);
@@ -141,7 +138,8 @@ class MissionRosterServiceTest {
     @Test
     void missionRosterToolDefaultsToActiveContacts() {
         AgentRunStore store = storeWithRuns();
-        AgentRun complete = new AgentRun("run-complete", "mission-1", "persona-a", "routine-a", Map.of());
+        AgentRun complete = new AgentRun("run-complete", "mission-1", null,
+                new AgentRunRequest("persona-a", "routine-a", Map.of()));
         complete.status(AgentRun.STATUS_COMPLETE);
         store.putRun(complete);
 
@@ -160,7 +158,8 @@ class MissionRosterServiceTest {
     @Test
     void missionRosterToolHistoryDefaultsToRunHistory() {
         AgentRunStore store = storeWithRuns();
-        AgentRun complete = new AgentRun("run-complete", "mission-1", "persona-a", "routine-a", Map.of());
+        AgentRun complete = new AgentRun("run-complete", "mission-1", null,
+                new AgentRunRequest("persona-a", "routine-a", Map.of()));
         complete.status(AgentRun.STATUS_COMPLETE);
         store.putRun(complete);
 
@@ -200,7 +199,8 @@ class MissionRosterServiceTest {
     @Test
     void missionRosterContactsCollapseMultipleRunsForOnePersona() {
         AgentRunStore store = storeWithRuns();
-        AgentRun second = new AgentRun("run-a-2", "mission-1", "persona-a", "routine-b", Map.of());
+        AgentRun second = new AgentRun("run-a-2", "mission-1", null,
+                new AgentRunRequest("persona-a", "routine-b", Map.of()));
         second.status(AgentRun.STATUS_RUNNING);
         store.putRun(second);
 
@@ -220,11 +220,13 @@ class MissionRosterServiceTest {
         AgentRunStore store = new AgentRunStore();
         store.putMission(new Mission("mission-1", "Build", List.of(), "active", Instant.now()));
         store.putMission(new Mission("mission-2", "Other", List.of(), "active", Instant.now()));
-        AgentRun runA = new AgentRun("run-a", "mission-1", "run-parent", "persona-a", "routine-a", Map.of());
+        AgentRun runA = new AgentRun("run-a", "mission-1", "run-parent",
+                new AgentRunRequest("persona-a", "routine-a", Map.of()));
         runA.status(AgentRun.STATUS_ACCEPTED);
-        AgentRun runC = new AgentRun("run-c", "mission-1", "persona-c", "routine-b", Map.of());
+        AgentRun runC = new AgentRun("run-c", "mission-1", null, new AgentRunRequest("persona-c", "routine-b", Map.of()));
         runC.status(AgentRun.STATUS_RUNNING);
-        AgentRun runB = new AgentRun("run-b-other-mission", "mission-2", "persona-b", "routine-a", Map.of());
+        AgentRun runB = new AgentRun("run-b-other-mission", "mission-2", null,
+                new AgentRunRequest("persona-b", "routine-a", Map.of()));
         runB.status(AgentRun.STATUS_ACCEPTED);
         store.putRun(runA);
         store.putRun(runC);

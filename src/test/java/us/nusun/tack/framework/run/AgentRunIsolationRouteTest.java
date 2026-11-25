@@ -356,7 +356,8 @@ class AgentRunIsolationRouteTest {
     }
 
     private static AgentRun parentRun() {
-        return new AgentRun("run-parent", "mission-1", FrameworkFixtures.PERSONA_A, "test/parent", Map.of());
+        return new AgentRun("run-parent", "mission-1", null,
+                new AgentRunRequest(FrameworkFixtures.PERSONA_A, "test/parent", Map.of()));
     }
 
     private static void assertParentStateRestored(Exchange exchange, AgentRun parent) {

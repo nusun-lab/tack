@@ -15,6 +15,7 @@ import us.nusun.tack.framework.routine.RoutineDefinition;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @ApplicationScoped
 public class AgentRunRoute extends RouteBuilder {
@@ -117,7 +118,7 @@ public class AgentRunRoute extends RouteBuilder {
         RoutineDefinition routine = routines.getRequired(run.routineId());
         exchange.setProperty("routine", routine);
         exchange.setProperty("agentRunRouteUri", routine.routeUri(run.subroutineId()));
-        exchange.getMessage().setBody(run.workingState().getOrDefault("input", Map.of()));
+        exchange.getMessage().setBody(Objects.requireNonNullElse(run.input(), Map.of()));
         projections.record(exchange, "AGENT_RUN_STARTED");
     }
 }

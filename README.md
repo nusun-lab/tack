@@ -110,7 +110,7 @@ A `Mission` is the top-level goal and context container. It owns the mission ID,
 
 ### AgentRun
 
-An `AgentRun` is one execution of one persona on one routine or declared subroutine. It carries persona/routine identity, structured input and working state, primitive state, thought-stack state, lifecycle status, projection data, and parent lineage.
+An `AgentRun` is one execution of one persona on one routine or declared subroutine. It carries persona and routine identity, structured input, an optional sandbox name, primitive results, lifecycle status, and parent lineage.
 
 Parent/child lineage does not imply synchronous waiting. Scheduling a child AgentRun returns an accepted handle; the parent continues unless its own routine later observes that state.
 

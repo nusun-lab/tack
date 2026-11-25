@@ -14,7 +14,7 @@ public record AgentRunProjection(
         Map<String, Object> persona,
         Map<String, Object> routine,
         Map<String, Object> subroutine,
-        Object input,
+        Map<String, Object> input,
         Map<String, Object> current,
         String toolProfile,
         String laneId,
