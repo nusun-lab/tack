@@ -47,14 +47,7 @@ public class KafkaTopicProvisioner {
     }
 
     public List<String> configuredTopicNames() {
-        java.util.ArrayList<String> topics = new java.util.ArrayList<>();
-        for (InferenceLaneDefinition lane : lanes.allLanes()) {
-            topics.add(lane.requestTopic());
-            topics.add(lane.responseTopic());
-        }
-        topics.add(agentRunScheduledTopic);
-        topics.add(deadLetterTopic);
-        return topics.stream().distinct().toList();
+        return List.copyOf(configuredTopicPartitions().keySet());
     }
 
     public List<NewTopic> configuredTopics() {
@@ -81,10 +74,11 @@ public class KafkaTopicProvisioner {
         if (bootstrapServers == null || bootstrapServers.isBlank()) {
             throw new IllegalStateException("kafka.bootstrap.servers is required when llm.kafka.provision-topics=true");
         }
+        List<NewTopic> topics = configuredTopics();
         try (Admin adminClient = adminClient()) {
             Set<String> existingTopics = existingTopicNames(adminClient);
             verifyExistingRequestTopicPartitions(adminClient, existingTopics);
-            List<NewTopic> missingTopics = configuredTopics().stream()
+            List<NewTopic> missingTopics = topics.stream()
                     .filter(topic -> !existingTopics.contains(topic.name()))
                     .toList();
             if (!missingTopics.isEmpty()) {
@@ -96,8 +90,9 @@ public class KafkaTopicProvisioner {
                     }
                 }
             }
-            LOG.infof("Ensured Kafka topics exist: %s", configuredTopicNames());
-            return configuredTopicNames();
+            List<String> names = topics.stream().map(NewTopic::name).toList();
+            LOG.infof("Ensured Kafka topics exist: %s", names);
+            return names;
         }
     }
 

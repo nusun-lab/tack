@@ -12,6 +12,7 @@ import org.jboss.logmanager.LogContext;
 import org.jboss.logmanager.Logger;
 import org.junit.jupiter.api.Test;
 import us.nusun.tack.framework.tests.support.FrameworkFixtures;
+import us.nusun.tack.framework.logging.LogTokens;
 import us.nusun.tack.framework.tests.support.StubKafkaComponent;
 import us.nusun.tack.framework.tests.support.TestCamelContexts;
 import us.nusun.tack.framework.tests.support.TestJson;
@@ -157,7 +158,7 @@ class LlmRouteFrameworkRouteTest {
             context.start();
             LlmJobEnvelope queued = FrameworkFixtures.queuedJob(new us.nusun.tack.framework.inference.LlmJobEnvelope(
                     null, "low-pass", LlmPassType.ACTION, "test", "Persona A", 0, "prompt", "system", null, Map.of(), null));
-            replies.register(queued);
+            replies.register(queued.jobId());
             LlmJobResult result = LlmJobResult.succeeded(queued, "test-model", "ok", "ok", Instant.now());
 
             context.createProducerTemplate().sendBody("direct:handle-llm-response", result);
@@ -266,10 +267,7 @@ class LlmRouteFrameworkRouteTest {
         FrameworkFixtures.set(route, "jobFactory", FrameworkFixtures.jobFactory());
         LlmDeadLetterFactory deadLetters = new LlmDeadLetterFactory();
         FrameworkFixtures.set(route, "deadLetterFactory", deadLetters);
-        FrameworkFixtures.set(route, "routeSupport", new LlmRouteSupport(
-                context,
-                replies,
-                deadLetters));
+        FrameworkFixtures.set(route, "routeSupport", FrameworkFixtures.llmRouteSupport(replies, deadLetters, new LogTokens(false)));
         context.addRoutes(route);
         return context;
     }

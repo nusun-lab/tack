@@ -110,7 +110,6 @@ public class McpClientFactory {
         String transportType = firstNonBlank(server.transportType(), "streamableHttp");
         String authHeaderName = firstNonBlank(server.authHeaderName(), "Authorization");
         String authHeaderValueFormat = firstNonBlank(server.authHeaderValueFormat(), "Bearer %s");
-        Map<String, String> extraHeaders = server.extraHeaders() == null ? Map.of() : Map.copyOf(server.extraHeaders());
         ClientCacheKey cacheKey = new ClientCacheKey(
                 server.id(),
                 persona.id(),
@@ -120,7 +119,7 @@ public class McpClientFactory {
                 token,
                 authHeaderName,
                 authHeaderValueFormat,
-                extraHeaders);
+                server.extraHeaders());
         return connections.computeIfAbsent(cacheKey, this::newConnection);
     }
 

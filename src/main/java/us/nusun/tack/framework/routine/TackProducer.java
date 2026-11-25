@@ -15,9 +15,6 @@ public class TackProducer extends DefaultProducer {
 
     @Override
     public void process(Exchange exchange) throws Exception {
-        if (executor == null) {
-            throw new IllegalStateException("No PrimitiveExecutor is configured for tack component");
-        }
         String operation = requiredOperation();
         switch (operation) {
             case "act" -> executor.act(exchange, new PrimitiveExecutor.ActRequest(

@@ -305,6 +305,28 @@ class MissionRouteAsyncTest {
     }
 
     @Test
+    void claimedRunRecordsStartupFailureWhenMissionContextIsMissing() throws Exception {
+        ProjectionStore store = FrameworkFixtures.projectionStore();
+        AgentRunStore runs = new AgentRunStore();
+        AgentRun run = new AgentRun("run-without-mission", "missing-mission", FrameworkFixtures.PERSONA_A,
+                FrameworkFixtures.ROUTINE_A, Map.of());
+        run.status(AgentRun.STATUS_ACCEPTED);
+        runs.putRun(run);
+
+        try (DefaultCamelContext context = context(FrameworkFixtures.projectionManager(store),
+                FrameworkFixtures.routineCatalog(), runs, new StubKafkaComponent(), "mission-route-test")) {
+            context.start();
+            context.createProducerTemplate().sendBody("direct:handle-agent-run-scheduled",
+                    new AgentRunScheduled(run.missionId(), run.id()));
+
+            assertTrue(waitForEvent(store, run.id(), "AGENT_RUN_FAILED"));
+            assertEquals(AgentRun.STATUS_FAILED, run.status());
+            assertEquals("AgentRun mission state not found: missing-mission",
+                    store.get(run.id()).latestResult().get("summary"));
+        }
+    }
+
+    @Test
     void kafkaScheduledConsumerReturnsBeforeRoutineCompletion() throws Exception {
         ProjectionStore store = FrameworkFixtures.projectionStore();
         AgentRunProjectionManager manager = FrameworkFixtures.projectionManager(store);

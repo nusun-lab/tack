@@ -34,7 +34,8 @@ public final class McpToolPolicy {
     private final ToolProfile profile;
     private final Persona persona;
     private final LogTokens logTokens;
-    private final int globalMaxResultTokens;
+    private final String toolNamePrefix;
+    private final int maxResultTokens;
     private final TokenCountEstimator tokenCountEstimator;
 
     public McpToolPolicy(McpClient delegate, String server, ToolProfile profile, Persona persona,
@@ -44,7 +45,10 @@ public final class McpToolPolicy {
         this.profile = profile;
         this.persona = persona;
         this.logTokens = logTokens;
-        this.globalMaxResultTokens = globalMaxResultTokens;
+        boolean multipleServers = profile.policies().values().stream()
+                .filter(policy -> policy.connection() != null).limit(2).count() == 2;
+        this.toolNamePrefix = multipleServers ? server.replaceAll("[^A-Za-z0-9_]", "_") + "__" : "";
+        this.maxResultTokens = McpToolResultLimiter.effectiveLimit(profile.maxResultTokens(), globalMaxResultTokens);
         this.tokenCountEstimator = tokenCountEstimator;
     }
 
@@ -70,7 +74,8 @@ public final class McpToolPolicy {
                 ToolExecutionRequest profiled = prepareRequest(request);
                 logDim("TOOL " + server + "." + profiled.name() + " REQUEST " + abbreviateToolValue(profiled.arguments()));
                 try {
-                    ToolExecutionResult result = limitResult(executor.executeWithContext(profiled, context));
+                    ToolExecutionResult result = McpToolResultLimiter.limit(
+                            executor.executeWithContext(profiled, context), maxResultTokens, tokenCountEstimator);
                     logDim("TOOL " + server + "." + profiled.name() + " RESPONSE isError=" + result.isError()
                             + " " + abbreviateToolValue(McpToolResultLimiter.resultText(result)));
                     return result;
@@ -84,10 +89,7 @@ public final class McpToolPolicy {
 
     private ToolSpecification exposeTool(ToolSpecification tool) {
         ToolSpecification projected = projectArguments(tool);
-        if (!qualifiesToolNames()) {
-            return projected;
-        }
-        return projected.toBuilder().name(exposedToolName(tool.name())).build();
+        return toolNamePrefix.isEmpty() ? projected : projected.toBuilder().name(toolNamePrefix + tool.name()).build();
     }
 
     private ToolSpecification projectArguments(ToolSpecification tool) {
@@ -162,31 +164,8 @@ public final class McpToolPolicy {
         return renamed.toBuilder().arguments(arguments.toString()).build();
     }
 
-    private boolean qualifiesToolNames() {
-        return profile.policies().values().stream().filter(policy -> policy.connection() != null).limit(2).count() == 2;
-    }
-
-    private String exposedToolName(String toolName) {
-        return serverQualifier() + "__" + toolName;
-    }
-
     private String originalToolName(String toolName) {
-        if (!qualifiesToolNames()) {
-            return toolName;
-        }
-        String prefix = serverQualifier() + "__";
-        return toolName != null && toolName.startsWith(prefix) ? toolName.substring(prefix.length()) : toolName;
-    }
-
-    private String serverQualifier() {
-        return server.replaceAll("[^A-Za-z0-9_]", "_");
-    }
-
-    private ToolExecutionResult limitResult(ToolExecutionResult result) {
-        return McpToolResultLimiter.limit(
-                result,
-                McpToolResultLimiter.effectiveLimit(profile.maxResultTokens(), globalMaxResultTokens),
-                tokenCountEstimator);
+        return toolName != null && toolName.startsWith(toolNamePrefix) ? toolName.substring(toolNamePrefix.length()) : toolName;
     }
 
     private void logDim(String message) {

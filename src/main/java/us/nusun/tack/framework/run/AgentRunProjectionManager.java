@@ -20,6 +20,7 @@ import us.nusun.tack.framework.routine.ThoughtStack;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -126,12 +127,21 @@ public class AgentRunProjectionManager {
 
     private AgentRunProjection build(AgentRun run, Mission mission, ThoughtStack stack, String profile, String lane,
                                      String failure, AgentRunProjection previous, ProjectionEvent event, String response) {
-        Persona persona = personas.getRequired(run.personaId());
-        RoutineDefinition routine = routines.getRequired(run.routineId());
-        SubroutineDefinition subroutine = run.subroutineId() == null ? null : routine.requireSubroutine(run.subroutineId());
+        Map<String, Object> persona = previous == null
+                ? personaSummary(personas.getRequired(run.personaId())) : previous.persona();
+        Map<String, Object> routine;
+        Map<String, Object> subroutine;
+        if (previous == null) {
+            RoutineDefinition definition = routines.getRequired(run.routineId());
+            routine = routineSummary(definition);
+            subroutine = run.subroutineId() == null ? Map.of() : subroutineSummary(definition.requireSubroutine(run.subroutineId()));
+        } else {
+            routine = previous.routine();
+            subroutine = previous.subroutine();
+        }
         return new AgentRunProjection(run.id(), run.missionId(), run.parentAgentRunId(), run.status(),
-                missionSummary(mission, run.missionId()), personaSummary(persona), routineSummary(routine),
-                subroutineSummary(subroutine), run.input(), current(previous, event, response),
+                missionSummary(mission, run.missionId()), persona, routine, subroutine, run.input(),
+                current(previous, event, response),
                 firstNonBlank(previous == null ? null : previous.toolProfile(), profile),
                 firstNonBlank(previous == null ? null : previous.laneId(), lane),
                 stack == null ? List.of() : stack.frames(), thoughtHistory(previous, event), latest(failure, run),
@@ -168,7 +178,7 @@ public class AgentRunProjectionManager {
         summary.put("name", persona.name());
         if (persona.label() != null) summary.put("label", persona.label());
         if (persona.color() != null) summary.put("color", persona.color());
-        return summary;
+        return Collections.unmodifiableMap(summary);
     }
 
     private static Map<String, Object> routineSummary(RoutineDefinition routine) {
@@ -177,18 +187,15 @@ public class AgentRunProjectionManager {
         summary.put("name", routine.name());
         summary.put("description", routine.description());
         summary.put("routeUri", routine.routeUri());
-        return summary;
+        return Collections.unmodifiableMap(summary);
     }
 
     private static Map<String, Object> subroutineSummary(SubroutineDefinition subroutine) {
-        if (subroutine == null) {
-            return Map.of();
-        }
         LinkedHashMap<String, Object> summary = new LinkedHashMap<>();
         summary.put("id", subroutine.id());
         summary.put("description", subroutine.description());
         summary.put("routeUri", subroutine.routeUri());
-        return summary;
+        return Collections.unmodifiableMap(summary);
     }
 
     private static Map<String, Object> latest(String failure, AgentRun run) {
@@ -207,9 +214,6 @@ public class AgentRunProjectionManager {
 
     private static List<Map<String, Object>> timeline(AgentRunProjection previous, ProjectionEvent event) {
         List<Map<String, Object>> history = previous == null ? List.of() : previous.timeline();
-        if (event == null) {
-            return history;
-        }
         var entries = new ArrayList<>(history.subList(Math.max(0, history.size() - MAX_TIMELINE_ENTRIES + 1), history.size()));
         entries.add(event.row(false));
         return List.copyOf(entries);
@@ -217,7 +221,7 @@ public class AgentRunProjectionManager {
 
     private static List<Map<String, Object>> thoughtHistory(AgentRunProjection previous, ProjectionEvent event) {
         List<Map<String, Object>> history = previous == null ? List.of() : previous.thoughtHistory();
-        if (event == null || !event.type().startsWith("THOUGHT_")) {
+        if (!event.type().startsWith("THOUGHT_")) {
             return history;
         }
         var entries = new ArrayList<>(history);

@@ -177,14 +177,21 @@ public class LlmAgentFactory {
                         AtomicBoolean firstRequest = new AtomicBoolean(true);
                         builder.chatRequestTransformer(request -> {
                             boolean initial = firstRequest.getAndSet(false);
-                            if (initial && routeSupport != null) {
+                            if (initial) {
                                 routeSupport.logPrompt(job, exchange);
                             }
+                            if (responseFormat == null && diagnostics == null) {
+                                return request;
+                            }
+                            var effectiveRequest = request.toBuilder();
                             if (responseFormat != null) {
-                                request = request.toBuilder().responseFormat(responseFormat).build();
+                                effectiveRequest.responseFormat(responseFormat);
                             }
                             if (diagnostics != null) {
-                                request = request.toBuilder().toolChoice(initial ? ToolChoice.REQUIRED : ToolChoice.AUTO).build();
+                                effectiveRequest.toolChoice(initial ? ToolChoice.REQUIRED : ToolChoice.AUTO);
+                            }
+                            request = effectiveRequest.build();
+                            if (diagnostics != null) {
                                 diagnostics.logBudget(request);
                             }
                             return request;
@@ -208,11 +215,11 @@ public class LlmAgentFactory {
                 mcpTools = mcpClientFactory.toolProvidersFor(persona, profile);
                 List<Object> customTools = new ArrayList<>();
                 String missionId = invocation.missionId();
-                if (missionRoster != null && !blank(missionId)) {
+                if (!blank(missionId)) {
                     Integer capacityMaximum = invocation.capacityMaximum();
                     customTools.add(new MissionRosterTool(missionRoster, missionId, capacityMaximum));
                 }
-                if (sandboxes != null && profile.allowsTool(SANDBOX_TOOL_SERVER, SANDBOX_EXEC_TOOL)) {
+                if (profile.allowsTool(SANDBOX_TOOL_SERVER, SANDBOX_EXEC_TOOL)) {
                     String sandboxName = invocation.sandboxName();
                     if (blank(sandboxName)) {
                         sandboxName = sandboxes.sandboxNameFor(missionId, personaId);

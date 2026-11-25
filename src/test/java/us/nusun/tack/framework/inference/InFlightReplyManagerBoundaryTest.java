@@ -8,8 +8,6 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -20,12 +18,11 @@ class InFlightReplyManagerBoundaryTest {
         LlmJobEnvelope job = queuedJob(UUID.randomUUID());
         LlmJobResult result = LlmJobResult.succeeded(job, "mock-model", "ok", "ok", Instant.now());
 
-        assertSame(job, manager.register(job));
+        manager.register(job.jobId());
         assertEquals(1, manager.inFlightCount());
         manager.complete(result);
 
         assertEquals(result, manager.await(job.jobId(), 100));
-        assertFalse(manager.contains(job.jobId()));
         assertEquals(0, manager.inFlightCount());
     }
 
@@ -33,12 +30,11 @@ class InFlightReplyManagerBoundaryTest {
     void duplicateRegistrationForSameJobIdIsRejectedAndOriginalRegistrationRemains() {
         InFlightReplyManager manager = new InFlightReplyManager();
         UUID jobId = UUID.randomUUID();
-        manager.register(queuedJob(jobId));
+        manager.register(jobId);
 
-        IllegalStateException failure = assertThrows(IllegalStateException.class, () -> manager.register(queuedJob(jobId)));
+        IllegalStateException failure = assertThrows(IllegalStateException.class, () -> manager.register(jobId));
 
         assertTrue(failure.getMessage().contains("Duplicate in-flight jobId " + jobId));
-        assertTrue(manager.contains(jobId));
         assertEquals(1, manager.inFlightCount());
     }
 
@@ -48,7 +44,7 @@ class InFlightReplyManagerBoundaryTest {
         LlmJobEnvelope job = queuedJob(UUID.randomUUID());
         LlmJobResult result = LlmJobResult.failed(job, "mock-model", "late reply", null, Instant.now());
 
-        assertSame(result, manager.complete(result));
+        manager.complete(result);
         assertEquals(0, manager.inFlightCount());
     }
 
@@ -57,12 +53,12 @@ class InFlightReplyManagerBoundaryTest {
         InFlightReplyManager manager = new InFlightReplyManager();
         UUID jobId = UUID.randomUUID();
         LlmJobEnvelope first = queuedJob(jobId);
-        manager.register(first);
+        manager.register(first.jobId());
         manager.complete(LlmJobResult.succeeded(first, "mock-model", "first", "first", Instant.now()));
         assertEquals("first", manager.await(jobId, 100).content());
 
         LlmJobEnvelope second = queuedJob(jobId);
-        manager.register(second);
+        manager.register(second.jobId());
         manager.complete(LlmJobResult.succeeded(second, "mock-model", "second", "second", Instant.now()));
 
         assertEquals("second", manager.await(jobId, 100).content());
@@ -73,13 +69,12 @@ class InFlightReplyManagerBoundaryTest {
     void timeoutRemovesRegistrationAndLateReplyDoesNotRecreateIt() {
         InFlightReplyManager manager = new InFlightReplyManager();
         LlmJobEnvelope job = queuedJob(UUID.randomUUID());
-        manager.register(job);
+        manager.register(job.jobId());
 
         IllegalStateException failure = assertThrows(IllegalStateException.class, () -> manager.await(job.jobId(), 1));
         manager.complete(new LlmJobResult(job.jobId(), LlmJobStatus.SUCCEEDED, job.laneId(), job.passType(), job.requester(), job.role(), "mock", "late", "late", job.requestedAt(), Instant.now(), Instant.now(), 0, null));
 
         assertTrue(failure.getMessage().contains("Timed out waiting for LLM reply"));
-        assertFalse(manager.contains(job.jobId()));
         assertEquals(0, manager.inFlightCount());
     }
 

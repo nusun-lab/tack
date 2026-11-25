@@ -11,9 +11,9 @@ import us.nusun.tack.framework.persona.PersonaView;
 import us.nusun.tack.framework.routine.RoutineDefinition;
 import us.nusun.tack.framework.routine.SubroutineDefinition;
 
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -48,14 +48,16 @@ public class MissionRosterService {
         String normalizedView = normalizeView(view, normalizedScope);
         Set<String> platformFilter = csvSet(platforms);
 
-        List<AgentRun> runs = agentRuns.runsByMission(missionId).stream()
+        String selectedPersona = personaId == null ? "" : personaId.strip();
+        String selectedRoutine = routineId == null ? "" : routineId.strip();
+        var candidates = agentRuns.runsByMission(missionId).stream()
                 .filter(run -> !"active".equals(normalizedScope) || AgentRunStore.isActiveStatus(run.status()))
-                .filter(run -> blank(personaId) || personaId.strip().equals(run.personaId()))
-                .filter(run -> blank(routineId) || routineId.strip().equals(run.routineId()))
-                .sorted("history".equals(normalizedScope)
-                        ? Comparator.comparing(AgentRun::startedAt).reversed()
-                        : Comparator.comparing(AgentRun::id))
-                .toList();
+                .filter(run -> selectedPersona.isEmpty() || selectedPersona.equals(run.personaId()))
+                .filter(run -> selectedRoutine.isEmpty() || selectedRoutine.equals(run.routineId()));
+        if ("history".equals(normalizedScope)) {
+            candidates = candidates.sorted(Comparator.comparing(AgentRun::startedAt).reversed());
+        }
+        List<AgentRun> runs = candidates.toList();
 
         String roster = "contacts".equals(normalizedView)
                 ? contactsView(runs, platformFilter)
@@ -70,7 +72,7 @@ public class MissionRosterService {
 
     private String renderView(AgentRun run, String view, Set<String> platforms) {
         return switch (view) {
-            case "coverage" -> coverageEntry(run);
+            case "coverage" -> coverageEntry(run, personas.getRequired(run.personaId()));
             case "runs" -> runsEntry(run, platforms);
             case "full" -> fullViewEntry(run, platforms);
             default -> throw new IllegalArgumentException("Unsupported roster view: " + view);
@@ -97,8 +99,7 @@ public class MissionRosterService {
         return "capacity: active=%d maximum=%d remaining=%d".formatted(active, maximum, remaining);
     }
 
-    private String coverageEntry(AgentRun run) {
-        Persona persona = personas.getRequired(run.personaId());
+    private String coverageEntry(AgentRun run, Persona persona) {
         return "- %s | personaId=%s | routineId=%s | target=%s | status=%s".formatted(
                 persona.name(),
                 run.personaId(),
@@ -129,12 +130,13 @@ public class MissionRosterService {
     }
 
     private String runsEntry(AgentRun run, Set<String> platforms) {
-        String entry = coverageEntry(run)
+        Persona persona = personas.getRequired(run.personaId());
+        String entry = coverageEntry(run, persona)
                 + " | agentRunId=" + run.id()
                 + " | parentAgentRunId=" + value(run.parentAgentRunId())
                 + " | startedAt=" + run.startedAt();
         if (!platforms.isEmpty()) {
-            entry += " | handles: " + renderIdentities(personas.getRequired(run.personaId()), platforms);
+            entry += " | handles: " + renderIdentities(persona, platforms);
         }
         return entry;
     }
@@ -229,14 +231,10 @@ public class MissionRosterService {
         if (blank(value)) {
             return Set.of();
         }
-        LinkedHashSet<String> result = new LinkedHashSet<>();
-        for (String item : value.split(",")) {
-            String normalized = normalize(item);
-            if (!normalized.isBlank()) {
-                result.add(normalized);
-            }
-        }
-        return Set.copyOf(result);
+        return Arrays.stream(value.split(","))
+                .map(MissionRosterService::normalize)
+                .filter(item -> !item.isBlank())
+                .collect(Collectors.toUnmodifiableSet());
     }
 
     private static String normalize(String value) {

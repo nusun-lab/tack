@@ -12,6 +12,7 @@ import us.nusun.tack.framework.run.Mission;
 import us.nusun.tack.framework.inference.lane.PartitionKeyStrategy;
 import us.nusun.tack.framework.run.AgentRun;
 import us.nusun.tack.framework.tests.support.FrameworkFixtures;
+import us.nusun.tack.framework.logging.LogTokens;
 import us.nusun.tack.framework.tests.support.TestCamelContexts;
 import us.nusun.tack.framework.tests.support.TestJson;
 
@@ -32,7 +33,7 @@ class LlmQueueLifecycleTest {
     @Test
     void selectedLaneVerificationDoesNotRequireUnselectedLaneRoutes() throws Exception {
         DefaultCamelContext context = TestCamelContexts.quiet();
-        LlmRouteSupport support = routeSupport(context);
+        LlmRouteSupport support = routeSupport(new InFlightReplyManager());
         context.addRoutes(new RouteBuilder() {
             @Override
             public void configure() {
@@ -52,7 +53,7 @@ class LlmQueueLifecycleTest {
     @Test
     void selectedLaneVerificationFailsForRequestedLaneOnly() throws Exception {
         DefaultCamelContext context = TestCamelContexts.quiet();
-        LlmRouteSupport support = routeSupport(context);
+        LlmRouteSupport support = routeSupport(new InFlightReplyManager());
         context.addRoutes(new RouteBuilder() {
             @Override
             public void configure() {
@@ -82,7 +83,7 @@ class LlmQueueLifecycleTest {
         Properties properties = new Properties();
         properties.setProperty("llm.local-worker-route-verification.enabled", "false");
         context.getPropertiesComponent().setOverrideProperties(properties);
-        LlmRouteSupport support = routeSupport(context);
+        LlmRouteSupport support = routeSupport(new InFlightReplyManager());
         context.addRoutes(new RouteBuilder() {
             @Override
             public void configure() {
@@ -116,7 +117,7 @@ class LlmQueueLifecycleTest {
         UUID jobId = UUID.randomUUID();
         LlmJobEnvelope job = queuedJob(jobId);
         DefaultCamelContext context = TestCamelContexts.quiet();
-        var support = routeSupport(context, manager);
+        var support = routeSupport(manager);
         context.addRoutes(new RouteBuilder() {
             @Override
             public void configure() {
@@ -136,7 +137,6 @@ class LlmQueueLifecycleTest {
         try {
             assertThrows(CamelExecutionException.class,
                     () -> context.createProducerTemplate().requestBody("direct:register-and-fail", job));
-            assertFalse(manager.contains(jobId));
             assertEquals(0, manager.inFlightCount());
         } finally {
             context.stop();
@@ -299,10 +299,10 @@ class LlmQueueLifecycleTest {
         properties.setProperty("llm.reply-timeout-ms", "1");
         context.getPropertiesComponent().setOverrideProperties(properties);
         InFlightReplyManager manager = new InFlightReplyManager();
-        LlmRouteSupport support = routeSupport(context, manager);
+        LlmRouteSupport support = routeSupport(manager);
         UUID jobId = UUID.randomUUID();
         LlmJobEnvelope job = queuedJob(jobId);
-        manager.register(job);
+        manager.register(job.jobId());
         Exchange exchange = new DefaultExchange(context);
         FrameworkFixtures.restoreJob(exchange, job);
 
@@ -315,20 +315,19 @@ class LlmQueueLifecycleTest {
         assertTrue(failure.getMessage().contains("laneId=low-pass"));
         assertTrue(failure.getMessage().contains("passType=ACTION"));
         assertFalse(failure.getMessage().contains("runtime" + "Id"));
-        assertFalse(manager.contains(jobId));
+        assertEquals(0, manager.inFlightCount());
     }
 
     @Test
     void timeoutDoesNotLeaveStaleInFlightEntry() {
         InFlightReplyManager manager = new InFlightReplyManager();
         UUID jobId = UUID.randomUUID();
-        manager.register(queuedJob(jobId));
+        manager.register(jobId);
 
         IllegalStateException failure = assertThrows(IllegalStateException.class, () -> manager.await(jobId, 1));
 
         assertTrue(failure.getMessage().contains(jobId.toString()));
         assertTrue(failure.getMessage().contains("after 1ms"));
-        assertFalse(manager.contains(jobId));
         assertEquals(0, manager.inFlightCount());
     }
 
@@ -593,16 +592,12 @@ class LlmQueueLifecycleTest {
         FrameworkFixtures.set(route, "lanes", registry);
         FrameworkFixtures.set(route, "jobFactory", jobFactory(registry));
         FrameworkFixtures.set(route, "deadLetterFactory", deadLetters);
-        FrameworkFixtures.set(route, "routeSupport", new LlmRouteSupport(context, manager, deadLetters));
+        FrameworkFixtures.set(route, "routeSupport", FrameworkFixtures.llmRouteSupport(manager, deadLetters, new LogTokens(false)));
         return route;
     }
 
-    private static LlmRouteSupport routeSupport(DefaultCamelContext context) {
-        return routeSupport(context, new InFlightReplyManager());
-    }
-
-    private static LlmRouteSupport routeSupport(DefaultCamelContext context, InFlightReplyManager manager) {
-        return new LlmRouteSupport(context, manager, deadLetters());
+    private static LlmRouteSupport routeSupport(InFlightReplyManager manager) {
+        return FrameworkFixtures.llmRouteSupport(manager, deadLetters(), new LogTokens(false));
     }
 
     private static LlmJobFactory jobFactory() {

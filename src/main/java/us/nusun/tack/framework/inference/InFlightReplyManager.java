@@ -15,12 +15,11 @@ import java.util.concurrent.TimeoutException;
 public class InFlightReplyManager {
     private final ConcurrentMap<UUID, CompletableFuture<LlmJobResult>> replies = new ConcurrentHashMap<>();
 
-    public LlmJobEnvelope register(LlmJobEnvelope job) {
-        CompletableFuture<LlmJobResult> previous = replies.putIfAbsent(job.jobId(), new CompletableFuture<>());
+    void register(UUID jobId) {
+        CompletableFuture<LlmJobResult> previous = replies.putIfAbsent(jobId, new CompletableFuture<>());
         if (previous != null) {
-            throw new IllegalStateException("Duplicate in-flight jobId " + job.jobId());
+            throw new IllegalStateException("Duplicate in-flight jobId " + jobId);
         }
-        return job;
     }
 
     public LlmJobResult await(UUID jobId, long timeoutMs) throws Exception {
@@ -43,19 +42,14 @@ public class InFlightReplyManager {
         }
     }
 
-    public boolean contains(UUID jobId) {
-        return replies.containsKey(jobId);
-    }
-
-    public int inFlightCount() {
+    int inFlightCount() {
         return replies.size();
     }
 
-    public LlmJobResult complete(LlmJobResult result) {
+    public void complete(LlmJobResult result) {
         CompletableFuture<LlmJobResult> future = replies.get(result.jobId());
         if (future != null) {
             future.complete(result);
         }
-        return result;
     }
 }

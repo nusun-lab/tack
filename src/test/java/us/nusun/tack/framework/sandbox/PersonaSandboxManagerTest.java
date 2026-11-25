@@ -29,12 +29,12 @@ class PersonaSandboxManagerTest {
         AgentRun first = run("run-1", mission, persona);
         AgentRun second = run("run-2", mission, persona);
 
-        String firstName = manager.ensureReady(mission, persona, first);
-        String secondName = manager.ensureReady(mission, persona, second);
+        manager.ensureReady(mission, persona, first);
+        manager.ensureReady(mission, persona, second);
 
-        assertEquals(firstName, secondName);
-        assertEquals(firstName, first.workingState().get(PersonaSandboxManager.WORKING_STATE_SANDBOX_NAME));
-        assertEquals(firstName, second.workingState().get(PersonaSandboxManager.WORKING_STATE_SANDBOX_NAME));
+        String name = manager.sandboxNameFor(mission.id(), persona.id());
+        assertEquals(name, first.workingState().get(PersonaSandboxManager.WORKING_STATE_SANDBOX_NAME));
+        assertEquals(name, second.workingState().get(PersonaSandboxManager.WORKING_STATE_SANDBOX_NAME));
         assertEquals(1, openshell.createCalls);
     }
 

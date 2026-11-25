@@ -7,7 +7,6 @@ import org.apache.camel.ValidationException;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.jackson.JacksonDataFormat;
 import org.apache.camel.component.kafka.KafkaConstants;
-import org.apache.camel.component.jsonvalidator.JsonValidationException;
 import us.nusun.tack.framework.inference.lane.InferenceLaneRegistry;
 import us.nusun.tack.framework.inference.memory.ToolLoopGuardChatMemory;
 import us.nusun.tack.framework.inference.lane.InferenceLaneDefinition;
@@ -21,7 +20,7 @@ public class LlmRoute extends RouteBuilder {
 
     @Override
     public void configure() {
-        onException(JsonValidationException.class, ValidationException.class)
+        onException(ValidationException.class)
                 .handled(false)
                 .logStackTrace(false)
                 .logExhausted(false)

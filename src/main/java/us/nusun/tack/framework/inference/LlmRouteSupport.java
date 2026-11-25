@@ -6,9 +6,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
 import org.apache.camel.Body;
-import org.apache.camel.CamelContext;
 import org.apache.camel.Exchange;
 import org.apache.camel.ExchangeProperty;
 import org.apache.camel.ServiceStatus;
@@ -32,37 +30,24 @@ public class LlmRouteSupport {
         public LlmResponseException(String message, Throwable cause) { super(message, cause); }
     }
 
-    @Inject CamelContext camelContext;
-    @Inject ObjectMapper objectMapper;
-    @Inject InFlightReplyManager inFlightReplyManager;
-    @Inject LlmDeadLetterFactory deadLetterFactory;
-    @Inject LogTokens logTokens;
-    @Inject AgentRunProjectionManager projections;
+    private final ObjectMapper objectMapper;
+    private final InFlightReplyManager inFlightReplyManager;
+    private final LlmDeadLetterFactory deadLetterFactory;
+    private final LogTokens logTokens;
+    private final AgentRunProjectionManager projections;
 
-    public LlmRouteSupport() {
-    }
-
-    public LlmRouteSupport(
-            CamelContext camelContext,
-            InFlightReplyManager inFlightReplyManager,
-            LlmDeadLetterFactory deadLetterFactory) {
-        this(camelContext, inFlightReplyManager, deadLetterFactory, new LogTokens(false));
-    }
-
-    public LlmRouteSupport(
-            CamelContext camelContext,
-            InFlightReplyManager inFlightReplyManager,
-            LlmDeadLetterFactory deadLetterFactory,
-            LogTokens logTokens) {
-        this.camelContext = camelContext;
-        this.objectMapper = new ObjectMapper();
+    public LlmRouteSupport(ObjectMapper objectMapper, InFlightReplyManager inFlightReplyManager,
+                           LlmDeadLetterFactory deadLetterFactory, LogTokens logTokens,
+                           AgentRunProjectionManager projections) {
+        this.objectMapper = objectMapper;
         this.inFlightReplyManager = inFlightReplyManager;
         this.deadLetterFactory = deadLetterFactory;
         this.logTokens = logTokens;
+        this.projections = projections;
     }
 
-    public void registerReply(@Body LlmJobEnvelope job, Exchange exchange) {
-        inFlightReplyManager.register(job);
+    public void registerReply(Exchange exchange) {
+        inFlightReplyManager.register(LlmExecutionContext.require(exchange).jobId());
         exchange.setProperty(REGISTERED, true);
     }
 
@@ -85,22 +70,21 @@ public class LlmRouteSupport {
 
     public void prepareAgentCall(@ExchangeProperty("llmJob") LlmJobEnvelope job, Exchange exchange) {
         exchange.setProperty("llmStartedAt", Instant.now());
-        exchange.getIn().setBody(new AiAgentBody<>(job.prompt(), firstNonBlank(job.systemPrompt(), """
+        exchange.getMessage().setBody(new AiAgentBody<>(job.prompt(), firstNonBlank(job.systemPrompt(), """
                 You are a precise worker in a shared LLM queue. Return only what the requester asked for.
                 """.strip()), job.jobId()));
     }
 
-    public void logPrompt(@ExchangeProperty("llmJob") LlmJobEnvelope job, Exchange exchange) {
-        if (projections != null) projections.recordLlmStarted(exchange);
-        String systemPrompt = job == null ? null : job.systemPrompt();
-        String prompt = job == null ? null : job.prompt();
-        logTokens().print(logTokens().wrapDim(agentLabel(exchange), agentLogColor(exchange),
-                "SYSTEM " + firstNonBlank(systemPrompt, "(default system prompt)") + "\nPROMPT " + prompt));
+    public void logPrompt(LlmJobEnvelope job, Exchange exchange) {
+        projections.recordLlmStarted(exchange);
+        var invocation = LlmExecutionContext.require(exchange);
+        logTokens.print(logTokens.wrapDim(invocation.logLabel(), invocation.logColor(),
+                "SYSTEM " + firstNonBlank(job.systemPrompt(), "(default system prompt)") + "\nPROMPT " + job.prompt()));
     }
 
     public void logModelResponse(@Body LlmJobResult result, Exchange exchange) {
-        String content = result == null ? null : result.content();
-        logTokens().print(logTokens().wrap(agentLabel(exchange), agentLogColor(exchange), "RESPONSE " + content));
+        var invocation = LlmExecutionContext.require(exchange);
+        logTokens.print(logTokens.wrap(invocation.logLabel(), invocation.logColor(), "RESPONSE " + result.content()));
     }
 
     public void requireAgentResponse(@Body String rawResponse, Exchange exchange) {
@@ -160,7 +144,7 @@ public class LlmRouteSupport {
     }
 
     private void verifyRouteStarted(Exchange exchange, String routeId) {
-        ServiceStatus status = camelContext.getRouteController().getRouteStatus(routeId);
+        ServiceStatus status = exchange.getContext().getRouteController().getRouteStatus(routeId);
         if (status == null || !status.isStarted()) {
             throw new LlmAvailabilityException("LLM route '" + routeId + "' is not running. Refusing to queue request: "
                     + deadLetterFactory.contextSummary(exchange) + " reason=route status is " + status);
@@ -197,23 +181,5 @@ public class LlmRouteSupport {
         int max = 240;
         String tail = compact.length() <= max ? compact : "..." + compact.substring(compact.length() - max);
         return "'" + tail.replace("'", "\\'") + "'";
-    }
-
-    private LogTokens logTokens() {
-        if (logTokens == null) {
-            logTokens = new LogTokens(false);
-        }
-        return logTokens;
-    }
-
-    private static String agentLabel(Exchange exchange) {
-        var invocation = LlmExecutionContext.on(exchange);
-        var job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
-        return invocation == null ? firstNonBlank(job == null ? null : job.requester(), "LLM") : invocation.logLabel();
-    }
-
-    private static String agentLogColor(Exchange exchange) {
-        var invocation = LlmExecutionContext.on(exchange);
-        return invocation == null ? null : invocation.logColor();
     }
 }

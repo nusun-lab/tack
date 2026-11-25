@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import us.nusun.tack.framework.tool.mcp.McpClientFactory;
 import us.nusun.tack.framework.tests.support.TestTokenCountEstimator;
 import us.nusun.tack.framework.tests.support.FrameworkFixtures;
+import us.nusun.tack.framework.logging.LogTokens;
 import us.nusun.tack.framework.tests.support.StubKafkaComponent;
 import us.nusun.tack.framework.tests.support.TestCamelContexts;
 import us.nusun.tack.framework.tests.support.TestJson;
@@ -176,10 +177,7 @@ class UnavailableToolRecoveryTest {
         FrameworkFixtures.set(route, "jobFactory", FrameworkFixtures.jobFactory());
         LlmDeadLetterFactory deadLetters = new LlmDeadLetterFactory();
         FrameworkFixtures.set(route, "deadLetterFactory", deadLetters);
-        FrameworkFixtures.set(route, "routeSupport", new LlmRouteSupport(
-                context,
-                replies,
-                deadLetters));
+        FrameworkFixtures.set(route, "routeSupport", FrameworkFixtures.llmRouteSupport(replies, deadLetters, new LogTokens(false)));
         context.addRoutes(route);
         return context;
     }

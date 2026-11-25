@@ -19,7 +19,7 @@ public class AgentRun {
     private final String personaId;
     private final String routineId;
     private final String subroutineId;
-    private String status;
+    private volatile String status;
     private String currentPrimitive;
     private String currentId;
     private StepResult latestStepResult;

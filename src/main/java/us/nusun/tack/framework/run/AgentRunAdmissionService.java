@@ -67,10 +67,8 @@ public class AgentRunAdmissionService {
 
         synchronized (agentRuns) {
             validateCapacity(mission, runs.size(), maximum);
-            if (sandboxes != null) {
-                for (AgentRun run : runs) {
-                    sandboxes.ensureReady(mission, personas.getRequired(run.personaId()), run);
-                }
+            for (AgentRun run : runs) {
+                sandboxes.ensureReady(mission, personas.getRequired(run.personaId()), run);
             }
             agentRuns.putMission(mission);
             for (AgentRun run : runs) {

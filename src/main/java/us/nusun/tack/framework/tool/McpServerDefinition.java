@@ -11,6 +11,10 @@ public record McpServerDefinition(
         String authHeaderValueFormat,
         Map<String, String> extraHeaders
 ) {
+    public McpServerDefinition {
+        extraHeaders = extraHeaders == null ? Map.of() : Map.copyOf(extraHeaders);
+    }
+
     public static Builder builder(String id) { return new Builder(id); }
 
     public static final class Builder {
@@ -33,7 +37,7 @@ public record McpServerDefinition(
             return this;
         }
         public McpServerDefinition build() {
-            return new McpServerDefinition(id, url, transportType, authHeaderName, authHeaderValueFormat, Map.copyOf(extraHeaders));
+            return new McpServerDefinition(id, url, transportType, authHeaderName, authHeaderValueFormat, extraHeaders);
         }
     }
 }

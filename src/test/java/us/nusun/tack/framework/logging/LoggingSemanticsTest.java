@@ -24,8 +24,7 @@ class LoggingSemanticsTest {
     @Test
     void personaPromptUsesDimColorAndModelResponseUsesRegularColor() {
         CapturingLogTokens logs = new CapturingLogTokens();
-        LlmRouteSupport support = new LlmRouteSupport(
-                new DefaultCamelContext(),
+        LlmRouteSupport support = FrameworkFixtures.llmRouteSupport(
                 new InFlightReplyManager(),
                 new LlmDeadLetterFactory(),
                 logs);

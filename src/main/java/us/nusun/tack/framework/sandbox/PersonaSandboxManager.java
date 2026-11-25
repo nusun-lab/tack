@@ -42,16 +42,15 @@ public class PersonaSandboxManager {
         this.configuredGiteaUrl = configuredGiteaUrl == null ? "" : configuredGiteaUrl.strip();
     }
 
-    public String ensureReady(Mission mission, Persona persona, AgentRun run) {
+    public void ensureReady(Mission mission, Persona persona, AgentRun run) {
         if (!openshell.enabled()) {
-            return null;
+            return;
         }
         if (mission == null || persona == null || run == null) {
             throw new IllegalArgumentException("Mission, persona, and AgentRun are required for sandbox admission");
         }
         String name = provision(mission, persona, run);
         run.workingState().put(WORKING_STATE_SANDBOX_NAME, name);
-        return name;
     }
 
     public SandboxExecTool tool(String sandboxName, Persona persona) {

@@ -148,12 +148,12 @@ public class PrimitiveExecutor {
     }
 
     public void create(Exchange exchange, CreateRequest request) throws Exception {
-        SchemaContract schema = SchemaContract.resolve(exchange.getContext(), objectMapper, request.schema());
+        String schema = SchemaContract.resolve(exchange.getContext(), objectMapper, request.schema()).json();
         markCurrent(exchange, "create", request.id());
         LlmJobResult llmResult = callLlm(
                 exchange,
                 llmRequest(exchange, request.lane(), LlmPassType.CREATION, request.prompt(),
-                        prompts.renderCreatePrompt(exchange, request, schema), schema.json(), null),
+                        prompts.renderCreatePrompt(exchange, request, schema), schema, null),
                 "create synthesis pass");
         projections.record(exchange, "SYNTHESIS_PASS_COMPLETED");
         JsonNode object = objectMapper.readTree(llmResult.content());
@@ -211,7 +211,7 @@ public class PrimitiveExecutor {
                 llmRequest(exchange, request.lane(), LlmPassType.CONSOLIDATION, null,
                         prompts.renderConsolidationPrompt(exchange, parent, child), THOUGHT_CONTENT_SCHEMA, null),
                 "thought consolidation pass");
-        ThoughtContentResult consolidated = parse(llmResult.content(), ThoughtContentResult.class);
+        ThoughtContentAnswer consolidated = parse(llmResult.content(), ThoughtContentAnswer.class);
         if (consolidated.content() == null || consolidated.content().isBlank()) {
             throw new FrameworkPrimitiveException("Thought consolidation returned blank parent content");
         }
@@ -392,6 +392,8 @@ public class PrimitiveExecutor {
         if (content == null || content.isBlank()) throw new IllegalArgumentException("LLM returned empty content for " + type.getSimpleName());
         return objectMapper.readValue(content, type);
     }
+
+    private record ThoughtContentAnswer(String content) {}
 
     private record DecisionAnswer(String result, double confidence, String reason) {}
 

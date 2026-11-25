@@ -58,19 +58,21 @@ class ForcedToolChoiceTest {
     }
 
     @Test
-    void toolEnabledAgentPreservesProviderResponseFormat() {
-        RecordingChatModel model = new RecordingChatModel(false);
+    void toolEnabledAgentPreservesProviderResponseFormatAcrossToolRounds() {
+        RecordingChatModel model = new RecordingChatModel(true);
         Exchange exchange = exchange("low-pass", LlmPassType.ACTION);
         FrameworkFixtures.restoreJob(exchange, job("low-pass", LlmPassType.ACTION, SCHEMA));
         Agent agent = factory("low-pass", model).createAgent(exchange);
 
         agent.chat(new AiAgentBody<>("Inspect current external state.", "You are a tester.", "memory-2"), probeToolProvider());
 
-        assertEquals(1, model.requests.size());
+        assertEquals(2, model.requests.size());
         assertEquals(ToolChoice.REQUIRED, model.requests.get(0).toolChoice());
+        assertEquals(ToolChoice.AUTO, model.requests.get(1).toolChoice());
         assertNotNull(model.requests.get(0).responseFormat());
         assertEquals(ResponseFormatType.JSON, model.requests.get(0).responseFormat().type());
         assertNotNull(model.requests.get(0).responseFormat().jsonSchema());
+        assertEquals(model.requests.get(0).responseFormat(), model.requests.get(1).responseFormat());
     }
 
     @Test
@@ -135,9 +137,7 @@ class ForcedToolChoiceTest {
     }
 
     private static LlmRouteSupport routeSupport(LogTokens logs) {
-        DefaultCamelContext context = new DefaultCamelContext();
-        return new LlmRouteSupport(
-                context,
+        return FrameworkFixtures.llmRouteSupport(
                 new InFlightReplyManager(),
                 new LlmDeadLetterFactory(),
                 logs);

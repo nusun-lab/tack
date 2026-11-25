@@ -48,10 +48,6 @@ public class ThoughtStack {
         return frames.get(frames.size() - 2);
     }
 
-    public boolean contains(String id) {
-        return frames.stream().anyMatch(frame -> frame.id().equals(id));
-    }
-
     public ThoughtFrame rewrite(String id, String content) {
         return rewrite(id, content, Instant.now());
     }

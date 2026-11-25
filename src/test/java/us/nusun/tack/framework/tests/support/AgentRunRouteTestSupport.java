@@ -58,7 +58,7 @@ public final class AgentRunRouteTestSupport {
 
         AgentRunAdmissionService admissions = new AgentRunAdmissionService();
         FrameworkFixtures.set(admissions, "personas", personas);
-        FrameworkFixtures.set(admissions, "sandboxes", sandboxes);
+        FrameworkFixtures.set(admissions, "sandboxes", sandboxes == null ? FrameworkFixtures.disabledSandboxes() : sandboxes);
         FrameworkFixtures.set(admissions, "routines", routines);
         FrameworkFixtures.set(admissions, "projections", manager);
         FrameworkFixtures.set(admissions, "agentRuns", agentRuns);

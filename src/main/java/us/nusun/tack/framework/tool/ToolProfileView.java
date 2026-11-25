@@ -34,7 +34,7 @@ public record ToolProfileView(
     public record Connection(String url, String transportType, String authHeaderName, List<String> extraHeaderNames) {
         private static Connection of(McpServerDefinition server) {
             return new Connection(server.url(), server.transportType(), server.authHeaderName(),
-                    server.extraHeaders() == null ? List.of() : server.extraHeaders().keySet().stream().sorted().toList());
+                    server.extraHeaders().keySet().stream().sorted().toList());
         }
     }
 }

@@ -6,7 +6,6 @@ import static us.nusun.tack.framework.routine.PrimitiveExecutor.currentRun;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.camel.Exchange;
 import us.nusun.tack.framework.persona.PersonaCatalog;
-import us.nusun.tack.framework.inference.SchemaContract;
 import us.nusun.tack.framework.inference.LlmJobResult;
 import us.nusun.tack.framework.inference.LlmPassType;
 import us.nusun.tack.framework.run.Mission;
@@ -255,7 +254,7 @@ final class PrimitivePrompts {
                 safeText(request.prompt()));
     }
 
-    String renderCreatePrompt(Exchange exchange, CreateRequest request, SchemaContract schema) {
+    String renderCreatePrompt(Exchange exchange, CreateRequest request, String schema) {
         return """
                 %s
 
@@ -281,7 +280,7 @@ final class PrimitivePrompts {
                 safeText(request.id()),
                 renderThoughtFramesForModel(ThoughtStack.on(exchange).frames()),
                 safeText(request.prompt()),
-                schema.json());
+                schema);
     }
 
     String renderConsolidationPrompt(Exchange exchange, ThoughtFrame parent, ThoughtFrame child) {

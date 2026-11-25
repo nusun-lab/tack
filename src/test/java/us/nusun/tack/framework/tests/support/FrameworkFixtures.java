@@ -6,6 +6,12 @@ import dev.langchain4j.model.TokenCountEstimator;
 import us.nusun.tack.framework.inference.lane.ToolPassSettings;
 import us.nusun.tack.framework.inference.LlmAgentFactory;
 import us.nusun.tack.framework.inference.LlmRouteSupport;
+import us.nusun.tack.framework.inference.InFlightReplyManager;
+import us.nusun.tack.framework.inference.LlmDeadLetterFactory;
+import us.nusun.tack.framework.logging.LogTokens;
+import us.nusun.tack.framework.sandbox.OpenShellGrpcClient;
+import us.nusun.tack.framework.sandbox.OpenShellLifecycleClient;
+import us.nusun.tack.framework.sandbox.PersonaSandboxManager;
 import us.nusun.tack.framework.tool.mcp.McpClientFactory;
 import org.apache.camel.Exchange;
 import org.apache.camel.ProducerTemplate;
@@ -142,9 +148,14 @@ public final class FrameworkFixtures {
     public static LlmAgentFactory.DynamicAgentFactory agentFactory(
             String lane, ChatModel model, McpClientFactory clients, TokenCountEstimator estimator,
             int memoryTokens, int maxToolCalls, LlmRouteSupport routeSupport) {
+        var personas = personaCatalog();
+        var roster = missionRosterService(new AgentRunStore(), personas, routineCatalog());
+        var support = routeSupport == null
+                ? llmRouteSupport(new InFlightReplyManager(), new LlmDeadLetterFactory(), new LogTokens(false))
+                : routeSupport;
         return new LlmAgentFactory.DynamicAgentFactory(Map.of(lane, new LlmAgentFactory.LaneRuntime(model,
                 new ToolPassSettings(memoryTokens, maxToolCalls, 0.50, 3, 69632, 4092))),
-                clients, toolProfileRegistry(), personaCatalog(), estimator, null, null, routeSupport, new ObjectMapper());
+                clients, toolProfileRegistry(), personas, estimator, disabledSandboxes(), roster, support, new ObjectMapper());
     }
 
     public static InferenceLaneRegistry inferenceLaneRegistry() {
@@ -156,11 +167,14 @@ public final class FrameworkFixtures {
                 projectionManager(store));
     }
 
-    public static AgentRunStore defaultAgentRunStore() {
-        AgentRunStore store = new AgentRunStore();
-        store.putMission(new Mission("mission-1", "Test mission", List.of(), "active", Instant.now()));
-        store.putRun(new AgentRun("run-1", "mission-1", PERSONA_A, ROUTINE_A, Map.of("input", Map.of("brief", "Test run input"))));
-        return store;
+    public static LlmRouteSupport llmRouteSupport(InFlightReplyManager replies, LlmDeadLetterFactory deadLetters,
+                                                  LogTokens logs) {
+        return new LlmRouteSupport(new ObjectMapper(), replies, deadLetters, logs, projectionManager(projectionStore()));
+    }
+
+    public static PersonaSandboxManager disabledSandboxes() {
+        var openshell = new OpenShellGrpcClient(false, 1, 1, 1, "unused");
+        return new PersonaSandboxManager(openshell, new OpenShellLifecycleClient(openshell), new LogTokens(false), "");
     }
 
     public static MissionRosterService missionRosterService(AgentRunStore agentRuns, PersonaCatalog personas, RoutineCatalog routines) {
