@@ -63,7 +63,7 @@ Tack owns:
 - Kafka request and reply routes for every inference lane;
 - model-worker routes and LLM correlation;
 - primitive execution and thought management;
-- MCP client construction and tool-result limiting;
+- MCP connections, tool discovery and execution;
 - profile-gated OpenShell sandbox execution and lifecycle;
 - workspace projection updates.
 
@@ -110,7 +110,7 @@ A `Mission` is the top-level goal and context container. It owns the mission ID,
 
 ### AgentRun
 
-An `AgentRun` is one execution of one persona on one routine or declared subroutine. It carries persona/routine identity, structured input and working state, primitive state, thought-stack state, lifecycle status, projection data, and parent lineage.
+An `AgentRun` is one execution of one persona on one routine or declared subroutine. It carries persona and routine identity, structured input, an optional sandbox name, primitive results, lifecycle status, and parent lineage.
 
 Parent/child lineage does not imply synchronous waiting. Scheduling a child AgentRun returns an accepted handle; the parent continues unless its own routine later observes that state.
 
@@ -129,9 +129,8 @@ A `ToolProfile` defines the capabilities available during an act. Profiles can:
 - attach MCP server definitions;
 - allow or deny MCP tools;
 - allow framework-provided tools such as `sandbox_exec`;
-- add default tool arguments;
-- provide prompt guidance;
-- cap tool-result tokens.
+- authorize a tool call before dispatch;
+- provide prompt guidance.
 
 When `tack:act` omits a profile, Tack uses the built-in no-tools profile.
 
@@ -280,18 +279,33 @@ public class CoordinatorRoutine extends RouteBuilder implements RoutineProvider 
 
 ### Define an inference lane
 
+Each provider declares one lane. `configName` selects its group under `llm.inference-lane`.
+The framework resolves model and endpoint fallbacks along with sampling and tool-memory settings.
+
 ```java
 @ApplicationScoped
-public class LowLane implements InferenceLaneProvider {
+public class LowPassLane implements InferenceLaneProvider {
+    public static final String ID = "low-pass";
+    private static final String CONFIG_NAME = "low";
+
+    private final LaneConfiguration.Lane config;
+
+    public LowPassLane(LaneConfiguration configuration) {
+        this.config = configuration.lanes().get(CONFIG_NAME);
+    }
+
     @Override
     public InferenceLaneDefinition inferenceLane() {
-        return InferenceLaneDefinition.builder("low-pass")
-                .requestTopic("llm.requests.low")
-                .responseTopic("llm.replies.low")
-                .parallelism(1)
-                .partitionKeyStrategy(PartitionKeyStrategy.AGENT_RUN)
-                .endpoint("http://localhost:8000/v1")
-                .model("qwen-low")
+        return InferenceLaneDefinition.builder(ID)
+                .configName(CONFIG_NAME)
+                .requestTopic(config.requestTopic().orElse("llm.requests.low"))
+                .responseTopic(config.replyTopic().orElse("llm.replies.low"))
+                .parallelism(config.parallelism())
+                .partitionKeyStrategy(config.partitionKeyStrategy().orElse(PartitionKeyStrategy.AGENT_RUN))
+                .endpoint(config.endpoint().orElse(""))
+                .model(config.model().orElse(""))
+                .apiKeyConfigKey("llm.inference-lane.low.api-key")
+                .apiKeyEnvVariable("LLM_LOW_API_KEY")
                 .build();
     }
 }
@@ -307,7 +321,6 @@ public class SourceControlToolProfile implements ToolProfileProvider {
         return List.of(ToolProfile.builder("source-control")
                 .mcpServer(repository.definition())
                 .allowTools("repository", "pull_request_read", "pull_request_write")
-                .maxResultTokens(6000)
                 .build());
     }
 }
@@ -365,7 +378,9 @@ Mission admission and child scheduling use `AgentRunRequest`. Framework entry po
 .to("direct:start-agent-runs")
 ```
 
-Scheduling validates the request, enforces any caller-supplied capacity constraint, records the run as accepted, publishes `AgentRunScheduled`, and returns accepted handle data without waiting for routine completion.
+Scheduling validates the full batch, checks mission capacity, and prepares required sandboxes. It
+commits all accepted runs before publishing `AgentRunScheduled` events from their handles. The
+caller gets accepted handle data without waiting for routine completion.
 
 The Kafka consumer restores authoritative state, transitions eligible runs to `running`, launches routine execution asynchronously with `wireTap`, and returns so Kafka can commit. Ordering a list of requests controls event publication order, not a guaranteed execution head start between accepted AgentRuns.
 
@@ -426,7 +441,6 @@ Reply correlation is currently in memory by `jobId`, so one active orchestrator 
 | --- | --- |
 | `AGENT_MCP_TRANSPORT_TIMEOUT_MS` | `60000` |
 | `AGENT_MCP_INITIALIZATION_TIMEOUT_MS` | `30000` |
-| `AGENT_MCP_MAX_TOOL_RESULT_TOKENS` | `1000` |
 | `AGENT_MCP_LOG_TRANSPORT_REQUESTS` | `false` |
 | `AGENT_MCP_LOG_TRANSPORT_RESPONSES` | `false` |
 
@@ -538,17 +552,23 @@ Tack is presently optimized for a local or single-orchestrator deployment.
 
 | Path | Purpose |
 | --- | --- |
-| `src/main/java/us/nusun/tack/framework/tack` | `tack:` component and primitive execution |
-| `src/main/java/us/nusun/tack/framework/route` | Mission, AgentRun, API, and LLM runtime routes |
-| `src/main/java/us/nusun/tack/framework/llm` | LLM jobs, workers, correlation, topic provisioning, and model setup |
-| `src/main/java/us/nusun/tack/framework/mcp` | MCP client construction, filtering, and result limits |
-| `src/main/java/us/nusun/tack/framework/sandbox` | OpenShell sandbox identity, lifecycle, providers, policy, and execution |
-| `src/main/java/us/nusun/tack/framework/state` | Mission/AgentRun working state and thought stack |
-| `src/main/java/us/nusun/tack/framework/projection` | Observable AgentRun projection history |
-| `src/main/java/us/nusun/tack/framework/inventory` | Persona, routine, tool-profile, and lane catalogs |
+| `framework.persona` | Persona declarations, external accounts, catalog and safe views |
+| `framework.routine` | Routine declarations and catalog, `tack:` component, prompts, thought scopes and primitive results |
+| `framework.run` | Mission and run admission, scheduling, state, roster and projections |
+| `framework.inference` | LLM jobs, queue routes, replies, model execution and schemas |
+| `framework.inference.lane` | Lane declarations, registry, configuration and effective settings |
+| `framework.inference.memory` | Transcript compaction, tool-loop guards and token counting |
+| `framework.tool` | Tool profiles, safe views and MCP server declarations |
+| `framework.tool.mcp` | MCP connections, tool discovery, dispatch and logging |
+| `framework.sandbox` | OpenShell readiness, lifecycle, policy and execution |
+| `framework.workspace` | HTTP endpoints, workspace views, topic provisioning and reset |
+| `framework.logging` | Shared logging helpers |
 | `src/main/java/us/nusun/tack/example` | Bundled software-team example |
 | `docs/architecture.md` | Additional architecture notes |
 | `docs/openshell-sandboxes.md` | OpenShell execution model and troubleshooting |
+
+Framework packages are under `src/main/java/us/nusun/tack`. Tests mirror the capability packages under
+`src/test/java` and use test-owned consumers and configuration.
 
 ## Development
 
@@ -564,7 +584,9 @@ Run the full verification lifecycle:
 ./mvnw verify
 ```
 
-Framework tests should use synthetic personas, routines, tool profiles, routes, and external boundaries. The bundled example demonstrates composition and is not a framework test fixture. Live vLLM, Kafka, Plane, Gitea, Mattermost, and OpenShell belong in explicit environment/integration validation rather than ordinary framework unit tests.
+Framework tests use synthetic personas, routines, tool profiles, routes, and test-owned configuration. Keep example providers and application settings out of test setup. Live services belong in explicit environment validation.
+
+JaCoCo reports handwritten framework code in `target/site/jacoco`, including sandbox clients, manager, and tool. The report excludes the example and generated protobuf and gRPC code.
 
 ## Troubleshooting
 
@@ -584,9 +606,9 @@ Confirm the selected profile includes the server, the server URL is present, the
 
 See [OpenShell persona sandboxes](docs/openshell-sandboxes.md#troubleshooting) for sandbox creation, profile exposure, Git provider/authentication, package egress, execution timeouts, and reset/orphan cleanup.
 
-### Tool results are truncated
+### A tool response exceeds the inference budget
 
-The selected profile's `maxResultTokens` takes precedence. Otherwise Tack uses `AGENT_MCP_MAX_TOOL_RESULT_TOKENS`.
+MCP result content enters inference in LangChain4j's native representation. Check the lane's token budget logs and use a narrower query when the server supports one, such as a smaller page or an explicit field selection.
 
 ### Jobs from one AgentRun execute out of order
 

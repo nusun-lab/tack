@@ -4,18 +4,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.camel.Exchange;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.impl.DefaultCamelContext;
-import us.nusun.tack.framework.inventory.PersonaCatalog;
-import us.nusun.tack.framework.inventory.RoutineCatalog;
-import us.nusun.tack.framework.model.AgentRunProjection;
-import us.nusun.tack.framework.model.AgentRunScheduled;
-import us.nusun.tack.framework.model.RoutineDefinition;
-import us.nusun.tack.framework.projection.AgentRunProjectionManager;
-import us.nusun.tack.framework.projection.ProjectionStore;
-import us.nusun.tack.framework.route.AgentRunRoute;
-import us.nusun.tack.framework.route.MissionRoute;
+import us.nusun.tack.framework.persona.PersonaCatalog;
+import us.nusun.tack.framework.routine.RoutineCatalog;
+import us.nusun.tack.framework.run.AgentRunProjection;
+import us.nusun.tack.framework.run.AgentRunScheduled;
+import us.nusun.tack.framework.routine.RoutineDefinition;
+import us.nusun.tack.framework.run.AgentRunProjectionManager;
+import us.nusun.tack.framework.run.ProjectionStore;
+import us.nusun.tack.framework.run.AgentRunRoute;
+import us.nusun.tack.framework.run.MissionRoute;
 import us.nusun.tack.framework.sandbox.PersonaSandboxManager;
-import us.nusun.tack.framework.service.AgentRunAdmissionService;
-import us.nusun.tack.framework.state.AgentRunStore;
+import us.nusun.tack.framework.run.AgentRunAdmissionService;
+import us.nusun.tack.framework.run.AgentRunStore;
 
 import java.util.List;
 import java.util.Properties;
@@ -58,17 +58,17 @@ public final class AgentRunRouteTestSupport {
 
         AgentRunAdmissionService admissions = new AgentRunAdmissionService();
         FrameworkFixtures.set(admissions, "personas", personas);
-        FrameworkFixtures.set(admissions, "sandboxes", sandboxes);
+        FrameworkFixtures.set(admissions, "sandboxes", sandboxes == null ? FrameworkFixtures.disabledSandboxes() : sandboxes);
         FrameworkFixtures.set(admissions, "routines", routines);
         FrameworkFixtures.set(admissions, "projections", manager);
         FrameworkFixtures.set(admissions, "agentRuns", agentRuns);
 
         AgentRunRoute agentRunRoute = new AgentRunRoute();
-        FrameworkFixtures.set(agentRunRoute, "personas", personas);
         FrameworkFixtures.set(agentRunRoute, "routines", routines);
         FrameworkFixtures.set(agentRunRoute, "projections", manager);
         FrameworkFixtures.set(agentRunRoute, "agentRuns", agentRuns);
         FrameworkFixtures.set(agentRunRoute, "admissions", admissions);
+        FrameworkFixtures.set(agentRunRoute, "mapper", OBJECT_MAPPER);
 
         MissionRoute missionRoute = new MissionRoute();
         FrameworkFixtures.set(missionRoute, "admissions", admissions);

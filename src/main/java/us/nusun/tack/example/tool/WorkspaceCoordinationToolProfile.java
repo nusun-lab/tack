@@ -2,9 +2,8 @@ package us.nusun.tack.example.tool;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
-import us.nusun.tack.framework.inventory.ToolProfileProvider;
-import us.nusun.tack.framework.model.ToolProfile;
+import us.nusun.tack.framework.tool.ToolProfileProvider;
+import us.nusun.tack.framework.tool.ToolProfile;
 
 import java.util.List;
 
@@ -14,17 +13,13 @@ public class WorkspaceCoordinationToolProfile implements ToolProfileProvider {
 
     private final PlaneMcpServer plane;
     private final MattermostMcpServer mattermost;
-    private final int maxResultTokens;
 
     @Inject
     public WorkspaceCoordinationToolProfile(
             PlaneMcpServer plane,
-            MattermostMcpServer mattermost,
-            @ConfigProperty(name = "agent.tool.profile.workspace-coordination.max-result-tokens", defaultValue = "5000")
-            int maxResultTokens) {
+            MattermostMcpServer mattermost) {
         this.plane = plane;
         this.mattermost = mattermost;
-        this.maxResultTokens = maxResultTokens;
     }
 
     @Override
@@ -81,7 +76,6 @@ public class WorkspaceCoordinationToolProfile implements ToolProfileProvider {
                         - do not infer active AgentRuns from external membership
                         - stop after the requested coordination mutation is verified
                         """)
-                .maxResultTokens(maxResultTokens)
                 .build());
     }
 }

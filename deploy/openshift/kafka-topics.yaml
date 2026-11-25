@@ -1,8 +1,9 @@
 # For Strimzi. Apply after installing a Kafka cluster named `my-cluster`.
+# Match custom lane topic names and request partitions to the runtime configuration.
 apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
 metadata:
-  name: llm.requests
+  name: llm.requests.low
   labels:
     strimzi.io/cluster: my-cluster
 spec:
@@ -14,7 +15,31 @@ spec:
 apiVersion: kafka.strimzi.io/v1beta2
 kind: KafkaTopic
 metadata:
-  name: llm.responses
+  name: llm.replies.low
+  labels:
+    strimzi.io/cluster: my-cluster
+spec:
+  partitions: 1
+  replicas: 1
+  config:
+    retention.ms: 604800000
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: llm.requests.high
+  labels:
+    strimzi.io/cluster: my-cluster
+spec:
+  partitions: 1
+  replicas: 1
+  config:
+    retention.ms: 604800000
+---
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaTopic
+metadata:
+  name: llm.replies.high
   labels:
     strimzi.io/cluster: my-cluster
 spec:

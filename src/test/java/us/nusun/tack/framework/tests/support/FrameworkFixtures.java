@@ -1,28 +1,43 @@
 package us.nusun.tack.framework.tests.support;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.TokenCountEstimator;
+import us.nusun.tack.framework.inference.lane.ToolPassSettings;
+import us.nusun.tack.framework.inference.LlmAgentFactory;
+import us.nusun.tack.framework.inference.LlmRouteSupport;
+import us.nusun.tack.framework.inference.InFlightReplyManager;
+import us.nusun.tack.framework.inference.LlmDeadLetterFactory;
+import us.nusun.tack.framework.logging.LogTokens;
+import us.nusun.tack.framework.sandbox.OpenShellGrpcClient;
+import us.nusun.tack.framework.sandbox.OpenShellLifecycleClient;
+import us.nusun.tack.framework.sandbox.PersonaSandboxManager;
+import us.nusun.tack.framework.tool.mcp.McpClientFactory;
 import org.apache.camel.Exchange;
+import org.apache.camel.ProducerTemplate;
+import us.nusun.tack.framework.inference.LlmJobFactory;
+import us.nusun.tack.framework.inference.LlmJobEnvelope;
 import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.support.DefaultExchange;
-import us.nusun.tack.framework.inventory.InferenceLaneRegistry;
-import us.nusun.tack.framework.inventory.PersonaCatalog;
-import us.nusun.tack.framework.inventory.RoutineCatalog;
-import us.nusun.tack.framework.inventory.ToolProfileRegistry;
-import us.nusun.tack.framework.model.InferenceLaneDefinition;
-import us.nusun.tack.framework.model.LlmJobResult;
-import us.nusun.tack.framework.model.LlmJobStatus;
-import us.nusun.tack.framework.model.LlmPassType;
-import us.nusun.tack.framework.model.Mission;
-import us.nusun.tack.framework.model.Persona;
-import us.nusun.tack.framework.model.RoutineDefinition;
-import us.nusun.tack.framework.model.ToolProfile;
-import us.nusun.tack.framework.projection.AgentRunProjectionManager;
-import us.nusun.tack.framework.projection.ProjectionStore;
-import us.nusun.tack.framework.tack.PrimitiveExecutor;
-import us.nusun.tack.framework.service.MissionRosterService;
-import us.nusun.tack.framework.routine.ThoughtStackSupport;
-import us.nusun.tack.framework.state.AgentRun;
-import us.nusun.tack.framework.state.AgentRunStore;
+import us.nusun.tack.framework.inference.lane.InferenceLaneRegistry;
+import us.nusun.tack.framework.persona.PersonaCatalog;
+import us.nusun.tack.framework.routine.RoutineCatalog;
+import us.nusun.tack.framework.tool.ToolProfileRegistry;
+import us.nusun.tack.framework.inference.lane.InferenceLaneDefinition;
+import us.nusun.tack.framework.inference.LlmJobResult;
+import us.nusun.tack.framework.inference.LlmJobStatus;
+import us.nusun.tack.framework.inference.LlmPassType;
+import us.nusun.tack.framework.run.Mission;
+import us.nusun.tack.framework.persona.Persona;
+import us.nusun.tack.framework.routine.RoutineDefinition;
+import us.nusun.tack.framework.tool.ToolProfile;
+import us.nusun.tack.framework.run.AgentRunProjectionManager;
+import us.nusun.tack.framework.run.ProjectionStore;
+import us.nusun.tack.framework.routine.PrimitiveExecutor;
+import us.nusun.tack.framework.run.MissionRosterService;
+import us.nusun.tack.framework.run.AgentRun;
+import us.nusun.tack.framework.run.AgentRunRequest;
+import us.nusun.tack.framework.run.AgentRunStore;
 
 import java.lang.reflect.Field;
 import java.time.Instant;
@@ -96,18 +111,14 @@ public final class FrameworkFixtures {
                 ToolProfile.builder(PROFILE_ALPHA)
                         .allowTools(SERVER_ALPHA, "alpha_post", "alpha_get")
                         .promptGuidance("Read recent synthetic context before posting.")
-                        .maxResultTokens(1500)
                         .build(),
                 ToolProfile.builder(PROFILE_BETA)
                         .allowTools(SERVER_BETA, "beta_list", "beta_create")
-                        .defaultArgument(SERVER_BETA, "beta_list", "fields", "id,name,identifier")
                         .promptGuidance("Find existing synthetic work before creating new items.")
-                        .maxResultTokens(1500)
                         .build(),
                 ToolProfile.builder(PROFILE_GAMMA)
                         .allowTools(SERVER_GAMMA, "gamma_get_repository", "gamma_get_pull_request")
                         .promptGuidance("Read before writing and avoid duplicate branches or pull requests.")
-                        .maxResultTokens(1500)
                         .build());
     }
 
@@ -118,67 +129,58 @@ public final class FrameworkFixtures {
     public static List<InferenceLaneDefinition> inferenceLanes() {
         return List.of(
                 InferenceLaneDefinition.builder("low-pass")
-                        .requestTopic("llm.requests.low")
-                        .responseTopic("llm.replies.low")
+                        .requestTopic("test.llm.requests.low")
+                        .responseTopic("test.llm.replies.low")
                         .parallelism(1)
                         .endpoint("http://low-vllm.example/v1")
-                        .apiKeyConfigKey("llm.inference-lane.low.api-key")
-                        .apiKeyEnvVariable("LLM_LOW_API_KEY")
                         .build(),
                 InferenceLaneDefinition.builder("high-pass")
-                        .requestTopic("llm.requests.high")
-                        .responseTopic("llm.replies.high")
+                        .requestTopic("test.llm.requests.high")
+                        .responseTopic("test.llm.replies.high")
                         .parallelism(1)
                         .endpoint("http://high-vllm.example/v1")
-                        .apiKeyConfigKey("llm.inference-lane.high.api-key")
-                        .apiKeyEnvVariable("LLM_HIGH_API_KEY")
                         .build());
+    }
+
+    public static LlmAgentFactory.DynamicAgentFactory agentFactory(
+            String lane, ChatModel model, McpClientFactory clients, TokenCountEstimator estimator,
+            int memoryTokens, int maxToolCalls, LlmRouteSupport routeSupport) {
+        var personas = personaCatalog();
+        var roster = missionRosterService(new AgentRunStore(), personas, routineCatalog());
+        var support = routeSupport == null
+                ? llmRouteSupport(new InFlightReplyManager(), new LlmDeadLetterFactory(), new LogTokens(false))
+                : routeSupport;
+        return new LlmAgentFactory.DynamicAgentFactory(Map.of(lane, new LlmAgentFactory.LaneRuntime(model,
+                new ToolPassSettings(memoryTokens, maxToolCalls, 0.50, 3, 69632, 4092))),
+                clients, toolProfileRegistry(), personas, estimator, disabledSandboxes(), roster, support, new ObjectMapper());
     }
 
     public static InferenceLaneRegistry inferenceLaneRegistry() {
         return new InferenceLaneRegistry(inferenceLanes());
     }
 
-    public static PrimitiveExecutor primitiveExecutor() {
-        return primitiveExecutor(defaultAgentRunStore(), new NoopProjectionManager());
+    public static PrimitiveExecutor primitiveExecutor(ProjectionStore store, ProducerTemplate template) {
+        return new PrimitiveExecutor(new ObjectMapper(), template, personaCatalog(), toolProfileRegistry(),
+                projectionManager(store));
     }
 
-    public static PrimitiveExecutor primitiveExecutor(ProjectionStore store) {
-        return primitiveExecutor(defaultAgentRunStore(), projectionManager(store));
+    public static LlmRouteSupport llmRouteSupport(InFlightReplyManager replies, LlmDeadLetterFactory deadLetters,
+                                                  LogTokens logs) {
+        return new LlmRouteSupport(new ObjectMapper(), replies, deadLetters, logs, projectionManager(projectionStore()));
     }
 
-    public static PrimitiveExecutor primitiveExecutor(AgentRunStore agentRuns, AgentRunProjectionManager projections) {
-        ObjectMapper objectMapper = new ObjectMapper();
-        PersonaCatalog personas = personaCatalog();
-        RoutineCatalog routines = routineCatalog();
-        ThoughtStackSupport thoughts = new ThoughtStackSupport();
-        set(thoughts, "projections", projections);
-        PrimitiveExecutor executor = new PrimitiveExecutor();
-        set(executor, "objectMapper", objectMapper);
-        set(executor, "thoughts", thoughts);
-        set(executor, "personas", personas);
-        set(executor, "routines", routines);
-        set(executor, "toolProfiles", toolProfileRegistry());
-        set(executor, "lanes", inferenceLaneRegistry());
-        set(executor, "projections", projections);
-        return executor;
-    }
-
-    public static AgentRunStore defaultAgentRunStore() {
-        AgentRunStore store = new AgentRunStore();
-        store.putMission(new Mission("mission-1", "Test mission", List.of(), "active", Map.of(), Instant.now()));
-        store.putRun(new AgentRun("run-1", "mission-1", PERSONA_A, ROUTINE_A, Map.of("input", Map.of("brief", "Test run input"))));
-        return store;
+    public static PersonaSandboxManager disabledSandboxes() {
+        var openshell = new OpenShellGrpcClient(false, 1, 1, 1, "unused");
+        return new PersonaSandboxManager(openshell, new OpenShellLifecycleClient(openshell), new LogTokens(false), "");
     }
 
     public static MissionRosterService missionRosterService(AgentRunStore agentRuns, PersonaCatalog personas, RoutineCatalog routines) {
-        return new MissionRosterService(agentRuns, personas, routines);
+        return new MissionRosterService(agentRuns, personas, routines, new ObjectMapper());
     }
 
     public static void bindCatalogBeans(DefaultCamelContext context) {
         context.getRegistry().bind("personaCatalog", personaCatalog());
         context.getRegistry().bind("routineCatalog", routineCatalog());
-        context.getRegistry().bind("toolProfileCatalog", toolProfileRegistry());
     }
 
     public static ProjectionStore projectionStore() {
@@ -195,9 +197,44 @@ public final class FrameworkFixtures {
 
     public static Exchange exchangeWithRun(String personaId, String routineId) {
         DefaultExchange exchange = new DefaultExchange(new DefaultCamelContext());
-        exchange.setProperty("mission", new Mission("mission-1", "Test mission", List.of(), "active", Map.of(), Instant.now()));
-        exchange.setProperty("agentRun", new AgentRun("run-1", "mission-1", personaId, routineId, Map.of("input", Map.of("brief", "Test run input"))));
+        exchange.setProperty("mission", new Mission("mission-1", "Test mission", List.of(), "active", Instant.now()));
+        exchange.setProperty("agentRun", new AgentRun("run-1", "mission-1", null,
+                new AgentRunRequest(personaId, routineId, Map.of("brief", "Test run input"))));
+        exchange.setProperty("routine", routineCatalog().getRequired(routineId));
         return exchange;
+    }
+
+    public static LlmJobFactory jobFactory(InferenceLaneRegistry lanes, String defaultModel, boolean providerSchemaDefault) {
+        var jobs = new LlmJobFactory();
+        set(jobs, "lanes", lanes);
+        set(jobs, "personas", personaCatalog());
+        set(jobs, "defaultLane", "low-pass");
+        set(jobs, "defaultModel", defaultModel);
+        set(jobs, "providerSchemaDefault", providerSchemaDefault);
+        return jobs;
+    }
+
+    public static LlmJobFactory jobFactory() {
+        return jobFactory(inferenceLaneRegistry(), "test-model", false);
+    }
+
+    public static void restoreJob(Exchange exchange, LlmJobEnvelope job) {
+        exchange.setProperty("llmJob", job);
+        jobFactory().restore(exchange);
+    }
+
+    public static Exchange agentExchange(String laneId, LlmPassType passType) {
+        var exchange = new DefaultExchange(new DefaultCamelContext());
+        restoreJob(exchange, queuedJob(new LlmJobEnvelope(null, laneId, passType, "test", "test", 0,
+                "Inspect", "system", null, Map.of("personaId", PERSONA_A), null)));
+        return exchange;
+    }
+
+    public static LlmJobEnvelope queuedJob(LlmJobEnvelope request) {
+        return new LlmJobEnvelope(request.jobId() == null ? UUID.randomUUID() : request.jobId(), LlmJobStatus.QUEUED,
+                request.laneId(), request.passType(), request.requester(), request.role(), request.priority(),
+                request.prompt(), request.systemPrompt(), request.responseSchema(), request.metadata(),
+                request.requestedAt() == null ? Instant.now() : request.requestedAt());
     }
 
     public static LlmJobResult llmResult(String laneId, String content) {
@@ -227,9 +264,5 @@ public final class FrameworkFixtures {
         throw new NoSuchFieldException(name);
     }
 
-    private static class NoopProjectionManager extends AgentRunProjectionManager {
-        @Override
-        public void record(Exchange exchange, String eventType) {
-        }
-    }
+
 }

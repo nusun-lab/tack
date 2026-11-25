@@ -1,9 +1,9 @@
 package us.nusun.tack.example.persona;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
-import us.nusun.tack.framework.inventory.PersonaProvider;
-import us.nusun.tack.framework.model.Persona;
+import us.nusun.tack.framework.persona.PersonaAccounts;
+import us.nusun.tack.framework.persona.PersonaProvider;
+import us.nusun.tack.framework.persona.Persona;
 
 import java.util.List;
 
@@ -11,17 +11,11 @@ import java.util.List;
 public class QuinnPersona implements PersonaProvider {
     public static final String ID = "software-team/quinn";
 
-    @ConfigProperty(name = "persona.quinn.email", defaultValue = "")
-    String email = "";
+    private final PersonaAccounts.Account account;
 
-    @ConfigProperty(name = "persona.quinn.identity.mattermost.token", defaultValue = "")
-    String mattermostToken = "";
-
-    @ConfigProperty(name = "persona.quinn.identity.gitea.token", defaultValue = "")
-    String giteaToken = "";
-
-    @ConfigProperty(name = "persona.quinn.identity.plane.token", defaultValue = "")
-    String planeToken = "";
+    public QuinnPersona(PersonaAccounts accounts) {
+        this.account = accounts.accounts().get("quinn");
+    }
 
     @Override
     public List<Persona> personas() {
@@ -31,7 +25,7 @@ public class QuinnPersona implements PersonaProvider {
     public Persona persona() {
         return Persona.builder(ID)
                 .name("Quinn")
-                .email(email)
+                .email(account.email().orElse(""))
                 .description("Quality engineer persona who builds system-level behavioral evidence for product epics.")
                 .trait("treats tests as engineered product evidence rather than ceremonial review")
                 .trait("works from epic acceptance intent and reports ambiguity back to the Product Owner")
@@ -40,9 +34,9 @@ public class QuinnPersona implements PersonaProvider {
                 .trait("distinguishes product ambiguity, implementation defects, architecture issues, and test defects")
                 .label("QA")
                 .color("38;2;196;153;255")
-                .identity("mattermost", mattermostToken, "@qa-agent")
-                .identity("gitea", giteaToken, "qa-agent")
-                .identity("plane", planeToken, "QA")
+                .identity("mattermost", account.token("mattermost"), "@qa-agent")
+                .identity("gitea", account.token("gitea"), "qa-agent")
+                .identity("plane", account.token("plane"), "QA")
                 .build();
     }
 }

@@ -5,12 +5,15 @@ import org.apache.camel.builder.RouteBuilder;
 import us.nusun.tack.example.tool.ProductOwnershipToolProfile;
 import us.nusun.tack.example.tool.TeamChatToolProfile;
 import us.nusun.tack.example.tool.WorkspaceReadonlyToolProfile;
-import us.nusun.tack.framework.inventory.RoutineProvider;
-import us.nusun.tack.framework.model.LlmPassType;
-import us.nusun.tack.framework.model.RoutineDefinition;
-import us.nusun.tack.framework.tack.TackHeaders;
+import us.nusun.tack.framework.routine.RoutineProvider;
+import us.nusun.tack.framework.inference.LlmPassType;
+import us.nusun.tack.framework.routine.RoutineDefinition;
+import us.nusun.tack.framework.routine.TackHeaders;
 
 import java.util.List;
+
+import static org.apache.camel.builder.PredicateBuilder.and;
+import static org.apache.camel.builder.PredicateBuilder.or;
 
 @ApplicationScoped
 public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider {
@@ -104,15 +107,12 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
         from("direct:po-epic-work-loop")
                 .routeId("po-epic-work-loop")
                 .setProperty("poEpicWorkIterations", constant(0))
-                .setProperty("poEpicWorkContinue", constant(true))
-                .loopDoWhile(simple("${exchangeProperty.poEpicWorkContinue} == true && ${exchangeProperty.poEpicWorkIterations} < 6"))
-                    .setProperty("poEpicWorkIterations", simple("${exchangeProperty.poEpicWorkIterations++}"))
-                    .setProperty("poEpicWorkContinue", constant(false))
+                .loopDoWhile(and(exchangeProperty("poEpicWorkIterations").isLessThan(6),
+                        or(exchangeProperty("poEpicWorkIterations").isEqualTo(0),
+                            exchangeProperty("act.po-epic-work.durableProgress").isEqualTo(true))))
+                    .setProperty("poEpicWorkIterations",
+                            simple("${exchangeProperty.poEpicWorkIterations}++", Integer.class))
                     .to("direct:po-epic-definition")
-                    .choice()
-                        .when(exchangeProperty("act.po-epic-work.durableProgress").isEqualTo(true))
-                            .setProperty("poEpicWorkContinue", constant(true))
-                    .end()
                 .end();
 
         from("direct:po-epic-definition")

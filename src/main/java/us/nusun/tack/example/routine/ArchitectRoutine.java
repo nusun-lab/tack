@@ -7,12 +7,15 @@ import us.nusun.tack.example.tool.EngineeringWorkToolProfile;
 import us.nusun.tack.example.tool.IntegrationToolProfile;
 import us.nusun.tack.example.tool.TeamChatToolProfile;
 import us.nusun.tack.example.tool.WorkspaceReadonlyToolProfile;
-import us.nusun.tack.framework.inventory.RoutineProvider;
-import us.nusun.tack.framework.model.LlmPassType;
-import us.nusun.tack.framework.model.RoutineDefinition;
-import us.nusun.tack.framework.tack.TackHeaders;
+import us.nusun.tack.framework.routine.RoutineProvider;
+import us.nusun.tack.framework.inference.LlmPassType;
+import us.nusun.tack.framework.routine.RoutineDefinition;
+import us.nusun.tack.framework.routine.TackHeaders;
 
 import java.util.List;
+
+import static org.apache.camel.builder.PredicateBuilder.and;
+import static org.apache.camel.builder.PredicateBuilder.or;
 
 @ApplicationScoped
 public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
@@ -189,22 +192,20 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:architect-integration-focus")
                 .routeId("architect-integration-focus")
                 .setProperty("architectIntegrationIterations", constant(0))
-                .setProperty("architectIntegrationContinue", constant(true))
-                .loopDoWhile(simple("${exchangeProperty.architectIntegrationContinue} == true && ${exchangeProperty.architectIntegrationIterations} < 4"))
-                    .setProperty("architectIntegrationIterations", simple("${exchangeProperty.architectIntegrationIterations++}"))
-                    .setProperty("architectIntegrationContinue", constant(false))
+                .loopDoWhile(and(exchangeProperty("architectIntegrationIterations").isLessThan(4),
+                        or(exchangeProperty("architectIntegrationIterations").isEqualTo(0),
+                            or(exchangeProperty("act.architect-integration-batch.durableProgress").isEqualTo(true),
+                               exchangeProperty("act.architect-conflict-recovery.durableProgress").isEqualTo(true)))))
+                    .setProperty("architectIntegrationIterations",
+                            simple("${exchangeProperty.architectIntegrationIterations}++", Integer.class))
                     .to("direct:architect-integration")
-                    .choice()
-                        .when(simple("${exchangeProperty.act.architect-integration-batch.durableProgress} == true || "
-                                + "${exchangeProperty.act.architect-conflict-recovery.durableProgress} == true"))
-                            .setProperty("architectIntegrationContinue", constant(true))
-                    .end()
                 .end();
 
         from("direct:architect-integration")
                 .routeId("architect-integration")
                 .setProperty("decision.architect-needs-conflict-recovery.result", constant("no"))
                 .setProperty("act.architect-integration-batch.durableProgress", constant(false))
+                .setProperty("act.architect-conflict-recovery.durableProgress", constant(false))
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Drain the current open integration queue across the known current-mission repositories in this act.
                         Include DEV-, QA-, and Architect-authored PRs. Process oldest safe PRs first, but never let an unsafe,

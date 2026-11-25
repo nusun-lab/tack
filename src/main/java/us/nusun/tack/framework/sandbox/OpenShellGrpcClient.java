@@ -1,9 +1,10 @@
 package us.nusun.tack.framework.sandbox;
 
-import io.grpc.Context;
 import io.grpc.Deadline;
 import io.grpc.Status;
+import io.grpc.StatusException;
 import io.grpc.StatusRuntimeException;
+import io.grpc.stub.ClientCalls;
 import io.quarkus.grpc.GrpcClient;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
@@ -54,7 +55,7 @@ import java.util.concurrent.TimeUnit;
 
 @ApplicationScoped
 public class OpenShellGrpcClient {
-    private static final String WORKSPACE = "default";
+    static final String WORKSPACE = "default";
     private static final List<String> DEVELOPER_PACKAGE_HOSTS = List.of(
             "repo.maven.apache.org",
             "maven.repository.redhat.com",
@@ -420,22 +421,7 @@ public class OpenShellGrpcClient {
                     .setAllowEncodedSlash("registry.npmjs.org".equals(host))
                     .build());
         }
-        int version;
-        try {
-            version = controlStub().updateConfig(UpdateConfigRequest.newBuilder()
-                    .setName(sandboxName)
-                    .setWorkspace(WORKSPACE)
-                    .addMergeOperations(PolicyMergeOperation.newBuilder()
-                            .setAddRule(AddNetworkRule.newBuilder()
-                                    .setRuleName("tack-developer-packages")
-                                    .setRule(rule.build())
-                                    .build())
-                            .build())
-                    .build()).getVersion();
-        } catch (StatusRuntimeException e) {
-            throw failure("authorize developer package egress for sandbox " + sandboxName, e);
-        }
-        awaitPolicyLoaded(sandboxName, version);
+        applyNetworkRule(sandboxName, rule.build(), "developer package");
     }
 
     public void authorizeGit(String sandboxName, Endpoint endpoint) {
@@ -451,6 +437,10 @@ public class OpenShellGrpcClient {
                         .build())
                 .addBinaries(NetworkBinary.newBuilder().setPath("/usr/bin/git").build())
                 .build();
+        applyNetworkRule(sandboxName, rule, "git");
+    }
+
+    private void applyNetworkRule(String sandboxName, NetworkPolicyRule rule, String egress) {
         int version;
         try {
             version = controlStub().updateConfig(UpdateConfigRequest.newBuilder()
@@ -458,13 +448,13 @@ public class OpenShellGrpcClient {
                     .setWorkspace(WORKSPACE)
                     .addMergeOperations(PolicyMergeOperation.newBuilder()
                             .setAddRule(AddNetworkRule.newBuilder()
-                                    .setRuleName("tack-gitea")
+                                    .setRuleName(rule.getName())
                                     .setRule(rule)
                                     .build())
                             .build())
                     .build()).getVersion();
         } catch (StatusRuntimeException e) {
-            throw failure("authorize git egress for sandbox " + sandboxName, e);
+            throw failure("authorize " + egress + " egress for sandbox " + sandboxName, e);
         }
         awaitPolicyLoaded(sandboxName, version);
     }
@@ -498,40 +488,40 @@ public class OpenShellGrpcClient {
                 .setFollowStatus(true)
                 .setStopOnTerminal(true)
                 .build();
-        while (!deadline.isExpired()) {
-            // Cancel a stream we stop consuming as soon as we have the state we need.
-            try (Context.CancellableContext watch = Context.current().withCancellation()) {
-                Context parent = watch.attach();
+        try {
+            while (!deadline.isExpired()) {
                 try {
-                    Iterator<SandboxStreamEvent> events = stub.withDeadline(deadline).watchSandbox(request);
-                    while (events.hasNext()) {
-                        SandboxStreamEvent event = events.next();
-                        if (event.hasSandbox()) {
-                            latest = event.getSandbox();
-                            if (isReady(latest)) {
-                                return latest;
+                    var watch = ClientCalls.blockingV2ServerStreamingCall(stub.getChannel(),
+                            OpenShellGrpc.getWatchSandboxMethod(), stub.getCallOptions().withDeadline(deadline), request);
+                    try {
+                        SandboxStreamEvent event;
+                        while ((event = watch.read()) != null) {
+                            if (event.hasSandbox()) {
+                                latest = event.getSandbox();
+                                if (isReady(latest)) {
+                                    return latest;
+                                }
                             }
                         }
+                    } finally {
+                        watch.cancel("Finished watching sandbox readiness", null);
                     }
-                } finally {
-                    watch.detach(parent);
+                } catch (StatusException | StatusRuntimeException e) {
+                    Status.Code code = Status.fromThrowable(e).getCode();
+                    if (code == Status.Code.DEADLINE_EXCEEDED) {
+                        throw readinessTimeout(latest, e);
+                    }
+                    if (code != Status.Code.UNAVAILABLE) {
+                        throw failure("watch sandbox " + describe(latest), e);
+                    }
                 }
-            } catch (StatusRuntimeException e) {
-                if (e.getStatus().getCode() == Status.Code.DEADLINE_EXCEEDED) {
-                    throw readinessTimeout(latest, e);
-                }
-                if (e.getStatus().getCode() != Status.Code.UNAVAILABLE) {
-                    throw failure("watch sandbox " + describe(latest), e);
-                }
-            }
-            // A reconnect receives a fresh snapshot from the gateway.
-            try {
+                // A reconnect receives a fresh snapshot from the gateway.
                 TimeUnit.NANOSECONDS.sleep(Math.min(
                         TimeUnit.MILLISECONDS.toNanos(100), deadline.timeRemaining(TimeUnit.NANOSECONDS)));
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IllegalStateException("Interrupted waiting for " + describe(latest), e);
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted waiting for " + describe(latest), e);
         }
         throw readinessTimeout(latest, null);
     }
@@ -578,7 +568,7 @@ public class OpenShellGrpcClient {
                 + " to load for sandbox " + sandboxName);
     }
 
-    private OpenShellGrpc.OpenShellBlockingStub controlStub() {
+    OpenShellGrpc.OpenShellBlockingStub controlStub() {
         return stub.withDeadlineAfter(controlTimeout.toSeconds(), TimeUnit.SECONDS);
     }
 
@@ -608,8 +598,8 @@ public class OpenShellGrpcClient {
         stream.writeBytes(value);
     }
 
-    private static IllegalStateException failure(String operation, StatusRuntimeException e) {
-        return new IllegalStateException("OpenShell failed to " + operation + ": " + e.getStatus(), e);
+    private static IllegalStateException failure(String operation, Exception e) {
+        return new IllegalStateException("OpenShell failed to " + operation + ": " + Status.fromThrowable(e), e);
     }
 
     public record Endpoint(String host, int port) {

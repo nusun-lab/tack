@@ -1,46 +1,34 @@
 package us.nusun.tack.example.runtime;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
-import us.nusun.tack.framework.model.InferenceLaneDefinition;
-import us.nusun.tack.framework.inventory.InferenceLaneProvider;
-import us.nusun.tack.framework.model.PartitionKeyStrategy;
+import us.nusun.tack.framework.inference.lane.LaneConfiguration;
+import us.nusun.tack.framework.inference.lane.InferenceLaneProvider;
+import us.nusun.tack.framework.inference.lane.InferenceLaneDefinition;
+import us.nusun.tack.framework.inference.lane.PartitionKeyStrategy;
 
 @ApplicationScoped
 public class HighPassLane implements InferenceLaneProvider {
     public static final String ID = "high-pass";
-    public static final String API_KEY_CONFIG_KEY = "llm.inference-lane.high.api-key";
-    public static final String API_KEY_ENV_VARIABLE = "LLM_HIGH_API_KEY";
+    private static final String CONFIG_NAME = "high";
 
-    @ConfigProperty(name = "llm.inference-lane.high.request-topic", defaultValue = "llm.requests.high")
-    String requestTopic;
+    private final LaneConfiguration.Lane config;
 
-    @ConfigProperty(name = "llm.inference-lane.high.reply-topic", defaultValue = "llm.replies.high")
-    String responseTopic;
-
-    @ConfigProperty(name = "llm.inference-lane.high.endpoint", defaultValue = "")
-    String endpoint;
-
-    @ConfigProperty(name = "llm.inference-lane.high.model", defaultValue = "")
-    String model;
-
-    @ConfigProperty(name = "llm.inference-lane.high.parallelism", defaultValue = "1")
-    int parallelism = 1;
-
-    @ConfigProperty(name = "llm.inference-lane.high.partition-key-strategy", defaultValue = "AGENT_RUN")
-    PartitionKeyStrategy partitionKeyStrategy = PartitionKeyStrategy.AGENT_RUN;
+    public HighPassLane(LaneConfiguration configuration) {
+        this.config = configuration.lanes().get(CONFIG_NAME);
+    }
 
     @Override
     public InferenceLaneDefinition inferenceLane() {
-        return InferenceLaneDefinition.builder(HighPassLane.ID)
-                .requestTopic(requestTopic)
-                .responseTopic(responseTopic)
-                .parallelism(parallelism)
-                .partitionKeyStrategy(partitionKeyStrategy)
-                .endpoint(endpoint)
-                .model(model)
-                .apiKeyConfigKey(API_KEY_CONFIG_KEY)
-                .apiKeyEnvVariable(API_KEY_ENV_VARIABLE)
+        return InferenceLaneDefinition.builder(ID)
+                .configName(CONFIG_NAME)
+                .requestTopic(config.requestTopic().orElse("llm.requests.high"))
+                .responseTopic(config.replyTopic().orElse("llm.replies.high"))
+                .parallelism(config.parallelism())
+                .partitionKeyStrategy(config.partitionKeyStrategy().orElse(PartitionKeyStrategy.JOB))
+                .endpoint(config.endpoint().orElse(""))
+                .model(config.model().orElse(""))
+                .apiKeyConfigKey("llm.inference-lane.high.api-key")
+                .apiKeyEnvVariable("LLM_HIGH_API_KEY")
                 .build();
     }
 }

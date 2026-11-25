@@ -1,0 +1,15 @@
+package us.nusun.tack.framework.run;
+
+public record AgentRunScheduled(
+        String missionId,
+        String agentRunId
+) {
+    public AgentRunScheduled {
+        if (missionId == null || missionId.isBlank()) {
+            throw new IllegalArgumentException("AgentRunScheduled missing missionId");
+        }
+        if (agentRunId == null || agentRunId.isBlank()) {
+            throw new IllegalArgumentException("AgentRunScheduled missing agentRunId");
+        }
+    }
+}

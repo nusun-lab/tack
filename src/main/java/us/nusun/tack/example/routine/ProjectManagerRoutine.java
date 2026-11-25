@@ -7,12 +7,15 @@ import us.nusun.tack.example.tool.ProjectDocumentationToolProfile;
 import us.nusun.tack.example.tool.TeamChatToolProfile;
 import us.nusun.tack.example.tool.WorkspaceCoordinationToolProfile;
 import us.nusun.tack.example.tool.WorkspaceReadonlyToolProfile;
-import us.nusun.tack.framework.inventory.RoutineProvider;
-import us.nusun.tack.framework.model.LlmPassType;
-import us.nusun.tack.framework.model.RoutineDefinition;
-import us.nusun.tack.framework.tack.TackHeaders;
+import us.nusun.tack.framework.routine.RoutineProvider;
+import us.nusun.tack.framework.inference.LlmPassType;
+import us.nusun.tack.framework.routine.RoutineDefinition;
+import us.nusun.tack.framework.routine.TackHeaders;
 
 import java.util.List;
+
+import static org.apache.camel.builder.PredicateBuilder.and;
+import static org.apache.camel.builder.PredicateBuilder.or;
 
 @ApplicationScoped
 public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvider {
@@ -210,15 +213,12 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-active-flow-loop")
                 .routeId("pm-active-flow-loop")
                 .setProperty("pmActiveFlowIterations", constant(0))
-                .setProperty("pmActiveFlowContinue", constant(true))
-                .loopDoWhile(simple("${exchangeProperty.pmActiveFlowContinue} == true && ${exchangeProperty.pmActiveFlowIterations} < 6"))
-                    .setProperty("pmActiveFlowIterations", simple("${exchangeProperty.pmActiveFlowIterations++}"))
-                    .setProperty("pmActiveFlowContinue", constant(false))
+                .loopDoWhile(and(exchangeProperty("pmActiveFlowIterations").isLessThan(6),
+                        or(exchangeProperty("pmActiveFlowIterations").isEqualTo(0),
+                            exchangeProperty("act.pm-flow.durableProgress").isEqualTo(true))))
+                    .setProperty("pmActiveFlowIterations",
+                            simple("${exchangeProperty.pmActiveFlowIterations}++", Integer.class))
                     .to("direct:pm-flow")
-                    .choice()
-                        .when(exchangeProperty("act.pm-flow.durableProgress").isEqualTo(true))
-                            .setProperty("pmActiveFlowContinue", constant(true))
-                    .end()
                 .end();
 
         from("direct:pm-flow")
@@ -244,8 +244,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         Do not leave executable Story work in Backlog merely because its intended engineer is not running.
                         Never infer a dependency from Story sequence, concurrent execution, or a failed relation-tool
                         payload. Story dependency relations must remain acyclic. If verified relations form a cycle that
-                        prevents forward progress, remove the least-justified relation(s) needed to restore an executable
-                        path; do not wait on a circular dependency. When current PO acceptance clearly makes a Story
+                        prevents forward progress, record the exact cycle and keep unrelated executable work flowing.
+                        Plane CE does not support relation deletion. Do not add more relations to the cycle.
+                        When current PO acceptance clearly makes a Story
                         obsolete or duplicate, PM owns moving that Story to Cancelled. Never cancel work merely because of
                         staffing, queue depth, or dependency delay. Otherwise repair a dependency/assignment; route product
                         ambiguity to PO; route integration/repository issues to ARCH; route implementation/testability
@@ -272,15 +273,12 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-planning-loop")
                 .routeId("pm-planning-loop")
                 .setProperty("pmPlanningIterations", constant(0))
-                .setProperty("pmPlanningContinue", constant(true))
-                .loopDoWhile(simple("${exchangeProperty.pmPlanningContinue} == true && ${exchangeProperty.pmPlanningIterations} < 5"))
-                    .setProperty("pmPlanningIterations", simple("${exchangeProperty.pmPlanningIterations++}"))
-                    .setProperty("pmPlanningContinue", constant(false))
+                .loopDoWhile(and(exchangeProperty("pmPlanningIterations").isLessThan(5),
+                        or(exchangeProperty("pmPlanningIterations").isEqualTo(0),
+                            exchangeProperty("act.pm-planning.durableProgress").isEqualTo(true))))
+                    .setProperty("pmPlanningIterations",
+                            simple("${exchangeProperty.pmPlanningIterations}++", Integer.class))
                     .to("direct:pm-planning")
-                    .choice()
-                        .when(exchangeProperty("act.pm-planning.durableProgress").isEqualTo(true))
-                            .setProperty("pmPlanningContinue", constant(true))
-                    .end()
                 .end();
 
         from("direct:pm-planning")

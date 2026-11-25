@@ -1,9 +1,9 @@
 package us.nusun.tack.example.persona;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import org.eclipse.microprofile.config.inject.ConfigProperty;
-import us.nusun.tack.framework.inventory.PersonaProvider;
-import us.nusun.tack.framework.model.Persona;
+import us.nusun.tack.framework.persona.PersonaAccounts;
+import us.nusun.tack.framework.persona.PersonaProvider;
+import us.nusun.tack.framework.persona.Persona;
 
 import java.util.List;
 
@@ -11,17 +11,11 @@ import java.util.List;
 public class OwenPersona implements PersonaProvider {
     public static final String ID = "software-team/owen";
 
-    @ConfigProperty(name = "persona.owen.email", defaultValue = "")
-    String email = "";
+    private final PersonaAccounts.Account account;
 
-    @ConfigProperty(name = "persona.owen.identity.mattermost.token", defaultValue = "")
-    String mattermostToken = "";
-
-    @ConfigProperty(name = "persona.owen.identity.gitea.token", defaultValue = "")
-    String giteaToken = "";
-
-    @ConfigProperty(name = "persona.owen.identity.plane.token", defaultValue = "")
-    String planeToken = "";
+    public OwenPersona(PersonaAccounts accounts) {
+        this.account = accounts.accounts().get("owen");
+    }
 
     @Override
     public List<Persona> personas() {
@@ -31,7 +25,7 @@ public class OwenPersona implements PersonaProvider {
     public Persona persona() {
         return Persona.builder(ID)
                 .name("Owen")
-                .email(email)
+                .email(account.email().orElse(""))
                 .description("Project manager persona who owns delivery flow, ready-work buffers, dependencies, and team handoffs.")
                 .trait("creates calm structure around ambiguous delivery work")
                 .trait("notices ownership, membership, and sequencing gaps early")
@@ -40,9 +34,9 @@ public class OwenPersona implements PersonaProvider {
                 .trait("prefers durable handoffs over performative status updates")
                 .label("PM")
                 .color("38;2;255;179;71")
-                .identity("mattermost", mattermostToken, "@project-manager-agent")
-                .identity("gitea", giteaToken, "project-manager-agent")
-                .identity("plane", planeToken, "PM")
+                .identity("mattermost", account.token("mattermost"), "@project-manager-agent")
+                .identity("gitea", account.token("gitea"), "project-manager-agent")
+                .identity("plane", account.token("plane"), "PM")
                 .build();
     }
 }

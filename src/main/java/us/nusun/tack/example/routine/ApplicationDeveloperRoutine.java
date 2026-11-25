@@ -8,12 +8,15 @@ import us.nusun.tack.example.tool.SourceControlToolProfile;
 import us.nusun.tack.example.tool.SourceControlWriteToolProfile;
 import us.nusun.tack.example.tool.TeamChatToolProfile;
 import us.nusun.tack.example.tool.WorkspaceReadonlyToolProfile;
-import us.nusun.tack.framework.inventory.RoutineProvider;
-import us.nusun.tack.framework.model.LlmPassType;
-import us.nusun.tack.framework.model.RoutineDefinition;
-import us.nusun.tack.framework.tack.TackHeaders;
+import us.nusun.tack.framework.routine.RoutineProvider;
+import us.nusun.tack.framework.inference.LlmPassType;
+import us.nusun.tack.framework.routine.RoutineDefinition;
+import us.nusun.tack.framework.routine.TackHeaders;
 
 import java.util.List;
+
+import static org.apache.camel.builder.PredicateBuilder.and;
+import static org.apache.camel.builder.PredicateBuilder.or;
 
 @ApplicationScoped
 public class ApplicationDeveloperRoutine extends RouteBuilder implements RoutineProvider {
@@ -258,10 +261,12 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .routeId("dev-delivery-loop")
                 .to("direct:dev-team-chat-sync")
                 .setProperty("devProductiveIterations", constant(0))
-                .setProperty("devMadeProgress", constant(true))
-                .loopDoWhile(simple("${exchangeProperty.devMadeProgress} == true && ${exchangeProperty.devProductiveIterations} < 6"))
-                    .setProperty("devProductiveIterations", simple("${exchangeProperty.devProductiveIterations++}"))
-                    .setProperty("devMadeProgress", constant(false))
+                .loopDoWhile(and(exchangeProperty("devProductiveIterations").isLessThan(6),
+                        or(exchangeProperty("devProductiveIterations").isEqualTo(0),
+                            exchangeProperty("devImplementationMadeProgress").isEqualTo(true))))
+                    .setProperty("devProductiveIterations",
+                            simple("${exchangeProperty.devProductiveIterations}++", Integer.class))
+                    .setProperty("devImplementationMadeProgress", constant(false))
                     .setProperty("devSourceCloseoutAllowed", constant(false))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
                             Current developer work unit: one selected defect or story,
@@ -274,7 +279,6 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .choice()
                         .when(exchangeProperty("decision.developer-has-work.result").isEqualTo("yes"))
                             .to("direct:dev-implementation-loop")
-                            .setProperty("devMadeProgress", exchangeProperty("devImplementationMadeProgress"))
                             .to("direct:dev-work-closeout-dispatch")
                         .otherwise()
                             .to("direct:dev-no-work-closeout")
@@ -365,7 +369,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .setProperty("devImplementationStepProgress", constant(true))
                 .setProperty("decision.developer-implementation-complete.result", constant("no"))
                 .loopDoWhile(simple("${exchangeProperty.devImplementationStepProgress} == true && ${exchangeProperty.developerImplementationCycle} < 6"))
-                    .setProperty("developerImplementationCycle", simple("${exchangeProperty.developerImplementationCycle++}"))
+                    .setProperty("developerImplementationCycle",
+                            simple("${exchangeProperty.developerImplementationCycle}++", Integer.class))
                     .setProperty("devImplementationStepProgress", constant(false))
                     .setProperty("decision.developer-has-valid-task-context.result", constant("no"))
                     .setProperty("decision.developer-is-topology-investigation.result", constant("no"))
@@ -389,8 +394,9 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .setHeader(TackHeaders.PROMPT, constant("""
                             Is selected source-work context valid enough to perform assigned work? Normal delivery requires
                             assignment, exact defect/story classification, Epic acceptance, repository locator,
-                            dependency state, and expected validation evidence. It does NOT require an existing branch/main,
-                            PM chat confirmation, or pre-confirmed push permission. Topology investigation requires
+                            dependency state, expected validation evidence, and the Architect-established main baseline.
+                            A missing feature branch, PM chat confirmation, or speculative push permission is not a blocker.
+                            Topology investigation requires
                             assignment, repository, dependency-free state, affected work ids, acceptance refs, exact
                             technical question. Answer no on genuinely missing/contradictory required context.
                             """))
@@ -483,9 +489,9 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             .setProperty("devSourceCloseoutAllowed", constant(false))
                             .setHeader(TackHeaders.PROMPT, constant("""
                                     Do not touch source. Keep selected child In Progress and add/refresh one concise evidence
-                                    comment naming the genuinely missing/malformed PM-owned delivery context and required repair. Do
-                                    not use absent main/default branch, untested source permission, or missing Mattermost
-                                    confirmation as blockers. Do not encode a named BLOCKED workflow state in comments.
+                                    comment naming the observed gap and its owner. Architect owns any missing or incorrect main
+                                    baseline. PM owns missing or malformed delivery context. Untested source permission and missing
+                                    Mattermost confirmation are not blockers. Do not encode a named BLOCKED workflow state.
                                     """))
                             .to("tack:act?id=dev-invalid-context-blocked&toolProfile=" + EngineeringWorkToolProfile.ID)
                             .choice()
