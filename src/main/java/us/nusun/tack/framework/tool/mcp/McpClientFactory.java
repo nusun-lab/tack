@@ -1,12 +1,9 @@
 package us.nusun.tack.framework.tool.mcp;
 
-import static us.nusun.tack.framework.FrameworkText.firstNonBlank;
 import static us.nusun.tack.framework.FrameworkText.isBlank;
 
 import dev.langchain4j.mcp.client.DefaultMcpClient;
 import dev.langchain4j.mcp.client.McpClient;
-import dev.langchain4j.mcp.client.McpHeadersSupplier;
-import dev.langchain4j.mcp.client.transport.McpTransport;
 import dev.langchain4j.mcp.client.transport.http.StreamableHttpMcpTransport;
 import dev.langchain4j.model.TokenCountEstimator;
 import dev.langchain4j.service.IllegalConfigurationException;
@@ -107,49 +104,33 @@ public class McpClientFactory {
                     !isBlank(token));
             return null;
         }
-        String transportType = firstNonBlank(server.transportType(), "streamableHttp");
-        String authHeaderName = firstNonBlank(server.authHeaderName(), "Authorization");
-        String authHeaderValueFormat = firstNonBlank(server.authHeaderValueFormat(), "Bearer %s");
-        ClientCacheKey cacheKey = new ClientCacheKey(
-                server.id(),
-                persona.id(),
-                handle,
-                transportType,
-                url,
-                token,
-                authHeaderName,
-                authHeaderValueFormat,
-                server.extraHeaders());
-        return connections.computeIfAbsent(cacheKey, this::newConnection);
+        return connections.computeIfAbsent(new ClientCacheKey(server, persona.id(), handle, token), this::newConnection);
     }
 
     private CachedMcpConnection newConnection(ClientCacheKey cacheKey) {
+        McpServerDefinition server = cacheKey.server();
         Map<String, String> headers = new LinkedHashMap<>();
-        headers.put(cacheKey.authHeaderName(), cacheKey.authHeaderValueFormat().formatted(cacheKey.token()));
-        headers.putAll(cacheKey.extraHeaders());
-        String key = cacheKey.serverId() + ":" + cacheKey.personaId();
-        return new CachedMcpConnection(() -> connect(key, cacheKey.url(), cacheKey.transportType(), headers));
+        headers.put(server.authHeaderName(), server.authHeaderValueFormat().formatted(cacheKey.token()));
+        headers.putAll(server.extraHeaders());
+        String key = server.id() + ":" + cacheKey.personaId();
+        return new CachedMcpConnection(() -> connect(key, server.url(), server.transportType(), headers));
     }
 
     McpClient connect(String key, String url, String transportType, Map<String, String> headers) {
+        warnIfUnsupportedTransport(transportType);
+        var transport = StreamableHttpMcpTransport.builder()
+                .url(url)
+                .customHeaders(ignored -> headers)
+                .timeout(Duration.ofMillis(transportTimeoutMs))
+                .logRequests(logTransportRequests)
+                .logResponses(logTransportResponses)
+                .build();
         return DefaultMcpClient.builder()
                 .key(key)
                 .clientName("tack")
                 .clientVersion("0.1.0-SNAPSHOT")
-                .transport(transport(url, transportType, headers))
+                .transport(transport)
                 .initializationTimeout(Duration.ofMillis(initializationTimeoutMs))
-                .build();
-    }
-
-    private McpTransport transport(String url, String transportType, Map<String, String> headers) {
-        McpHeadersSupplier headersSupplier = ignored -> headers;
-        warnIfUnsupportedTransport(transportType);
-        return StreamableHttpMcpTransport.builder()
-                .url(url)
-                .customHeaders(headersSupplier)
-                .timeout(Duration.ofMillis(transportTimeoutMs))
-                .logRequests(logTransportRequests)
-                .logResponses(logTransportResponses)
                 .build();
     }
 
@@ -161,14 +142,14 @@ public class McpClientFactory {
                 connection.close();
             } catch (Exception failure) {
                 LOG.warn("Failed to close MCP connection server={} persona={} cause={}",
-                        key.serverId(), key.personaId(), rootMessage(failure));
+                        key.server().id(), key.personaId(), rootMessage(failure));
             }
         });
         connections.clear();
     }
 
     private static void warnIfUnsupportedTransport(String transportType) {
-        String normalized = transportType == null ? "streamablehttp" : transportType.toLowerCase().replace("-", "").replace("_", "");
+        String normalized = transportType.toLowerCase().replace("-", "").replace("_", "");
         if (!"streamablehttp".equals(normalized)) {
             LOG.warn("Ignoring unsupported MCP transport-type='{}'. Only streamableHttp is supported.", transportType);
         }
@@ -184,19 +165,14 @@ public class McpClientFactory {
     }
 
     private record ClientCacheKey(
-            String serverId,
+            McpServerDefinition server,
             String personaId,
             String identityHandle,
-            String transportType,
-            String url,
-            String token,
-            String authHeaderName,
-            String authHeaderValueFormat,
-            Map<String, String> extraHeaders) {
+            String token) {
         @Override
         public String toString() {
-            return "ClientCacheKey[serverId=%s, personaId=%s, identityHandle=%s, transportType=%s, url=%s, token=<redacted>]"
-                    .formatted(serverId, personaId, identityHandle, transportType, url);
+            return "ClientCacheKey[serverId=%s, personaId=%s, identityHandle=%s, credentials=<redacted>]"
+                    .formatted(server.id(), personaId, identityHandle);
         }
     }
 }

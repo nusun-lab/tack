@@ -1,5 +1,7 @@
 package us.nusun.tack.framework.tool;
 
+import static us.nusun.tack.framework.FrameworkText.firstNonBlank;
+
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -12,6 +14,9 @@ public record McpServerDefinition(
         Map<String, String> extraHeaders
 ) {
     public McpServerDefinition {
+        transportType = firstNonBlank(transportType, "streamableHttp");
+        authHeaderName = firstNonBlank(authHeaderName, "Authorization");
+        authHeaderValueFormat = firstNonBlank(authHeaderValueFormat, "Bearer %s");
         extraHeaders = extraHeaders == null ? Map.of() : Map.copyOf(extraHeaders);
     }
 
@@ -20,9 +25,9 @@ public record McpServerDefinition(
     public static final class Builder {
         private final String id;
         private String url = "";
-        private String transportType = "streamableHttp";
-        private String authHeaderName = "Authorization";
-        private String authHeaderValueFormat = "Bearer %s";
+        private String transportType;
+        private String authHeaderName;
+        private String authHeaderValueFormat;
         private final LinkedHashMap<String, String> extraHeaders = new LinkedHashMap<>();
 
         private Builder(String id) { this.id = id; }

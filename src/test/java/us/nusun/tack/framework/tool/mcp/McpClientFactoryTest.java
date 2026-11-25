@@ -30,8 +30,11 @@ class McpClientFactoryTest {
     void discoveryIsLazyAndSharesOneConnectionUnderContentionAcrossProfiles() throws Exception {
         FakeFactory factory = new FakeFactory();
         Persona persona = persona("first", "first-token");
-        ToolProvider first = factory.toolProvidersFor(persona, profile("read")).getFirst();
-        ToolProvider second = factory.toolProvidersFor(persona, profile("write")).getFirst();
+        String url = "http://mcp.example";
+        ToolProvider first = factory.toolProvidersFor(persona, profile("read",
+                McpServerDefinition.builder("mcp").url(url).build())).getFirst();
+        ToolProvider second = factory.toolProvidersFor(persona, profile("write",
+                new McpServerDefinition("mcp", url, " ", null, "", Map.of()))).getFirst();
         assertEquals(0, factory.attempts.get());
 
         try (var threads = Executors.newFixedThreadPool(4)) {
@@ -44,6 +47,7 @@ class McpClientFactoryTest {
             }
         }
         assertEquals(1, factory.attempts.get());
+        assertEquals(List.of("Bearer first-token"), factory.authorization);
         assertEquals(0, factory.closes.get());
 
         factory.closeCachedClients();
@@ -104,9 +108,12 @@ class McpClientFactoryTest {
     }
 
     private static ToolProfile profile(String id) {
-        return ToolProfile.builder(id).mcpServer(McpServerDefinition.builder("mcp")
-                .url("http://mcp.example").authHeaderName("X-Token").authHeaderValueFormat("Token %s").build())
-                .allowTool("mcp", "allowed_tool").build();
+        return profile(id, McpServerDefinition.builder("mcp")
+                .url("http://mcp.example").authHeaderName("X-Token").authHeaderValueFormat("Token %s").build());
+    }
+
+    private static ToolProfile profile(String id, McpServerDefinition server) {
+        return ToolProfile.builder(id).mcpServer(server).allowTool("mcp", "allowed_tool").build();
     }
 
     private static class FakeFactory extends McpClientFactory {
@@ -123,7 +130,7 @@ class McpClientFactoryTest {
                 failure = null;
                 throw next;
             }
-            authorization.add(headers.get("X-Token"));
+            authorization.add(headers.getOrDefault("X-Token", headers.get("Authorization")));
             return new FakeMcpClient(closes);
         }
     }

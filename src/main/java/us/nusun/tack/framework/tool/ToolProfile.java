@@ -2,7 +2,6 @@ package us.nusun.tack.framework.tool;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -72,8 +71,7 @@ public record ToolProfile(
     }
 
     public static final class Builder {
-        private static final ObjectMapper ARGUMENT_PARSER = new ObjectMapper();
-        private static final JsonNodeFactory NODES = JsonNodeFactory.instance;
+        private static final ObjectMapper ARGUMENT_MAPPER = new ObjectMapper();
 
         private final String id;
         private final Map<String, ServerBuilder> policies = new LinkedHashMap<>();
@@ -141,32 +139,17 @@ public record ToolProfile(
             return this;
         }
 
-        public Builder defaultArgument(String server, String tool, String name, String value) {
-            return defaultArgument(server, tool, name, NODES.textNode(value));
-        }
-
-        public Builder defaultArgument(String server, String tool, String name, boolean value) {
-            return defaultArgument(server, tool, name, NODES.booleanNode(value));
-        }
-
-        public Builder defaultArgument(String server, String tool, String name, int value) {
-            return defaultArgument(server, tool, name, NODES.numberNode(value));
-        }
-
-        public Builder defaultArgument(String server, String tool, String name, double value) {
-            return defaultArgument(server, tool, name, NODES.numberNode(value));
-        }
-
         public Builder defaultArgumentJson(String server, String tool, String name, String json) {
             try {
-                return defaultArgument(server, tool, name, ARGUMENT_PARSER.readTree(json));
+                return defaultArgument(server, tool, name, ARGUMENT_MAPPER.readTree(json));
             } catch (Exception failure) {
                 throw new IllegalArgumentException("Invalid JSON default argument for " + server + "." + tool + "." + name, failure);
             }
         }
 
-        public Builder defaultArgument(String server, String tool, String name, JsonNode value) {
-            policy(server).arguments(tool).defaults.put(name, value == null ? NODES.nullNode() : value.deepCopy());
+        public Builder defaultArgument(String server, String tool, String name, Object value) {
+            JsonNode node = value instanceof JsonNode json ? json : ARGUMENT_MAPPER.valueToTree(value);
+            policy(server).arguments(tool).defaults.put(name, node.deepCopy());
             return this;
         }
 

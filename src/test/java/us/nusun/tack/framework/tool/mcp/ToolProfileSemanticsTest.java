@@ -248,13 +248,18 @@ class ToolProfileSemanticsTest {
 
     @Test
     void jsonDefaultArgumentsSupportScalarsAndArrays() throws Exception {
-        ToolProfile profile = ToolProfile.builder("json-defaults")
+        var callerOwned = OBJECT_MAPPER.createArrayNode().add("first");
+        var builder = ToolProfile.builder("json-defaults")
                 .server(FrameworkFixtures.SERVER_ALPHA)
                 .defaultArgument(FrameworkFixtures.SERVER_ALPHA, "alpha_search", "includeClosed", true)
                 .defaultArgument(FrameworkFixtures.SERVER_ALPHA, "alpha_search", "limit", 5)
                 .defaultArgument(FrameworkFixtures.SERVER_ALPHA, "alpha_search", "query", "parking")
-                .defaultArgumentJson(FrameworkFixtures.SERVER_ALPHA, "alpha_search", "states", "[\"open\",\"started\"]")
-                .build();
+                .defaultArgument(FrameworkFixtures.SERVER_ALPHA, "alpha_search", "literal", "[]")
+                .defaultArgument(FrameworkFixtures.SERVER_ALPHA, "alpha_search", "optional", null)
+                .defaultArgument(FrameworkFixtures.SERVER_ALPHA, "alpha_search", "selection", callerOwned)
+                .defaultArgumentJson(FrameworkFixtures.SERVER_ALPHA, "alpha_search", "states", "[\"open\",\"started\"]");
+        callerOwned.add("added later");
+        ToolProfile profile = builder.build();
         McpToolPolicy client = policy(null, FrameworkFixtures.SERVER_ALPHA, profile);
 
         ToolExecutionRequest request = ToolExecutionRequest.builder().id("1").name("alpha_search").arguments("{}").build();
@@ -263,6 +268,9 @@ class ToolProfileSemanticsTest {
         assertTrue(arguments.get("includeClosed").asBoolean());
         assertEquals(5, arguments.get("limit").asInt());
         assertEquals("parking", arguments.get("query").asText());
+        assertEquals("[]", arguments.get("literal").textValue());
+        assertTrue(arguments.get("optional").isNull());
+        assertEquals(1, arguments.get("selection").size());
         assertEquals("open", arguments.get("states").get(0).asText());
     }
 
