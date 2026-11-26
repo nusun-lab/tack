@@ -68,6 +68,7 @@ class TackComponentContractTest {
             assertTrue(llm.requests.get(0).systemPrompt().contains("before issuing a call that depends on it"));
             assertTrue(llm.requests.get(1).prompt().contains("Copy exact IDs, names and"));
             assertTrue(llm.requests.get(1).prompt().contains("false for reads, including first-time verification"));
+            assertFalse(llm.requests.get(1).prompt().contains("\"durableProgress\":true"));
             assertFalse(llm.requests.get(1).prompt().contains("t_"));
         }
     }

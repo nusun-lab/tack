@@ -154,8 +154,7 @@ final class PrimitivePrompts {
                 Set durableProgress true for an evidenced durable change, completed handoff or new test result.
                 Set it false for reads, including first-time verification of readiness. Confidence is telemetry.
 
-                Return JSON only:
-                {"content":"One coherent updated thought.","summary":"One compact statement of what this act accomplished.","outcome":"SUCCEEDED|PARTIAL|BLOCKED|NOOP|FAILED","durableProgress":true,"confidence":0.95}
+                Return JSON with content (updated thought), summary (this act only), outcome, durableProgress and confidence.
                 """.formatted(
                 missionLevelContext(exchange),
                 safeText(request.id()),
@@ -251,8 +250,7 @@ final class PrimitivePrompts {
                 %s
                 Omit internal thought identifiers.
 
-                Return JSON only:
-                {"content":"One coherent replacement parent thought."}
+                Return JSON with content (updated parent thought).
                 """.formatted(
                 missionLevelContext(exchange),
                 safeText(parent.name()),
