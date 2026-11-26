@@ -12,9 +12,6 @@ import us.nusun.tack.framework.routine.TackHeaders;
 
 import java.util.List;
 
-import static org.apache.camel.builder.PredicateBuilder.and;
-import static org.apache.camel.builder.PredicateBuilder.or;
-
 @ApplicationScoped
 public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider {
     public static final String ID = "software-team/product-owner";
@@ -85,20 +82,9 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                         Keep delivery activation evidence separate.
                         """))
                 .to("tack:thought-enter?name=po-epic-work-focus&maxTokens=500")
-                .to("direct:po-epic-work-loop")
+                .to("direct:po-epic-definition")
                 .to("tack:thought-exit?name=po-epic-work-focus")
                 .to("direct:po-product-awareness");
-
-        from("direct:po-epic-work-loop")
-                .routeId("po-epic-work-loop")
-                .setProperty("poEpicWorkIterations", constant(0))
-                .loopDoWhile(and(exchangeProperty("poEpicWorkIterations").isLessThan(6),
-                        or(exchangeProperty("poEpicWorkIterations").isEqualTo(0),
-                            exchangeProperty("act.po-epic-work.durableProgress").isEqualTo(true))))
-                    .setProperty("poEpicWorkIterations",
-                            simple("${exchangeProperty.poEpicWorkIterations}++", Integer.class))
-                    .to("direct:po-epic-definition")
-                .end();
 
         from("direct:po-epic-definition")
                 .routeId("po-epic-definition")
