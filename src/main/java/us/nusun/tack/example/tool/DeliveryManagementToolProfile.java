@@ -29,6 +29,8 @@ public class DeliveryManagementToolProfile implements ToolProfileProvider {
                 .mcpServer(gitea.definition())
                 .allowTools(KaneoMcpServer.ID,
                         "whoami",
+                        "list_workspaces",
+                        "list_projects",
                         "list_workspace_members",
                         "list_tasks",
                         "get_task",
@@ -53,7 +55,7 @@ public class DeliveryManagementToolProfile implements ToolProfileProvider {
                         "get_commit",
                         "list_pull_requests",
                         "pull_request_read")
-                .promptGuidance(KaneoWorkGuidance.DISCOVERY + KaneoWorkGuidance.LIFECYCLE + KaneoWorkGuidance.CLASSIFICATION + """
+                .promptGuidance(KaneoWorkGuidance.PROJECT + KaneoWorkGuidance.TASKS + KaneoWorkGuidance.LIFECYCLE + KaneoWorkGuidance.CLASSIFICATION + RepositoryWritingGuidance.DISCOVERY + """
                         - Keep dependencies acyclic. Repair a relation only after reading its exact ID, direction, and
                           downstream consequences. Verify the corrected graph before promoting work.
                         """)

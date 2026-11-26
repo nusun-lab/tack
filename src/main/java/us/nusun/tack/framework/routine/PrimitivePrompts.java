@@ -22,6 +22,13 @@ import java.util.List;
 import java.util.Map;
 
 final class PrimitivePrompts {
+    private static final String MEMORY_GUIDANCE = """
+            Keep relevant verified facts and external locators as short labeled entries. Copy exact IDs, names and
+            paths verbatim. Replace verified facts only with contradictory evidence about that same resource.
+            Silence, an unverified locator failure and hypotheses leave prior evidence intact. Preserve uncertainty
+            and the condition that makes unfinished work actionable. Drop transient reasoning and tool mechanics.
+            """.strip();
+
     private final ObjectMapper objectMapper;
     private final PersonaCatalog personas;
 
@@ -36,34 +43,14 @@ final class PrimitivePrompts {
                 + switch (passType) {
             case ACTION -> """
 
-                    Tool access:
-                    - You have access to only one external tool profile during this pass.
-                    - Framework-local tools such as mission_roster may also be available; use them only when the act
-                      requires current mission-team state.
-
-                    Bounded execution:
-                    - Work only on the highlighted ACT PROMPT.
-                    - Use the fewest useful tool calls; target 1-3 calls for normal steps.
-                    - Stop when the requested evidence, mutation, or blocker is known.
-                    - Do not browse entire projects, repositories, documentation trees, or channels.
-                    - Do not re-check mission context unless this act prompt requires it.
-
-                    Contract:
-                    - Do tool-backed work using available tools.
-                    - Never do anything except the specific act.
-                    - Do not claim external state unless tool-backed.
-                    - Return only a compact plain-text pass report.
+                    Complete the current act with targeted tool calls. Use verified context first and gather
+                    enough evidence to finish. Stop when the objective is met or an actual blocker is established.
+                    Use the advertised argument schema. For tools with no parameters, send {}. Example values and
+                    placeholders are instructional text. Copy external locators verbatim from evidence.
                     """;
             case SYNTHESIS -> """
 
-                    Contract:
-                    - Synthesize the completed action result into the required JSON.
-                    - Return only valid JSON matching the supplied schema.
-                    - This pass has no tools; do not call tools, reason about tool availability, or retry the action.
-                    - The preceding action has already completed; do not repeat it.
-                    - Treat the supplied latest observation as the newest evidence.
-                    - Rewrite the current thought as current-state memory, not hidden chain-of-thought.
-                    - Evaluate only what the completed act actually accomplished; do not infer success from intent.
+                    Evaluate the completed act from the supplied evidence and return the requested JSON.
                     """;
             case DECISION -> """
 
@@ -81,11 +68,7 @@ final class PrimitivePrompts {
                     """;
             case CONSOLIDATION -> """
 
-                    Contract:
-                    - Consolidate a completed child thought into its parent.
-                    - Use only supplied context; this pass has no tools.
-                    - Return only valid JSON matching the supplied schema.
-                    - The framework has already selected the parent; do not reference framework ids in content.
+                    Merge the child thought into its parent and return the requested JSON.
                     """;
         };
     }
@@ -118,32 +101,13 @@ final class PrimitivePrompts {
                 ### Tool-profile guidance:
                 %s
 
-                ## Rules / Execution Guidance
-                - The highlighted ACT PROMPT is the only work that matters right now.
-                - Take the smallest useful path: one direct read or mutation first, then stop when enough is known.
-                - Normal steps should finish in 1-3 tool calls. If more is needed, report the remaining narrow follow-up.
-                - Prefer direct ids, links, and named anchors from context over broad searches.
-                - Do not scan whole systems or refresh unrelated mission state.
-                - Label verified evidence and assumptions plainly.
-
-                ## ACT PROMPT - DO THIS NOW
-                This is the only goal for this pass. Use prior context only when it helps complete this act.
-
+                ## Act
                 %s
 
-                ## Response Format
-                Return a compact pass report in this shape:
-                Outcome:
-                Tool calls used:
-                Actions taken:
-                Evidence / links / ids:
-                - Label links/ids as verified, missing, expected, or reference. Do not include guessed URLs.
-                Latest observations from this act:
-                - created:
-                - verified:
-                Durable facts to remember:
-                - Preserve only verified current anchors
-                State changed:
+                Report briefly using these lines when applicable:
+                Verified / exact locators:
+                Changed:
+                Unknown or blocked / next actionable condition:
                 """.formatted(
                 missionLevelContext(exchange),
                 safeText(request.id()),
@@ -180,30 +144,14 @@ final class PrimitivePrompts {
                 ### Useful ancestor context:
                 %s
 
-                ## SYNTHESIS PROMPT - DO THIS NOW
-                Rewrite the current thought as complete, compact, current memory and evaluate the completed act.
+                Rewrite the leaf as compact current memory within its purpose and budget.
+                %s
 
-                Memory:
-                - Preserve still-relevant prior content.
-                - Incorporate durable facts learned during this operation.
-                - Resolve conflicts in favor of newer evidence.
-                - Exclude transient reasoning, raw tool mechanics, and irrelevant detail.
-                - Fit the stated thought purpose and token budget.
-
-                Outcome:
-                - SUCCEEDED: the requested act completed as intended.
-                - PARTIAL: useful work occurred but the requested act still has a directly actionable remainder.
-                - BLOCKED: the requested act cannot continue without another role, external event, or missing authoritative input.
-                - NOOP: the act completed correctly but found nothing to change or do.
-                - FAILED: the act did not accomplish its requested objective.
-
-                Durable progress:
-                - true only when this act materially changed durable external mission state, completed a required handoff,
-                  produced validated implementation evidence, or resolved an actionable condition.
-                - false for reads, understanding, unchanged verification, generic status/chat, or rediscovering existing state.
-                - detecting a blocker alone is not durable progress; recording the required durable blocker/handoff may be.
-
-                Confidence is telemetry only. Estimate confidence in this evaluation from 0.0 to 1.0; it does not authorize actions.
+                Evaluate only the completed act. An unsupported claim, failed lookup or unfinished step stays uncertain.
+                Use SUCCEEDED for a completed objective, NOOP when no change was needed, PARTIAL for incomplete work
+                with a useful next step, BLOCKED when it awaits a named prerequisite, or FAILED for an unsuccessful act.
+                durableProgress measures a durable change, completed handoff or newly produced validation evidence.
+                An unchanged read can verify readiness while durableProgress remains false. Confidence is telemetry.
 
                 Return JSON only:
                 {"content":"One coherent updated thought.","summary":"One compact statement of what this act accomplished.","outcome":"SUCCEEDED|PARTIAL|BLOCKED|NOOP|FAILED","durableProgress":true,"confidence":0.95}
@@ -216,7 +164,7 @@ final class PrimitivePrompts {
                 safeText(leaf.context()),
                 safeText(leaf.content()),
                 leaf.maxTokens(),
-                renderAncestorThoughts(ThoughtStack.on(exchange).frames()));
+                renderAncestorThoughts(ThoughtStack.on(exchange).frames()), MEMORY_GUIDANCE);
     }
 
     String renderDecisionPrompt(Exchange exchange, DecideRequest request, List<String> choices) {
@@ -234,16 +182,11 @@ final class PrimitivePrompts {
                 ### Latest step result:
                 %s
 
-                ## Rules / Execution Guidance
-                - Answer only the highlighted decision question.
-                - Choose exactly one allowed answer.
-                - Do not invent missing evidence or perform work outside this decision.
-                - If the answers are yes and no, prefer no when evidence is incomplete, stale, or blocked.
+                ## Decision
+                %s
 
-                ## DECISION PROMPT - ANSWER THIS NOW
-                Question: %s
-
-                ## Response Format
+                Choose one allowed answer. A yes requires affirmative evidence. When choosing a focus, prefer actionable
+                work. Revisit unchanged or blocked work when new evidence or a different next action warrants it.
                 Return only result, confidence, and reason.
                 """.formatted(
                 missionLevelContext(exchange),
@@ -303,16 +246,9 @@ final class PrimitivePrompts {
                 final content:
                 %s
 
-                ## CONSOLIDATION PROMPT - DO THIS NOW
-                Rewrite the parent as one coherent, current durable thought.
-
-                Preserve still-relevant parent memory.
-                Promote only child information useful beyond the child scope.
-                Replace stale or conflicting information with newer evidence.
-                Discard temporary, redundant, scope-local, or implementation-specific detail.
-                Fit the parent purpose and token budget.
-
-                Do not expose framework ids or expired child ids in the parent content.
+                Rewrite the parent within its purpose and budget. Promote child facts useful beyond the child scope.
+                %s
+                Omit internal thought identifiers.
 
                 Return JSON only:
                 {"content":"One coherent replacement parent thought."}
@@ -327,7 +263,7 @@ final class PrimitivePrompts {
                 safeText(child.context()),
                 child.maxTokens(),
                 child.updatedAt(),
-                safeText(child.content()));
+                safeText(child.content()), MEMORY_GUIDANCE);
     }
 
     private String missionLevelContext(Exchange exchange) {

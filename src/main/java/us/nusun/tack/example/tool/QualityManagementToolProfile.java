@@ -25,6 +25,8 @@ public class QualityManagementToolProfile implements ToolProfileProvider {
                 .mcpServer(kaneo.definition())
                 .allowTools(KaneoMcpServer.ID,
                         "whoami",
+                        "list_workspaces",
+                        "list_projects",
                         "list_workspace_members",
                         "list_tasks",
                         "get_task",
@@ -38,7 +40,7 @@ public class QualityManagementToolProfile implements ToolProfileProvider {
                         "update_task_assignee",
                         "create_task_relation",
                         "create_task_comment")
-                .promptGuidance(KaneoWorkGuidance.DISCOVERY + KaneoWorkGuidance.LIFECYCLE + KaneoWorkGuidance.CLASSIFICATION)
+                .promptGuidance(KaneoWorkGuidance.PROJECT + KaneoWorkGuidance.TASKS + KaneoWorkGuidance.LIFECYCLE + KaneoWorkGuidance.CLASSIFICATION)
                 .build());
     }
 }

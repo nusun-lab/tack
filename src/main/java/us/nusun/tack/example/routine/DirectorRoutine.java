@@ -41,10 +41,9 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:example-software-team-director")
                 .routeId("example-software-team-director")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Durable mission anchors: mission goal, authoritative active roster, coordination readiness, repository
-                        architecture readiness (verified system repository and component repository map), ready/active epic product
-                        outcomes, major blockers, product viability, and last focused outcome. Preserve verified readiness and exact
-                        repository locators across synthesis and consolidation unless newer evidence invalidates them.
+                        Mission anchor, active roster and capacity. Preserve verified readiness and exact repository locators
+                        (system/component owner/repo pairs), Kaneo workspace ID and project ID/slug, qualifying Epic and PO IDs, and
+                        Mattermost team/channel IDs across synthesis and consolidation. Keep outstanding staffing gates and escalations.
                         """))
                 .to("tack:thought-enter?name=director-root&maxTokens=450")
                 .setProperty(AgentRunAdmissionService.CAPACITY_MAXIMUM_PROPERTY, constant(MAX_ACTIVE_MISSION_RUNS))
@@ -61,10 +60,6 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                             - complete: all required Epic outcomes are accepted and done and no unresolved
                               delivery, architecture, QA, product, or mission blocker remains.
                             - wait: the mission is not complete and neither staffing nor Director judgment is useful now.
-                            Director does not arbitrate routine merge authority or integrate pull requests. Architect owns
-                            the integration queue for all current-mission PRs regardless of author. Director does not own
-                            backlog decomposition; PO owns epic product outcomes and PM owns delivery flow.
-                            Choose exactly one value.
                             """))
                     .to("tack:decide?id=director-focus&choices=staffing,guidance,complete,wait")
                     .toD("direct:director-focus-${exchangeProperty.decision.director-focus.result}")
@@ -75,41 +70,25 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:director-orientation")
                 .routeId("director-orientation")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Read only the smallest fresh slice needed to rank Director focus: authoritative active AgentRun
-                        coverage/capacity; whether shared mission foundations remain usable; whether product delivery is
-                        still active; and any fresh explicit escalation that genuinely requires Director judgment. Carry forward
-                        verified repository readiness and exact locators when this orientation finds no contradictory evidence.
-                        Do not audit normal Story/Test queue depth, assignment, merge readiness, dependency sequencing,
-                        or role-local blockers; PM, ARCH, DEV, QA, and PO own those. Do not invent a mission-level blocker
-                        from ordinary planned/to-do state. External artifacts never prove active AgentRun coverage.
-                        Do not mutate.
+                        Check active roster coverage, changed staffing prerequisites, product completion and genuine Director escalations.
+                        Reuse verified project, channel and repository readiness. Record a missing gate as an expected phase condition
+                        unless evidence establishes an actual failure.
                         """))
                 .to("tack:act?id=director-orientation&toolProfile=" + WorkspaceReadonlyToolProfile.ID);
 
         from("direct:director-focus-staffing")
                 .routeId("director-focus-staffing")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Staffing evidence: active roster and remaining capacity, coordination readiness, repository architecture
-                        readiness (verified system repository and component repository map), and qualifying Epic evidence. Preserve
-                        verified readiness and exact repository locators across synthesis and consolidation unless newer evidence
-                        invalidates them.
+                        Active roster and capacity, exact project/channel locators, repository architecture (verified system and
+                        component owner/repo pairs), and qualifying Epic and PO user IDs. Preserve each verified gate and unknown.
                         """))
                 .to("tack:thought-enter?name=director-staffing-focus&maxTokens=400")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Resolve each applicable staffing condition using the current mission and verified facts.
-                        - Read mission_roster coverage for active roles and capacity. PM is always required.
-                        - Verify a usable Kaneo mission project and team channel. These foundations make PO and ARCH required.
-                        - Verify the mission system repository and the component repositories in Architect's documented map.
-                          A single deployable component is sufficient when the map calls for one. Repository readiness is a gate
-                          for DEV and QA only.
-                        - Find a PO-owned Epic in to-do or in-progress. Match the PO's roster Kaneo email to the exact member ID.
-                          Use list_tasks on the mission project filtered by that assignee and each relevant status. The exact
-                          attached epic label establishes classification.
-
-                        When evaluating DEV and QA, resolve both the repository and Epic gates. Use additional calls beyond the
-                        normal 1–3 target if needed. For each gate record verified ready, verified missing, or unknown and its evidence.
-                        Preserve verified durable readiness and exact locators. Name missing evidence in the report and synthesis
-                        and return PARTIAL or BLOCKED for unresolved required conditions.
+                        Read active roster coverage and capacity. PM is always required. Verify project and channel readiness
+                        for PO and ARCH. For DEV and QA, verify both the system/component repository map and a PO-owned to-do
+                        or in-progress task with the attached epic label. Match the PO's roster email to the member ID and
+                        use assignee and status filters. A documented single component is sufficient. Preserve verified gates
+                        and record unresolved gates as unknown. Product definition and repository setup precede DEV/QA staffing.
                         """))
                 .to("tack:act?id=director-staffing-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, simple("""
@@ -140,8 +119,8 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:director-focus-guidance")
                 .routeId("director-focus-guidance")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        One true Director-level escalation: mission interpretation, product viability, staffing, or a
-                        cross-role conflict no existing role owns. Ordinary delivery flow is explicitly out of scope.
+                        Exact channel/thread and relevant work locators for one mission interpretation, viability or cross-role issue.
+                        Keep the decision and next actionable condition.
                         """))
                 .to("tack:thought-enter?name=director-guidance-focus&maxTokens=350")
                 .setHeader(TackHeaders.PROMPT, constant("""

@@ -21,6 +21,7 @@ import us.nusun.tack.example.routine.DirectorRoutine;
 import us.nusun.tack.example.routine.ProductOwnerRoutine;
 import us.nusun.tack.example.routine.ProjectManagerRoutine;
 import us.nusun.tack.example.routine.QualityEngineerRoutine;
+import us.nusun.tack.example.tool.ArchitectSourceControlWriteToolProfile;
 import us.nusun.tack.example.tool.DeliveryManagementToolProfile;
 import us.nusun.tack.example.tool.EngineeringWorkToolProfile;
 import us.nusun.tack.example.tool.GiteaMcpServer;
@@ -29,6 +30,8 @@ import us.nusun.tack.example.tool.KaneoMcpServer;
 import us.nusun.tack.example.tool.MattermostMcpServer;
 import us.nusun.tack.example.tool.ProductOwnershipToolProfile;
 import us.nusun.tack.example.tool.QualityManagementToolProfile;
+import us.nusun.tack.example.tool.SourceControlToolProfile;
+import us.nusun.tack.example.tool.TeamChatToolProfile;
 import us.nusun.tack.example.tool.WorkspaceCoordinationToolProfile;
 import us.nusun.tack.example.tool.WorkspaceReadonlyToolProfile;
 import us.nusun.tack.framework.persona.PersonaAccounts;
@@ -88,26 +91,49 @@ class SoftwareTeamKaneoTest {
                 list_project_columns
                 """);
         assertTools(new ProductOwnershipToolProfile(kaneo), """
-                whoami list_workspace_members list_tasks get_task get_task_relations list_task_comments create_task
+                whoami list_workspaces list_projects list_workspace_members list_tasks get_task get_task_relations list_task_comments create_task
                 create_label update_task update_task_status update_task_assignee create_task_relation create_task_comment
                 """);
         assertTools(new DeliveryManagementToolProfile(kaneo, gitea), """
-                whoami list_workspace_members list_tasks get_task get_task_by_ticket_id get_task_relations
+                whoami list_workspaces list_projects list_workspace_members list_tasks get_task get_task_by_ticket_id get_task_relations
                 list_task_comments create_task create_label update_task update_task_status update_task_assignee
                 create_task_relation delete_task_relation create_task_comment
                 """);
-        assertTools(new EngineeringWorkToolProfile(kaneo), """
-                whoami list_tasks get_task get_task_by_ticket_id get_task_relations list_task_comments
+        var engineering = new EngineeringWorkToolProfile(kaneo, gitea);
+        assertTools(engineering, """
+                whoami list_workspaces list_projects list_tasks get_task get_task_by_ticket_id get_task_relations list_task_comments
                 update_task_status create_task_comment
                 """);
+        assertEquals(Set.of("search_repos", "list_pull_requests", "pull_request_read"),
+                engineering.toolProfiles().getFirst().policies().get("gitea").allowed());
         assertTools(new QualityManagementToolProfile(kaneo), """
-                whoami list_workspace_members list_tasks get_task get_task_by_ticket_id get_task_relations
+                whoami list_workspaces list_projects list_workspace_members list_tasks get_task get_task_by_ticket_id get_task_relations
                 list_task_comments create_task create_label update_task update_task_status update_task_assignee
                 create_task_relation create_task_comment
                 """);
         assertTools(new IntegrationToolProfile(kaneo, gitea), """
-                list_tasks get_task get_task_by_ticket_id list_task_comments
+                whoami list_workspaces list_projects list_tasks get_task get_task_by_ticket_id list_task_comments
                 """);
+    }
+
+    @Test
+    void sourceAndChannelProfilesOfferTargetedDiscovery() {
+        var gitea = new GiteaMcpServer("");
+        var chat = new MattermostMcpServer("");
+        for (var provider : List.of(new SourceControlToolProfile(gitea),
+                new ArchitectSourceControlWriteToolProfile(gitea))) {
+            var profile = provider.toolProfiles().getFirst();
+            assertTrue(profile.allowsTool("gitea", "search_repos"));
+            assertFalse(profile.allowsTool("gitea", "list_org_repos"));
+            assertFalse(profile.allowsTool("gitea", "list_my_repos"));
+        }
+        for (var provider : List.of(new TeamChatToolProfile(chat), new WorkspaceCoordinationToolProfile(new KaneoMcpServer(URL), chat),
+                new WorkspaceReadonlyToolProfile(new KaneoMcpServer(URL), gitea, chat))) {
+            var profile = provider.toolProfiles().getFirst();
+            assertTrue(profile.allowsTool("mattermost", "list_teams"));
+            assertTrue(profile.allowsTool("mattermost", "get_channel_by_name"));
+            assertFalse(profile.allowsTool("mattermost", "list_my_channels"));
+        }
     }
 
     @Test
@@ -140,13 +166,13 @@ class SoftwareTeamKaneoTest {
 
             String root = headers(context, "example-software-team-director", TackHeaders.THOUGHT_PURPOSE);
             assertTrue(root.contains("Preserve verified readiness and exact"));
-            assertTrue(root.contains("repository locators across synthesis and consolidation"));
+            assertTrue(root.contains("across synthesis and consolidation"));
             String staffingPurpose = headers(context, "director-focus-staffing", TackHeaders.THOUGHT_PURPOSE);
             assertTrue(staffingPurpose.contains("repository architecture"));
-            assertTrue(staffingPurpose.contains("qualifying Epic evidence"));
+            assertTrue(staffingPurpose.contains("qualifying Epic and PO user IDs"));
             String staffing = headers(context, "director-focus-staffing", TackHeaders.PROMPT);
-            for (String rule : List.of("Project Manager is always required", "PO and ARCH required",
-                    "component repositories", "to-do or in-progress", "attached epic label",
+            for (String rule : List.of("Project Manager is always required", "Product Owner and Architect are required",
+                    "component repository set", "to-do or in-progress", "attached epic label",
                     "unknown", "capacity remains, agentRuns must include it")) {
                 assertTrue(staffing.contains(rule), rule);
             }
@@ -154,6 +180,13 @@ class SoftwareTeamKaneoTest {
             assertTrue(planning.contains("miles@example.test"));
             assertTrue(planning.contains("avery@example.test"));
             assertFalse(planning.contains("miles-test-token"));
+            String epic = headers(context, "po-epic-definition", TackHeaders.PROMPT);
+            assertTrue(epic.contains("as soon as it is product-ready"));
+            assertTrue(epic.contains("independently of repositories, Stories, staffing and chat"));
+            assertTrue(headers(context, "pm-focus-onboarding", TackHeaders.PROMPT)
+                    .contains("verified missing active teammates"));
+            assertTrue(headers(context, "architect-repository-architecture", TackHeaders.PROMPT)
+                    .contains("Create only verified missing repositories"));
             assertTrue(headers(context, "dev-work-selection", TackHeaders.PROMPT).contains("update_task_status"));
             assertTrue(headers(context, "qa-focus-defect-feedback", TackHeaders.PROMPT).contains("no-priority"));
             assertTrue(headers(context, "po-epic-acceptance", TackHeaders.PROMPT).contains("Archived work does not count as success"));

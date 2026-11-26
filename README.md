@@ -470,7 +470,7 @@ Tack uses `planned`, `to-do`, `in-progress`, `done`, and `archived`. Archived wo
 
 PM creates the mission project with default columns and reconciles active roster access to the Mattermost channel. Kaneo workspace grants are provisioned once and inherited by mission projects. PM maintains `docs/project-basics.md` in the system repository with the project, channel, and Gitea locators.
 
-The Director keeps PM active, adds PO and ARCH after the project and channel are usable, and adds DEV and QA after the system/component repository map is established and a PO-owned Epic is `to-do` or `in-progress`. PM prepares planned Stories under `to-do` Epics and feeds assigned `to-do` work under `in-progress` Epics. Assignment goes to persistent personas and stands on its own as the engineering handoff.
+The Director keeps PM active, adds PO and ARCH after the project and channel are usable, and adds DEV and QA after the system/component repository map is established and a PO-owned Epic is `to-do` or `in-progress`. PO can define and promote a product-ready Epic to `to-do` while ARCH establishes the repository map. PM prepares planned Stories under `to-do` Epics and feeds assigned `to-do` work under `in-progress` Epics. Assignment goes to persistent personas and stands on its own as the engineering handoff.
 
 The repository model is deliberately simple:
 

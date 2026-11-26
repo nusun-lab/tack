@@ -60,27 +60,26 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:example-software-team-project-manager")
                 .routeId("example-software-team-project-manager")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Durable flow anchors: Kaneo workspace and mission project, lifecycle readiness, shared channel and roster parity,
-                        system repo and canonical project-basics documentation, active/ready epic sets,
-                        implementation/test queues, defects, dependencies, PR consequences, blockers, and handoffs. PM's
-                        primary responsibility is keeping delivery work coherent, assigned, and executable.
+                        Mission anchor, verified Kaneo workspace ID, project ID/slug, user/assignee IDs, default lifecycle and
+                        Mattermost team/channel IDs. Keep current roster parity, Gitea system/component owner/repo pairs,
+                        actionable Epic/Story/Defect IDs, PR evidence and the next delivery condition.
                         """))
                 .to("tack:thought-enter?name=pm-root&maxTokens=450")
                 .setProperty("decision.project-manager-mission-complete.result", constant("no"))
                 .loopDoWhile(exchangeProperty("decision.project-manager-mission-complete.result").isNotEqualTo("yes"))
                     .to("direct:pm-orientation")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                            Choose the highest-value focus for the current mission.
-                            - bootstrap: the Kaneo project, default lifecycle verification, or shared channel is missing.
-                            - onboarding: the shared channel lacks a current active teammate or parity is unverified.
-                            - defect-flow: an unassigned PO-validated to-do Defect needs routing, or a merged fix awaits QA retest.
-                            - active-flow: repair an ownership or dependency issue, or feed an engineer's executable queue.
-                            - planning: the documented repository map is established and a to-do or in-progress Epic lacks Story coverage.
-                            - documentation: system-repo docs/project-basics.md is missing or stale.
-                            - coordination: a fresh delivery question needs PM judgment.
-                            - complete: every required Epic is accepted and done and no delivery or coordination blocker remains.
-                            - wait: none of the other actions is useful now. Name a missing Kaneo workspace grant as a provisioning blocker.
-                            Prioritize channel onboarding when the channel exists, then executable delivery over creating future work.
+                            Choose the highest-value focus.
+                            - bootstrap: verified missing mission project or channel, or unverified default lifecycle for the mission board.
+                            - onboarding: a verified active teammate is missing from the channel.
+                            - defect-flow: a validated to-do Defect needs assignment or a merged fix awaits QA retest.
+                            - active-flow: repair delivery ownership or dependencies, or feed an executable queue.
+                            - planning: the documented repository map is ready and a to-do or active Epic needs Story coverage.
+                            - documentation: the system repo exists and project basics need an update.
+                            - coordination: a fresh delivery issue needs PM judgment.
+                            - complete: required Epics are accepted and done and delivery blockers are resolved.
+                            - wait: no action is useful until new evidence or another role's work arrives.
+                            Missing future AgentRuns are expected. ARCH owns repository setup. Verified parity needs no onboarding.
                             """))
                     .to("tack:decide?id=pm-focus&choices=bootstrap,onboarding,documentation,defect-flow,"
                             + "active-flow,planning,coordination,complete,wait")
@@ -92,13 +91,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-orientation")
                 .routeId("pm-orientation")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Reuse verified mission locators. First compare the active mission roster with fresh shared-channel membership.
-                        Verify persistent Kaneo workspace identities by exact configured email when unresolved. Report missing access as
-                        a provisioning blocker. Check project, native lifecycle and channel readiness.
-                        Then assess the documented repository map, docs/project-basics.md, and to-do and in-progress Epic coverage.
-                        Filter project tasks by to-do or in-progress and by exact DEV/ARCH assignee for individual queue depths.
-                        Identify actionable ownership gaps, unassigned validated Defects, and planned Story candidates under active Epics.
-                        Inspect dependencies and PRs only for candidates that matter. Report facts and unresolved evidence.
+                        Resolve missing mission locators before evaluating readiness. Compare active roster and channel members
+                        when parity is unknown or either set changed. Distinguish verified parity, a missing active member and unknown.
+                        Reuse verified default columns and the repository map. Look for actionable Epic coverage, ownership gaps,
+                        validated Defects and planned Stories ready under active Epics. Use per-assignee queue filters where needed.
                         """ + engineeringIdentities))
                 .to("tack:act?id=pm-orientation&toolProfile=" + WorkspaceReadonlyToolProfile.ID);
 
@@ -109,25 +105,19 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-bootstrap")
                 .routeId("pm-bootstrap")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Reuse or create one private mission project in Tack Software Team and one private Mattermost mission channel.
-                        Use the unique mission anchor in the project and channel names. Verify default project columns include
-                        to-do, in-progress and done. Planned and archived are native virtual buckets. Keep the defaults.
-                        Verify Kaneo membership by exact persona email and report any missing workspace access as a platform
-                        provisioning blocker. Reconcile the channel with the current active roster and verify access.
-                        Post a concise kickoff with the Kaneo project locator when first making the channel usable.
-                        Architect owns repository setup.
+                        Reuse or create the private mission project and channel using the mission anchor. Verify default
+                        columns once with list_project_columns. Check access for the active roster and reconcile channel membership.
+                        Send a kickoff with the project locator when the channel is first made usable.
                         """))
-                .to("tack:act?id=pm-bootstrap&toolProfile=" + WorkspaceCoordinationToolProfile.ID)
-                .to("direct:pm-awareness");
+                .to("tack:act?id=pm-bootstrap&toolProfile=" + WorkspaceCoordinationToolProfile.ID);
 
         from("direct:pm-focus-onboarding")
                 .routeId("pm-focus-onboarding")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Reconcile the current active mission roster with fresh Mattermost channel membership. Add only resolved
-                        missing teammates and verify the result. Reuse the shared channel as the roster changes.
+                        Compare active AgentRuns with the mission channel membership. Add verified missing active teammates
+                        and read back changes. Report parity when already in sync.
                         """))
-                .to("tack:act?id=pm-onboarding&toolProfile=" + WorkspaceCoordinationToolProfile.ID)
-                .to("direct:pm-awareness");
+                .to("tack:act?id=pm-onboarding&toolProfile=" + WorkspaceCoordinationToolProfile.ID);
 
         from("direct:pm-focus-documentation")
                 .routeId("pm-focus-documentation")
@@ -157,8 +147,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-focus-active-flow")
                 .routeId("pm-focus-active-flow")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused delivery supervision across in-progress Epics: verified classification, ownership, executable
-                        queue depth, dependency promotions, merged-work reconciliation, and concrete blockers/handoffs.
+                        Exact project, Epic/Story/Defect, assignee, relation and PR locators for the current queue changes.
+                        Keep dependency evidence, remaining gaps and their next actionable conditions.
                         """))
                 .to("tack:thought-enter?name=pm-active-flow-focus&maxTokens=500")
                 .to("direct:pm-active-flow-loop")
@@ -193,8 +183,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-focus-planning")
                 .routeId("pm-focus-planning")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused planning across in-progress and ready to-do Epics: PO Gherkin, reasonable Story coverage,
-                        dependencies, repository ownership, future planned work, and executable DEV/ARCH queues.
+                        Exact Epic/task/assignee IDs and repository owner/repo pairs for Story coverage and dependencies.
+                        Track what is prepared, executable or awaiting a named prerequisite.
                         """))
                 .to("tack:thought-enter?name=pm-planning-focus&maxTokens=550")
                 .to("direct:pm-planning-loop")

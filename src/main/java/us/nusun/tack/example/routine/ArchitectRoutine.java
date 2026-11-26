@@ -48,8 +48,8 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:example-software-team-architect")
                 .routeId("example-software-team-architect")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Durable architecture anchors: system repo, component repo map, architecture decisions,
-                        assigned ARCH work, open PRs, conflicts, integration blockers, and cross-role questions.
+                        Mission anchor, verified Kaneo workspace ID, project ID/slug and ARCH user ID, and Mattermost team/channel IDs.
+                        Keep the documented system/component owner/repo pairs, baseline readiness, relevant task/PR locators and blockers.
                         """))
                 .to("tack:thought-enter?name=architect-root&maxTokens=450")
                 .setProperty("decision.architect-mission-complete.result", constant("no"))
@@ -57,8 +57,8 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
                     .to("direct:architect-orientation")
                     .setHeader(TackHeaders.PROMPT, constant("""
                             Choose exactly one highest-value Architect focus.
-                            - repository-architecture: system repo/component repo model is missing, incomplete, or
-                              inconsistent with the current architecture.
+                            - repository-architecture: evidence identifies missing or incomplete repository setup you can
+                              advance. A verified existing baseline satisfies readiness even on an unchanged read.
                             - reconcile: an ARCH-assigned story remains in-progress after its linked
                               PR is verified merged; Architect owns its transition to done.
                             - integration: any current-mission open PR can be safely merged, needs conflict recovery, or
@@ -81,12 +81,9 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:architect-orientation")
                 .routeId("architect-orientation")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Read only enough fresh current-mission state to rank Architect focus. Reuse the verified
-                        agent-workspace repository map already in thought. Filter tasks by your Kaneo user ID. Check whether repository architecture is
-                        still missing; any ARCH-assigned classification-verified source work needing reconciliation;
-                        current open PRs across the known mission repos regardless of author; and actionable ARCH-assigned
-                        Story/Defect work. Do not manufacture a blocker or reread chat/repository structure when existing
-                        anchors remain valid. Integration candidates outrank new implementation. Report only; do not mutate.
+                        Check current repository readiness, open mission PRs and assigned engineering work. Carry forward the verified
+                        repository map and baseline. When unresolved, use mission-anchor search and read the documented map and main.
+                        An unchanged verified baseline is ready. Inspect assigned tasks using your exact Kaneo user ID.
                         """))
                 .to("tack:act?id=architect-orientation&toolProfile=" + WorkspaceReadonlyToolProfile.ID);
 
@@ -97,19 +94,12 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:architect-repository-architecture")
                 .routeId("architect-repository-architecture")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Make one concrete repository-architecture advance. All mission repositories belong under the
-                        agent-workspace Gitea organization; repositories in a persona's personal namespace are not valid
-                        mission repositories. Reuse current mission repositories under agent-workspace when their
-                        responsibility is already clear. Otherwise provision only what the architecture requires:
-                        exactly one system repository and the justified component repository set. Establish the system
-                        repository baseline with README.md, gitops/README.md, docs/architecture.md, and
-                        tests/system/README.md so GitOps, system documentation, and behavioral-test ownership are explicit.
-                        Document the component repository map and boundaries in system docs. Initialize component repos
-                        with a minimal README/buildable baseline appropriate to the architecture, not speculative features.
-                        Prefer <anchor>-service for deployable components that implement/expose APIs. Reserve <anchor>-api
-                        for repositories whose primary responsibility is an API specification/contract such as OpenAPI or
-                        AsyncAPI, so runtime services do not collide with future API-spec golden paths.
-                        Do not create a separate docs or QA repository. Avoid duplicate/near-duplicate repositories.
+                        Establish or repair the repository architecture independently of Epic decomposition and staffing. Search
+                        the mission anchor in agent-workspace before creating anything. Reuse exact matches and repair incomplete main
+                        baselines. A verified existing baseline needs no write. Create only verified missing repositories.
+                        Baseline one system repo on main with README.md, gitops/, docs/architecture.md and tests/system/.
+                        Document component owner/repo pairs and boundaries. Baseline deployable components on main. Use <anchor>-service for a
+                        runtime service and reserve <anchor>-api for a standalone API contract.
                         """))
                 .to("tack:act?id=architect-repository-step&toolProfile="
                         + ArchitectSourceControlWriteToolProfile.ID)
@@ -129,8 +119,8 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:architect-focus-implementation")
                 .routeId("architect-focus-implementation")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        One architecture-owned engineering unit: exact Kaneo id/classification/owner, Epic acceptance,
-                        repository locator, branch/PR, dependency state, validation, and current blocker.
+                        Exact project, task, Epic and assignee IDs, repo owner/name and branch/PR. Keep acceptance,
+                        dependencies, validation and the next actionable blocker.
                         """))
                 .to("tack:thought-enter?name=architect-implementation-focus&maxTokens=500")
                 .to("direct:architect-implementation")
@@ -176,9 +166,8 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:architect-focus-integration")
                 .routeId("architect-focus-integration")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Drain the current integration queue. Preserve exact selected Gitea owner/repo/PR, linked Kaneo
-                        work, head/base, mergeability, validation evidence, and any concrete blocker across selection,
-                        conflict recovery, and final merge. Exact locators are the most important memory in this scope.
+                        Exact Gitea owner/repo/PR, head/base, linked Kaneo project/ticket, validation and blockers for each
+                        selected candidate across merge and conflict recovery.
                         """))
                 .to("tack:thought-enter?name=architect-integration-focus&maxTokens=550")
                 .to("direct:architect-integration-focus")
