@@ -68,7 +68,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                     .setHeader(TackHeaders.PROMPT, constant("""
                             Choose the highest-value focus.
                             - bootstrap: verified missing mission project or channel, or unverified default lifecycle for the mission board.
-                            - onboarding: a verified active teammate is missing from the channel.
+                            - onboarding: mission_roster shows an active run whose persona is missing from the channel.
                             - defect-flow: a validated to-do Defect needs assignment or a merged fix awaits QA retest.
                             - active-flow: repair delivery ownership or dependencies, or feed an executable queue.
                             - planning: the documented repository map is ready and a to-do or active Epic needs Story coverage.
@@ -76,7 +76,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                             - coordination: a fresh delivery issue needs PM judgment.
                             - complete: required Epics are accepted and done and delivery blockers are resolved.
                             - wait: no action is useful until new evidence or another role's work arrives.
-                            Missing future AgentRuns are expected. ARCH owns repository setup. Verified parity needs no onboarding.
+                            Assignment identifies the owner. Only mission_roster establishes staffing. ARCH owns repository setup.
                             """))
                     .to("tack:decide?id=pm-focus&choices=bootstrap,onboarding,documentation,defect-flow,"
                             + "active-flow,planning,coordination,complete,wait")
@@ -88,8 +88,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-orientation")
                 .routeId("pm-orientation")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Resolve missing mission locators before evaluating readiness. Compare active roster and channel members
-                        when parity is unknown or either set changed. Distinguish verified parity, a missing active member and unknown.
+                        Read active coverage from mission_roster. Compare those personas with the channel members
+                        when parity is unknown or either set changed. Record active runs separately from persistent assignees.
                         Reuse verified default columns and the repository map. Look for actionable Epic coverage, ownership gaps,
                         validated Defects and planned Stories ready under active Epics. Use per-assignee queue filters where needed.
                         """ + engineeringIdentities))
@@ -111,7 +111,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-focus-onboarding")
                 .routeId("pm-focus-onboarding")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Compare active AgentRuns with the mission channel membership. Add verified missing active teammates
+                        Compare mission_roster active contacts with channel membership. Add verified missing active teammates
                         and read back changes. Report parity when already in sync.
                         """))
                 .to("tack:act?id=pm-onboarding&toolProfile=" + WorkspaceCoordinationToolProfile.ID);
@@ -159,7 +159,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         Route Epic ownership gaps to PO and Test ownership gaps to QA. Leave merged Story closure to its engineer.
                         Use filtered assignment queues to keep roughly 2–3 executable Stories per engineer when available.
                         Find eligible planned Stories with an in-progress Epic and all incoming prerequisites done.
-                        Assign the persistent engineer identity before promoting to-do. An absent AgentRun does not prevent assignment.
+                        Assign the persistent engineer identity before promoting to-do. Queue readiness comes from lifecycle,
+                        dependencies and assignment. Reconcile staffing and chat separately.
                         PR integration waits do not consume coding capacity.
                         Repair an incorrect or cyclic relation only after verifying its ID, direction and consequences. Preserve
                         valid dependencies and continue independent work. Archive obsolete Stories with a reason when warranted.
