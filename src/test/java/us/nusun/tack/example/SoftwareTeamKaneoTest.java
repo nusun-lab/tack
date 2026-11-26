@@ -208,12 +208,16 @@ class SoftwareTeamKaneoTest {
             assertTrue(headers(context, "pm-focus-onboarding", TackHeaders.PROMPT)
                     .contains("verified missing active teammates"));
             String architecture = headers(context, "architect-repository-architecture", TackHeaders.PROMPT);
-            assertTrue(architecture.contains("Create only verified missing repositories with gitea.create_repo"));
+            assertTrue(architecture.contains("Create only verified missing repositories with"));
+            assertTrue(architecture.contains("gitea.create_repo and organization agent-workspace"));
             assertTrue(architecture.contains("Use a placeholder entry point and a build"));
             for (String route : List.of("dev-work-selection", "architect-implementation")) {
                 assertTrue(headers(context, route, TackHeaders.PROMPT)
                         .contains("parent Epic may be to-do or in-progress"), route);
             }
+            assertTrue(context.getRouteDefinition("dev-orientation").getOutputs().stream()
+                    .filter(ToDefinition.class::isInstance).map(ToDefinition.class::cast)
+                    .anyMatch(step -> step.getUri().equals("tack:act?id=dev-orientation&toolProfile=engineering-work")));
             assertTrue(headers(context, "dev-work-selection", TackHeaders.PROMPT).contains("update_task_status"));
             assertTrue(headers(context, "dev-implementation-step", TackHeaders.PROMPT).contains("test locally"));
             assertTrue(headers(context, "qa-focus-defect-feedback", TackHeaders.PROMPT).contains("no-priority"));

@@ -59,8 +59,7 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
                             - test-engineering: assigned to-do/in-progress test has executable test engineering/evidence work.
                             - test-planning: a product-ready Epic has a missing scenario you can prepare now, or an
                               existing Test needs ownership, promotion, clarification recovery or archival.
-                            - epic-evidence: one active Epic's implementation/test work is sufficiently settled to publish
-                              a current acceptance-evidence summary for PO.
+                            - epic-evidence: current recorded QA Test results are ready to summarize for PO.
                             - coordination: a fresh PO/DEV/ARCH/PM question needs QA participation.
                             - complete: every required product Epic is accepted and done, no QA test engineering/evidence remains,
                               no repaired defect awaits retest, and no unresolved QA finding remains.
@@ -77,7 +76,8 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
                 .routeId("qa-orientation")
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Find the first to-do or in-progress Epic and your actionable Tests. Use the Epic's acceptance to
-                        spot a scenario QA can write or run locally now. Look for merged fixes awaiting focused retest.
+                        spot a scenario QA can write or run locally now. Plan a Test when QA evidence is missing, even
+                        if the developer has passing tests. Look for merged fixes awaiting focused retest.
                         Distinguish test authoring, local proof, and behavior that requires a deployed environment.
                         """))
                 .to("tack:act?id=qa-orientation&toolProfile=" + WorkspaceReadonlyToolProfile.ID);

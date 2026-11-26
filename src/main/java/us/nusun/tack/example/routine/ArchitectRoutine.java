@@ -96,9 +96,9 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
                 .routeId("architect-repository-architecture")
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Establish or repair the repository architecture independently of Epic decomposition and staffing. Search
-                        the mission anchor in agent-workspace before creating anything. Reuse exact matches and repair incomplete main
-                        baselines. Create only verified missing repositories with gitea.create_repo and organization agent-workspace.
-                        Use the sandbox for Git, source edits and builds.
+                        the mission anchor in agent-workspace first. If the documented map and component build files exist
+                        on main, report ready and finish setup. Create only verified missing repositories with
+                        gitea.create_repo and organization agent-workspace. Use the sandbox to build changes you make.
                         Publish the smallest locally buildable skeleton on main. Use a placeholder entry point and a build
                         smoke check. Leave Epic behavior and its tests for Stories and QA. In the system repo, document exact
                         component owner/repo pairs and local build/test commands in docs/architecture.md.

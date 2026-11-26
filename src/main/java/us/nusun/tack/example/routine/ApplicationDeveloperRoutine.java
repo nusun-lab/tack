@@ -6,7 +6,6 @@ import us.nusun.tack.example.tool.EngineeringWorkToolProfile;
 import us.nusun.tack.example.tool.IntegrationToolProfile;
 import us.nusun.tack.example.tool.SourceControlWriteToolProfile;
 import us.nusun.tack.example.tool.TeamChatToolProfile;
-import us.nusun.tack.example.tool.WorkspaceReadonlyToolProfile;
 import us.nusun.tack.framework.routine.RoutineProvider;
 import us.nusun.tack.framework.inference.LlmPassType;
 import us.nusun.tack.framework.routine.RoutineDefinition;
@@ -47,9 +46,9 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             - implementation: an assigned to-do Story or Defect is executable, or assigned work has a
                               concrete next coding or test step. A PR waiting for merge leaves room for independent work.
                             - integration: help with an explicitly handed-off PR or when Architect is unavailable.
-                            - coordination: a fresh question or verified blocker needs one message to its owner.
+                            - coordination: a fresh technical question or a blocker on assigned work needs a response.
                             - complete: required Epics are accepted and done and delivery follow-up is settled.
-                            - wait: there is no actionable assigned work or fresh evidence to communicate.
+                            - wait: the assigned queue is empty, or its work awaits new evidence.
                             """))
                     .to("tack:decide?id=dev-focus&choices=reconcile,implementation,integration,coordination,complete,wait")
                     .toD("direct:dev-focus-${exchangeProperty.decision.dev-focus.result}")
@@ -72,7 +71,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                         Stories or Defects with native filters. Identify actionable work, open PR waits, merged Stories
                         to reconcile and merged Defects awaiting QA. Read related details only for the best candidate.
                         """))
-                .to("tack:act?id=dev-orientation&toolProfile=" + WorkspaceReadonlyToolProfile.ID);
+                .to("tack:act?id=dev-orientation&toolProfile=" + EngineeringWorkToolProfile.ID);
 
         from("direct:dev-focus-implementation")
                 .routeId("dev-focus-implementation")
