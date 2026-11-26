@@ -28,6 +28,9 @@ public class IntegrationToolProfile implements ToolProfileProvider {
                 .mcpServer(kaneo.definition())
                 .mcpServer(gitea.definition())
                 .allowTools(KaneoMcpServer.ID,
+                        "whoami",
+                        "list_workspaces",
+                        "list_projects",
                         "list_tasks",
                         "get_task",
                         "get_task_by_ticket_id",
@@ -38,7 +41,7 @@ public class IntegrationToolProfile implements ToolProfileProvider {
                         "pull_request_read",
                         "pull_request_write",
                         "get_commit")
-                .promptGuidance(KaneoWorkGuidance.DISCOVERY + """
+                .promptGuidance(KaneoWorkGuidance.PROJECT + KaneoWorkGuidance.TASKS + RepositoryWritingGuidance.DISCOVERY + """
                         - Use the exact PR and linked Kaneo project/ticket. The calling routine owns candidate selection.
                         - Before each merge, fresh-read the PR head, base, mergeability, conflicts, and relevant validation.
                           Use pull_request_write only for merges. Stop if Gitea already shows the PR closed or merged.

@@ -3,12 +3,13 @@ package us.nusun.tack.example.tool;
 final class RepositoryWritingGuidance {
     private RepositoryWritingGuidance() {}
 
-    static final String REPOSITORY_GUIDANCE = """
-            - software-team mission repositories live under Gitea owner agent-workspace
-            - use the persistent persona sandbox under /sandbox/repos and reuse an existing checkout, branch, or PR
-            - when clone_url is unknown, use search_repos and the returned agent-workspace clone_url
-            - canonical external Gitea is https://gitea.apps.cluster.lab.nusun.us
-            - use pull_request_write for PR create/update work only and merge through the integration profile
-            - include the exact Kaneo project and ticket in a PR for selected task work
+    static final String DISCOVERY = """
+            Reuse verified Gitea owner/repo pairs. To recover, search by mission anchor and confirm the exact
+            repository and owner. For software-team missions the owner is agent-workspace.
+            """;
+
+    static final String REPOSITORY_GUIDANCE = DISCOVERY + """
+            Use the returned clone_url and reuse the checkout under /sandbox/repos, task branch and PR.
+            Validate in the sandbox. Link the exact Kaneo project and ticket in task PRs. Merge through integration.
             """;
 }

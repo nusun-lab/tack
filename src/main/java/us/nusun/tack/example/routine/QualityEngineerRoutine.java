@@ -44,8 +44,8 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
         from("direct:example-software-team-quality-engineer")
                 .routeId("example-software-team-quality-engineer")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Durable QA anchors: active epic set/acceptance intent, test items,
-                        system repository/test paths, execution evidence, defect findings, ambiguities, and blockers.
+                        Mission anchor, verified Kaneo workspace ID, project ID/slug and QA user ID, Mattermost team/channel IDs,
+                        system repo owner/name, and exact Epic/Test/Defect and PR locators. Keep behavioral proof and remaining gaps.
                         """))
                 .to("tack:thought-enter?name=qa-root&maxTokens=450")
                 .setProperty("decision.qa-mission-complete.result", constant("no"))
@@ -67,7 +67,7 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
                             - coordination: a fresh PO/DEV/ARCH/PM question needs QA participation.
                             - complete: every required product Epic is accepted and done, no QA test engineering/evidence remains,
                               no repaired defect awaits retest, and no unresolved QA finding remains.
-                            - wait: the mission is not complete and none of the other focuses is useful now.
+                            - wait: testing awaits integration, a product decision or new evidence and no independent test work is ready.
                             Prefer durable automated evidence over manual review. Choose exactly one value.
                             """))
                     .to("tack:decide?id=qa-focus&choices=defect-retest,defect-feedback,test-engineering,test-planning,epic-evidence,coordination,complete,wait")
@@ -103,8 +103,8 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
         from("direct:qa-focus-test-engineering")
                 .routeId("qa-focus-test-engineering")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        One QA test-engineering unit: exact Kaneo Test classification/owner, Epic Gherkin, system-repo
-                        locator, branch/PR, current test evidence, execution limits, and concrete blocker.
+                        Exact Test/Epic and assignee IDs, system repo owner/name and PR. Keep acceptance intent, execution
+                        evidence and the condition that makes the next test step actionable.
                         """))
                 .to("tack:thought-enter?name=qa-test-engineering-focus&maxTokens=500")
                 .to("direct:qa-test-engineering")
@@ -164,8 +164,7 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
         from("direct:qa-focus-defect-retest")
                 .routeId("qa-focus-defect-retest")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        One defect retest: exact defect, Epic acceptance, originating test, original failure evidence,
-                        merged fix PR/commit, regression test evidence, and current retest result.
+                        Exact Defect/Epic/Test IDs, merged fix repo/PR or commit, reproduction and current regression evidence.
                         """))
                 .to("tack:thought-enter?name=qa-defect-retest-focus&maxTokens=500")
                 .to("direct:qa-defect-retest")

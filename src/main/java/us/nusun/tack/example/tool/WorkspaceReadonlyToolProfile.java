@@ -58,22 +58,15 @@ public class WorkspaceReadonlyToolProfile implements ToolProfileProvider {
                 .allowTools(MattermostMcpServer.ID,
                         "get_me",
                         "list_teams",
-                        "list_my_channels",
                         "get_channel",
                         "get_channel_by_name",
                         "get_channel_members",
                         "get_channel_messages",
                         "get_thread",
-                        "search_messages",
                         "get_user",
-                        "get_user_by_username",
-                        "search_users")
-                .promptGuidance(KaneoWorkGuidance.DISCOVERY + """
-                        - Match artifacts to the current mission and reuse verified locators. Read the exact Gitea repository,
-                          file or PR, or the Mattermost channel by team and name.
-                        - Kaneo owns work, Gitea owns source and PR state, and the mission roster owns active AgentRuns.
-                          Distinguish verified, missing, and unknown evidence. Gitea CI is disabled.
-                        """)
+                        "get_user_by_username")
+                .promptGuidance(KaneoWorkGuidance.PROJECT + KaneoWorkGuidance.TASKS
+                        + RepositoryWritingGuidance.DISCOVERY + TeamChatToolProfile.DISCOVERY)
                 .build());
     }
 }

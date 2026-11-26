@@ -54,7 +54,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                             - integration: help on a safe PR after Architect hands it off or is unavailable, when no implementation is actionable.
                             - coordination: a fresh inbound question needs your judgment.
                             - complete: required Epics are accepted and done and your delivery follow-up is settled.
-                            - wait: nothing else is actionable. Prefer fresh evidence over earlier wait conclusions.
+                            - wait: work awaits another role or new evidence and no independent assigned task is actionable.
                             """))
                     .to("tack:decide?id=dev-focus&choices=missing-basics,reconcile,integration,implementation,coordination,complete,wait")
                     .toD("direct:dev-focus-${exchangeProperty.decision.dev-focus.result}")
@@ -65,8 +65,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         from("direct:dev-focus-missing-basics")
                 .routeId("dev-focus-missing-basics")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused missing-foundation response: communicate only when a concrete access/basic or Architect-
-                        established repository baseline is actually unavailable.
+                        Exact locator and actual lookup evidence for an unavailable prerequisite. Keep the owner and next condition.
                         """))
                 .to("tack:thought-enter?name=dev-missing-basics-focus&maxTokens=250")
                 .to("direct:dev-missing-basics-closeout")
@@ -87,8 +86,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         from("direct:dev-focus-implementation")
                 .routeId("dev-focus-implementation")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused implementation unit: one assigned defect or story, task/product context,
-                        source or topology work, validation, PR state, and concise durable evidence.
+                        Exact task/Epic and assignee IDs, repo owner/name, branch/PR, validation and remaining blocker.
                         """))
                 .to("tack:thought-enter?name=dev-implementation-focus&maxTokens=450")
                 .to("direct:dev-implementation-focus")
@@ -111,8 +109,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         from("direct:dev-focus-coordination")
                 .routeId("dev-focus-coordination")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused Developer coordination for one fresh inbound technical question or teammate exchange.
-                        Implementation closeout handles outbound PR/blocker/finding awareness.
+                        Exact channel/thread and linked work locators for one actionable technical exchange.
                         """))
                 .to("tack:thought-enter?name=dev-coordination-focus&maxTokens=250")
                 .to("direct:dev-team-chat-sync")
@@ -183,10 +180,8 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         from("direct:dev-application-developer-root-enter")
                 .routeId("dev-application-developer-root-enter")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Durable developer anchors: verified project/repo/chat ids, selected source work
-                        (defect or story)/Kaneo state, Epic acceptance,
-                        topology question when present, branch/commit/PR,
-                        validation evidence, blockers/feedback, and current PR state.
+                        Mission anchor, verified Kaneo workspace ID, project ID/slug and DEV user ID, Mattermost team/channel IDs,
+                        repository owner/repo pairs and exact selected task/Epic and branch/PR locators. Keep validation and open blockers.
                         """))
                 .to("tack:thought-enter?name=application-developer-routine&maxTokens=500");
 
@@ -229,9 +224,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .setProperty("devImplementationMadeProgress", constant(false))
                     .setProperty("devSourceCloseoutAllowed", constant(false))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                            Current developer work unit: one selected defect or story,
-                            real Kaneo state, Epic acceptance, topology question when applicable, source evidence, patch/PR,
-                            validation, and current feedback/blocker evidence.
+                            Exact selected task/Epic and PR locators, current status, validation and next action.
                             """))
                     .to("tack:thought-enter?name=dev-cycle&maxTokens=300")
                     .setProperty("decision.developer-has-work.result", constant("no"))
@@ -271,17 +264,13 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         from("direct:dev-work-selection")
                 .routeId("dev-work-selection")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Work selection only: one assigned defect or story, never Epics or test. Prefer actionable
-                        in-progress work; otherwise claim an assigned to-do when useful.
-                        Maintain roughly 2-3 actively coded source units when enough independent work exists. Open PRs
-                        waiting only on integration do not consume active coding capacity. to-do + assignment is complete
-                        handoff; Developer claims to-do -> in-progress.
+                        Exact task, Epic, assignee and repository locators for one eligible unit. Keep claim status and blockers.
                         """))
                 .to("tack:thought-enter?name=dev-selection&maxTokens=250")
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Use the verified mission project and your whoami user ID. List assigned in-progress and to-do tasks.
                         Select one verified Story or Defect, preferring actionable in-progress work and then repair work
-                        when options are otherwise equivalent. Use the fresh Gitea findings to skip integration waits,
+                        when options are otherwise equivalent. Use or recover exact Gitea PR evidence to skip integration waits,
                         merged Stories awaiting reconciliation, and merged Defects awaiting QA.
                         Verify the Epic relation and acceptance intent and that incoming prerequisites are done. A Story
                         requires an in-progress Epic. For a topology investigation require an explicit technical question.
@@ -311,9 +300,7 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                     .setProperty("decision.developer-has-valid-task-context.result", constant("no"))
                     .setProperty("decision.developer-is-topology-investigation.result", constant("no"))
                     .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                            Current implementation step: selected source work unit, classification, Epic acceptance
-                            behavior, source evidence, branch/PR, validation, current teammate feedback, blocker
-                            evidence, and technical finding when applicable.
+                            Exact task and repo/branch/PR locators, validation and any concrete blocker or technical finding.
                             """))
                     .to("tack:thought-enter?name=dev-implementation&maxTokens=250")
                     .setHeader(TackHeaders.PROMPT, constant("""

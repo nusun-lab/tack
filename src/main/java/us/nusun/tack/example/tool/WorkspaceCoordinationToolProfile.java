@@ -39,30 +39,20 @@ public class WorkspaceCoordinationToolProfile implements ToolProfileProvider {
                 .allowTools(MattermostMcpServer.ID,
                         "get_me",
                         "list_teams",
-                        "list_my_channels",
-                        "list_public_channels",
                         "get_channel",
                         "get_channel_by_name",
                         "create_channel",
                         "get_channel_members",
-                        "add_channel_member",
                         "add_user_to_channel",
                         "get_channel_messages",
                         "get_thread",
-                        "search_messages",
                         "post_message",
                         "update_message",
                         "get_user",
-                        "get_user_by_username",
-                        "search_users")
-                .promptGuidance("""
-                        - Resolve the Tack Software Team workspace by exact name and copy its ID verbatim, including
-                          case and repeated characters. Find the project by its mission anchor before creating it.
-                          Use a unique project key and the default columns. Keep the project private.
-                        - Resolve the Mattermost team ID with list_teams, then use get_channel_by_name for the mission
-                          channel. Reuse verified IDs for creation and membership.
-                        - Verify inherited access using the workspace member roster. Report missing Kaneo access as a
-                          provisioning blocker. Reconcile Mattermost channel membership with the active mission roster.
+                        "get_user_by_username")
+                .promptGuidance(KaneoWorkGuidance.PROJECT + TeamChatToolProfile.DISCOVERY + """
+                        Use private mission resources and default columns. Check inherited workspace access and reconcile
+                        channel membership with active AgentRuns.
                         """)
                 .build());
     }

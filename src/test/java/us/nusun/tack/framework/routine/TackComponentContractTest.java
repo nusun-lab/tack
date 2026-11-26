@@ -63,7 +63,12 @@ class TackComponentContractTest {
             assertEquals(FrameworkFixtures.PROFILE_GAMMA, llm.requests.get(0).metadata().get("toolProfile"));
             assertTrue(llm.requests.get(0).prompt().contains("Inspect contract state."));
             assertEquals(LlmPassType.SYNTHESIS, llm.requests.get(1).passType());
-            assertTrue(llm.requests.get(1).prompt().contains("Rewrite the current thought"));
+            assertFalse(llm.requests.get(0).prompt().contains("Tool calls used"));
+            assertTrue(llm.requests.get(0).systemPrompt().contains("using {} for parameterless tools"));
+            assertTrue(llm.requests.get(0).systemPrompt().contains("before issuing a call that depends on it"));
+            assertTrue(llm.requests.get(1).prompt().contains("Copy exact IDs, names and"));
+            assertTrue(llm.requests.get(1).prompt().contains("false for reads, including first-time verification"));
+            assertFalse(llm.requests.get(1).prompt().contains("\"durableProgress\":true"));
             assertFalse(llm.requests.get(1).prompt().contains("t_"));
         }
     }
@@ -186,6 +191,7 @@ class TackComponentContractTest {
     @Test
     void repeatedChildActAndExitRewritesEachChildAndConsolidatesEachTurn() throws Exception {
         ProjectionStore store = FrameworkFixtures.projectionStore();
+        String locator = "Project ID: AbcQq234";
         ScriptedLlm llm = new ScriptedLlm(new Function<>() {
             int act = 0;
             int consolidation = 0;
@@ -193,14 +199,18 @@ class TackComponentContractTest {
             @Override
             public String apply(LlmJobEnvelope request) {
                 if (request.passType() == LlmPassType.ACTION) {
-                    return "tool evidence turn " + (act + 1);
+                    return act == 0 ? locator : "Lookup failed with an unverified candidate ID.";
                 }
                 if ("act".equals(request.metadata().get("primitive"))) {
                     act++;
-                    return "{\"content\":\"child memory turn " + act + "\"}";
+                    assertTrue(request.prompt().contains(locator));
+                    return "{\"content\":\"child memory turn " + act + " " + locator + "\"}";
                 }
                 consolidation++;
-                return "{\"content\":\"root memory after turn " + consolidation + "\"}";
+                assertTrue(request.prompt().contains(locator));
+                assertTrue(request.prompt().contains("unverified locator failure"));
+                assertTrue(request.prompt().contains("Omit internal thought identifiers"));
+                return "{\"content\":\"root memory after turn " + consolidation + " " + locator + "\"}";
             }
         });
 
@@ -227,7 +237,7 @@ class TackComponentContractTest {
             ThoughtStack stack = result.getProperty(ThoughtStack.PROPERTY, ThoughtStack.class);
             assertEquals(1, stack.frames().size());
             assertEquals("root", stack.leaf().name());
-            assertEquals("root memory after turn 2", stack.leaf().content());
+            assertEquals("root memory after turn 2 " + locator, stack.leaf().content());
             assertEquals(6, llm.requests.size());
             assertEquals(2, llm.requests.stream().filter(r -> r.passType() == LlmPassType.ACTION).count());
             assertEquals(2, llm.requests.stream().filter(r -> "act".equals(r.metadata().get("primitive")) && r.passType() == LlmPassType.SYNTHESIS).count());
