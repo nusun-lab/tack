@@ -1,11 +1,26 @@
 {
   "type": "object",
   "properties": {
-    "content": {"type": "string", "minLength": 1},
-    "summary": {"type": "string", "minLength": 1},
-    "outcome": {"type": "string", "enum": ["SUCCEEDED", "PARTIAL", "BLOCKED", "NOOP", "FAILED"]},
-    "durableProgress": {"type": "boolean"},
-    "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0}
+    "content": {
+      "type": "string", "minLength": 1,
+      "description": "Complete replacement working memory governed by the thought purpose. Update the existing thought with new observations and retain relevant facts, exact identifiers and their associations, and unresolved conditions."
+    },
+    "summary": {
+      "type": "string", "minLength": 1,
+      "description": "Brief evidence-based account of what the latest act established or changed."
+    },
+    "outcome": {
+      "type": "string", "enum": ["SUCCEEDED", "PARTIAL", "BLOCKED", "NOOP", "FAILED"],
+      "description": "Latest act only. SUCCEEDED completed its objective, PARTIAL left actionable work, BLOCKED awaits a prerequisite, NOOP needed no action, and FAILED did not accomplish its objective."
+    },
+    "durableProgress": {
+      "type": "boolean",
+      "description": "True when the latest act made a verified durable change, completed a handoff, or produced a new test result. False for reads, including first-time verification of readiness."
+    },
+    "confidence": {
+      "type": "number", "minimum": 0.0, "maximum": 1.0,
+      "description": "Confidence in the latest act evaluation, for telemetry."
+    }
   },
   "required": ["content", "summary", "outcome", "durableProgress", "confidence"],
   "additionalProperties": false

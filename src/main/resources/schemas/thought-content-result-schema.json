@@ -3,6 +3,7 @@
   "properties": {
     "content": {
       "type": "string",
+      "description": "Complete replacement parent working memory. Preserve relevant parent knowledge and incorporate child evidence according to the parent's purpose, retaining exact identifiers and associations.",
       "minLength": 1
     }
   },

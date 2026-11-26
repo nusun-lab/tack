@@ -23,10 +23,9 @@ import java.util.Map;
 
 final class PrimitivePrompts {
     private static final String MEMORY_GUIDANCE = """
-            Lead with relevant external locators as short labeled entries. Copy exact IDs, names and
-            paths verbatim. Replace verified facts only with contradictory evidence about that same resource.
-            Silence, an unverified locator failure and hypotheses leave prior evidence intact. Preserve uncertainty
-            and the condition that makes unfinished work actionable. Drop transient reasoning and tool mechanics.
+            Write the complete updated working memory as labeled notes in `content`. This replaces the existing thought, so omissions are lost.
+            Use the thought purpose as a checklist. Carry forward unchanged notes that still serve it and add relevant verified facts and open conditions.
+            Copy exact identifiers verbatim with what they identify. Change established facts only when supported by new evidence. Keep useful detail within the available budget.
             """.strip();
 
     private final ObjectMapper objectMapper;
@@ -51,7 +50,7 @@ final class PrimitivePrompts {
                     """;
             case SYNTHESIS -> """
 
-                    Evaluate the completed act from the supplied evidence and return the requested JSON.
+                    Maintain the thought for the next step. Put the working memory in `content` and evaluate the latest act separately.
                     """;
             case DECISION -> """
 
@@ -69,7 +68,7 @@ final class PrimitivePrompts {
                     """;
             case CONSOLIDATION -> """
 
-                    Merge the child thought into its parent and return the requested JSON.
+                    Maintain the parent's working memory using relevant evidence from the child.
                     """;
         };
     }
@@ -127,44 +126,40 @@ final class PrimitivePrompts {
                 - Primitive: act synthesis
                 - Act id: %s
 
-                ### Act objective:
+                ### Thought purpose
                 %s
 
-                ### Tool evidence observedAt: %s
+                ### Existing thought
                 %s
 
-                ### Current leaf thought purpose:
+                ### Thought token budget
                 %s
 
-                ### Current leaf existing content:
+                ### Ancestor context
                 %s
 
-                ### Current leaf token budget:
+                ### Act objective
                 %s
 
-                ### Useful ancestor context:
+                ### New observations from the act (%s)
                 %s
 
-                Rewrite the leaf as compact current memory within its purpose and budget.
+                Evaluate only the latest act in `summary` (brief evidence), `outcome` (SUCCEEDED, PARTIAL, BLOCKED, NOOP,
+                or FAILED), `durableProgress` (boolean, false for reads), and `confidence` (number from 0 to 1).
+
+                Update the existing thought with relevant new observations according to its purpose.
                 %s
-
-                Evaluate only the completed act. An unsupported claim, failed lookup or unfinished step stays uncertain.
-                Use SUCCEEDED for a completed objective, NOOP when no change was needed, PARTIAL for incomplete work
-                with a useful next step, BLOCKED when it awaits a named prerequisite, or FAILED for an unsuccessful act.
-                Set durableProgress true for an evidenced durable change, completed handoff or new test result.
-                Set it false for reads, including first-time verification of readiness. Confidence is telemetry.
-
-                Return JSON with content (updated thought), summary (this act only), outcome, durableProgress and confidence.
                 """.formatted(
                 missionLevelContext(exchange),
                 safeText(request.id()),
-                safeText(request.prompt()),
-                observedAt,
-                safeText(toolResult.content()),
                 safeText(leaf.context()),
                 safeText(leaf.content()),
                 leaf.maxTokens(),
-                renderAncestorThoughts(ThoughtStack.on(exchange).frames()), MEMORY_GUIDANCE);
+                renderAncestorThoughts(ThoughtStack.on(exchange).frames()),
+                safeText(request.prompt()),
+                observedAt,
+                safeText(toolResult.content()),
+                MEMORY_GUIDANCE);
     }
 
     String renderDecisionPrompt(Exchange exchange, DecideRequest request, List<String> choices) {
@@ -246,11 +241,9 @@ final class PrimitivePrompts {
                 final content:
                 %s
 
-                Rewrite the parent within its purpose and budget. Promote child facts useful beyond the child scope.
+                Start with the existing parent thought. Incorporate child evidence relevant to the parent's purpose.
                 %s
                 Omit internal thought identifiers.
-
-                Return JSON with content (updated parent thought).
                 """.formatted(
                 missionLevelContext(exchange),
                 safeText(parent.name()),
