@@ -15,9 +15,6 @@ import us.nusun.tack.framework.routine.TackHeaders;
 
 import java.util.List;
 
-import static org.apache.camel.builder.PredicateBuilder.and;
-import static org.apache.camel.builder.PredicateBuilder.or;
-
 @ApplicationScoped
 public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvider {
     public static final String ID = "software-team/project-manager";
@@ -151,20 +148,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         Keep dependency evidence, remaining gaps and their next actionable conditions.
                         """))
                 .to("tack:thought-enter?name=pm-active-flow-focus&maxTokens=500")
-                .to("direct:pm-active-flow-loop")
+                .to("direct:pm-flow")
                 .to("tack:thought-exit?name=pm-active-flow-focus")
                 .to("direct:pm-awareness");
-
-        from("direct:pm-active-flow-loop")
-                .routeId("pm-active-flow-loop")
-                .setProperty("pmActiveFlowIterations", constant(0))
-                .loopDoWhile(and(exchangeProperty("pmActiveFlowIterations").isLessThan(6),
-                        or(exchangeProperty("pmActiveFlowIterations").isEqualTo(0),
-                            exchangeProperty("act.pm-flow.durableProgress").isEqualTo(true))))
-                    .setProperty("pmActiveFlowIterations",
-                            simple("${exchangeProperty.pmActiveFlowIterations}++", Integer.class))
-                    .to("direct:pm-flow")
-                .end();
 
         from("direct:pm-flow")
                 .routeId("pm-flow")
@@ -187,26 +173,16 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         Track what is prepared, executable or awaiting a named prerequisite.
                         """))
                 .to("tack:thought-enter?name=pm-planning-focus&maxTokens=550")
-                .to("direct:pm-planning-loop")
+                .to("direct:pm-planning")
                 .to("tack:thought-exit?name=pm-planning-focus")
                 .to("direct:pm-awareness");
-
-        from("direct:pm-planning-loop")
-                .routeId("pm-planning-loop")
-                .setProperty("pmPlanningIterations", constant(0))
-                .loopDoWhile(and(exchangeProperty("pmPlanningIterations").isLessThan(5),
-                        or(exchangeProperty("pmPlanningIterations").isEqualTo(0),
-                            exchangeProperty("act.pm-planning.durableProgress").isEqualTo(true))))
-                    .setProperty("pmPlanningIterations",
-                            simple("${exchangeProperty.pmPlanningIterations}++", Integer.class))
-                    .to("direct:pm-planning")
-                .end();
 
         from("direct:pm-planning")
                 .routeId("pm-planning")
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Use the Architect's system and component map to decompose to-do and in-progress PO-owned Epics.
-                        Read the selected Epic's Gherkin and create or refine only missing implementation Stories.
+                        Read the selected Epic's Gherkin and create only missing story-labeled implementation work.
+                        Put engineering verification in the Story description. QA creates separate Test tasks.
                         Create each Story planned with its story label and one subtask relation from the Epic. Record repository
                         and implementation intent in its description. Add incoming blocks relations only for real prerequisites.
                         Verify the graph remains acyclic and repair incorrect relations with evidence.
