@@ -118,15 +118,17 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                         source needed for this slice. Reuse the task branch and PR. Build and test locally from source
                         where possible, commit, push and open or update the PR. Link the Kaneo ticket and record actual
                         validation and its limits in the PR. A shared deployed application environment is not needed
-                        for implementation or locally testable behavior. Attempt ordinary git operations before treating
+                        for implementation or locally testable behavior. If current main already satisfies the Story, record
+                        the exact commit and local checks without creating an empty PR. Attempt ordinary git operations before treating
                         access as blocked. For a task explicitly requesting investigation, return the requested technical
                         evidence without manufacturing a code change. Report exact branch, head and PR locators.
                         """))
                 .to("tack:act?id=dev-delivery-step&toolProfile=" + SourceControlWriteToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Record new branch/PR, validation or a concrete blocker on the selected Kaneo task once.
-                        An open PR leaves the task in-progress. A merged Story can be reconciled to done. QA retests
-                        merged Defect fixes. For an investigation, record the findings and what PM can act on.
+                        An open PR leaves the task in-progress. Reconcile a Story to done when the intended base already
+                        contains the complete slice and current validation proves it, citing the integrated commit and
+                        checks. QA retests merged Defect fixes. Record investigation findings for PM.
                         """))
                 .to("tack:act?id=dev-task-evidence-update&toolProfile=" + EngineeringWorkToolProfile.ID);
 
