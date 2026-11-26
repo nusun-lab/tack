@@ -424,6 +424,8 @@ Reply correlation is currently in memory by `jobId`, so one active orchestrator 
 | `LLM_MODEL_DEFAULT_TOOL_MEMORY_RECENT_TOOL_INTERACTIONS` | `3` |
 | `LLM_MODEL_DEFAULT_MAX_TOOL_CALLING_ROUND_TRIPS` | `50` |
 
+The software-team example uses low-pass temperature `0.2`, top-p `0.90` and top-k `20` for memory passes. For action and decision passes it uses high-pass temperature `0.30`, top-p `0.90` and presence penalty `0.0`. Set `LLM_LOW_*` and `LLM_HIGH_*` to override the lane settings.
+
 ### OpenShell runtime
 
 | Environment variable | Default |
@@ -470,14 +472,17 @@ Tack uses `planned`, `to-do`, `in-progress`, `done`, and `archived`. Archived wo
 
 PM creates the mission project with default columns and reconciles active roster access to the Mattermost channel. Kaneo workspace grants are provisioned once and inherited by mission projects. PM maintains `docs/project-basics.md` in the system repository with the project, channel, and Gitea locators.
 
-The Director keeps PM active, adds PO and ARCH after the project and channel are usable, and adds DEV and QA after the system/component repository map is established and a PO-owned Epic is `to-do` or `in-progress`. PO can define and promote a product-ready Epic to `to-do` while ARCH establishes the repository map. PM prepares planned Stories under `to-do` Epics and feeds assigned `to-do` work under `in-progress` Epics. Assignment goes to persistent personas and stands on its own as the engineering handoff.
+The Director keeps PM active, adds PO and ARCH after the project and channel are usable, and adds DEV and QA after the system/component repository map is established and a PO-owned Epic is `to-do` or `in-progress`. PO prepares the first product-ready Epic while ARCH publishes the smallest locally buildable repository baseline.
+
+PM starts with one behavior slice. Once its Story has a repository, the `story` label, an Epic parent, completed prerequisites, and a persistent engineer assignee, PM moves it to `to-do`, including the first Story under a `to-do` Epic. The engineer can claim it immediately. PO moves the Epic to `in-progress` when that first Story is ready or underway. PM then feeds more independent work as capacity permits.
+
+Engineers build and test from source in the sandbox and hand off through linked Gitea PRs. QA can write tests as soon as an Epic is product-ready and use local execution as evidence for behavior it directly exercises. Record deployment-dependent acceptance separately. Safe PRs can integrate while that evidence is pending.
 
 The repository model is deliberately simple:
 
 ```text
 system-repo/
 ├── README.md
-├── gitops/
 ├── docs/
 └── tests/
     └── system/
@@ -488,7 +493,7 @@ component-repo(s)/
     └── <anchor>-api       # reserved for API specification/contract repositories
 ```
 
-The system repository is the single home for system GitOps, system documentation, architecture decisions, and cross-component system behavior tests. Separate docs or QE repositories are not part of the model. The example expects mission Git repositories under the `agent-workspace` organization.
+The system repository holds system documentation, architecture decisions, and cross-component system behavior tests. Add GitOps structure when delivery calls for it. The example expects mission Git repositories under the `agent-workspace` organization.
 
 ### Feedback loops
 

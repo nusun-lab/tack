@@ -11,6 +11,7 @@ import us.nusun.tack.framework.run.AgentRunRequest;
 import us.nusun.tack.framework.routine.RoutineDefinition;
 import us.nusun.tack.framework.run.AgentRunAdmissionService;
 import us.nusun.tack.framework.routine.TackHeaders;
+import us.nusun.tack.framework.tool.ToolProfileRegistry;
 
 import java.util.List;
 
@@ -47,14 +48,18 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         """))
                 .to("tack:thought-enter?name=director-root&maxTokens=450")
                 .setProperty(AgentRunAdmissionService.CAPACITY_MAXIMUM_PROPERTY, constant(MAX_ACTIVE_MISSION_RUNS))
+                .setHeader(TackHeaders.PROMPT, constant("""
+                        Read mission_roster with view coverage. Record active roles and available capacity.
+                        PM is always required. A verified PM vacancy can be filled before any workspace exists.
+                        """))
+                .to("tack:act?id=director-startup-roster&toolProfile=" + ToolProfileRegistry.NONE_ID)
+                .to("direct:director-focus-staffing")
                 .setProperty("decision.director-mission-complete.result", constant("no"))
                 .loopDoWhile(exchangeProperty("decision.director-mission-complete.result").isNotEqualTo("yes"))
-                    .to("direct:director-orientation")
+                    .to("direct:director-evidence")
                     .setHeader(TackHeaders.PROMPT, constant("""
                             Choose exactly one highest-value Director focus.
-                            - staffing: PM or an already-required role is missing, or fresh evidence warrants checking
-                              a missing role's gate. Check project and channel readiness for PO and ARCH. Check the
-                              documented repository architecture and a PO-owned to-do or in-progress Epic for DEV and QA.
+                            - staffing: the latest evidence verifies an eligible role is absent and capacity is available.
                             - guidance: a fresh cross-role blocker, mission interpretation, or PO product-viability
                               question needs Director judgment.
                             - complete: all required Epic outcomes are accepted and done and no unresolved
@@ -67,30 +72,20 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                 .end()
                 .to("tack:thought-exit?name=director-root");
 
-        from("direct:director-orientation")
-                .routeId("director-orientation")
+        from("direct:director-evidence")
+                .routeId("director-evidence")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Check active roster coverage, changed staffing prerequisites, product completion and genuine Director escalations.
-                        Reuse verified project, channel and repository readiness. Record a missing gate as an expected phase condition
-                        unless evidence establishes an actual failure.
+                        Read mission_roster with view coverage for active roles and capacity. For missing PO or ARCH, check usability
+                        of the current-mission project and channel. For missing DEV or QA, verify the documented system/
+                        component repository baseline and one PO-owned to-do or in-progress task with the attached epic
+                        label. Resolve the PO's exact member ID and use assignee/status filters. Reuse verified gates.
+                        Report eligible vacancies and unknown gates. PM creates project/channel, PO readies the Epic,
+                        and ARCH establishes repositories. With all roles active, check changed completion or escalation.
                         """))
-                .to("tack:act?id=director-orientation&toolProfile=" + WorkspaceReadonlyToolProfile.ID);
+                .to("tack:act?id=director-staffing-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID);
 
         from("direct:director-focus-staffing")
                 .routeId("director-focus-staffing")
-                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Active roster and capacity, exact project/channel locators, repository architecture (verified system and
-                        component owner/repo pairs), and qualifying Epic and PO user IDs. Preserve each verified gate and unknown.
-                        """))
-                .to("tack:thought-enter?name=director-staffing-focus&maxTokens=400")
-                .setHeader(TackHeaders.PROMPT, constant("""
-                        Read active roster coverage and capacity. PM is always required. Verify project and channel readiness
-                        for PO and ARCH. For DEV and QA, verify both the system/component repository map and a PO-owned to-do
-                        or in-progress task with the attached epic label. Match the PO's roster email to the member ID and
-                        use assignee and status filters. A documented single component is sufficient. Preserve verified gates
-                        and record unresolved gates as unknown. Product definition and repository setup precede DEV/QA staffing.
-                        """))
-                .to("tack:act?id=director-staffing-read&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, simple("""
                         Decide which missing AgentRuns are required now. Mission: ${exchangeProperty.mission.goal}
                         Assignable personas: ${bean:personaCatalog.agentRunStartAssignablePromptJson}
@@ -108,13 +103,13 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         - Never duplicate an already-active role.
                         - Start one run for every missing required role that capacity allows. When a missing role has verified gates
                         and capacity remains, agentRuns must include it. If PM is missing, include it first.
+                        Start the whole-mission routine. It receives the shared mission and owns its next action.
                         Return {"agentRuns":[]} when no missing role is eligible or capacity prevents another start.
                         """))
                 .to("tack:create?id=planned-agent-runs&schemaId=agent-run-request-list&schema=classpath:schemas/example/software-team/agent-run-requests-schema.json")
                 .unmarshal().json(JsonLibrary.Jackson, AgentRunBatch.class)
                 .setBody(simple("${body.agentRuns}"))
-                .to("direct:start-agent-runs")
-                .to("tack:thought-exit?name=director-staffing-focus");
+                .to("direct:start-agent-runs");
 
         from("direct:director-focus-guidance")
                 .routeId("director-focus-guidance")
@@ -139,6 +134,6 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
 
         from("direct:director-focus-wait")
                 .routeId("director-focus-wait")
-                .delay(120000);
+                .delay(60000);
     }
 }
