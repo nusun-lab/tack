@@ -92,7 +92,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Resolve mission project and channel readiness first. If either needs bootstrap, stop discovery there.
                         Once the project is usable, inspect the highest-priority to-do or in-progress Epic and its ready work.
-                        For an idle engineering queue, identify the first Story to assign or a missing Story to create.
+                        For an idle engineering queue, identify a missing Story or a Story without a DEV or ARCH assignee.
                         Look up the documented repository map only if needed for that handoff. Check channel membership only
                         for changed active coverage from mission_roster. Distinguish an unfilled queue from missing staffing.
                         """ + engineeringIdentities))
@@ -163,7 +163,8 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         Deliver one executable Story before decomposing the rest of the Epic. Pick the highest-priority PO-owned
                         to-do or in-progress Epic with a verified component map. Read its acceptance and existing children.
                         Resolve the persistent DEV for component work or ARCH for system/cross-component work. Reuse a
-                        usable partial Story and repair its assignment if needed. Otherwise create a planned Story with
+                        usable partial Story and repair an absent or non-engineering assignee, including on a to-do Story.
+                        Otherwise create a planned Story with
                         that engineer's userId, one exact owner/repo, a small acceptance slice and a local verification target.
                         Attach story and the Epic subtask relation. With required incoming prerequisites done, promote
                         the assigned Story to to-do in this act. Verify its owner and status.

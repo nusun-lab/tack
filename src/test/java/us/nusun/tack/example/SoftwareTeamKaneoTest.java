@@ -191,16 +191,19 @@ class SoftwareTeamKaneoTest {
             assertTrue(planning.contains("avery@example.test"));
             assertFalse(planning.contains("miles-test-token"));
             assertTrue(planning.contains("A to-do Epic is sufficient for its first executable Story"));
+            assertTrue(planning.contains("repair an absent or non-engineering assignee"));
             assertTrue(planning.contains("that engineer's userId"));
             assertTrue(planning.indexOf("that engineer's userId") < planning.indexOf("the assigned Story to to-do"));
             String epic = headers(context, "po-epic-definition", TackHeaders.PROMPT);
             assertTrue(epic.contains("as soon as it is product-ready"));
             assertTrue(epic.contains("independently of repositories, Stories, staffing and chat"));
             assertTrue(epic.contains("once its first assigned Story is to-do, in-progress or done"));
+            assertTrue(epic.contains("In this act, write only Epics"));
             assertTrue(headers(context, "pm-focus-onboarding", TackHeaders.PROMPT)
                     .contains("verified missing active teammates"));
-            assertTrue(headers(context, "architect-repository-architecture", TackHeaders.PROMPT)
-                    .contains("Create only verified missing repositories"));
+            String architecture = headers(context, "architect-repository-architecture", TackHeaders.PROMPT);
+            assertTrue(architecture.contains("Create only verified missing repositories with gitea.create_repo"));
+            assertTrue(architecture.contains("Use a placeholder entry point and a build"));
             for (String route : List.of("dev-work-selection", "architect-implementation")) {
                 assertTrue(headers(context, route, TackHeaders.PROMPT)
                         .contains("parent Epic may be to-do or in-progress"), route);

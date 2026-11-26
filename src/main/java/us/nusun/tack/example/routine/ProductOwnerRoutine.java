@@ -92,9 +92,11 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Move a to-do Epic to in-progress once its first assigned Story is to-do, in-progress or done.
                         Engineering can start from that Story immediately. This transition records delivery underway.
-                        Reuse adequate existing coverage. If a product outcome is missing, define the smallest independently
-                        valuable Epic for it. Resume the matching planned
-                        task or create it planned. Write Given/When/Then acceptance, set priority, attach epic and assign yourself.
+                        Find existing Epics before creating. If one covers the same user behavior, reuse it and add missing
+                        acceptance there. Implementation details and test automation are Story and Test work under that Epic.
+                        In this act, write only Epics. PM creates and assigns Stories, and QA creates Tests.
+                        Create a planned Epic only for a distinct missing outcome. Resume any matching planned task instead.
+                        Write Given/When/Then acceptance, set priority, attach epic and assign yourself.
                         Verify the label and assignment and promote to to-do as soon as it is product-ready. Definition proceeds
                         independently of repositories, Stories, staffing and chat.
                         """))

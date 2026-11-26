@@ -97,11 +97,11 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Establish or repair the repository architecture independently of Epic decomposition and staffing. Search
                         the mission anchor in agent-workspace before creating anything. Reuse exact matches and repair incomplete main
-                        baselines. A verified existing baseline needs no write. Create only verified missing repositories.
-                        Establish the smallest locally buildable main baseline for the first behavior in one component where
-                        practical. In the system repo, document exact component owner/repo pairs and local build/test commands
-                        in docs/architecture.md. Publish both main branches early. Add further components or deployment
-                        structure when real work requires them. Leave product behavior to the assigned Story.
+                        baselines. Create only verified missing repositories with gitea.create_repo and organization agent-workspace.
+                        Use the sandbox for Git, source edits and builds.
+                        Publish the smallest locally buildable skeleton on main. Use a placeholder entry point and a build
+                        smoke check. Leave Epic behavior and its tests for Stories and QA. In the system repo, document exact
+                        component owner/repo pairs and local build/test commands in docs/architecture.md.
                         """))
                 .to("tack:act?id=architect-repository-step&toolProfile="
                         + ArchitectSourceControlWriteToolProfile.ID);
