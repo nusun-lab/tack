@@ -215,10 +215,14 @@ class SoftwareTeamKaneoTest {
                 assertTrue(headers(context, route, TackHeaders.PROMPT)
                         .contains("parent Epic may be to-do or in-progress"), route);
             }
-            assertTrue(context.getRouteDefinition("dev-orientation").getOutputs().stream()
+            assertTrue(context.getRouteDefinition("example-software-team-application-developer").getOutputs().stream()
+                    .filter(LoopDefinition.class::isInstance).map(LoopDefinition.class::cast)
+                    .flatMap(loop -> loop.getOutputs().stream())
                     .filter(ToDefinition.class::isInstance).map(ToDefinition.class::cast)
-                    .anyMatch(step -> step.getUri().equals("tack:act?id=dev-orientation&toolProfile=engineering-work")));
+                    .anyMatch(step -> step.getUri().equals("direct:dev-work-selection")));
             assertTrue(headers(context, "dev-work-selection", TackHeaders.PROMPT).contains("update_task_status"));
+            assertTrue(headers(context, "dev-work-selection", TackHeaders.PROMPT)
+                    .contains("The following source act has shell, Git and PR tools"));
             assertTrue(headers(context, "dev-implementation-step", TackHeaders.PROMPT).contains("test locally"));
             assertTrue(headers(context, "qa-focus-defect-feedback", TackHeaders.PROMPT).contains("no-priority"));
             assertTrue(headers(context, "po-epic-acceptance", TackHeaders.PROMPT).contains("Archived work does not count as success"));

@@ -39,22 +39,29 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                 .to("direct:dev-application-developer-root-enter")
                 .setProperty("decision.application-developer-mission-complete.result", constant("no"))
                 .loopDoWhile(exchangeProperty("decision.application-developer-mission-complete.result").isNotEqualTo("yes"))
-                    .to("direct:dev-orientation")
-                    .setHeader(TackHeaders.PROMPT, constant("""
-                            Select a focus based on the observed queue.
-                            - reconcile: an assigned Story has merged and still needs Kaneo closure.
-                            - implementation: an assigned to-do Story or Defect is executable, or assigned work has a
-                              concrete next coding or test step. A PR waiting for merge leaves room for independent work.
-                            - integration: help with an explicitly handed-off PR or when Architect is unavailable.
-                            - coordination: a fresh technical question or a blocker on assigned work needs a response.
-                            - complete: required Epics are accepted and done and delivery follow-up is settled.
-                            - wait: the assigned queue is empty, or its work awaits new evidence.
-                            """))
-                    .to("tack:decide?id=dev-focus&choices=reconcile,implementation,integration,coordination,complete,wait")
-                    .toD("direct:dev-focus-${exchangeProperty.decision.dev-focus.result}")
+                    .to("direct:dev-work-selection")
+                    .choice()
+                        .when(exchangeProperty("decision.developer-has-work.result").isEqualTo("yes"))
+                            .to("direct:dev-implementation-step")
+                        .otherwise()
+                            .to("direct:dev-other-work")
+                    .end()
                 .end()
                 .end()
                 .to("tack:thought-exit?name=application-developer-routine");
+
+        from("direct:dev-other-work")
+                .routeId("dev-other-work")
+                .setHeader(TackHeaders.PROMPT, constant("""
+                        Select a focus when there is no actionable source work.
+                        - reconcile: an assigned Story has merged and needs Kaneo closure.
+                        - integration: help with an explicitly handed-off PR or while Architect is unavailable.
+                        - coordination: a fresh technical question or blocker on assigned work needs a response.
+                        - complete: required Epics are accepted and done and delivery follow-up is settled.
+                        - wait: the assigned queue is empty, or work awaits new evidence.
+                        """))
+                .to("tack:decide?id=dev-focus&choices=reconcile,integration,coordination,complete,wait")
+                .toD("direct:dev-focus-${exchangeProperty.decision.dev-focus.result}");
 
         from("direct:dev-application-developer-root-enter")
                 .routeId("dev-application-developer-root-enter")
@@ -63,15 +70,6 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
                         branch/PR, actual validation and next action. Keep verified locators across queue checks.
                         """))
                 .to("tack:thought-enter?name=application-developer-routine&maxTokens=500");
-
-        from("direct:dev-orientation")
-                .routeId("dev-orientation")
-                .setHeader(TackHeaders.PROMPT, constant("""
-                        Reuse the verified mission project and whoami identity. Find assigned to-do and in-progress
-                        Stories or Defects with native filters. Identify actionable work, open PR waits, merged Stories
-                        to reconcile and merged Defects awaiting QA. Read related details only for the best candidate.
-                        """))
-                .to("tack:act?id=dev-orientation&toolProfile=" + EngineeringWorkToolProfile.ID);
 
         from("direct:dev-focus-implementation")
                 .routeId("dev-focus-implementation")
@@ -98,16 +96,17 @@ public class ApplicationDeveloperRoutine extends RouteBuilder implements Routine
         from("direct:dev-work-selection")
                 .routeId("dev-work-selection")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Use the Kaneo project and your exact user ID to confirm the best known candidate or find
-                        one assigned to you. Verify Story or Defect classification, Epic relation, repository,
+                        Filter in-progress and to-do work by your exact user ID in the mission's Kaneo project.
+                        Select one assigned candidate. Verify Story or Defect classification, Epic relation, repository,
                         useful acceptance slice and done prerequisites. The parent Epic may be to-do or in-progress.
                         Claim an eligible assigned to-do task with update_task_status. Report its exact task, Epic
-                        and repository locators. Skip PRs waiting only for integration or QA. Consider independent work.
+                        and repository locators. Flag merged Stories for closure. Skip PRs awaiting integration
+                        and merged Defects awaiting QA. Consider independent work.
                         """))
                 .to("tack:act?id=dev-work-selection&toolProfile=" + EngineeringWorkToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Is one assigned Story or Defect selected in-progress with an executable next step?
-                        Use the selected task's verified context. Answer yes when the ordinary source workflow can start.
+                        Is one assigned Story or Defect selected in-progress with a concrete next source step?
+                        Answer from task readiness. The following source act has shell, Git and PR tools.
                         """))
                 .to("tack:decide?id=developer-has-work");
 
