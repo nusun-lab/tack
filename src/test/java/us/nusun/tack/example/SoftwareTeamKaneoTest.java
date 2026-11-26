@@ -7,6 +7,7 @@ import io.smallrye.config.SmallRyeConfig;
 import io.smallrye.config.SmallRyeConfigBuilder;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.impl.DefaultCamelContext;
+import org.apache.camel.model.LoopDefinition;
 import org.apache.camel.model.SetHeaderDefinition;
 import org.apache.camel.model.ToDefinition;
 import org.junit.jupiter.api.Test;
@@ -177,6 +178,11 @@ class SoftwareTeamKaneoTest {
             assertTrue(context.getRouteDefinition("example-software-team-project-manager").getOutputs().stream()
                     .filter(ToDefinition.class::isInstance).map(ToDefinition.class::cast)
                     .anyMatch(step -> step.getUri().equals("direct:pm-bootstrap")));
+            assertTrue(context.getRouteDefinition("example-software-team-project-manager").getOutputs().stream()
+                    .filter(LoopDefinition.class::isInstance).map(LoopDefinition.class::cast)
+                    .flatMap(loop -> loop.getOutputs().stream())
+                    .filter(ToDefinition.class::isInstance).map(ToDefinition.class::cast)
+                    .anyMatch(step -> step.getUri().equals("direct:pm-planning")));
             String domainEvidence = headers(context, "director-evidence", TackHeaders.PROMPT);
             assertTrue(domainEvidence.contains("Report eligible vacancies and unknown gates"));
             String staffing = (domainEvidence + headers(context, "director-focus-staffing", TackHeaders.PROMPT))

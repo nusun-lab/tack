@@ -6,7 +6,6 @@ import us.nusun.tack.example.tool.DeliveryManagementToolProfile;
 import us.nusun.tack.example.tool.ProjectDocumentationToolProfile;
 import us.nusun.tack.example.tool.TeamChatToolProfile;
 import us.nusun.tack.example.tool.WorkspaceCoordinationToolProfile;
-import us.nusun.tack.example.tool.WorkspaceReadonlyToolProfile;
 import us.nusun.tack.framework.persona.PersonaAccounts;
 import us.nusun.tack.framework.routine.RoutineProvider;
 import us.nusun.tack.framework.inference.LlmPassType;
@@ -65,14 +64,12 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .to("direct:pm-bootstrap")
                 .setProperty("decision.project-manager-mission-complete.result", constant("no"))
                 .loopDoWhile(exchangeProperty("decision.project-manager-mission-complete.result").isNotEqualTo("yes"))
-                    .to("direct:pm-orientation")
+                    .to("direct:pm-planning")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                            Choose the highest-value focus. Bootstrap and planning use their own write tools.
-                            - bootstrap: discover or establish the mission project and channel when their readiness is unknown.
-                            - planning: an engineer can start useful work once you assign, repair or create a Story for a
-                              product-ready Epic with a verified repository baseline. Prefer unlocking the first work.
+                            Choose the next useful focus after the Story handoff pass.
+                            - bootstrap: the mission project or channel needs repair or bootstrap was incomplete.
                             - defect-flow: a PO-validated to-do Defect lacks a repair assignee.
-                            - onboarding: an active run is verified missing from the channel. Reconcile independently of delivery.
+                            - onboarding: active roster changed since the last verified channel reconciliation.
                             - documentation: the system repo exists and project basics need an update.
                             - coordination: a specific inbound question or verified cross-role blocker needs PM judgment.
                             - complete: required Epics are accepted and done and delivery blockers are resolved.
@@ -80,23 +77,12 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                               the first Epic or repository baseline is normal after bootstrap.
                             Assignment identifies the owner. Only mission_roster establishes staffing. ARCH owns repository setup.
                             """))
-                    .to("tack:decide?id=pm-focus&choices=bootstrap,planning,defect-flow,onboarding,documentation,"
+                    .to("tack:decide?id=pm-focus&choices=bootstrap,defect-flow,onboarding,documentation,"
                             + "coordination,complete,wait")
                     .toD("direct:pm-focus-${exchangeProperty.decision.pm-focus.result}")
                 .end()
                 .end()
                 .to("tack:thought-exit?name=pm-root");
-
-        from("direct:pm-orientation")
-                .routeId("pm-orientation")
-                .setHeader(TackHeaders.PROMPT, constant("""
-                        Resolve mission project and channel readiness first. If either needs bootstrap, stop discovery there.
-                        Once the project is usable, inspect the highest-priority to-do or in-progress Epic and its ready work.
-                        For an idle engineering queue, identify a missing Story or a Story without a DEV or ARCH assignee.
-                        Look up the documented repository map only if needed for that handoff. Check channel membership only
-                        for changed active coverage from mission_roster. Distinguish an unfilled queue from missing staffing.
-                        """ + engineeringIdentities))
-                .to("tack:act?id=pm-orientation&toolProfile=" + WorkspaceReadonlyToolProfile.ID);
 
         from("direct:pm-focus-bootstrap")
                 .routeId("pm-focus-bootstrap")
@@ -147,21 +133,12 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .routeId("pm-flow")
                 .to("direct:pm-planning");
 
-        from("direct:pm-focus-planning")
-                .routeId("pm-focus-planning")
-                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Exact Epic/task/assignee IDs and repository owner/repo pairs for Story coverage and dependencies.
-                        Track what is prepared, executable or awaiting a named prerequisite.
-                        """))
-                .to("tack:thought-enter?name=pm-planning-focus&maxTokens=550")
-                .to("direct:pm-planning")
-                .to("tack:thought-exit?name=pm-planning-focus");
-
         from("direct:pm-planning")
                 .routeId("pm-planning")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Deliver one executable Story before decomposing the rest of the Epic. Pick the highest-priority PO-owned
-                        to-do or in-progress Epic with a verified component map. Read its acceptance and existing children.
+                        Inspect the highest-priority PO-owned to-do or in-progress Epic and its existing Story children.
+                        Deliver one executable Story before decomposing the rest. Use the documented repository map.
+                        If either the Epic or repository baseline is still missing, record which owner can provide it and stop.
                         Resolve the persistent DEV for component work or ARCH for system/cross-component work. Reuse a
                         usable partial Story and repair an absent or non-engineering assignee, including on a to-do Story.
                         Otherwise create a planned Story with
@@ -169,8 +146,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         Attach story and the Epic subtask relation. With required incoming prerequisites done, promote
                         the assigned Story to to-do in this act. Verify its owner and status.
                         A to-do Epic is sufficient for its first executable Story. Feed additional Stories under in-progress Epics.
-                        AgentRun presence, QA work and chat are independent. A PR waiting for merge leaves room for independent work.
+                        Keep one next actionable Story per engineer. A PR waiting for merge leaves room for independent work.
+                        AgentRun presence, QA work and chat are independent.
                         Use blocks only for real prerequisites and repair incorrect relations after verifying direction and impact.
+                        Report changed active roster coverage and any unassigned validated Defect visible during this pass.
                         """ + engineeringIdentities))
                 .to("tack:act?id=pm-planning&toolProfile=" + DeliveryManagementToolProfile.ID);
 
