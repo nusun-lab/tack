@@ -98,12 +98,12 @@ public class DirectorRoutine extends RouteBuilder implements RoutineProvider {
                         Use the authoritative roster and remaining capacity from this read and the verified readiness evidence
                         in the active thoughts. An unknown gate does not establish eligibility.
 
-                        Phase policy for an unfinished mission:
+                        Eligibility for an unfinished mission:
                         - Project Manager is always required.
                         - Once Kaneo project and team channel are usable, Product Owner and Architect are required.
-                        - Once a PO-owned Epic with the epic label is to-do or in-progress AND Architect has established
-                          the system repository plus the required component repository set, Developer and Quality Engineer
-                          are required. Staffing can proceed while the Epic is still to-do.
+                        - Developer and Quality Engineer are required once the documented system and component repository
+                          baselines are verified and a PO-owned Epic with the epic label is to-do or in-progress.
+                          Verified artifacts establish eligibility. Start all eligible roles in the same batch.
                         - Keep already-required roles active through mission completion.
                         - Never duplicate an already-active role.
                         - Start one run for every missing required role that capacity allows. When a missing role has verified gates

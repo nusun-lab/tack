@@ -172,7 +172,7 @@ class SoftwareTeamKaneoTest {
             assertTrue(staffingPurpose.contains("qualifying Epic and PO user IDs"));
             String staffing = headers(context, "director-focus-staffing", TackHeaders.PROMPT);
             for (String rule : List.of("Project Manager is always required", "Product Owner and Architect are required",
-                    "component repository set", "to-do or in-progress", "attached epic label",
+                    "component repository", "to-do or in-progress", "attached epic label", "Start all eligible roles in the same batch",
                     "unknown", "capacity remains, agentRuns must include it")) {
                 assertTrue(staffing.contains(rule), rule);
             }
