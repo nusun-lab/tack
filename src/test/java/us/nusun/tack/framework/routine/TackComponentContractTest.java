@@ -64,9 +64,10 @@ class TackComponentContractTest {
             assertTrue(llm.requests.get(0).prompt().contains("Inspect contract state."));
             assertEquals(LlmPassType.SYNTHESIS, llm.requests.get(1).passType());
             assertFalse(llm.requests.get(0).prompt().contains("Tool calls used"));
-            assertTrue(llm.requests.get(0).systemPrompt().contains("For tools with no parameters, send {}"));
+            assertTrue(llm.requests.get(0).systemPrompt().contains("using {} for parameterless tools"));
+            assertTrue(llm.requests.get(0).systemPrompt().contains("before issuing a call that depends on it"));
             assertTrue(llm.requests.get(1).prompt().contains("Copy exact IDs, names and"));
-            assertTrue(llm.requests.get(1).prompt().contains("An unchanged read can verify readiness"));
+            assertTrue(llm.requests.get(1).prompt().contains("false for reads, including first-time verification"));
             assertFalse(llm.requests.get(1).prompt().contains("t_"));
         }
     }

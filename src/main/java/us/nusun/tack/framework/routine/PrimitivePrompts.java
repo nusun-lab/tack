@@ -23,7 +23,7 @@ import java.util.Map;
 
 final class PrimitivePrompts {
     private static final String MEMORY_GUIDANCE = """
-            Keep relevant verified facts and external locators as short labeled entries. Copy exact IDs, names and
+            Lead with relevant external locators as short labeled entries. Copy exact IDs, names and
             paths verbatim. Replace verified facts only with contradictory evidence about that same resource.
             Silence, an unverified locator failure and hypotheses leave prior evidence intact. Preserve uncertainty
             and the condition that makes unfinished work actionable. Drop transient reasoning and tool mechanics.
@@ -45,8 +45,9 @@ final class PrimitivePrompts {
 
                     Complete the current act with targeted tool calls. Use verified context first and gather
                     enough evidence to finish. Stop when the objective is met or an actual blocker is established.
-                    Use the advertised argument schema. For tools with no parameters, send {}. Example values and
-                    placeholders are instructional text. Copy external locators verbatim from evidence.
+                    Check each result before issuing a call that depends on it. Copy locators verbatim from the
+                    latest direct evidence. Follow tool schemas, using {} for parameterless tools. Examples and
+                    placeholders are instructional text.
                     """;
             case SYNTHESIS -> """
 
@@ -150,8 +151,8 @@ final class PrimitivePrompts {
                 Evaluate only the completed act. An unsupported claim, failed lookup or unfinished step stays uncertain.
                 Use SUCCEEDED for a completed objective, NOOP when no change was needed, PARTIAL for incomplete work
                 with a useful next step, BLOCKED when it awaits a named prerequisite, or FAILED for an unsuccessful act.
-                durableProgress measures a durable change, completed handoff or newly produced validation evidence.
-                An unchanged read can verify readiness while durableProgress remains false. Confidence is telemetry.
+                Set durableProgress true for an evidenced durable change, completed handoff or new test result.
+                Set it false for reads, including first-time verification of readiness. Confidence is telemetry.
 
                 Return JSON only:
                 {"content":"One coherent updated thought.","summary":"One compact statement of what this act accomplished.","outcome":"SUCCEEDED|PARTIAL|BLOCKED|NOOP|FAILED","durableProgress":true,"confidence":0.95}

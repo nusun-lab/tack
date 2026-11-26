@@ -104,7 +104,8 @@ public class ProductOwnerRoutine extends RouteBuilder implements RoutineProvider
                 .routeId("po-epic-definition")
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Advance one independently valuable Epic. Resume a matching planned task, or create it planned.
-                        Define Given/When/Then acceptance, set priority, attach epic and assign yourself. Promote to to-do
+                        Define Given/When/Then acceptance, set priority, attach epic and assign yourself. Verify the label
+                        and assignment before promoting to to-do
                         as soon as it is product-ready. This work proceeds independently of repositories, Stories, staffing and chat.
                         Move a to-do Epic to in-progress only when PM has prepared Stories and downstream capacity supports delivery.
                         Keep the active set shallow (normally 2–3) with a deeper to-do runway. Blocking defects may reopen done Epics.
