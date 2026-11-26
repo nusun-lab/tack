@@ -57,13 +57,9 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
                             - defect-feedback: a test has reproducible product-failure evidence not already represented
                               by an open defect.
                             - test-engineering: assigned to-do/in-progress test has executable test engineering/evidence work.
-                            - test-planning: a non-planned test lacks QA ownership; a dependency-ready planned Test
-                              can enter the executable queue; a Test needs QE-owned reset to to-do after PO rejected its
-                              linked Defect and clarified intent; an obsolete Test should be archived; or active Epics
-                              lack sufficient test coverage and QA has room for roughly 2-3 active and 2-3 queued
-                              executable test units.
-                            - epic-evidence: one active Epic's implementation/test work is sufficiently settled to publish
-                              a current acceptance-evidence summary for PO.
+                            - test-planning: a product-ready Epic has a missing scenario you can prepare now, or an
+                              existing Test needs ownership, promotion, clarification recovery or archival.
+                            - epic-evidence: current recorded QA Test results are ready to summarize for PO.
                             - coordination: a fresh PO/DEV/ARCH/PM question needs QA participation.
                             - complete: every required product Epic is accepted and done, no QA test engineering/evidence remains,
                               no repaired defect awaits retest, and no unresolved QA finding remains.
@@ -79,10 +75,10 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
         from("direct:qa-orientation")
                 .routeId("qa-orientation")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Find in-progress Epics, executable Tests assigned to your authenticated user, and relevant open Defects.
-                        Use targeted reads for the Epic's Gherkin, child relations, integrated implementation and system-test
-                        evidence. Identify missing coverage, dependency-ready planned Tests, clarified Test intent after a
-                        rejected Defect, and merged fixes awaiting retest. Cross-component behavior tests belong in the system repo.
+                        Find the first to-do or in-progress Epic and your actionable Tests. Use the Epic's acceptance to
+                        spot a scenario QA can write or run locally now. Plan a Test when QA evidence is missing, even
+                        if the developer has passing tests. Look for merged fixes awaiting focused retest.
+                        Distinguish test authoring, local proof, and behavior that requires a deployed environment.
                         """))
                 .to("tack:act?id=qa-orientation&toolProfile=" + WorkspaceReadonlyToolProfile.ID);
 
@@ -90,15 +86,14 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
                 .routeId("qa-focus-test-planning")
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Own Test lifecycle. Resolve your Kaneo user and repair any verified active Test ownership gap.
-                        Create or refine missing coverage for active Epic Gherkin. Create planned Tests with a task-specific test
+                        Create or refine one missing scenario for a to-do or in-progress Epic. Create planned Tests with a task-specific test
                         label and a subtask relation from the Epic. Describe the observable scenario and assign yourself.
-                        Promote dependency-ready work to maintain roughly 2–3 executable to-do Tests. A Test waiting only on
-                        integration or deployment does not consume active execution capacity. Surface ambiguity to PO.
+                        Promote a Test once writing its automation or running the next local check is possible. Do not make
+                        future execution a prerequisite for writing tests now. Surface product ambiguity to PO.
                         When PO rejects a linked Defect and clarifies intent, return its Test to to-do for retest. Archive
                         obsolete or duplicate Tests with a recorded reason.
                         """))
-                .to("tack:act?id=qa-test-planning&toolProfile=" + QualityManagementToolProfile.ID)
-                .to("direct:qa-awareness");
+                .to("tack:act?id=qa-test-planning&toolProfile=" + QualityManagementToolProfile.ID);
 
         from("direct:qa-focus-test-engineering")
                 .routeId("qa-focus-test-engineering")
@@ -117,8 +112,8 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Find Tests using your authenticated user ID and in-progress or to-do filters. Prefer actionable active
                         work. Verify the test label, Epic parent, Gherkin, system repo, and prerequisites before claiming to-do.
-                        Usually the Epic must be in-progress. A done Epic permits a clarified retest after PO rejected a related
-                        Defect and recorded the expected behavior. Use the dedicated status tool and select one Test.
+                        A product-ready to-do or in-progress Epic permits test authoring. A done Epic permits a clarified
+                        retest. Use the dedicated status tool and select one Test.
                         """))
                 .to("tack:act?id=qa-test-work-select&toolProfile=" + QualityManagementToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
@@ -133,9 +128,9 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
                                 Add/improve durable automated system behavior tests when coverage is missing, or execute
                                 existing tests when implementation is ready. Use the selected Test's Epic
                                 Given/When/Then acceptance as the behavioral target, not implementation details. Reuse the
-                                same QA branch/PR when
-                                continuing work. Validate what can actually run and preserve exact pass/fail/limitation
-                                evidence. Do not create repositories.
+                                same QA branch/PR. Use the sandbox and merged source to run local behavior checks, including a
+                                locally started application when useful. Preserve exact execution evidence and separate any
+                                deployed-environment condition that still needs proof.
                                 """))
                         .to("tack:act?id=qa-test-engineering-step&toolProfile=" + QualitySourceControlWriteToolProfile.ID)
                         .setHeader(TackHeaders.PROMPT, constant("""
@@ -180,8 +175,8 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
                         """))
                 .to("tack:act?id=qa-defect-retest-context&toolProfile=" + WorkspaceReadonlyToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        If the selected Defect and merged fix are verified, retest against the integrated system using the system-repo
-                        behavior test when available. Add a focused regression test when the defect exposes missing durable
+                        If the selected Defect and merged fix are verified, retest from the integrated source in the sandbox
+                        when it can reproduce the original conditions. Add a focused regression test when the defect exposes missing durable
                         coverage. When that test change creates or updates a QA PR, preserve the PR as required evidence
                         and do not treat the defect as closable until the regression-test PR is integrated. Preserve exact
                         execution evidence. Do not create a repository or alter product intent.
@@ -189,7 +184,7 @@ public class QualityEngineerRoutine extends RouteBuilder implements RoutineProvi
                 .to("tack:act?id=qa-defect-retest-execution&toolProfile=" + QualitySourceControlWriteToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Does current retest evidence demonstrate that the originally failed behavior is now fixed and the
-                        relevant acceptance behavior passes? Answer yes only for direct current integrated-system evidence,
+                        relevant acceptance behavior passes? Answer yes only for direct evidence from the integrated code,
                         and only when any regression-test PR required by this retest is already merged. An open/unmerged
                         QA regression-test PR means no even if the local test execution passes.
                         """))

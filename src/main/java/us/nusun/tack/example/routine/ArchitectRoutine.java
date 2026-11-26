@@ -52,6 +52,7 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
                         Keep the documented system/component owner/repo pairs, baseline readiness, relevant task/PR locators and blockers.
                         """))
                 .to("tack:thought-enter?name=architect-root&maxTokens=450")
+                .to("direct:architect-repository-architecture")
                 .setProperty("decision.architect-mission-complete.result", constant("no"))
                 .loopDoWhile(exchangeProperty("decision.architect-mission-complete.result").isNotEqualTo("yes"))
                     .to("direct:architect-orientation")
@@ -81,9 +82,9 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:architect-orientation")
                 .routeId("architect-orientation")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Check current repository readiness, open mission PRs and assigned engineering work. Carry forward the verified
-                        repository map and baseline. When unresolved, use mission-anchor search and read the documented map and main.
-                        An unchanged verified baseline is ready. Inspect assigned tasks using your exact Kaneo user ID.
+                        If repository readiness is unknown, use a mission-anchor search and verify the system map and one
+                        component baseline. Once ready, look for open mission PRs and your assigned to-do or in-progress work.
+                        Treat an unchanged verified baseline as ready.
                         """))
                 .to("tack:act?id=architect-orientation&toolProfile=" + WorkspaceReadonlyToolProfile.ID);
 
@@ -95,15 +96,15 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
                 .routeId("architect-repository-architecture")
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Establish or repair the repository architecture independently of Epic decomposition and staffing. Search
-                        the mission anchor in agent-workspace before creating anything. Reuse exact matches and repair incomplete main
-                        baselines. A verified existing baseline needs no write. Create only verified missing repositories.
-                        Baseline one system repo on main with README.md, gitops/, docs/architecture.md and tests/system/.
-                        Document component owner/repo pairs and boundaries. Baseline deployable components on main. Use <anchor>-service for a
-                        runtime service and reserve <anchor>-api for a standalone API contract.
+                        the mission anchor in agent-workspace first. If the documented map and component build files exist
+                        on main, report ready and finish setup. Create only verified missing repositories with
+                        gitea.create_repo and organization agent-workspace. Use the sandbox to build changes you make.
+                        Publish the smallest locally buildable skeleton on main. Use a placeholder entry point and a build
+                        smoke check. Leave Epic behavior and its tests for Stories and QA. In the system repo, document exact
+                        component owner/repo pairs and local build/test commands in docs/architecture.md.
                         """))
                 .to("tack:act?id=architect-repository-step&toolProfile="
-                        + ArchitectSourceControlWriteToolProfile.ID)
-                .to("direct:architect-awareness");
+                        + ArchitectSourceControlWriteToolProfile.ID);
 
         from("direct:architect-focus-reconcile")
                 .routeId("architect-focus-reconcile")
@@ -134,7 +135,7 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
                         Use your authenticated Kaneo user ID to list assigned in-progress and to-do tasks. Verify the story
                         or defect label. Prefer actionable in-progress work. A PR merely waiting for integration belongs in
                         the integration queue. Verify the selected task's Epic relation, acceptance intent, repository and
-                        incoming prerequisites. A Story requires an in-progress Epic. Claim one eligible to-do task using
+                        incoming prerequisites. The parent Epic may be to-do or in-progress. Claim one eligible to-do task using
                         the dedicated status tool.
                         """))
                 .to("tack:act?id=architect-work-select&toolProfile=" + EngineeringWorkToolProfile.ID)
@@ -198,7 +199,8 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
 
                         For each candidate, fresh-read the exact owner/repo/PR and linked Kaneo work needed to verify:
                         intended base, current head/base, mergeability/conflicts, credible validation, acceptance scope,
-                        and absence of a current product/QA blocker. If safe, merge it immediately and continue to the next
+                        and absence of a current product/QA blocker. Local build and focused tests can justify integration.
+                        Pending deployed-environment evidence is separate from PR readiness. If safe, merge it immediately and continue to the next
                         candidate in the same act. If another candidate targets the same repository after a merge, refresh
                         its PR/base state before deciding. QA test-code PRs in the system repository are first-class.
 

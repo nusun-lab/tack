@@ -6,7 +6,6 @@ import us.nusun.tack.example.tool.DeliveryManagementToolProfile;
 import us.nusun.tack.example.tool.ProjectDocumentationToolProfile;
 import us.nusun.tack.example.tool.TeamChatToolProfile;
 import us.nusun.tack.example.tool.WorkspaceCoordinationToolProfile;
-import us.nusun.tack.example.tool.WorkspaceReadonlyToolProfile;
 import us.nusun.tack.framework.persona.PersonaAccounts;
 import us.nusun.tack.framework.routine.RoutineProvider;
 import us.nusun.tack.framework.inference.LlmPassType;
@@ -62,38 +61,28 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         actionable Epic/Story/Defect IDs, PR evidence and the next delivery condition.
                         """))
                 .to("tack:thought-enter?name=pm-root&maxTokens=450")
+                .to("direct:pm-bootstrap")
                 .setProperty("decision.project-manager-mission-complete.result", constant("no"))
                 .loopDoWhile(exchangeProperty("decision.project-manager-mission-complete.result").isNotEqualTo("yes"))
-                    .to("direct:pm-orientation")
+                    .to("direct:pm-planning")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                            Choose the highest-value focus.
-                            - bootstrap: verified missing mission project or channel, or unverified default lifecycle for the mission board.
-                            - onboarding: mission_roster shows an active run whose persona is missing from the channel.
-                            - defect-flow: a validated to-do Defect needs assignment or a merged fix awaits QA retest.
-                            - active-flow: repair delivery ownership or dependencies, or feed an executable queue.
-                            - planning: the documented repository map is ready and a to-do or active Epic needs Story coverage.
+                            Choose the next useful focus after the Story handoff pass.
+                            - bootstrap: the mission project or channel needs repair or bootstrap was incomplete.
+                            - defect-flow: a PO-validated to-do Defect lacks a repair assignee.
+                            - onboarding: active roster changed since the last verified channel reconciliation.
                             - documentation: the system repo exists and project basics need an update.
-                            - coordination: a fresh delivery issue needs PM judgment.
+                            - coordination: a specific inbound question or verified cross-role blocker needs PM judgment.
                             - complete: required Epics are accepted and done and delivery blockers are resolved.
-                            - wait: no action is useful until new evidence or another role's work arrives.
+                            - wait: no action is useful until new evidence or another role's work arrives. Waiting for
+                              the first Epic or repository baseline is normal after bootstrap.
                             Assignment identifies the owner. Only mission_roster establishes staffing. ARCH owns repository setup.
                             """))
-                    .to("tack:decide?id=pm-focus&choices=bootstrap,onboarding,documentation,defect-flow,"
-                            + "active-flow,planning,coordination,complete,wait")
+                    .to("tack:decide?id=pm-focus&choices=bootstrap,defect-flow,onboarding,documentation,"
+                            + "coordination,complete,wait")
                     .toD("direct:pm-focus-${exchangeProperty.decision.pm-focus.result}")
                 .end()
                 .end()
                 .to("tack:thought-exit?name=pm-root");
-
-        from("direct:pm-orientation")
-                .routeId("pm-orientation")
-                .setHeader(TackHeaders.PROMPT, constant("""
-                        Read active coverage from mission_roster. Compare those personas with the channel members
-                        when parity is unknown or either set changed. Record active runs separately from persistent assignees.
-                        Reuse verified default columns and the repository map. Look for actionable Epic coverage, ownership gaps,
-                        validated Defects and planned Stories ready under active Epics. Use per-assignee queue filters where needed.
-                        """ + engineeringIdentities))
-                .to("tack:act?id=pm-orientation&toolProfile=" + WorkspaceReadonlyToolProfile.ID);
 
         from("direct:pm-focus-bootstrap")
                 .routeId("pm-focus-bootstrap")
@@ -102,9 +91,9 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-bootstrap")
                 .routeId("pm-bootstrap")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Reuse or create the private mission project and channel using the mission anchor. Verify default
-                        columns once with list_project_columns. Check access for the active roster and reconcile channel membership.
-                        Send a kickoff with the project locator when the channel is first made usable.
+                        Find the exact mission project and channel by anchor. Reuse existing matches and create any missing
+                        resource. Verify the board once with list_project_columns and onboard verified missing active
+                        teammates. Report exact project and channel locators as soon as both are usable.
                         """))
                 .to("tack:act?id=pm-bootstrap&toolProfile=" + WorkspaceCoordinationToolProfile.ID);
 
@@ -136,61 +125,31 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         Route one unassigned to-do Defect with verified PO validation, Epic relation and repair priority.
                         Assign the persistent DEV identity for component work or ARCH for system, integration, or cross-cutting work.
                         Leave it to-do for the engineer to claim. Deferred planned Defects stay with PO.
-                        When the fix PR is verified merged, leave the Defect in-progress and surface retest evidence to QA.
+                        QA discovers merged fixes from the linked PR. Leave in-progress repairs with their current owners.
                         """ + engineeringIdentities))
-                .to("tack:act?id=pm-defect-flow&toolProfile=" + DeliveryManagementToolProfile.ID)
-                .to("direct:pm-awareness");
-
-        from("direct:pm-focus-active-flow")
-                .routeId("pm-focus-active-flow")
-                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Exact project, Epic/Story/Defect, assignee, relation and PR locators for the current queue changes.
-                        Keep dependency evidence, remaining gaps and their next actionable conditions.
-                        """))
-                .to("tack:thought-enter?name=pm-active-flow-focus&maxTokens=500")
-                .to("direct:pm-flow")
-                .to("tack:thought-exit?name=pm-active-flow-focus")
-                .to("direct:pm-awareness");
+                .to("tack:act?id=pm-defect-flow&toolProfile=" + DeliveryManagementToolProfile.ID);
 
         from("direct:pm-flow")
                 .routeId("pm-flow")
-                .setHeader(TackHeaders.PROMPT, constant("""
-                        Restore delivery across in-progress Epics. Repair Story and validated executable Defect ownership first.
-                        Route Epic ownership gaps to PO and Test ownership gaps to QA. Leave merged Story closure to its engineer.
-                        Use filtered assignment queues to keep roughly 2–3 executable Stories per engineer when available.
-                        Find eligible planned Stories with an in-progress Epic and all incoming prerequisites done.
-                        Assign the persistent engineer identity before promoting to-do. Queue readiness comes from lifecycle,
-                        dependencies and assignment. Reconcile staffing and chat separately.
-                        PR integration waits do not consume coding capacity.
-                        Repair an incorrect or cyclic relation only after verifying its ID, direction and consequences. Preserve
-                        valid dependencies and continue independent work. Archive obsolete Stories with a reason when warranted.
-                        """ + engineeringIdentities))
-                .to("tack:act?id=pm-flow&toolProfile=" + DeliveryManagementToolProfile.ID);
-
-        from("direct:pm-focus-planning")
-                .routeId("pm-focus-planning")
-                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Exact Epic/task/assignee IDs and repository owner/repo pairs for Story coverage and dependencies.
-                        Track what is prepared, executable or awaiting a named prerequisite.
-                        """))
-                .to("tack:thought-enter?name=pm-planning-focus&maxTokens=550")
-                .to("direct:pm-planning")
-                .to("tack:thought-exit?name=pm-planning-focus")
-                .to("direct:pm-awareness");
+                .to("direct:pm-planning");
 
         from("direct:pm-planning")
                 .routeId("pm-planning")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Use the Architect's system and component map to decompose to-do and in-progress PO-owned Epics.
-                        Read the selected Epic's Gherkin and create only missing story-labeled implementation work.
-                        Put engineering verification in the Story description. QA creates separate Test tasks.
-                        Create each Story planned with its story label and one subtask relation from the Epic. Record repository
-                        and implementation intent in its description. Add incoming blocks relations only for real prerequisites.
-                        Verify the graph remains acyclic and repair incorrect relations with evidence.
-                        Children of to-do Epics stay planned. For in-progress Epics, assign eligible Stories and promote to-do
-                        after all prerequisites are done. Aim for 2–3 executable units per engineer when the work supports it.
-                        Use DEV for component implementation and ARCH for system or cross-component work. Assignment uses the
-                        persistent persona even when its AgentRun is absent. PO owns Epics and QA owns Tests.
+                        Inspect the highest-priority PO-owned to-do or in-progress Epic and its existing Story children.
+                        Deliver one executable Story before decomposing the rest. Use the documented repository map.
+                        If either the Epic or repository baseline is still missing, record which owner can provide it and stop.
+                        Resolve the persistent DEV for component work or ARCH for system/cross-component work. Reuse a
+                        usable partial Story and repair an absent or non-engineering assignee, including on a to-do Story.
+                        Otherwise create a planned Story with
+                        that engineer's userId, one exact owner/repo, a small acceptance slice and a local verification target.
+                        Attach story and the Epic subtask relation. With required incoming prerequisites done, promote
+                        the assigned Story to to-do in this act. Verify its owner and status.
+                        A to-do Epic is sufficient for its first executable Story. Feed additional Stories under in-progress Epics.
+                        Keep one next actionable Story per engineer. A PR waiting for merge leaves room for independent work.
+                        AgentRun presence, QA work and chat are independent.
+                        Use blocks only for real prerequisites and repair incorrect relations after verifying direction and impact.
+                        Report changed active roster coverage and any unassigned validated Defect visible during this pass.
                         """ + engineeringIdentities))
                 .to("tack:act?id=pm-planning&toolProfile=" + DeliveryManagementToolProfile.ID);
 

@@ -1,11 +1,13 @@
 package us.nusun.tack.example;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.smallrye.config.EnvConfigSource;
 import io.smallrye.config.PropertiesConfigSource;
 import io.smallrye.config.SmallRyeConfig;
 import io.smallrye.config.SmallRyeConfigBuilder;
 import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.impl.DefaultCamelContext;
+import org.apache.camel.model.LoopDefinition;
 import org.apache.camel.model.SetHeaderDefinition;
 import org.apache.camel.model.ToDefinition;
 import org.junit.jupiter.api.Test;
@@ -146,7 +148,7 @@ class SoftwareTeamKaneoTest {
                 context.addRoutes(routine);
             }
             var routing = Map.of(
-                    "director-focus-staffing", "director-staffing-read&toolProfile=workspace-readonly",
+                    "director-evidence", "director-staffing-read&toolProfile=workspace-readonly",
                     "pm-bootstrap", "pm-bootstrap&toolProfile=workspace-coordination",
                     "pm-focus-onboarding", "pm-onboarding&toolProfile=workspace-coordination",
                     "pm-planning", "pm-planning&toolProfile=delivery-management",
@@ -167,10 +169,24 @@ class SoftwareTeamKaneoTest {
             String root = headers(context, "example-software-team-director", TackHeaders.THOUGHT_PURPOSE);
             assertTrue(root.contains("Preserve verified readiness and exact"));
             assertTrue(root.contains("across synthesis and consolidation"));
-            String staffingPurpose = headers(context, "director-focus-staffing", TackHeaders.THOUGHT_PURPOSE);
-            assertTrue(staffingPurpose.contains("repository architecture"));
-            assertTrue(staffingPurpose.contains("qualifying Epic and PO user IDs"));
-            String staffing = headers(context, "director-focus-staffing", TackHeaders.PROMPT);
+            assertTrue(root.contains("qualifying Epic and PO IDs"));
+            assertTrue(headers(context, "example-software-team-director", TackHeaders.PROMPT)
+                    .contains("PM is always required"));
+            assertTrue(context.getRouteDefinition("example-software-team-director").getOutputs().stream()
+                    .filter(ToDefinition.class::isInstance).map(ToDefinition.class::cast)
+                    .anyMatch(step -> step.getUri().equals("tack:act?id=director-startup-roster&toolProfile=none")));
+            assertTrue(context.getRouteDefinition("example-software-team-project-manager").getOutputs().stream()
+                    .filter(ToDefinition.class::isInstance).map(ToDefinition.class::cast)
+                    .anyMatch(step -> step.getUri().equals("direct:pm-bootstrap")));
+            assertTrue(context.getRouteDefinition("example-software-team-project-manager").getOutputs().stream()
+                    .filter(LoopDefinition.class::isInstance).map(LoopDefinition.class::cast)
+                    .flatMap(loop -> loop.getOutputs().stream())
+                    .filter(ToDefinition.class::isInstance).map(ToDefinition.class::cast)
+                    .anyMatch(step -> step.getUri().equals("direct:pm-planning")));
+            String domainEvidence = headers(context, "director-evidence", TackHeaders.PROMPT);
+            assertTrue(domainEvidence.contains("Report eligible vacancies and unknown gates"));
+            String staffing = (domainEvidence + headers(context, "director-focus-staffing", TackHeaders.PROMPT))
+                    .replaceAll("\\s+", " ");
             for (String rule : List.of("Project Manager is always required", "Product Owner and Architect are required",
                     "component repository", "to-do or in-progress", "attached epic label", "Start all eligible roles in the same batch",
                     "unknown", "capacity remains, agentRuns must include it")) {
@@ -180,16 +196,49 @@ class SoftwareTeamKaneoTest {
             assertTrue(planning.contains("miles@example.test"));
             assertTrue(planning.contains("avery@example.test"));
             assertFalse(planning.contains("miles-test-token"));
+            assertTrue(planning.contains("A to-do Epic is sufficient for its first executable Story"));
+            assertTrue(planning.contains("repair an absent or non-engineering assignee"));
+            assertTrue(planning.contains("that engineer's userId"));
+            assertTrue(planning.indexOf("that engineer's userId") < planning.indexOf("the assigned Story to to-do"));
             String epic = headers(context, "po-epic-definition", TackHeaders.PROMPT);
             assertTrue(epic.contains("as soon as it is product-ready"));
             assertTrue(epic.contains("independently of repositories, Stories, staffing and chat"));
+            assertTrue(epic.contains("once its first assigned Story is to-do, in-progress or done"));
+            assertTrue(epic.contains("In this act, write only Epics"));
             assertTrue(headers(context, "pm-focus-onboarding", TackHeaders.PROMPT)
                     .contains("verified missing active teammates"));
-            assertTrue(headers(context, "architect-repository-architecture", TackHeaders.PROMPT)
-                    .contains("Create only verified missing repositories"));
+            String architecture = headers(context, "architect-repository-architecture", TackHeaders.PROMPT);
+            assertTrue(architecture.contains("Create only verified missing repositories with"));
+            assertTrue(architecture.contains("gitea.create_repo and organization agent-workspace"));
+            assertTrue(architecture.contains("Use a placeholder entry point and a build"));
+            for (String route : List.of("dev-work-selection", "architect-implementation")) {
+                assertTrue(headers(context, route, TackHeaders.PROMPT)
+                        .contains("parent Epic may be to-do or in-progress"), route);
+            }
+            assertTrue(context.getRouteDefinition("example-software-team-application-developer").getOutputs().stream()
+                    .filter(LoopDefinition.class::isInstance).map(LoopDefinition.class::cast)
+                    .flatMap(loop -> loop.getOutputs().stream())
+                    .filter(ToDefinition.class::isInstance).map(ToDefinition.class::cast)
+                    .anyMatch(step -> step.getUri().equals("direct:dev-work-selection")));
             assertTrue(headers(context, "dev-work-selection", TackHeaders.PROMPT).contains("update_task_status"));
+            assertTrue(headers(context, "dev-work-selection", TackHeaders.PROMPT)
+                    .contains("The following source act has shell, Git and PR tools"));
+            assertTrue(headers(context, "dev-implementation-step", TackHeaders.PROMPT).contains("test locally"));
             assertTrue(headers(context, "qa-focus-defect-feedback", TackHeaders.PROMPT).contains("no-priority"));
             assertTrue(headers(context, "po-epic-acceptance", TackHeaders.PROMPT).contains("Archived work does not count as success"));
+        }
+    }
+
+    @Test
+    void directorStaffingSelectsWholeMissionRoutinesWithoutDelegationInstructions() throws Exception {
+        try (var schema = getClass().getResourceAsStream("/schemas/example/software-team/agent-run-requests-schema.json")) {
+            assertNotNull(schema);
+            var run = new ObjectMapper().readTree(schema).at("/properties/agentRuns/items");
+            var properties = run.path("properties");
+            assertEquals(2, properties.size());
+            assertTrue(properties.has("personaId"));
+            assertTrue(properties.has("routineId"));
+            assertFalse(run.path("additionalProperties").asBoolean(true));
         }
     }
 
