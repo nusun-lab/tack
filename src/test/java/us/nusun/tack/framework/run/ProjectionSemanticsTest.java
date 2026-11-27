@@ -167,6 +167,7 @@ class ProjectionSemanticsTest {
 
         manager.recordPrimitiveCompleted(exchange, "DECISION_COMPLETED", "decide", "previous-step", "Older response");
         assertEquals("", store.get(run.id()).current().get("response"));
+        assertTrue(store.get(run.id()).lastCompleted().isEmpty());
         manager.recordPrimitiveCompleted(exchange, "ACT_COMPLETED", "act", "inspect-current-work", "Current response");
         projection = store.get(run.id());
         assertEquals("Current response", projection.current().get("response"));
@@ -176,6 +177,27 @@ class ProjectionSemanticsTest {
         assertTrue(projection.timeline().stream().anyMatch(event -> "ACT_STARTED".equals(event.get("type"))));
         assertEquals("TOOL_PASS_COMPLETED", projection.timeline().getLast().get("type"));
         assertEquals("Current response", projection.current().get("response"));
+
+        LlmJobEnvelope next = FrameworkFixtures.queuedJob(new LlmJobEnvelope(
+                null, "high-pass", LlmPassType.DECISION, "decide:next-work", "Persona A", 0,
+                "Rendered decision prompt", "System prompt", null,
+                Map.of("agentRunId", run.id(), "primitive", "decide", "primitiveId", "next-work",
+                        "primitivePrompt", "Choose the next work item."), null));
+        FrameworkFixtures.restoreJob(exchange, next);
+        manager.recordLlmStarted(exchange);
+
+        assertEquals("next-work", store.get(run.id()).current().get("id"));
+        assertEquals("", store.get(run.id()).current().get("response"));
+        assertEquals(Map.of("primitive", "act", "id", "inspect-current-work", "jobId", job.jobId().toString(),
+                "response", "Current response"), store.get(run.id()).lastCompleted());
+
+        manager.recordPrimitiveCompleted(exchange, "ACT_COMPLETED", "act", "older-work", "Stale response");
+        assertEquals("Current response", store.get(run.id()).lastCompleted().get("response"));
+        exchange.setProperty("latestPrimitiveFailure", "Structured output was malformed");
+        run.status(AgentRun.STATUS_FAILED);
+        manager.record(exchange, "AGENT_RUN_FAILED");
+        assertEquals(Map.of("type", "failure", "summary", "Structured output was malformed"), store.get(run.id()).latestResult());
+        assertEquals("Current response", store.get(run.id()).lastCompleted().get("response"));
     }
 
     @Test

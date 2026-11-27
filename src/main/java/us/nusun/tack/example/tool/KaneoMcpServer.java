@@ -1,0 +1,27 @@
+package us.nusun.tack.example.tool;
+
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+import us.nusun.tack.framework.tool.McpServerDefinition;
+
+@ApplicationScoped
+public class KaneoMcpServer {
+    public static final String ID = "kaneo";
+
+    private final McpServerDefinition definition;
+
+    @Inject
+    public KaneoMcpServer(@ConfigProperty(name = "agent.tool.mcp.kaneo.url", defaultValue = "") String url) {
+        this.definition = McpServerDefinition.builder(ID)
+                .url(url)
+                .transportType("streamableHttp")
+                .authHeaderName("Authorization")
+                .authHeaderValueFormat("Bearer %s")
+                .build();
+    }
+
+    public McpServerDefinition definition() {
+        return definition;
+    }
+}

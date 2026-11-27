@@ -10,7 +10,10 @@ import org.apache.camel.Body;
 import org.apache.camel.Exchange;
 import org.apache.camel.ExchangeProperty;
 import org.apache.camel.ServiceStatus;
+import org.apache.camel.component.kafka.KafkaConstants;
+import org.apache.camel.component.kafka.consumer.KafkaManualCommit;
 import org.apache.camel.component.langchain4j.agent.api.AiAgentBody;
+import org.jboss.logging.Logger;
 import us.nusun.tack.framework.logging.LogTokens;
 import us.nusun.tack.framework.run.AgentRunProjectionManager;
 
@@ -18,6 +21,7 @@ import java.time.Instant;
 
 @ApplicationScoped
 public class LlmRouteSupport {
+    private static final Logger LOG = Logger.getLogger(LlmRouteSupport.class);
     private static final String REGISTERED = "llmReplyRegistered";
 
     public static final class LlmAvailabilityException extends RuntimeException {
@@ -47,7 +51,8 @@ public class LlmRouteSupport {
     }
 
     public void registerReply(Exchange exchange) {
-        inFlightReplyManager.register(LlmExecutionContext.require(exchange).jobId());
+        var invocation = LlmExecutionContext.require(exchange);
+        inFlightReplyManager.register(invocation.jobId(), invocation.agentRunId());
         exchange.setProperty(REGISTERED, true);
     }
 
@@ -58,14 +63,61 @@ public class LlmRouteSupport {
     }
 
     public LlmJobResult awaitReply(Exchange exchange) throws Exception {
-        long timeoutMs = Long.parseLong(exchange.getContext().resolvePropertyPlaceholders("{{llm.reply-timeout-ms:300000}}"));
+        long timeoutMs = Long.parseLong(exchange.getContext().resolvePropertyPlaceholders("{{llm.reply-timeout-ms:900000}}"));
+        var invocation = LlmExecutionContext.require(exchange);
         try {
             exchange.removeProperty(REGISTERED);
-            return inFlightReplyManager.await(LlmExecutionContext.require(exchange).jobId(), timeoutMs);
+            return inFlightReplyManager.await(invocation.jobId(), timeoutMs);
         } catch (Exception failure) {
+            if (failure instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             throw new LlmAvailabilityException("LLM reply failure: " + deadLetterFactory.contextSummary(exchange)
-                    + " reason=" + failure.getMessage(), failure);
+                    + " reason=" + firstNonBlank(failure.getMessage(), failure.getClass().getSimpleName()), failure);
         }
+    }
+
+    public void commitWorkerRequest(Exchange exchange) {
+        var commit = exchange.getMessage().getHeader(KafkaConstants.MANUAL_COMMIT, KafkaManualCommit.class);
+        try {
+            if (commit == null) {
+                throw new IllegalStateException("Kafka worker requires a synchronous offset commit");
+            }
+            // Commit while this consumer still owns the partition, before entering the side-effecting tool loop.
+            commit.commit();
+        } catch (RuntimeException failure) {
+            LOG.warnf(failure, "LLM execution rejected: %s reason=offset commit failed", workerContext(exchange));
+            throw failure;
+        }
+    }
+
+    public boolean claimWorkerJob(Exchange exchange) {
+        var job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
+        if (!inFlightReplyManager.claim(job.jobId())) {
+            LOG.warnf("LLM execution rejected: %s reason=duplicate or no waiting owner", workerContext(exchange));
+            return false;
+        }
+        LOG.infof("LLM execution started: %s", workerContext(exchange));
+        return true;
+    }
+
+    public void completeWorkerJob(Exchange exchange) {
+        var body = exchange.getMessage().getBody();
+        LlmJobResult result = body instanceof LlmJobResult completed ? completed : deadLetterFactory.failedLlmResult(exchange);
+        exchange.getMessage().setBody(result);
+        inFlightReplyManager.complete(result);
+        if (result.status() == LlmJobStatus.FAILED) {
+            LOG.warnf("LLM execution failed: %s reason=%s", workerContext(exchange), result.error());
+        } else {
+            LOG.infof("LLM execution completed: %s", workerContext(exchange));
+        }
+    }
+
+    private String workerContext(Exchange exchange) {
+        return deadLetterFactory.contextSummary(exchange)
+                + " topic=" + header(exchange, KafkaConstants.TOPIC)
+                + " partition=" + header(exchange, KafkaConstants.PARTITION)
+                + " offset=" + header(exchange, KafkaConstants.OFFSET);
     }
 
     public AiAgentBody<?> agentBody(@ExchangeProperty("llmJob") LlmJobEnvelope job) {
@@ -132,10 +184,7 @@ public class LlmRouteSupport {
 
     public void verifySelectedRoutesAvailable(Exchange exchange) {
         String routeSuffix = routeSuffix(LlmExecutionContext.require(exchange).laneId());
-        if (localWorkerRouteVerificationEnabled(exchange)) {
-            verifyRouteStarted(exchange, "llm-worker-" + routeSuffix);
-        }
-        verifyRouteStarted(exchange, "llm-response-consumer-" + routeSuffix);
+        verifyRouteStarted(exchange, "llm-worker-" + routeSuffix);
     }
 
     public static String routeSuffix(String laneId) {
@@ -148,10 +197,6 @@ public class LlmRouteSupport {
             throw new LlmAvailabilityException("LLM route '" + routeId + "' is not running. Refusing to queue request: "
                     + deadLetterFactory.contextSummary(exchange) + " reason=route status is " + status);
         }
-    }
-
-    private boolean localWorkerRouteVerificationEnabled(Exchange exchange) {
-        return Boolean.parseBoolean(exchange.getContext().resolvePropertyPlaceholders("{{llm.local-worker-route-verification.enabled:true}}"));
     }
 
     private static String agentResponseContext(Exchange exchange) {

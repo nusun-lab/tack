@@ -99,7 +99,7 @@ public class AgentRunProjectionManager {
                                            String lane, ProjectionEvent event) {
         return new AgentRunProjection(previous.agentRunId(), previous.missionId(), previous.parentAgentRunId(),
                 previous.status(), previous.mission(), previous.persona(), previous.routine(), previous.subroutine(),
-                previous.input(), current, profile, lane, previous.thoughtStack(), thoughtHistory(previous, event),
+                previous.input(), current, previous.lastCompleted(), profile, lane, previous.thoughtStack(), thoughtHistory(previous, event),
                 previous.latestResult(), timeline(previous, event), Instant.now());
     }
 
@@ -139,24 +139,25 @@ public class AgentRunProjectionManager {
             routine = previous.routine();
             subroutine = previous.subroutine();
         }
+        Map<String, Object> current = previous == null ? Map.of() : previous.current();
+        Map<String, Object> lastCompleted = previous == null ? Map.of() : previous.lastCompleted();
+        if (response != null && !current.isEmpty() && Objects.equals(current.get("primitive"), event.primitive())
+                && Objects.equals(current.get("id"), event.id())) {
+            var completed = new LinkedHashMap<>(current);
+            completed.put("response", response);
+            current = Map.copyOf(completed);
+            if (!response.isBlank()) {
+                completed.remove("request");
+                lastCompleted = Map.copyOf(completed);
+            }
+        }
         return new AgentRunProjection(run.id(), run.missionId(), run.parentAgentRunId(), run.status(),
                 missionSummary(mission, run.missionId()), persona, routine, subroutine, run.input(),
-                current(previous, event, response),
+                current, lastCompleted,
                 firstNonBlank(previous == null ? null : previous.toolProfile(), profile),
                 firstNonBlank(previous == null ? null : previous.laneId(), lane),
                 stack == null ? List.of() : stack.frames(), thoughtHistory(previous, event), latest(failure, run),
                 timeline(previous, event), Instant.now());
-    }
-
-    private static Map<String, Object> current(AgentRunProjection previous, ProjectionEvent event, String response) {
-        Map<String, Object> current = previous == null ? Map.of() : previous.current();
-        if (response == null || !Objects.equals(current.get("primitive"), event.primitive())
-                || !Objects.equals(current.get("id"), event.id())) {
-            return current;
-        }
-        var completed = new LinkedHashMap<>(current);
-        completed.put("response", response);
-        return Map.copyOf(completed);
     }
 
     private static Map<String, Object> missionSummary(Mission mission, String missionId) {

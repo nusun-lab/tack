@@ -90,20 +90,15 @@ The current request/reply implementation assumes one active orchestrator instanc
 
 The bundled software-team example is deliberately outside framework core, but it documents one concrete way to keep tool authority understandable.
 
-Plane owns projects, planned work, assignments, status, dependencies, priorities, blockers, and delivery planning. Gitea owns remote repository state and review metadata. Mattermost owns conversation, questions, handoffs, and concise notifications. OpenShell is the local execution boundary for repository content work.
+Kaneo owns projects, planned work, assignments, status, dependencies, priorities, blockers, and delivery planning. Gitea owns remote repository state and review metadata. Mattermost owns conversation, questions, handoffs, and concise notifications. OpenShell is the local execution boundary for repository content work.
 
 The software-team example declares separate profiles for workspace observation, coordination,
 delivery, product ownership, QA, source changes, integration, and team chat. The
 [example profile table](../README.md#example-tool-profiles) lists the current IDs and ownership.
-Repository-writing profiles share their sandbox and Gitea grants. Plane work profiles share
-classification and query guidance. The read-only workspace profile advertises and enforces an
-explicit list of Plane actions for each resource tool. Omitted actions require a profile-owned
-default. Tack applies defaults and checks the effective values before dispatch.
-
-Architect owns the non-empty repository baseline on main. Developers report missing baselines
-to Architect and start task branches from an established baseline. Project managers record
-verified dependency cycles and continue unrelated executable work. Plane CE supports reading
-and creating built-in relations, so the routine does not attempt relation deletion.
+Repository-writing profiles share sandbox and Gitea guidance. Kaneo profiles grant exact native tool
+names per responsibility. Workspace observation and the Kaneo side of integration expose read tools only.
+Architect owns the non-empty baseline on main. PM can repair a verified dependency relation by ID using
+Kaneo's native relation deletion, then verify the corrected graph.
 
 ## Runtime boundaries
 
@@ -132,8 +127,6 @@ and creating built-in relations, so the routine does not attempt relation deleti
   connection on first discovery, checks tool grants at dispatch, and passes through the
   native schema, arguments and result content. The persona execution log includes an
   abbreviated preview of the response.
-- The example checks read-only Plane actions before dispatch from workspace observation
-  and integration profiles. Plane supplies its native schemas, including PQL.
 
 ## Near-term decisions
 

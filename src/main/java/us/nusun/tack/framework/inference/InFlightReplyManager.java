@@ -1,55 +1,111 @@
 package us.nusun.tack.framework.inference;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Named;
+import org.jboss.logging.Logger;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 @ApplicationScoped
-@Named("inFlightReplyManager")
 public class InFlightReplyManager {
-    private final ConcurrentMap<UUID, CompletableFuture<LlmJobResult>> replies = new ConcurrentHashMap<>();
+    private static final Logger LOG = Logger.getLogger(InFlightReplyManager.class);
+    private final Map<UUID, Pending> replies = new HashMap<>();
 
     void register(UUID jobId) {
-        CompletableFuture<LlmJobResult> previous = replies.putIfAbsent(jobId, new CompletableFuture<>());
-        if (previous != null) {
+        register(jobId, null);
+    }
+
+    synchronized void register(UUID jobId, String agentRunId) {
+        if (replies.containsKey(jobId)) {
             throw new IllegalStateException("Duplicate in-flight jobId " + jobId);
         }
+        if (agentRunId != null && replies.values().stream().anyMatch(reply -> agentRunId.equals(reply.agentRunId))) {
+            throw new IllegalStateException("AgentRun already has an in-flight LLM job: " + agentRunId);
+        }
+        replies.put(jobId, new Pending(agentRunId));
+    }
+
+    synchronized boolean claim(UUID jobId) {
+        Pending pending = replies.get(jobId);
+        if (pending == null || pending.claimed || pending.result.isDone()) {
+            return false;
+        }
+        pending.claimed = true;
+        return true;
     }
 
     public LlmJobResult await(UUID jobId, long timeoutMs) throws Exception {
-        CompletableFuture<LlmJobResult> future = replies.get(jobId);
-        if (future == null) {
+        Pending pending = pending(jobId);
+        if (pending == null) {
             throw new IllegalStateException("No in-flight reply registered for " + jobId);
         }
         try {
-            return future.get(timeoutMs, TimeUnit.MILLISECONDS);
+            return pending.result.get(timeoutMs, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
-            throw new IllegalStateException("Timed out waiting for LLM reply for " + jobId + " after " + timeoutMs + "ms", e);
+            if (withdrawIfUnclaimed(jobId, pending)) {
+                throw new IllegalStateException("Timed out waiting for LLM reply for " + jobId + " after " + timeoutMs
+                        + "ms. The unclaimed request was withdrawn.", e);
+            }
+            LOG.warnf("LLM wait threshold exceeded; waiting for active execution to finish: jobId=%s agentRunId=%s waitMs=%d",
+                    jobId, pending.agentRunId, timeoutMs);
+            return pending.result.get();
         } finally {
-            replies.remove(jobId);
+            release(jobId, pending);
         }
     }
 
     public void discard(UUID jobId) {
-        if (jobId != null) {
-            replies.remove(jobId);
+        Pending pending = pending(jobId);
+        if (pending != null) {
+            release(jobId, pending);
         }
     }
 
-    int inFlightCount() {
+    synchronized int inFlightCount() {
         return replies.size();
     }
 
     public void complete(LlmJobResult result) {
-        CompletableFuture<LlmJobResult> future = replies.get(result.jobId());
-        if (future != null) {
-            future.complete(result);
+        Pending pending = pending(result.jobId());
+        if (pending != null) {
+            pending.result.complete(result);
+        }
+    }
+
+    private synchronized Pending pending(UUID jobId) {
+        return replies.get(jobId);
+    }
+
+    private synchronized boolean withdrawIfUnclaimed(UUID jobId, Pending pending) {
+        if (pending.claimed) {
+            return false;
+        }
+        replies.remove(jobId, pending);
+        return true;
+    }
+
+    private void release(UUID jobId, Pending pending) {
+        if (withdrawIfUnclaimed(jobId, pending)) {
+            return;
+        }
+        // An interruption or ambiguous publish failure cannot release a live tool pass.
+        pending.result.join();
+        synchronized (this) {
+            replies.remove(jobId, pending);
+        }
+    }
+
+    private static final class Pending {
+        private final String agentRunId;
+        private final CompletableFuture<LlmJobResult> result = new CompletableFuture<>();
+        private boolean claimed;
+
+        private Pending(String agentRunId) {
+            this.agentRunId = agentRunId;
         }
     }
 }

@@ -8,8 +8,7 @@
         "type": "object",
         "properties": {
           "personaId": { "type": "string" },
-          "routineId": { "type": "string" },
-          "input": { "type": "object" }
+          "routineId": { "type": "string" }
         },
         "required": ["personaId", "routineId"],
         "additionalProperties": false

@@ -27,7 +27,7 @@ public final class MissionRosterTool {
             String view,
             @P(value = "Optional exact persona id filter", required = false) String personaId,
             @P(value = "Optional exact routine id filter", required = false) String routineId,
-            @P(value = "Optional comma-separated platform filter such as mattermost,plane,gitea", required = false)
+            @P(value = "Optional comma-separated platform filter such as mattermost,gitea", required = false)
             String platforms) {
         return roster.rosterView(missionId, scope, view, personaId, routineId, platforms, capacityMaximum);
     }
