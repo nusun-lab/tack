@@ -321,6 +321,8 @@
       const routine = obj(p.routine);
       const subroutine = obj(p.subroutine);
       const current = obj(p.current);
+      const lastCompleted = obj(p.lastCompleted);
+      const failure = obj(p.latestResult);
       const thoughts = arr(p.thoughtStack);
       const fullTimeline = arr(p.timeline);
       const timeline = fullTimeline.slice(-TIMELINE_LIMIT);
@@ -334,6 +336,10 @@
         </div>
         <div class="agent-run-detail-layout">
           <div class="stack">
+            ${p.status === 'failed' ? `<div class="step-panel">
+              <h4>Failure</h4>
+              <pre>${esc(failure.type === 'failure' && failure.summary ? failure.summary : 'No failure details were recorded.')}</pre>
+            </div>` : ''}
             <div class="step-panel">
               <h4>Request</h4>
               <div class="row"><span class="pill subtle mono">${esc(current.primitive || '(none)')}</span><span class="pill subtle mono">${esc(current.id || '(no step id)')}</span></div>
@@ -341,7 +347,10 @@
             </div>
             <div class="step-panel">
               <h4>Response</h4>
-              ${current.response ? `<pre>${esc(current.response)}</pre>` : '<pre></pre>'}
+              ${current.response ? `<pre>${esc(current.response)}</pre>` : `
+                <div class="empty">${current.request && p.status === 'running' ? 'Awaiting response.' : 'No response for this request.'}</div>
+                ${lastCompleted.response ? `<h4>Last completed step ${esc(lastCompleted.id || '')}</h4><pre>${esc(lastCompleted.response)}</pre>` : ''}
+              `}
             </div>
             <div class="step-panel">
               <h4>Timeline <span class="muted">last ${timeline.length}${fullTimeline.length > timeline.length ? ` of ${fullTimeline.length}` : ''}</span></h4>
@@ -548,8 +557,17 @@
       });
     }
 
-    refresh();
-    setInterval(refresh, 3000);
+    async function pollWorkspace() {
+      try {
+        await refresh();
+      } catch (error) {
+        console.warn('Workspace refresh failed', error);
+      } finally {
+        setTimeout(pollWorkspace, 3000);
+      }
+    }
+
+    pollWorkspace();
   </script>
 </body>
 </html>

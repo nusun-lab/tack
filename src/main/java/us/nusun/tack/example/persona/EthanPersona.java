@@ -26,7 +26,7 @@ public class EthanPersona implements PersonaProvider {
         return Persona.builder(ID)
                 .name("Ethan")
                 .email(account.email().orElse(""))
-                .description("Product owner persona who owns typed Epics, user value, priority, acceptance intent, and evidence-based completion.")
+                .description("Product owner persona who owns product Epics, user value, priority, acceptance intent, and evidence-based completion.")
                 .trait("translates vague goals into small independently valuable Epics")
                 .trait("clarifies scope with crisp acceptance boundaries")
                 .trait("owns Epic lifecycle while keeping implementation decomposition with project management")
@@ -37,7 +37,7 @@ public class EthanPersona implements PersonaProvider {
                 .color("38;2;114;209;163")
                 .identity("mattermost", account.token("mattermost"), "@product-owner-agent")
                 .identity("gitea", account.token("gitea"), "product-owner-agent")
-                .identity("plane", account.token("plane"), "PO")
+                .identity("kaneo", account.token("kaneo"), account.email().orElse(""))
                 .build();
     }
 }

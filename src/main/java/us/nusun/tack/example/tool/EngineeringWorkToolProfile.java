@@ -11,32 +11,35 @@ import java.util.List;
 public class EngineeringWorkToolProfile implements ToolProfileProvider {
     public static final String ID = "engineering-work";
 
-    private final PlaneMcpServer plane;
+    private final KaneoMcpServer kaneo;
+    private final GiteaMcpServer gitea;
 
     @Inject
     public EngineeringWorkToolProfile(
-            PlaneMcpServer plane) {
-        this.plane = plane;
+            KaneoMcpServer kaneo, GiteaMcpServer gitea) {
+        this.kaneo = kaneo;
+        this.gitea = gitea;
     }
 
     @Override
     public List<ToolProfile> toolProfiles() {
         return List.of(ToolProfile.builder(ID)
-                .mcpServer(plane.definition())
-                .allowTools(PlaneMcpServer.ID,
-                        "project", "member", "workitem", "workitem_activity", "workitem_comment", "label", "state")
-                .promptGuidance("""
-                        - this profile updates already-created engineering work; the calling routine owns selection,
-                          lifecycle policy, and completion criteria
-                        - use only these Plane actions here: project=list/retrieve; member=me;
-                          workitem=list/retrieve/retrieve_by_identifier/search/update; workitem_activity=list;
-                          workitem_comment=list/retrieve/create/update; label=list; state=list
-                        - before any lifecycle mutation, verify the selected item's attached labels and current assignees
-                        - never infer classification or ownership from title, wording, comments, or surrounding context
-                        - comments are evidence/context, not hidden lifecycle states
-                        - do not create work items, labels, projects, test tasks, or defects in this profile
-
-                        """ + PlaneWorkGuidance.CLASSIFICATION + "\n" + PlaneWorkGuidance.QUERIES)
+                .mcpServer(kaneo.definition())
+                .mcpServer(gitea.definition())
+                .allowTools(KaneoMcpServer.ID,
+                        "whoami",
+                        "list_workspaces",
+                        "list_projects",
+                        "list_tasks",
+                        "get_task",
+                        "get_task_by_ticket_id",
+                        "get_task_relations",
+                        "list_task_comments",
+                        "update_task_status",
+                        "create_task_comment")
+                .allowTools(GiteaMcpServer.ID, "search_repos", "list_pull_requests", "pull_request_read")
+                .promptGuidance(KaneoWorkGuidance.PROJECT + KaneoWorkGuidance.TASKS + KaneoWorkGuidance.LIFECYCLE
+                        + RepositoryWritingGuidance.DISCOVERY)
                 .build());
     }
 }

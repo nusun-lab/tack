@@ -36,7 +36,7 @@ public class MilesPersona implements PersonaProvider {
                 .color("38;2;106;169;255")
                 .identity("mattermost", account.token("mattermost"), "@app-developer-agent")
                 .identity("gitea", account.token("gitea"), "application-developer-agent")
-                .identity("plane", account.token("plane"), "Dev")
+                .identity("kaneo", account.token("kaneo"), account.email().orElse(""))
                 .build();
     }
 }

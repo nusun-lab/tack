@@ -7,6 +7,7 @@ import us.nusun.tack.example.tool.ProjectDocumentationToolProfile;
 import us.nusun.tack.example.tool.TeamChatToolProfile;
 import us.nusun.tack.example.tool.WorkspaceCoordinationToolProfile;
 import us.nusun.tack.example.tool.WorkspaceReadonlyToolProfile;
+import us.nusun.tack.framework.persona.PersonaAccounts;
 import us.nusun.tack.framework.routine.RoutineProvider;
 import us.nusun.tack.framework.inference.LlmPassType;
 import us.nusun.tack.framework.routine.RoutineDefinition;
@@ -21,6 +22,18 @@ import static org.apache.camel.builder.PredicateBuilder.or;
 public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvider {
     public static final String ID = "software-team/project-manager";
 
+    private final String engineeringIdentities;
+
+    public ProjectManagerRoutine(PersonaAccounts accounts) {
+        engineeringIdentities = """
+
+                Resolve persistent engineers by exact Kaneo account email, then use their returned user IDs.
+                DEV uses %s and ARCH uses %s.
+                An unconfigured or unmatched email is a provisioning blocker.
+                """.formatted(accounts.accounts().get("miles").email().orElse("unconfigured"),
+                accounts.accounts().get("avery").email().orElse("unconfigured"));
+    }
+
     @Override
     public List<RoutineDefinition> routines() {
         return List.of(routine());
@@ -32,10 +45,10 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                 .main("Manage delivery flow, synchronization, and ready-work buffers across the team.",
                         "direct:example-software-team-project-manager")
                 .subroutine("bootstrap", "Establish shared coordination basics.", "direct:pm-bootstrap")
-                .subroutine("planning", "Prepare active and ready Epics into executable Story work.", "direct:pm-planning")
+                .subroutine("planning", "Prepare active and ready Epics into executable Story work.", "direct:pm-focus-planning")
                 .subroutine("documentation", "Keep canonical project basics current in the system repository.",
                         "direct:pm-project-basics")
-                .subroutine("flow", "Synchronize active delivery, defects, and handoffs.", "direct:pm-flow")
+                .subroutine("flow", "Synchronize active delivery, defects, and handoffs.", "direct:pm-focus-active-flow")
                 .defaultLane("high-pass")
                 .withLaneBinding(LlmPassType.SYNTHESIS, "low-pass")
                 .withLaneBinding(LlmPassType.CONSOLIDATION, "low-pass")
@@ -47,51 +60,29 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:example-software-team-project-manager")
                 .routeId("example-software-team-project-manager")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Durable flow anchors: Plane project, shared team channel, active roster, verified access parity,
-                        system repo and canonical project-basics documentation, active/ready epic sets,
+                        Durable flow anchors: exact Kaneo workspace and mission project IDs/slug, default lifecycle, Mattermost
+                        team/channel IDs and active-roster parity, Gitea system/component owner/repo pairs and project-basics, active/ready Epics,
                         implementation/test queues, defects, dependencies, PR consequences, blockers, and handoffs. PM's
-                        primary operational responsibility is keeping Plane coherent, assigned, and executable.
+                        primary responsibility is keeping delivery work coherent, assigned, and executable.
                         """))
                 .to("tack:thought-enter?name=pm-root&maxTokens=450")
                 .setProperty("decision.project-manager-mission-complete.result", constant("no"))
                 .loopDoWhile(exchangeProperty("decision.project-manager-mission-complete.result").isNotEqualTo("yes"))
                     .to("direct:pm-orientation")
                     .setHeader(TackHeaders.PROMPT, constant("""
-                            Choose exactly one highest-value Project Manager focus.
-                            - bootstrap: shared Plane project, canonical lifecycle states, or team-channel basics are
-                              missing.
-                            - onboarding: any current active roster identity is missing from the Plane project or the
-                              shared mission channel, or either membership set cannot be verified against the active roster.
-                              This is the highest-priority focus and takes precedence over bootstrap follow-up, delivery,
-                              planning, documentation, defect flow, and coordination.
-                            - defect-flow: a PO-validated Todo defect needs repair assignment, or an In Progress
-                              Defect with a merged fix needs QA awareness for retest.
-                            - active-flow: any verified non-Backlog work item lacks an appropriate owner; or an active
-                              DEV/ARCH has queue capacity and a dependency-satisfied Backlog story is
-                              available; or dependency repair, a cyclic Story dependency graph, obsolete Story cleanup,
-                              stale assignment, engineer-owned Story completion awareness, blocker routing, QA handoff, or
-                              another active-Epic synchronization issue is actionable.
-                              Ownership repair outranks filling additional queue capacity. Capacity is per engineer:
-                              ARCH work never
-                              consumes DEV capacity, and DEV work never consumes ARCH capacity. Feeding existing executable
-                              work outranks creating more Backlog.
-                            - planning: repository architecture is established and any In Progress or Todo Epic lacks the
-                              reasonable story/dependency set needed to keep active delivery supplied
-                              and ready product work pre-decomposed. Planning spans all active and ready Epics. If the
-                              repository map is not established, route that architecture dependency instead of inventing
-                              implementation topology.
-                            - documentation: Architect has established the system repository and docs/project-basics.md is
-                              missing or materially stale for mission, Plane project, shared channel, repo map, or roles.
-                            - coordination: a fresh delivery question needs PM participation.
-                            - complete: every required Epic is terminal, no Story/defect/test delivery remains active,
-                              and no PM synchronization/reconciliation blocker remains.
-                            - wait: the mission is not complete, onboarding is healthy, no dependency/state/assignment
-                              repair is pending, every delivery role has a healthy executable runway or no legitimate
-                              candidate exists across any In Progress Epic, ready Todo Epics are sufficiently decomposed,
-                              and none of the other focuses is useful now.
-                            After onboarding, durable Plane delivery mutations outrank documentation, coordination, and
-                            waiting. Keep active delivery shallow while preparing enough work ahead of execution.
-                            Choose exactly one value.
+                            Choose the highest-value focus for the current mission.
+                            - bootstrap: the Kaneo project, default lifecycle verification, or shared channel is missing.
+                            - onboarding: a verified gap in current active-roster channel membership.
+                            - defect-flow: an unassigned PO-validated to-do Defect needs routing, or new merged-fix evidence helps QA.
+                            - active-flow: repair a verified ownership or dependency issue, seed the first executable Story under a
+                              to-do Epic where delivery has yet to start, or replenish an engineer's queue. Count DEV and ARCH separately.
+                            - planning: the repository map is established and a to-do or in-progress Epic lacks Story coverage or
+                              needs a dedicated technical investigation before its dependencies can be planned.
+                            - documentation: system-repo docs/project-basics.md is missing or stale.
+                            - coordination: a fresh delivery question needs PM judgment.
+                            - complete: every required Epic is accepted and done and no delivery or coordination blocker remains.
+                            - wait: none of the other actions is useful now. Name a missing Kaneo workspace grant as a provisioning blocker.
+                            Prioritize verified onboarding gaps, defect routing, then existing executable work before more planning.
                             """))
                     .to("tack:decide?id=pm-focus&choices=bootstrap,onboarding,documentation,defect-flow,"
                             + "active-flow,planning,coordination,complete,wait")
@@ -103,30 +94,15 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-orientation")
                 .routeId("pm-orientation")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Read the smallest current-mission slice needed to rank PM focus. Reuse verified project, lifecycle
-                        state, label, repository, and channel anchors already in thought instead of rediscovering them.
-                        First, directly observe onboarding
-                        status from current state: read the authoritative active roster, actual Plane project membership,
-                        and actual shared mission-channel membership. Compare the active identities against both membership
-                        sets and explicitly report whether they are in sync, plus every missing active identity in either
-                        system. Resolve current-roster Plane/Mattermost identities only when needed for that comparison.
-                        Do not use prior thought or a previously reconciled roster to establish onboarding status.
-                        A current active teammate is operationally onboarded only when present in both current membership
-                        sets. This onboarding observation is mandatory before ranking any other focus.
-                        Also capture whether Plane has the canonical lifecycle states Backlog, Todo, In Progress, Done,
-                        and Cancelled. Missing canonical states make bootstrap incomplete. Once onboarding is healthy,
-                        treat Plane delivery health as the primary observation: repository/component readiness; current
-                        docs/project-basics.md; all epic items currently In Progress plus the ready Todo Epic set and
-                        their PO-authored Given/When/Then acceptance; relevant story children;
-                        test children; defect items; Story coverage, assignments,
-                        lifecycle, and dependencies. Explicitly report every Todo/In Progress/Done/Cancelled item with no
-                        assignee or an assignee inconsistent with verified classification. For each DEV/ARCH delivery
-                        identity, report assigned In Progress count, assigned Todo count, and up to three
-                        dependency-satisfied Backlog Story candidates beneath In Progress Epics. Linked PR state only when
-                        needed; one blocker/handoff;
-                        and one fresh exchange from the shared mission channel. Do not use unrelated or long-lived DM
-                        history as mission evidence. PO owns epic lifecycle; QA owns test lifecycle. Report only.
-                        """))
+                        Reuse verified mission locators. First compare the active mission roster with fresh shared-channel membership.
+                        Verify persistent Kaneo workspace identities by exact configured email when unresolved. Report missing access as
+                        a provisioning blocker. Check project, native lifecycle and channel readiness.
+                        Then assess the documented repository map, docs/project-basics.md, and to-do and in-progress Epic coverage.
+                        Filter assigned to-do and in-progress separately for DEV and ARCH. Check in-review for changed PR outcomes,
+                        outside both queue and coding counts. Identify assignment gaps, validated Defects, and the best eligible
+                        planned Story candidates under in-progress Epics or a to-do Epic where delivery has yet to start.
+                        Inspect dependencies and PRs only for candidates that matter. Report facts and unresolved evidence.
+                        """ + engineeringIdentities))
                 .to("tack:act?id=pm-orientation&toolProfile=" + WorkspaceReadonlyToolProfile.ID);
 
         from("direct:pm-focus-bootstrap")
@@ -135,32 +111,27 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
 
         from("direct:pm-bootstrap")
                 .routeId("pm-bootstrap")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant(
+                        "Exact Kaneo workspace/project IDs and slug, lifecycle columns, Mattermost team/channel IDs, roster parity and provisioning gaps."))
+                .to("tack:thought-enter?name=pm-bootstrap-focus&maxTokens=400")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Establish only the shared coordination foundation: one mission Plane project, its canonical
-                        lifecycle states, and one private current-mission team channel. Reuse matching artifacts and never
-                        create duplicates. After resolving the mission project, list its states and ensure Backlog, Todo,
-                        In Progress, Done, and Cancelled exist. Create only missing states with the matching lifecycle
-                        groups: Backlog=backlog, Todo=unstarted, In Progress=started, Done=completed,
-                        Cancelled=cancelled. Re-read states and verify all five before bootstrap is complete.
-                        Reconcile every current-roster identity into both Plane project and shared channel, then verify
-                        both membership sets before treating bootstrap/onboarding as complete. Once the shared channel is usable,
-                        post one concise kickoff message there identifying the Plane project and telling current teammates
-                        the workspace is ready. Do not create source/docs repositories. Architect owns system and component
-                        repository provisioning.
+                        Reuse or create one private mission project in Tack Software Team and one private Mattermost mission channel.
+                        Use the unique mission anchor in both names. Verify default columns include to-do, in-progress,
+                        in-review and done. Planned and archived are native virtual buckets. Keep the defaults.
+                        Verify Kaneo membership by exact persona email and report any missing workspace access as a platform
+                        provisioning blocker. Reconcile the channel with the current active roster and verify access.
+                        Post a concise kickoff with the Kaneo project locator when first making the channel usable.
+                        Architect owns repository setup.
                         """))
                 .to("tack:act?id=pm-bootstrap&toolProfile=" + WorkspaceCoordinationToolProfile.ID)
-                .to("direct:pm-awareness");
+                .to("direct:pm-awareness")
+                .to("tack:thought-exit?name=pm-bootstrap-focus");
 
         from("direct:pm-focus-onboarding")
                 .routeId("pm-focus-onboarding")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Compare the authoritative current mission roster with actual Plane project and team-channel
-                        membership. Add only resolved current-roster identities that are missing. Use the existing private
-                        current-mission team channel for Mattermost access; do not substitute a direct channel for missing
-                        mission-channel membership. Re-read both membership sets after additions and claim completion only
-                        when every current active identity is verified in both. Team onboarding is a recurring PM
-                        responsibility whenever the roster changes. Do not infer access from roster presence and do not
-                        manage repository architecture.
+                        Reconcile the current active mission roster with fresh Mattermost channel membership. Add only resolved
+                        missing teammates and verify the result. Reuse the shared channel as the roster changes.
                         """))
                 .to("tack:act?id=pm-onboarding&toolProfile=" + WorkspaceCoordinationToolProfile.ID)
                 .to("direct:pm-awareness");
@@ -171,44 +142,40 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
 
         from("direct:pm-project-basics")
                 .routeId("pm-project-basics")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant(
+                        "Exact system repository, mission project and channel locators, project-basics changes and docs PR."))
+                .to("tack:thought-enter?name=pm-project-basics-focus&maxTokens=400")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Visit the Architect-established system repository documentation before writing. Read the current
-                        README and relevant docs, especially docs/architecture.md and any existing docs/project-basics.md.
-                        Create or update only docs/project-basics.md as compact canonical navigation for the mission:
-                        mission purpose/anchor, Plane project, shared Mattermost channel, system/component repository map,
-                        role responsibilities, and stable delivery conventions teammates need to find the work. Use exact
-                        verified identifiers/links when available. Keep transient status, WIP, and speculative plans out.
-                        Do not provision repositories, change architecture, edit component source, or duplicate durable
-                        Plane state. Reuse an existing documentation branch/PR when present; otherwise create one concise
-                        documentation PR for Architect integration.
+                        Read the system README and architecture docs. Maintain only docs/project-basics.md as compact mission
+                        navigation with the mission anchor, verified Kaneo project, Mattermost channel, Gitea repository map,
+                        and role responsibilities. Reuse the docs branch/PR and leave integration to Architect.
                         """))
                 .to("tack:act?id=pm-project-basics&toolProfile=" + ProjectDocumentationToolProfile.ID)
-                .to("direct:pm-awareness");
+                .to("direct:pm-awareness")
+                .to("tack:thought-exit?name=pm-project-basics-focus");
 
         from("direct:pm-focus-defect-flow")
                 .routeId("pm-focus-defect-flow")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Route one PO-validated defect without changing product judgment. A validated Backlog Defect
-                        remains product backlog until PO moves it to Todo; do not assign or promote it. For a Todo Defect
-                        with a verified Epic parent and product priority, choose the appropriate engineer from evidence:
-                        ordinary component behavior -> DEV; system integration/repository/GitOps/cross-cutting architecture
-                        -> ARCH. Assign it and leave it Todo for the engineer to claim. Do not create a repair Story.
-                        For an In Progress Defect whose fix PR is verified merged, keep the Defect In Progress and surface
-                        concise evidence to QA for retest; QA owns the final Done transition.
-                        """))
+                        Route one unassigned to-do Defect with verified PO validation, Epic relation and repair priority.
+                        Assign the persistent DEV identity for component work or ARCH for system, integration, or cross-cutting work.
+                        Leave it to-do for the engineer to claim. Deferred planned Defects stay with PO.
+                        For a newly merged fix, surface exact evidence to the repair engineer and QA. The repair engineer
+                        returns the Defect to in-progress for retest. QA owns successful closure.
+                        """ + engineeringIdentities))
                 .to("tack:act?id=pm-defect-flow&toolProfile=" + DeliveryManagementToolProfile.ID)
                 .to("direct:pm-awareness");
 
         from("direct:pm-focus-active-flow")
                 .routeId("pm-focus-active-flow")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused delivery supervision across In Progress Epics: verified work types, ownership, executable
-                        queue depth, dependency promotions, merged-work reconciliation, and concrete blockers/handoffs.
+                        Focused delivery supervision: Epic and Story locators, exact engineer IDs and independent executable
+                        queues, dependency promotions, integration changes, and concrete blockers/handoffs.
                         """))
                 .to("tack:thought-enter?name=pm-active-flow-focus&maxTokens=500")
                 .to("direct:pm-active-flow-loop")
-                .to("tack:thought-exit?name=pm-active-flow-focus")
-                .to("direct:pm-awareness");
+                .to("direct:pm-awareness")
+                .to("tack:thought-exit?name=pm-active-flow-focus");
 
         from("direct:pm-active-flow-loop")
                 .routeId("pm-active-flow-loop")
@@ -224,51 +191,30 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-flow")
                 .routeId("pm-flow")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Restore delivery across the current In Progress Epic set to a coherent executable state in this pass.
-                        Before any assignment or lifecycle mutation, verify current attached classification labels establish
-                        the expected work kind. Plane type_id is unrelated to Tack classification. Unknown classification means do not mutate. Never treat epic or test as
-                        engineer source work. Every non-Backlog work item must have an owner appropriate to its verified
-                        classification: epic -> PO; story -> DEV/ARCH; test -> QA; defect -> repair engineer,
-                        except a newly PO-validated Todo Defect may remain briefly unassigned until PM routes it. Repair a verified
-                        non-Backlog ownership gap only within the role that owns that work. Do not guess classification
-                        merely to fill an ownership gap. Apply the obvious state/assignment/dependency promotions needed
-                        for healthy flow instead of stopping after one observation. When an assigned Story PR is merged
-                        but the Story is still In Progress,
-                        notify the assigned engineer to complete its lifecycle rather than closing it for them. When an
-                        DEV/ARCH has queue capacity, promote enough dependency-satisfied Backlog Story work beneath any
-                        In Progress Epic to assigned Todo to restore a healthy buffer of roughly 2-3 executable queued
-                        units. Inspect up to three legitimate candidates instead of stopping after one promotion. This
-                        applies even when that engineer's AgentRun is temporarily absent; durable assignment and readiness
-                        must not track ephemeral runtime presence. Capacity is independent per engineer. A source unit
-                        waiting only on PR integration or an external condition does not consume active coding capacity.
-                        Do not leave executable Story work in Backlog merely because its intended engineer is not running.
-                        Never infer a dependency from Story sequence, concurrent execution, or a failed relation-tool
-                        payload. Story dependency relations must remain acyclic. If verified relations form a cycle that
-                        prevents forward progress, record the exact cycle and keep unrelated executable work flowing.
-                        Plane CE does not support relation deletion. Do not add more relations to the cycle.
-                        When current PO acceptance clearly makes a Story
-                        obsolete or duplicate, PM owns moving that Story to Cancelled. Never cancel work merely because of
-                        staffing, queue depth, or dependency delay. Otherwise repair a dependency/assignment; route product
-                        ambiguity to PO; route integration/repository issues to ARCH; route implementation/testability
-                        evidence to DEV/QA. Never mark defect Done after merge; QA retest closes defects. Never mutate
-                        test lifecycle.
-                        Never move Todo, In Progress, Done, or Cancelled work backward because of staffing, queue depth,
-                        capacity, or dependency bookkeeping. Preserve flow over serialization: continue feeding independent
-                        executable work while other units wait
-                        on integration, deployment, or another role.
-                        """))
+                        Restore assigned delivery across in-progress Epics. Repair Story ownership first and route other kinds to
+                        their lifecycle owners. Replenish roughly 2–3 executable to-do Stories per engineer when independent work
+                        exists. DEV capacity is separate from ARCH capacity. Where practical, keep 2–3 active coding units
+                        per engineer as well as that buffer.
+                        Count in-review and other integration-only waits outside active coding capacity. Notify the assigned engineer
+                        when a merge or concrete review feedback calls for reconciliation. Keep unrelated work moving.
+                        Find eligible planned Stories with all incoming prerequisites done. Under a to-do Epic, seed only its
+                        first executable Story. A to-do, in-progress, in-review or done Story already satisfies the seed.
+                        Assign the persistent engineer before promoting to-do, even without an AgentRun.
+                        Repair an incorrect or cyclic relation only after verifying its ID, direction and consequences. Preserve
+                        valid dependencies and continue independent work. Archive obsolete Stories with a reason when warranted.
+                        """ + engineeringIdentities))
                 .to("tack:act?id=pm-flow&toolProfile=" + DeliveryManagementToolProfile.ID);
 
         from("direct:pm-focus-planning")
                 .routeId("pm-focus-planning")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Focused planning across In Progress and ready Todo Epics: PO Gherkin, reasonable Story coverage,
-                        dependencies, repository ownership, future Backlog work, and executable DEV/ARCH queues.
+                        Focused planning across ready and active Epics: exact Epic, Story, dependency, and repository locators,
+                        PO Gherkin, necessary technical investigations, and opportunities for independent DEV/ARCH delivery.
                         """))
                 .to("tack:thought-enter?name=pm-planning-focus&maxTokens=550")
                 .to("direct:pm-planning-loop")
-                .to("tack:thought-exit?name=pm-planning-focus")
-                .to("direct:pm-awareness");
+                .to("direct:pm-awareness")
+                .to("tack:thought-exit?name=pm-planning-focus");
 
         from("direct:pm-planning-loop")
                 .routeId("pm-planning-loop")
@@ -284,33 +230,19 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
         from("direct:pm-planning")
                 .routeId("pm-planning")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Plan across all PO-owned epic items in In Progress or Todo after Architect has established
-                        the system repository plus component repository map. Read each selected Epic's PO-authored
-                        Given/When/Then acceptance as the authoritative behavioral boundary. Reuse architecture as the
-                        source of truth for repository/component boundaries; do not invent a new topology.
-
-                        For an In Progress Epic, create/refine its reasonable non-duplicative implementation Story set and
-                        an acyclic dependency graph, then replenish each DEV/ARCH runway to roughly 2-3 assigned executable
-                        Todo Stories when legitimate dependency-satisfied work exists. Before adding a relation, verify it
-                        does not create a dependency cycle. If a verified cycle already exists, do not attempt unsupported
-                        relation deletion; record the exact cycle, keep unrelated executable work flowing, and avoid adding
-                        relations that preserve or worsen it. Inspect enough candidates to restore the buffer in this pass
-                        rather than stopping after one promotion.
-
-                        For a Todo Epic, pre-decompose the same reasonable Story/dependency set but leave its implementation
-                        children Backlog. Todo at the Epic level means product/delivery ready for future activation, not
-                        active engineering consumption. Do not promote child Stories to Todo until their parent Epic is
-                        In Progress.
-
-                        Ensure the story label exists and attach it explicitly. Normal component
-                        work goes to DEV; system repository, integration, GitOps, cross-component, or architecture-heavy
-                        work goes to ARCH. Before mutating an existing item, verify its classification from attached labels.
-                        Todo Stories must have the intended engineer assigned, and they may remain staged even while that
-                        engineer's AgentRun is temporarily absent. Never move existing Todo/In Progress/Done/Cancelled work
-                        backward because an AgentRun is absent. Keep genuinely dependency-blocked future Stories Backlog.
-                        Work owned by ARCH does not consume DEV capacity and vice versa. Do not create epic product
-                        outcomes, test QA work, or defect findings.
-                        """))
+                        Use the Architect's system and component map to decompose to-do and in-progress PO-owned Epics.
+                        Read the selected Epic's Gherkin and create or refine only missing implementation Stories.
+                        Create each Story planned with its story label and one subtask relation from the Epic. Record repository
+                        and implementation intent in its description. Add incoming blocks relations only for real prerequisites.
+                        Verify the graph remains acyclic and repair incorrect relations with evidence. For an unresolved
+                        technical/topology question, prepare a bounded investigation Story naming the source boundaries, affected
+                        tasks, exact question and expected findings. Route unresolved product intent to PO.
+                        Prepare independent slices for DEV (component work) and ARCH (system or cross-component work). Keep future
+                        Stories planned. Once evidence, dependencies and ownership are settled, assign and promote the first
+                        executable Story beneath a to-do Epic with no prepared or started executable Story. Reuse and repair
+                        partially prepared Stories. Leave further queue replenishment to active flow. Resolve the exact persistent
+                        Kaneo assignee by configured email and verify assignment before promoting, regardless of AgentRun presence.
+                        """ + engineeringIdentities))
                 .to("tack:act?id=pm-planning&toolProfile=" + DeliveryManagementToolProfile.ID);
 
         from("direct:pm-focus-coordination")
@@ -323,7 +255,7 @@ public class ProjectManagerRoutine extends RouteBuilder implements RoutineProvid
                         Use the current-mission shared channel. Send/reply once only when changed assignment, dependency,
                         defect routing, merge reconciliation, QA handoff, blocker, or WIP pressure will help another
                         routine act sooner. Chat is awareness only: acknowledgments, approval phrases, "green" signals,
-                        and handoff messages never gate Plane lifecycle or Gitea integration. Missing channel access is
+                        and handoff messages never gate Kaneo lifecycle or Gitea integration. Missing channel access is
                         onboarding work, not a reason to use a DM. Avoid generic status.
                         """))
                 .to("tack:act?id=pm-awareness&toolProfile=" + TeamChatToolProfile.ID);

@@ -12,6 +12,8 @@ import dev.langchain4j.service.Result;
 import dev.langchain4j.service.tool.ToolProvider;
 import dev.langchain4j.service.tool.ToolProviderResult;
 import org.apache.camel.Exchange;
+import org.apache.camel.component.kafka.KafkaConstants;
+import org.apache.camel.component.kafka.consumer.KafkaManualCommit;
 import org.apache.camel.component.langchain4j.agent.api.Agent;
 import org.apache.camel.component.langchain4j.agent.api.AiAgentBody;
 import org.apache.camel.impl.DefaultCamelContext;
@@ -81,7 +83,8 @@ class UnavailableToolRecoveryTest {
         ScriptedChatModel model = ScriptedChatModel.hallucinateThenAnswer();
         StubKafkaComponent kafka = new StubKafkaComponent();
 
-        try (DefaultCamelContext context = routeContext(model, kafka)) {
+        InFlightReplyManager replies = new InFlightReplyManager();
+        try (DefaultCamelContext context = routeContext(model, kafka, replies)) {
             context.start();
             LlmJobEnvelope job = FrameworkFixtures.queuedJob(new LlmJobEnvelope(
                     UUID.randomUUID(),
@@ -101,7 +104,9 @@ class UnavailableToolRecoveryTest {
                     null));
             String json = TestJson.write(job);
 
-            assertDoesNotThrow(() -> kafka.emit("test.llm.requests.low", json));
+            replies.register(job.jobId());
+            assertDoesNotThrow(() -> kafka.emit("test.llm.requests.low", json, exchange ->
+                    exchange.getMessage().setHeader(KafkaConstants.MANUAL_COMMIT, (KafkaManualCommit) () -> {})));
 
             await(() -> kafka.sentTopics().contains("test.llm.replies.low"));
             assertFalse(kafka.sentTopics().contains("llm.dead-letter"));
@@ -154,20 +159,17 @@ class UnavailableToolRecoveryTest {
         return FrameworkFixtures.agentExchange(laneId, LlmPassType.ACTION);
     }
 
-    private static DefaultCamelContext routeContext(ChatModel model, StubKafkaComponent kafka) throws Exception {
+    private static DefaultCamelContext routeContext(ChatModel model, StubKafkaComponent kafka, InFlightReplyManager replies) throws Exception {
         DefaultCamelContext context = TestCamelContexts.quiet();
         context.setAutowiredEnabled(false);
         context.getShutdownStrategy().setTimeout(1);
         Properties properties = new Properties();
         properties.setProperty("llm.consumer.group", "hallucinated-tool-test");
-        properties.setProperty("llm.response.consumer.group", "hallucinated-tool-test-response");
         properties.setProperty("llm.model-default.openai.model", "test-model");
         properties.setProperty("llm.reply-timeout-ms", "100");
         properties.setProperty("llm.topic.dead-letter", "llm.dead-letter");
         context.getPropertiesComponent().setOverrideProperties(properties);
         context.addComponent("kafka", kafka);
-        InFlightReplyManager replies = new InFlightReplyManager();
-        context.getRegistry().bind("inFlightReplyManager", replies);
         LlmAgentFactory.DynamicAgentFactory agentFactory = factory("low-pass", model);
         agentFactory.setCamelContext(context);
         context.getRegistry().bind("dynamicAgentFactory", agentFactory);

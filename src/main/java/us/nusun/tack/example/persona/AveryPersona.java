@@ -36,7 +36,7 @@ public class AveryPersona implements PersonaProvider {
                 .color("38;2;255;123;172")
                 .identity("mattermost", account.token("mattermost"), "@architect-agent")
                 .identity("gitea", account.token("gitea"), "architect-agent")
-                .identity("plane", account.token("plane"), "ARCH")
+                .identity("kaneo", account.token("kaneo"), account.email().orElse(""))
                 .build();
     }
 }

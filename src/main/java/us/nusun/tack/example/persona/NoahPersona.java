@@ -41,7 +41,7 @@ public class NoahPersona implements PersonaProvider {
                 .agentRunStartAssignable(false)
                 .identity("mattermost", account.token("mattermost"), "@director-agent")
                 .identity("gitea", account.token("gitea"), "director-agent")
-                .identity("plane", account.token("plane"), "Director")
+                .identity("kaneo", account.token("kaneo"), account.email().orElse(""))
                 .build();
     }
 }

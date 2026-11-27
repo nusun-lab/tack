@@ -28,15 +28,8 @@ public class QualitySourceControlWriteToolProfile implements ToolProfileProvider
                         "get_me", "search_repos", "get_repository_tree", "get_dir_contents", "get_file_contents",
                         "list_branches", "list_commits", "get_commit",
                         "list_pull_requests", "pull_request_read", "pull_request_write")
-                .promptGuidance("""
-                        - this profile changes QA-owned test/evidence source in the existing system repository selected by
-                          the calling routine; it cannot provision repositories
-                        - do not use this profile to modify component implementation
-                        """ + RepositoryWritingGuidance.REPOSITORY_GUIDANCE + """
-                        - use ordinary git/filesystem/build/test commands for edits, validation, commits, and pushes
-                        - only an actual auth/write failure establishes a write-permission blocker
-                        - validate directly in the sandbox; Gitea Actions/CI are not enabled
-                        - never claim source changes, validation, commits, or pushes without direct evidence
+                .promptGuidance(RepositoryWritingGuidance.REPOSITORY_GUIDANCE + """
+                        Keep QA source changes in the existing system repository.
                         """)
                 .build());
     }

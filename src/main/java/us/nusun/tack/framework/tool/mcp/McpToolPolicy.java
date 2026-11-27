@@ -60,7 +60,7 @@ final class McpToolPolicy {
                 if (!exposedName.equals(request.name())) {
                     throw new IllegalArgumentException("MCP executor for " + exposedName + " cannot execute " + request.name());
                 }
-                profile.checkExecution(server, toolName, request.arguments());
+                profile.checkExecution(server, toolName);
                 String tool = "TOOL " + server + "." + toolName;
                 log(tool + " REQUEST " + abbreviateToolValue(request.arguments()));
                 try {

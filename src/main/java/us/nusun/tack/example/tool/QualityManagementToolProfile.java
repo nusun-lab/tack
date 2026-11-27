@@ -11,34 +11,40 @@ import java.util.List;
 public class QualityManagementToolProfile implements ToolProfileProvider {
     public static final String ID = "quality-management";
 
-    private final PlaneMcpServer plane;
+    private final KaneoMcpServer kaneo;
+    private final GiteaMcpServer gitea;
 
     @Inject
     public QualityManagementToolProfile(
-            PlaneMcpServer plane) {
-        this.plane = plane;
+            KaneoMcpServer kaneo, GiteaMcpServer gitea) {
+        this.kaneo = kaneo;
+        this.gitea = gitea;
     }
 
     @Override
     public List<ToolProfile> toolProfiles() {
         return List.of(ToolProfile.builder(ID)
-                .mcpServer(plane.definition())
-                .allowTools(PlaneMcpServer.ID,
-                        "project", "member", "workitem", "workitem_activity", "workitem_comment", "label", "state")
-                .promptGuidance("""
-                        - this profile creates and updates Plane QA work and defect evidence; the calling routine owns QA
-                          lifecycle, test-planning, defect, retest, and completion policy
-                        - use only these Plane actions here: project=list/retrieve; member=me;
-                          workitem=list/retrieve/retrieve_by_identifier/search/create/update/manage_label;
-                          workitem_activity=list; workitem_comment=list/retrieve/create/update; label=list/create; state=list
-                        """ + PlaneWorkGuidance.CLASSIFICATION + """
-                        - create a missing classification label only when the routine explicitly requires that kind, then
-                          attach it explicitly with workitem(action="manage_label")
-                        - before mutating an existing item based on kind, verify attached labels and current assignees
-                        - use workitem(action="update", ...) with the complete assignees array for assignment changes
-                        - comments preserve evidence/context and are not lifecycle states
-
-                        """ + PlaneWorkGuidance.QUERIES)
+                .mcpServer(kaneo.definition())
+                .mcpServer(gitea.definition())
+                .allowTools(KaneoMcpServer.ID,
+                        "whoami",
+                        "list_workspaces",
+                        "list_projects",
+                        "list_workspace_members",
+                        "list_tasks",
+                        "get_task",
+                        "get_task_relations",
+                        "list_task_comments",
+                        "get_task_by_ticket_id",
+                        "create_task",
+                        "create_label",
+                        "update_task",
+                        "update_task_status",
+                        "update_task_assignee",
+                        "create_task_relation",
+                        "create_task_comment")
+                .allowTools(GiteaMcpServer.ID, "search_repos", "list_pull_requests", "pull_request_read")
+                .promptGuidance(KaneoWorkGuidance.PROJECT + KaneoWorkGuidance.TASKS + KaneoWorkGuidance.LIFECYCLE + KaneoWorkGuidance.CLASSIFICATION)
                 .build());
     }
 }
