@@ -43,10 +43,15 @@ public class LlmDeadLetterFactory {
         var context = LlmExecutionContext.on(exchange);
         var job = exchange.getProperty("llmJob", LlmJobEnvelope.class);
         if (context != null) {
-            return "jobId=" + context.jobId() + " laneId=" + context.laneId()
+            return "jobId=" + context.jobId() + " agentRunId=" + context.agentRunId()
+                    + " primitive=" + context.primitive() + "/" + context.primitiveId() + " laneId=" + context.laneId()
                     + " passType=" + context.passType() + " model=" + modelId(exchange);
         }
+        Map<String, Object> metadata = job == null ? Map.of() : job.metadata();
         return "jobId=" + (job == null ? null : job.jobId())
+                + " agentRunId=" + LlmExecutionContext.text(metadata, "agentRunId")
+                + " primitive=" + LlmExecutionContext.text(metadata, "primitive") + "/"
+                + LlmExecutionContext.text(metadata, "primitiveId")
                 + " laneId=" + firstNonBlank(job == null ? null : job.laneId(), "unknown")
                 + " passType=" + (job == null ? null : job.passType()) + " model=" + modelId(exchange);
     }
