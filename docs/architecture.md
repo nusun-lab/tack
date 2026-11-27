@@ -59,16 +59,16 @@ Sandbox lifecycle is independent of AgentRun lifecycle. `POST /workspace/reset` 
 
 ## Tool-pass safety
 
-Tool/action memory is ephemeral to one tool pass. Tack keeps a bounded recent interaction window and compacts tool memory once the configured threshold is crossed instead of carrying an indefinitely growing transcript.
+Tool/action memory is ephemeral to one tool pass. Tack keeps the original execution history for accounting and projects the model request after it knows the current prompt and tool schemas.
 
 The default controls are:
 
-- 50,000 tool-memory tokens;
-- compaction at 50% of that budget;
-- three recent tool interactions preserved around compaction;
+- 50,000 transcript tokens, bounded by the model context available after protected prompts, schemas, and reserved output;
 - a semantic budget of 50 individual tool calls per tool pass.
 
-Tack also detects repeated completed tool executions, including repeated cycles up to length five, before executing the next repeated cycle. The semantic call budget is checked before another tool executes, so a runaway pass fails at the Tack boundary rather than silently continuing through an unbounded tool loop.
+When a request exceeds the effective budget, Tack replaces payloads one at a time, starting with the largest savings and preferring older results among similar sizes. It aims for 90% of the budget. The result notices preserve tool-call correlation and reported outcomes. When the remaining messages still cannot fit, Tack stops the pass. Previously completed calls remain executed.
+
+Tack also detects repeated completed tool executions, including cycles up to length five, and checks the call budget before executing more tools.
 
 These mechanisms are safety rails, not the primary routine design. Act prompts should still define a valid stop when evidence is found, when required state is absent, or when an exact blocker is known.
 

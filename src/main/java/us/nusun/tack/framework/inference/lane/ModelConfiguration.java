@@ -41,10 +41,6 @@ public interface ModelConfiguration {
     interface ToolMemory {
         @WithDefault("12000")
         int maxTokens();
-        @WithDefault("0.50")
-        double compactionThreshold();
-        @WithDefault("3")
-        int recentToolInteractions();
     }
 
     interface StructuredOutput {

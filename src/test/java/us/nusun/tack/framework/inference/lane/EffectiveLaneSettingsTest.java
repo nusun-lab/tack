@@ -56,7 +56,7 @@ class EffectiveLaneSettingsTest {
         assertEquals(0.6, review.temperature());
         assertEquals("review-test-key", review.apiKey());
         assertEquals(7000, review.toolPass().memoryTokens());
-        assertEquals(inherited.toolPass().compactionThreshold(), review.toolPass().compactionThreshold());
+        assertEquals(inherited.toolPass().contextWindow(), review.toolPass().contextWindow());
 
         var importLane = lane("import").apiKeyConfigKey("test.credentials.import").build();
         assertEquals("import-test-key", EffectiveLaneSettings.resolve(importLane, defaults, lanes, config).apiKey());

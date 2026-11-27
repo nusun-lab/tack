@@ -191,10 +191,7 @@ public class LlmAgentFactory {
                                 effectiveRequest.toolChoice(initial ? ToolChoice.REQUIRED : ToolChoice.AUTO);
                             }
                             request = effectiveRequest.build();
-                            if (diagnostics != null) {
-                                diagnostics.logBudget(request);
-                            }
-                            return request;
+                            return diagnostics == null ? request : diagnostics.projectRequest(request);
                         });
                     });
             List<ToolProvider> mcpTools = List.of();
@@ -205,7 +202,7 @@ public class LlmAgentFactory {
                 if (settings.maxToolCalls() > 0) {
                     configuration.withMaxToolCallingRoundTrips(settings.maxToolCalls() + 1);
                 }
-                configuration.withChatMemoryProvider(id -> ToolLoopGuardChatMemory.forPass(id, settings, tokenCountEstimator));
+                configuration.withChatMemoryProvider(id -> ToolLoopGuardChatMemory.forPass(id, settings.maxToolCalls()));
                 ToolProfile profile = toolProfiles.getRequired(invocation.toolProfile());
                 String personaId = invocation.personaId();
                 if (blank(personaId)) {

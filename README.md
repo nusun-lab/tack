@@ -347,7 +347,7 @@ Use `act` when the model may need tools and the active thought should be rewritt
 
 `act` performs a tool/action pass with the selected profile, then a schema-shaped synthesis pass that rewrites the active leaf thought.
 
-Tool passes are bounded. The defaults are 50,000 tool-memory tokens, compaction at 50%, three recent tool interactions retained around compaction, and a semantic budget of 50 individual tool calls. Tack also detects repeated completed tool cycles. These are safety rails; routine prompts should still make absence, blockers, and sufficient evidence valid stop conditions.
+Tool passes default to 50,000 transcript tokens and 50 individual tool calls. Tack preserves the native transcript up to the smaller of the transcript limit and the lane context remaining after prompts, tool schemas, and reserved output. Under pressure, it replaces individual tool-result payloads with outcome notices, preferring recent and smaller evidence. It aims for 90% of the effective budget. Tool requests and their result messages stay paired, and repeated-execution checks use the original history.
 
 ### `tack:decide`
 
@@ -422,8 +422,6 @@ Run the rebalance regression against a local Kafka broker with `TACK_TEST_KAFKA_
 | `LLM_MODEL_DEFAULT_OPENAI_STRICT_JSON_SCHEMA` | `true` |
 | `LLM_MODEL_DEFAULT_OPENAI_THINKING_OFF_ENABLED` | `true` |
 | `LLM_MODEL_DEFAULT_TOOL_MEMORY_MAX_TOKENS` | `50000` |
-| `LLM_MODEL_DEFAULT_TOOL_MEMORY_COMPACTION_THRESHOLD` | `0.50` |
-| `LLM_MODEL_DEFAULT_TOOL_MEMORY_RECENT_TOOL_INTERACTIONS` | `3` |
 | `LLM_MODEL_DEFAULT_MAX_TOOL_CALLING_ROUND_TRIPS` | `50` |
 
 The software-team example defaults to temperature `0.2`, top-p `0.90`, and top-k `20` on low-pass, and temperature `0.30`, top-p `0.90`, and presence penalty `0.0` on high-pass. The corresponding `LLM_LOW_*` and `LLM_HIGH_*` settings override these defaults.

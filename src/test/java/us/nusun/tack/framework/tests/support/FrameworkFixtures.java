@@ -151,7 +151,7 @@ public final class FrameworkFixtures {
                 ? llmRouteSupport(new InFlightReplyManager(), new LlmDeadLetterFactory(), new LogTokens(false))
                 : routeSupport;
         return new LlmAgentFactory.DynamicAgentFactory(Map.of(lane, new LlmAgentFactory.LaneRuntime(model,
-                new ToolPassSettings(memoryTokens, maxToolCalls, 0.50, 3, 69632, 4092))),
+                new ToolPassSettings(memoryTokens, maxToolCalls, 69632, 4092))),
                 clients, toolProfileRegistry(), personas, estimator, disabledSandboxes(), roster, support, new ObjectMapper());
     }
 

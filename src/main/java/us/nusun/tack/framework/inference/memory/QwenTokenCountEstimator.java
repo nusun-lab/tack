@@ -65,7 +65,10 @@ public final class QwenTokenCountEstimator implements TokenCountEstimator {
             return tokenCount;
         }
         if (message instanceof ToolExecutionResultMessage result) {
-            return tokenCount + estimateTokenCountInText(result.text());
+            for (Content content : result.contents()) {
+                tokenCount += estimateTokenCountInText(content instanceof TextContent text ? text.text() : content.toString());
+            }
+            return tokenCount;
         }
         throw new IllegalArgumentException("Unknown message type: " + message);
     }
