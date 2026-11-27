@@ -8,8 +8,10 @@ import org.apache.camel.builder.RouteBuilder;
 import org.apache.camel.component.langchain4j.agent.api.Agent;
 import org.apache.camel.component.langchain4j.agent.api.AgentFactory;
 import org.apache.camel.component.kafka.KafkaConstants;
+import org.apache.camel.component.kafka.consumer.KafkaManualCommit;
 import org.apache.camel.impl.DefaultCamelContext;
 import org.apache.camel.model.ToDynamicDefinition;
+import org.apache.camel.model.TryDefinition;
 import org.jboss.logmanager.LogContext;
 import org.jboss.logmanager.Logger;
 import org.junit.jupiter.api.Test;
@@ -24,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -75,6 +78,8 @@ class LlmRouteFrameworkRouteTest {
     void kafkaPublishEndpointsDoNotInterpolateDynamicKeysIntoUris() throws Exception {
         try (DefaultCamelContext context = context(new InFlightReplyManager(), new StubKafkaComponent())) {
             String requestUri = context.getRouteDefinition("llm").getOutputs().stream()
+                    .filter(TryDefinition.class::isInstance)
+                    .flatMap(step -> step.getOutputs().stream())
                     .filter(ToDynamicDefinition.class::isInstance)
                     .map(ToDynamicDefinition.class::cast)
                     .map(ToDynamicDefinition::getUri)
@@ -83,7 +88,7 @@ class LlmRouteFrameworkRouteTest {
             String replyInput = context.getRouteDefinition("publish-llm-result-low-pass").getOutputs().toString();
             String deadLetterOutput = context.getRouteDefinition("publish-failed-llm-job-dlq").getOutputs().toString();
 
-            assertEquals("kafka:${exchangeProperty.laneRequestTopic}", requestUri);
+            assertEquals("kafka:${exchangeProperty.laneRequestTopic}?synchronous=true", requestUri);
             assertTrue(replyInput.contains("kafka:test.llm.replies.low"));
             assertTrue(deadLetterOutput.contains("kafka:{{llm.topic.dead-letter:llm.dead-letter}}"));
             assertTrue(!requestUri.contains("?key="));
@@ -169,7 +174,7 @@ class LlmRouteFrameworkRouteTest {
     }
 
     @Test
-    void handleResponseRouteCompletesRegisteredInFlightReply() throws Exception {
+    void unownedRequestIsCommittedWithoutExecuting() throws Exception {
         InFlightReplyManager replies = new InFlightReplyManager();
         StubKafkaComponent kafka = new StubKafkaComponent();
 
@@ -177,14 +182,10 @@ class LlmRouteFrameworkRouteTest {
             context.start();
             LlmJobEnvelope queued = FrameworkFixtures.queuedJob(new us.nusun.tack.framework.inference.LlmJobEnvelope(
                     null, "low-pass", LlmPassType.ACTION, "test", "Persona A", 0, "prompt", "system", null, Map.of(), null));
-            replies.register(queued.jobId());
-            LlmJobResult result = LlmJobResult.succeeded(queued, "test-model", "ok", "ok", Instant.now());
-
-            context.createProducerTemplate().sendBody("direct:handle-llm-response", result);
-
-            LlmJobResult completed = replies.await(queued.jobId(), 10);
-            assertEquals(result.jobId(), completed.jobId());
-            assertEquals("ok", completed.content());
+            AtomicInteger committed = new AtomicInteger();
+            emitWorkerRequest(kafka, TestJson.write(queued), committed::incrementAndGet);
+            assertEquals(1, committed.get());
+            assertTrue(kafka.sentTopics().isEmpty());
         }
     }
 
@@ -208,14 +209,68 @@ class LlmRouteFrameworkRouteTest {
                     Map.of(),
                     null));
             String json = TestJson.write(queued);
+            replies.register(queued.jobId());
 
-            kafka.emit("test.llm.requests.low", json);
+            AtomicInteger committed = new AtomicInteger();
+            emitWorkerRequest(kafka, json, committed::incrementAndGet);
+            emitWorkerRequest(kafka, json, committed::incrementAndGet);
 
             await(() -> kafka.sentTopics().contains("test.llm.replies.low"));
+            assertEquals(2, committed.get());
+            assertEquals(1, kafka.sentTo("test.llm.replies.low").size());
+            assertEquals(LlmJobStatus.SUCCEEDED, replies.await(queued.jobId(), 100).status());
             String replyJson = kafka.sentTo("test.llm.replies.low").getFirst().getIn().getBody(String.class);
             assertTrue(replyJson.contains("\"jobId\":\"" + queued.jobId() + "\""));
             assertTrue(replyJson.contains("\"status\":\"SUCCEEDED\""));
             assertTrue(replyJson.contains("\"content\":\"{\\\"result\\\":\\\"worker-ok\\\"}\""));
+        }
+    }
+
+    @Test
+    void failedOffsetCommitCannotClaimOrExecuteTheJob() throws Exception {
+        InFlightReplyManager replies = new InFlightReplyManager();
+        StubKafkaComponent kafka = new StubKafkaComponent();
+
+        try (DefaultCamelContext context = context(replies, kafka)) {
+            context.start();
+            LlmJobEnvelope queued = FrameworkFixtures.queuedJob(structuredRequest("Return JSON."));
+            replies.register(queued.jobId());
+            String json = TestJson.write(queued);
+            try {
+                emitWorkerRequest(kafka, json, () -> { throw new IllegalStateException("Partition was revoked"); });
+            } catch (Exception failure) {
+                assertTrue(failure.getMessage().contains("Partition was revoked"));
+            }
+            assertTrue(kafka.sentTopics().isEmpty());
+
+            emitWorkerRequest(kafka, json, () -> {});
+            assertEquals(LlmJobStatus.SUCCEEDED, replies.await(queued.jobId(), 100).status());
+        }
+    }
+
+    @Test
+    void replyTopicFailureDoesNotLoseTheTerminalResultOrReplayTheWorker() throws Exception {
+        InFlightReplyManager replies = new InFlightReplyManager();
+        StubKafkaComponent kafka = new StubKafkaComponent((topic, exchange) -> {
+            if ("test.llm.replies.low".equals(topic)) {
+                throw new IllegalStateException("Reply topic unavailable");
+            }
+        });
+
+        try (DefaultCamelContext context = context(replies, kafka)) {
+            context.start();
+            LlmJobEnvelope queued = FrameworkFixtures.queuedJob(structuredRequest("Return JSON."));
+            replies.register(queued.jobId());
+            String json = TestJson.write(queued);
+            try {
+                emitWorkerRequest(kafka, json, () -> {});
+            } catch (Exception failure) {
+                assertTrue(failure.getMessage().contains("Reply topic unavailable"));
+            }
+            assertEquals(LlmJobStatus.SUCCEEDED, replies.await(queued.jobId(), 100).status());
+
+            emitWorkerRequest(kafka, json, () -> {});
+            assertEquals(1, kafka.sentTo("test.llm.replies.low").size());
         }
     }
 
@@ -239,9 +294,11 @@ class LlmRouteFrameworkRouteTest {
                     Map.of("primitive", "test-synthesis"),
                     null));
 
-            kafka.emit("test.llm.requests.low", TestJson.write(queued));
+            replies.register(queued.jobId());
+            emitWorkerRequest(kafka, TestJson.write(queued), () -> {});
 
             await(() -> kafka.sentTopics().contains("test.llm.replies.low") && kafka.sentTopics().contains("llm.dead-letter"));
+            assertEquals(LlmJobStatus.FAILED, replies.await(queued.jobId(), 100).status());
             String replyJson = kafka.sentTo("test.llm.replies.low").getFirst().getIn().getBody(String.class);
             assertTrue(replyJson.contains("\"jobId\":\"" + queued.jobId() + "\""));
             assertTrue(replyJson.contains("\"status\":\"FAILED\""));
@@ -255,6 +312,10 @@ class LlmRouteFrameworkRouteTest {
             assertTrue(deadLetterJson.contains("LLM response failure: reason=empty-final-content"));
             assertTrue(deadLetterExchange.getIn().getHeader(KafkaConstants.KEY) instanceof UUID);
         }
+    }
+
+    private static void emitWorkerRequest(StubKafkaComponent kafka, String json, KafkaManualCommit commit) throws Exception {
+        kafka.emit("test.llm.requests.low", json, exchange -> exchange.getMessage().setHeader(KafkaConstants.MANUAL_COMMIT, commit));
     }
 
     private static LlmJobEnvelope structuredRequest(String prompt) {
@@ -272,13 +333,11 @@ class LlmRouteFrameworkRouteTest {
         context.getShutdownStrategy().setTimeout(1);
         Properties properties = new Properties();
         properties.setProperty("llm.consumer.group", "framework-test");
-        properties.setProperty("llm.response.consumer.group", "framework-test-response");
         properties.setProperty("llm.model-default.openai.model", "test-model");
         properties.setProperty("llm.reply-timeout-ms", "100");
         properties.setProperty("llm.topic.dead-letter", "llm.dead-letter");
         context.getPropertiesComponent().setOverrideProperties(properties);
         context.addComponent("kafka", kafka);
-        context.getRegistry().bind("inFlightReplyManager", replies);
         context.getRegistry().bind("dynamicAgentFactory", agentFactory);
         FrameworkFixtures.bindCatalogBeans(context);
         LlmRoute route = new LlmRoute();

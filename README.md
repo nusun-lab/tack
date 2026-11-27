@@ -172,7 +172,6 @@ export LLM_MODEL_DEFAULT_OPENAI_BASE_URL=http://localhost:8000/v1
 export LLM_MODEL_DEFAULT_OPENAI_MODEL=qwen-36-27b
 export LLM_MODEL_DEFAULT_OPENAI_API_KEY=not-needed
 export LLM_WORKER_ENABLED=true
-export LLM_LOCAL_WORKER_ROUTE_VERIFICATION_ENABLED=true
 export LLM_KAFKA_PROVISION_TOPICS=true
 ```
 
@@ -390,7 +389,11 @@ For each lane Tack creates a Kafka worker path with `consumersCount=lane.paralle
 
 With parallelism greater than one, ordering is preserved only for records sharing a partition key. The default `AGENT_RUN` strategy keeps one AgentRun's jobs on the same partition while unrelated runs can use others.
 
-Reply correlation is currently in memory by `jobId`, so one active orchestrator process must own the waiting request and its reply consumer.
+Run one Tack orchestrator with its inference workers. A worker synchronously commits each request offset before atomically claiming the job from the caller's in-memory registry. Workers reject duplicate copies of claimed jobs and requests without a waiting caller. The local worker completes the caller when the pass exits and also publishes the result to the lane's Kafka reply topic.
+
+`LLM_REPLY_TIMEOUT_MS` withdraws a request if no worker has claimed it by the deadline. Once a worker starts, Tack keeps the AgentRun attached until it exits, even after that deadline. If the process dies after committing a request, Tack does not replay the job. Inspect external state before retrying an interrupted Act.
+
+Run the rebalance regression against a local Kafka broker with `TACK_TEST_KAFKA_BOOTSTRAP=localhost:9092 mvn -Dtest=LlmKafkaRebalanceTest test`. It creates temporary topics, forces a consumer poll timeout, and uses a simulated side effect in place of a model.
 
 ## Configuration
 
@@ -404,7 +407,6 @@ Reply correlation is currently in memory by `jobId`, so one active orchestrator 
 | `AGENT_RUN_SCHEDULED_CONSUMER_ENABLED` | `true` |
 | `LLM_TOPIC_DEAD_LETTER` | `llm.dead-letter` |
 | `LLM_WORKER_ENABLED` | `true` |
-| `LLM_LOCAL_WORKER_ROUTE_VERIFICATION_ENABLED` | `true` |
 | `LLM_REPLY_TIMEOUT_MS` | `900000` |
 
 ### Global model and tool-pass defaults
@@ -602,7 +604,7 @@ Check the scheduler consumer, Kafka connectivity, `agent-runs.scheduled`, and wh
 
 ### An LLM request times out
 
-Check the selected lane's worker logs, reply topic, reply-consumer group, model endpoint timeout, and `LLM_REPLY_TIMEOUT_MS`.
+Check the selected lane's worker logs for the job ID, AgentRun ID, and Kafka partition and offset. Check the model endpoint timeout and `LLM_REPLY_TIMEOUT_MS` to distinguish a slow active worker from a request that never started.
 
 ### MCP tools do not appear
 

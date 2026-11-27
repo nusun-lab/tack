@@ -1,5 +1,7 @@
 package us.nusun.tack.framework.run;
 
+import static us.nusun.tack.framework.FrameworkText.firstNonBlank;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -104,8 +106,10 @@ public class AgentRunRoute extends RouteBuilder {
         Exception failure = exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class);
         if (run != null) {
             run.status(AgentRun.STATUS_FAILED);
-            if (failure != null && failure.getMessage() != null && !failure.getMessage().isBlank()) {
-                exchange.setProperty("latestPrimitiveFailure", failure.getMessage());
+            if (failure != null) {
+                exchange.setProperty("latestPrimitiveFailure", firstNonBlank(
+                        exchange.getProperty("latestPrimitiveFailure", String.class),
+                        failure.getMessage(), failure.getClass().getSimpleName()));
             }
             projections.record(exchange, "AGENT_RUN_FAILED");
         }
