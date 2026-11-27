@@ -39,7 +39,6 @@ class LlmQueueLifecycleTest {
             @Override
             public void configure() {
                 from("direct:low-worker").routeId("llm-worker-low-pass").setBody(constant("ok"));
-                from("direct:low-reply").routeId("llm-response-consumer-low-pass").setBody(constant("ok"));
             }
         });
         context.start();
@@ -59,7 +58,6 @@ class LlmQueueLifecycleTest {
             @Override
             public void configure() {
                 from("direct:low-worker").routeId("llm-worker-low-pass").setBody(constant("ok"));
-                from("direct:low-reply").routeId("llm-response-consumer-low-pass").setBody(constant("ok"));
             }
         });
         context.start();
@@ -79,28 +77,6 @@ class LlmQueueLifecycleTest {
     }
 
     @Test
-    void producerOnlyVerificationModeDoesNotRequireLocalWorkerRoute() throws Exception {
-        DefaultCamelContext context = TestCamelContexts.quiet();
-        Properties properties = new Properties();
-        properties.setProperty("llm.local-worker-route-verification.enabled", "false");
-        context.getPropertiesComponent().setOverrideProperties(properties);
-        LlmRouteSupport support = routeSupport(new InFlightReplyManager());
-        context.addRoutes(new RouteBuilder() {
-            @Override
-            public void configure() {
-                from("direct:high-reply").routeId("llm-response-consumer-high-pass").setBody(constant("ok"));
-            }
-        });
-        context.start();
-        try {
-            Exchange exchange = exchangeForLane(context, "high-pass");
-            assertDoesNotThrow(() -> support.verifySelectedRoutesAvailable(exchange));
-        } finally {
-            context.stop();
-        }
-    }
-
-    @Test
     void laneParallelismDrivesKafkaWorkerConsumerCount() throws Exception {
         DefaultCamelContext context = TestCamelContexts.quiet();
         LlmRoute route = route(context, registryWithLowLaneParallelism(3));
@@ -110,6 +86,8 @@ class LlmQueueLifecycleTest {
         String workerUri = context.getRouteDefinition("llm-worker-low-pass").getInput().getEndpointUri();
         assertTrue(workerUri.contains("consumersCount=3"));
         assertTrue(workerUri.contains("maxPollRecords=1"));
+        assertTrue(workerUri.contains("autoCommitEnable=false"));
+        assertTrue(workerUri.contains("allowManualCommit=true"));
     }
 
     @Test

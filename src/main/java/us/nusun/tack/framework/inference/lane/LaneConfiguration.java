@@ -36,7 +36,5 @@ public interface LaneConfiguration {
 
     interface ToolMemory {
         Optional<Integer> maxTokens();
-        Optional<Double> compactionThreshold();
-        Optional<Integer> recentToolInteractions();
     }
 }

@@ -49,19 +49,22 @@ public class LlmRoute extends RouteBuilder {
                     .setProperty("llmFailureMessage", simple("${exception.message}"))
                     .setProperty("llmFailureContext", method(deadLetterFactory, "contextSummary"))
                     .log(LoggingLevel.WARN, "LLM queue failure: ${exchangeProperty.llmFailureContext} reason=${exchangeProperty.llmFailureMessage}")
-                    .bean(routeSupport, "discardReply")
                     .filter(exchangeProperty("llmJob").isNotNull())
                         .wireTap("direct:publish-failed-llm-job-dlq")
                         .end()
                     .end()
                 .end()
                 .bean(jobFactory, "prepare")
-                .bean(routeSupport, "registerReply")
-                .bean(routeSupport, "verifySelectedRoutesAvailable")
-                .marshal(llmJson(LlmJobEnvelope.class))
-                .setHeader(KafkaConstants.KEY, method(jobFactory, "requestKafkaKey"))
-                .toD("kafka:${exchangeProperty.laneRequestTopic}")
-                .bean(routeSupport, "awaitReply")
+                .doTry()
+                    .bean(routeSupport, "registerReply")
+                    .bean(routeSupport, "verifySelectedRoutesAvailable")
+                    .marshal(llmJson(LlmJobEnvelope.class))
+                    .setHeader(KafkaConstants.KEY, method(jobFactory, "requestKafkaKey"))
+                    .toD("kafka:${exchangeProperty.laneRequestTopic}?synchronous=true")
+                    .bean(routeSupport, "awaitReply")
+                .doFinally()
+                    .bean(routeSupport, "discardReply")
+                .end()
                 .bean(routeSupport, "logModelResponse")
                 .bean(routeSupport, "validateResponseSchema")
                 .validate(body().isInstanceOf(LlmJobResult.class));
@@ -69,11 +72,6 @@ public class LlmRoute extends RouteBuilder {
         for (InferenceLaneDefinition lane : lanes.allLanes()) {
             llmWorker(lane);
         }
-
-        from("direct:handle-llm-response")
-                .routeId("handle-llm-response")
-                .validate(body().isInstanceOf(LlmJobResult.class))
-                .bean("inFlightReplyManager", "complete");
 
         from("direct:publish-failed-llm-job-dlq")
                 .routeId("publish-failed-llm-job-dlq")
@@ -100,6 +98,23 @@ public class LlmRoute extends RouteBuilder {
                 .bean(routeSupport, "requireAgentResponse")
                 .setBody(method(routeSupport, "succeededResult"));
 
+        from("direct:execute-claimed-llm-job")
+                .routeId("execute-claimed-llm-job")
+                .doTry()
+                    .to("direct:call-llm-agent")
+                .doCatch(ToolLoopGuardChatMemory.ToolPassTerminatedException.class)
+                    .log(LoggingLevel.WARN, "${exception.message}")
+                    .setBody(simple("${exception.message}"))
+                    .setBody(method(routeSupport, "succeededResult"))
+                .doCatch(Exception.class)
+                    .setProperty("llmFailureMessage", simple("${exception.message}"))
+                    .setBody(method(deadLetterFactory, "failedLlmResult"))
+                .doFinally()
+                    .bean(routeSupport, "completeWorkerJob")
+                .end()
+                .filter(simple("${body.status} == 'FAILED'"))
+                    .wireTap("direct:publish-failed-llm-job-dlq")
+                .end();
     }
 
     private void llmWorker(InferenceLaneDefinition lane) {
@@ -114,23 +129,15 @@ public class LlmRoute extends RouteBuilder {
                 + "&consumersCount=" + lane.parallelism()
                 + "&maxPollRecords=1"
                 + "&maxPollIntervalMs=900000"
+                + "&autoCommitEnable=false&allowManualCommit=true"
                 + "&autoOffsetReset=earliest")
                 .routeId("llm-worker-" + routeSuffix)
                 .autoStartup("{{llm.worker.enabled:true}}")
                 .unmarshal(llmJson(LlmJobEnvelope.class))
                 .setProperty("llmJob", body())
-                .doTry()
-                    .to("direct:call-llm-agent")
-                    .to(publishReplyUri)
-                .doCatch(ToolLoopGuardChatMemory.ToolPassTerminatedException.class)
-                    .log(LoggingLevel.WARN, "${exception.message}")
-                    .setBody(simple("${exception.message}"))
-                    .setBody(method(routeSupport, "succeededResult"))
-                    .to(publishReplyUri)
-                .doCatch(Exception.class)
-                    .setProperty("llmFailureMessage", simple("${exception.message}"))
-                    .wireTap("direct:publish-failed-llm-job-dlq")
-                    .setBody(method(deadLetterFactory, "failedLlmResult"))
+                .bean(routeSupport, "commitWorkerRequest")
+                .filter(method(routeSupport, "claimWorkerJob"))
+                    .to("direct:execute-claimed-llm-job")
                     .to(publishReplyUri)
                 .end();
 
@@ -139,14 +146,6 @@ public class LlmRoute extends RouteBuilder {
                 .setHeader(KafkaConstants.KEY, simple("${body.jobId}"))
                 .marshal(llmJson(LlmJobResult.class))
                 .to("kafka:" + replyTopic);
-
-        from("kafka:" + replyTopic
-                + "?groupId={{llm.response.consumer.group}}-" + laneId
-                + "&autoOffsetReset=latest"
-                + "&maxPollRecords=1")
-                .routeId("llm-response-consumer-" + routeSuffix)
-                .unmarshal(llmJson(LlmJobResult.class))
-                .to("direct:handle-llm-response");
     }
 
     private static JacksonDataFormat llmJson(Class<?> type) {

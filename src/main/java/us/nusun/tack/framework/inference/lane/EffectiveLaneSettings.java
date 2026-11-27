@@ -50,10 +50,6 @@ public record EffectiveLaneSettings(
                         toolMemory == null ? memory.maxTokens() : toolMemory.maxTokens().orElse(memory.maxTokens()),
                         override == null ? defaults.maxToolCallingRoundTrips()
                                 : override.maxToolCallingRoundTrips().orElse(defaults.maxToolCallingRoundTrips()),
-                        toolMemory == null ? memory.compactionThreshold()
-                                : toolMemory.compactionThreshold().orElse(memory.compactionThreshold()),
-                        toolMemory == null ? memory.recentToolInteractions()
-                                : toolMemory.recentToolInteractions().orElse(memory.recentToolInteractions()),
                         override == null ? model.contextWindow() : override.contextWindow().orElse(model.contextWindow()),
                         override == null ? model.maxTokens() : override.maxTokens().orElse(model.maxTokens())));
     }

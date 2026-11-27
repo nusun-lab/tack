@@ -14,10 +14,11 @@ import org.apache.camel.support.DefaultProducer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public final class StubKafkaComponent extends DefaultComponent {
     private final SendObserver observer;
-    private final List<SentExchange> sent = new ArrayList<>();
+    private final List<SentExchange> sent = new CopyOnWriteArrayList<>();
     private final List<ConsumerRegistration> consumers = new ArrayList<>();
 
     public StubKafkaComponent() {
@@ -46,6 +47,10 @@ public final class StubKafkaComponent extends DefaultComponent {
     }
 
     public void emit(String topic, Object body) throws Exception {
+        emit(topic, body, exchange -> {});
+    }
+
+    public void emit(String topic, Object body, Processor prepare) throws Exception {
         List<ConsumerRegistration> matches = consumers.stream()
                 .filter(consumer -> consumer.topic().equals(topic))
                 .toList();
@@ -55,6 +60,7 @@ public final class StubKafkaComponent extends DefaultComponent {
         for (ConsumerRegistration consumer : matches) {
             Exchange exchange = consumer.endpoint().createExchange();
             exchange.getIn().setBody(body);
+            prepare.process(exchange);
             consumer.processor().process(exchange);
         }
     }

@@ -1,11 +1,5 @@
 package us.nusun.tack.framework.inference;
 
-import dev.langchain4j.agent.tool.ToolSpecification;
-import dev.langchain4j.data.message.AiMessage;
-import dev.langchain4j.data.message.ChatMessage;
-import dev.langchain4j.data.message.SystemMessage;
-import dev.langchain4j.data.message.ToolExecutionResultMessage;
-import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.TokenCountEstimator;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.openai.OpenAiTokenUsage;
@@ -23,18 +17,14 @@ final class LlmCallDiagnostics {
     private final Exchange exchange;
     private final LlmExecutionContext invocation;
     private final TokenCountEstimator tokenCountEstimator;
-    private final int contextWindow;
-    private final int maxOutputTokens;
-    private final int transcriptMaxTokens;
+    private final ToolPassSettings settings;
     private long cumulativeEstimatedInputTokens;
 
     LlmCallDiagnostics(Exchange exchange, TokenCountEstimator tokenCountEstimator, ToolPassSettings settings) {
         this.exchange = exchange;
         this.invocation = LlmExecutionContext.require(exchange);
         this.tokenCountEstimator = tokenCountEstimator;
-        this.contextWindow = settings.contextWindow();
-        this.maxOutputTokens = settings.maxOutputTokens();
-        this.transcriptMaxTokens = settings.memoryTokens();
+        this.settings = settings;
     }
 
     void capture(Result<String> result) {
@@ -56,72 +46,20 @@ final class LlmCallDiagnostics {
         LOG.info("LLM final response diagnostics: lane={} passType={} {}", invocation.laneId(), invocation.passType(), summary);
     }
 
-    void logBudget(ChatRequest request) {
-        int promptTokens = 0;
-        int messageTokens = 0;
-        int thinkingTokens = 0;
-        int toolCallTokens = 0;
-        int toolResultTokens = 0;
-        boolean firstUser = true;
-
-        for (ChatMessage message : request.messages()) {
-            if (message instanceof SystemMessage || (firstUser && message instanceof UserMessage)) {
-                promptTokens += tokenCountEstimator.estimateTokenCountInMessage(message);
-                if (message instanceof UserMessage) firstUser = false;
-            } else if (message instanceof UserMessage) {
-                firstUser = false;
-                messageTokens += tokenCountEstimator.estimateTokenCountInMessage(message);
-            } else if (message instanceof AiMessage ai) {
-                messageTokens += tokenCountEstimator.estimateTokenCountInText(ai.text());
-                thinkingTokens += tokenCountEstimator.estimateTokenCountInText(ai.thinking());
-                if (ai.hasToolExecutionRequests()) {
-                    for (var call : ai.toolExecutionRequests()) {
-                        toolCallTokens += tokenCountEstimator.estimateTokenCountInText(call.name());
-                        toolCallTokens += tokenCountEstimator.estimateTokenCountInText(call.arguments());
-                    }
-                }
-            } else if (message instanceof ToolExecutionResultMessage) {
-                toolResultTokens += tokenCountEstimator.estimateTokenCountInMessage(message);
-            }
-        }
-
-        int toolSchemaTokens = request.toolSpecifications().stream()
-                .map(ToolSpecification::toJson)
-                .mapToInt(tokenCountEstimator::estimateTokenCountInText)
-                .sum();
-        int responseTokens = request.responseFormat() == null
-                ? 0 : tokenCountEstimator.estimateTokenCountInText(String.valueOf(request.responseFormat()));
-        int transcriptTokens = messageTokens + thinkingTokens + toolCallTokens + toolResultTokens;
-        int inputTokens = promptTokens + toolSchemaTokens + responseTokens + transcriptTokens;
-        boolean compacted = request.messages().stream()
-                .filter(UserMessage.class::isInstance)
-                .map(UserMessage.class::cast)
-                .anyMatch(message -> "tack-runtime".equals(message.name()));
-        int inputCeiling = Math.max(0, contextWindow - maxOutputTokens);
-        cumulativeEstimatedInputTokens += inputTokens;
-
-        LOG.info("[{}] TOKEN BUDGET lane={} input={}/{} ({}%) | prompt={} tools={} response={} transcript={}/{} ({}%) "
-                        + "| transcriptParts messages={} thinking={} toolCalls={} toolResults={} | compacted={} cumulativeInput={}",
-                invocation.logLabel(),
-                invocation.laneId(),
-                inputTokens,
-                inputCeiling,
-                percent(inputTokens, inputCeiling),
-                promptTokens,
-                toolSchemaTokens,
-                responseTokens,
-                transcriptTokens,
-                transcriptMaxTokens,
-                percent(transcriptTokens, transcriptMaxTokens),
-                messageTokens,
-                thinkingTokens,
-                toolCallTokens,
-                toolResultTokens,
-                compacted,
+    ChatRequest projectRequest(ChatRequest request) {
+        var projection = ToolTranscriptCompaction.project(request, settings, tokenCountEstimator);
+        int input = projection.promptTokens() + projection.toolTokens() + projection.responseSchemaTokens()
+                + projection.projectedTokens();
+        cumulativeEstimatedInputTokens += input;
+        LOG.info("[{}] TOKEN BUDGET jobId={} lane={} input={}/{} | prompt={} tools={} response={} "
+                        + "| transcriptRaw={} transcriptProjected={} transcriptBudget={} "
+                        + "| retainedResults={} omittedResults={} reclaimedTokens={} compacted={} cumulativeInput={}",
+                invocation.logLabel(), invocation.jobId(), invocation.laneId(), input, projection.inputCeiling(),
+                projection.promptTokens(), projection.toolTokens(), projection.responseSchemaTokens(),
+                projection.rawTokens(), projection.projectedTokens(), projection.budget(),
+                projection.retainedResults(), projection.omittedResults(),
+                projection.rawTokens() - projection.projectedTokens(), projection.omittedResults() > 0,
                 cumulativeEstimatedInputTokens);
-    }
-
-    private static int percent(long used, long max) {
-        return max <= 0 ? 0 : (int) Math.round((double) used / (double) max * 100.0);
+        return projection.request();
     }
 }

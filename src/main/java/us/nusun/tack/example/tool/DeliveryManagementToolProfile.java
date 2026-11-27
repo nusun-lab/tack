@@ -11,25 +11,40 @@ import java.util.List;
 public class DeliveryManagementToolProfile implements ToolProfileProvider {
     public static final String ID = "delivery-management";
 
-    private final PlaneMcpServer plane;
+    private final KaneoMcpServer kaneo;
     private final GiteaMcpServer gitea;
 
     @Inject
     public DeliveryManagementToolProfile(
-            PlaneMcpServer plane,
+            KaneoMcpServer kaneo,
             GiteaMcpServer gitea) {
-        this.plane = plane;
+        this.kaneo = kaneo;
         this.gitea = gitea;
     }
 
     @Override
     public List<ToolProfile> toolProfiles() {
         return List.of(ToolProfile.builder(ID)
-                .mcpServer(plane.definition())
+                .mcpServer(kaneo.definition())
                 .mcpServer(gitea.definition())
-                .allowTools(PlaneMcpServer.ID,
-                        "project", "member", "workitem", "workitem_activity", "workitem_comment",
-                        "workitem_relation", "label", "state")
+                .allowTools(KaneoMcpServer.ID,
+                        "whoami",
+                        "list_workspaces",
+                        "list_projects",
+                        "list_workspace_members",
+                        "list_tasks",
+                        "get_task",
+                        "get_task_relations",
+                        "list_task_comments",
+                        "get_task_by_ticket_id",
+                        "create_task",
+                        "create_label",
+                        "update_task",
+                        "update_task_status",
+                        "update_task_assignee",
+                        "create_task_relation",
+                        "create_task_comment",
+                        "delete_task_relation")
                 .allowTools(GiteaMcpServer.ID,
                         "get_me",
                         "search_repos",
@@ -40,32 +55,10 @@ public class DeliveryManagementToolProfile implements ToolProfileProvider {
                         "get_commit",
                         "list_pull_requests",
                         "pull_request_read")
-                .promptGuidance("""
-                        - this profile mutates Plane delivery data and reads Gitea delivery evidence; the calling routine
-                          defines which delivery mutation is appropriate
-                        - use only these Plane actions here: project=list/retrieve;
-                          member=me/list_workspace/list_project;
-                          workitem=list/retrieve/retrieve_by_identifier/search/create/update/manage_label;
-                          workitem_activity=list; workitem_comment=list/retrieve/create/update;
-                          workitem_relation=list/create; label=list/create; state=list
-                        - before mutating an existing work item, retrieve its attached labels and verify classification;
-                          never infer classification from title, state, assignee, hierarchy, or wording
-                        """ + PlaneWorkGuidance.CLASSIFICATION + """
-                        - use workitem(action="update", ...) with the complete assignees array for assignment changes
-                        - Gitea access in this profile is read-only evidence; do not create repositories or mutate source
-                        - built-in dependency relations are direct: use workitem_relation(action="list", ...) to inspect
-                          them and workitem_relation(action="create", relation_type=<built-in>, ...) to create them; valid
-                          built-in types are blocking, blocked_by, start_before, start_after, finish_before, and finish_after
-                        - do not call list_definitions for built-in dependency relations; relation definitions are only for
-                          custom relationships
-                        - relation deletion is not available in the current Plane CE API; do not attempt
-                          workitem_relation(action="delete")
-                        - a successful Plane relation read is authoritative for blockers; an error/validation payload is
-                          not blocker evidence
-                        - if relation reading fails, use only explicit blocker information on the selected item and report
-                          dependency state as unknown when it cannot be verified
-
-                        """ + PlaneWorkGuidance.QUERIES)
+                .promptGuidance(KaneoWorkGuidance.PROJECT + KaneoWorkGuidance.TASKS + KaneoWorkGuidance.LIFECYCLE + KaneoWorkGuidance.CLASSIFICATION + RepositoryWritingGuidance.DISCOVERY + """
+                        - Keep dependencies acyclic. Repair a relation only after reading its exact ID, direction, and
+                          downstream consequences. Verify the corrected graph before promoting work.
+                        """)
                 .build());
     }
 }

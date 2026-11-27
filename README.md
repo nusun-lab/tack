@@ -172,7 +172,6 @@ export LLM_MODEL_DEFAULT_OPENAI_BASE_URL=http://localhost:8000/v1
 export LLM_MODEL_DEFAULT_OPENAI_MODEL=qwen-36-27b
 export LLM_MODEL_DEFAULT_OPENAI_API_KEY=not-needed
 export LLM_WORKER_ENABLED=true
-export LLM_LOCAL_WORKER_ROUTE_VERIFICATION_ENABLED=true
 export LLM_KAFKA_PROVISION_TOPICS=true
 ```
 
@@ -348,7 +347,7 @@ Use `act` when the model may need tools and the active thought should be rewritt
 
 `act` performs a tool/action pass with the selected profile, then a schema-shaped synthesis pass that rewrites the active leaf thought.
 
-Tool passes are bounded. The defaults are 50,000 tool-memory tokens, compaction at 50%, three recent tool interactions retained around compaction, and a semantic budget of 50 individual tool calls. Tack also detects repeated completed tool cycles. These are safety rails; routine prompts should still make absence, blockers, and sufficient evidence valid stop conditions.
+Tool passes default to 50,000 transcript tokens and 50 individual tool calls. Tack preserves the native transcript up to the smaller of the transcript limit and the lane context remaining after prompts, tool schemas, and reserved output. Under pressure, it replaces individual tool-result payloads with outcome notices, preferring recent and smaller evidence. It aims for 90% of the effective budget. Tool requests and their result messages stay paired, and repeated-execution checks use the original history.
 
 ### `tack:decide`
 
@@ -390,7 +389,11 @@ For each lane Tack creates a Kafka worker path with `consumersCount=lane.paralle
 
 With parallelism greater than one, ordering is preserved only for records sharing a partition key. The default `AGENT_RUN` strategy keeps one AgentRun's jobs on the same partition while unrelated runs can use others.
 
-Reply correlation is currently in memory by `jobId`, so one active orchestrator process must own the waiting request and its reply consumer.
+Run one Tack orchestrator with its inference workers. A worker synchronously commits each request offset before atomically claiming the job from the caller's in-memory registry. Workers reject duplicate copies of claimed jobs and requests without a waiting caller. The local worker completes the caller when the pass exits and also publishes the result to the lane's Kafka reply topic.
+
+`LLM_REPLY_TIMEOUT_MS` withdraws a request if no worker has claimed it by the deadline. Once a worker starts, Tack keeps the AgentRun attached until it exits, even after that deadline. If the process dies after committing a request, Tack does not replay the job. Inspect external state before retrying an interrupted Act.
+
+Run the rebalance regression against a local Kafka broker with `TACK_TEST_KAFKA_BOOTSTRAP=localhost:9092 mvn -Dtest=LlmKafkaRebalanceTest test`. It creates temporary topics, forces a consumer poll timeout, and uses a simulated side effect in place of a model.
 
 ## Configuration
 
@@ -404,7 +407,6 @@ Reply correlation is currently in memory by `jobId`, so one active orchestrator 
 | `AGENT_RUN_SCHEDULED_CONSUMER_ENABLED` | `true` |
 | `LLM_TOPIC_DEAD_LETTER` | `llm.dead-letter` |
 | `LLM_WORKER_ENABLED` | `true` |
-| `LLM_LOCAL_WORKER_ROUTE_VERIFICATION_ENABLED` | `true` |
 | `LLM_REPLY_TIMEOUT_MS` | `900000` |
 
 ### Global model and tool-pass defaults
@@ -420,9 +422,9 @@ Reply correlation is currently in memory by `jobId`, so one active orchestrator 
 | `LLM_MODEL_DEFAULT_OPENAI_STRICT_JSON_SCHEMA` | `true` |
 | `LLM_MODEL_DEFAULT_OPENAI_THINKING_OFF_ENABLED` | `true` |
 | `LLM_MODEL_DEFAULT_TOOL_MEMORY_MAX_TOKENS` | `50000` |
-| `LLM_MODEL_DEFAULT_TOOL_MEMORY_COMPACTION_THRESHOLD` | `0.50` |
-| `LLM_MODEL_DEFAULT_TOOL_MEMORY_RECENT_TOOL_INTERACTIONS` | `3` |
 | `LLM_MODEL_DEFAULT_MAX_TOOL_CALLING_ROUND_TRIPS` | `50` |
+
+The software-team example defaults to temperature `0.2`, top-p `0.90`, and top-k `20` on low-pass, and temperature `0.30`, top-p `0.90`, and presence penalty `0.0` on high-pass. The corresponding `LLM_LOW_*` and `LLM_HIGH_*` settings override these defaults.
 
 ### OpenShell runtime
 
@@ -459,19 +461,26 @@ The `us.nusun.tack.example` package is a demonstration catalog, not part of Tack
 
 ### Delivery model
 
-Plane labels plus parent/child hierarchy carry the durable product/delivery model. Tack does not depend on native Plane work-item types for this example. Every classified work item carries exactly one attached classification label from this closed set. These labels are unrelated to Plane's native work-item type/type_id:
+Kaneo tasks carry exactly one classification label. Each task has its own attached label record.
 
-- **`epic`:** PO-owned product lifecycle object. PO defines, prioritizes, activates, and accepts it.
-- **`story`:** PM-planned engineering delivery beneath an Epic. DEV or ARCH owns assigned lifecycle through Done.
-- **`test`:** QE-owned test/evidence work beneath an Epic.
-- **`defect`:** QE-raised product-failure claim. QE creates it unparented in Backlog with evidence; PO validates or rejects it, records whether it blocks Epic acceptance, and assigns product priority; PM routes accepted Todo Defects; DEV/ARCH repairs; QE retests and closes.
+- **`epic`** is an independently valuable product outcome with PO-authored Gherkin and evidence-based acceptance.
+- **`story`** is PM-planned engineering work under an Epic. DEV or ARCH closes it after verified integration.
+- **`test`** is QA-owned coverage and evidence under an Epic.
+- **`defect`** starts as a planned, unassigned QA finding related to its originating Test. PO validates it, links it to its Epic, and records its priority and acceptance impact. PM routes repairs and QA closes proven fixes.
 
-Plane state carries lifecycle, assignment carries ownership, parent/sub-work-item hierarchy carries decomposition, and relations carry blocking/order. Plane native `type_id` is not used for Tack classification. Classification is never inferred from title, wording, state, hierarchy, or role.
+Engineering work normally moves from `planned` to `to-do`, `in-progress`, `in-review`, and `done`. Only `done` satisfies completed-work prerequisites. Archived work requires a recorded reason. A `subtask` relation points from an Epic to its child, and a `blocks` relation points from prerequisite to dependent. PM verifies direction and repairs incorrect relations before feeding executable queues.
 
-The team normally keeps roughly 2-3 Epics In Progress with a deeper Todo runway when downstream capacity supports it. Todo is the preparation boundary: PM may pre-decompose Backlog Stories, and once repository architecture is ready Director staffs DEV and QE without waiting for the Epic to become In Progress. PM targets roughly 2-3 active engineering units plus 2-3 executable Todo Stories per delivery role when independent work exists; QE uses the same practical 2-3 active plus 2-3 queued target for Tests. Story dependencies must remain acyclic. PM owns cancellation of obsolete Stories; QE owns Test promotion, clarified-retest resets, and cancellation of obsolete Tests. These are flow targets, not hard ceilings.
+PM creates the mission project with default columns and reconciles active roster access to the Mattermost channel. Kaneo workspace grants are provisioned once and inherited by mission projects. PM maintains `docs/project-basics.md` in the system repository with the project, channel, and Gitea locators.
 
-PM bootstrap establishes the Plane project and shared team channel. Team onboarding is a first-class recurring PM responsibility. On every PM orientation, onboarding status is observed directly by comparing the authoritative active roster with current Plane project membership and current shared Mattermost channel membership. Any missing active identity makes onboarding the highest-priority PM focus. PM does not rely on prior memory to establish parity and does not evict members based on roster absence. Architect provisions and baselines source control after that foundation exists. Once the system repository exists, PM reads its documentation and maintains `docs/project-basics.md` as compact canonical navigation linking the mission, Plane project, shared channel, repository map, role responsibilities, and stable delivery conventions.
- DEV and QE are staffed once a PO-owned Epic is Todo or In Progress and repository architecture is ready. QE test-code PRs use the same Architect integration path as implementation PRs, and a Test stays In Progress until required test code is merged. The repository model is deliberately simple:
+The Director keeps PM active, adds PO and ARCH after the project and channel are usable, and adds DEV and QA after the system/component repository map is established and a PO-owned Epic is `to-do` or `in-progress`. PO prepares the first product-ready Epic while ARCH publishes the smallest locally buildable repository baseline.
+
+PM plans Story coverage and dependencies for ready and active Epics, including dedicated investigations for unresolved technical questions. PM can assign and promote the first executable Story under a `to-do` Epic once its repository, classification, parent, and dependencies are verified. The assigned engineer can claim it immediately. PO activates the Epic when that Story is ready or underway and downstream capacity supports delivery. PO normally keeps 2–3 active Epics with a deeper ready backlog. PM separately replenishes roughly 2–3 executable queued Stories for each engineer where the work supports it.
+
+DEV and ARCH prioritize actionable Defects over Stories. An assigned engineer records the exact PR and moves a validated slice into `in-review` when its PR is open and ready. Architect integrates eligible PRs, including QA test code. Gitea is authoritative for merge eligibility and requires no Kaneo status or chat acknowledgment. Work awaiting integration leaves room to code another slice. Concrete review feedback returns work to `in-progress`. After verified merge and validation, the assigned engineer completes a Story. A merged Defect returns to `in-progress` for QA retest, and QA closes it after passing evidence.
+
+QA maintains a separate executable Test queue and can author automation as soon as an Epic is product-ready. A Test with a required open code PR goes to `in-review`. Verified integration returns it to `in-progress` when execution remains. `done` requires integrated automation where applicable and actual behavioral evidence. Local runs against integrated source count for behavior they directly exercise. Record deployment-dependent checks separately. PO accepts an Epic only after its required work and Gherkin evidence are complete.
+
+The repository model is deliberately simple:
 
 ```text
 system-repo/
@@ -487,7 +496,7 @@ component-repo(s)/
     └── <anchor>-api       # reserved for API specification/contract repositories
 ```
 
-The system repository is the single home for system GitOps, system documentation, architecture decisions, and cross-component system behavior tests. Separate docs or QE repositories are not part of the model. The example expects mission Git repositories under the `agent-workspace` organization.
+The system repository is the canonical home for system GitOps, documentation, architecture decisions, and cross-component behavior tests. The example expects mission Git repositories under the `agent-workspace` organization.
 
 ### Feedback loops
 
@@ -499,21 +508,21 @@ The system repository is the single home for system GitOps, system documentation
 
 ### Tool ownership
 
-- **Plane:** projects, label-classified work items, hierarchy, assignments, lifecycle, dependencies, priorities, blockers, and evidence comments.
+- **Kaneo:** projects, label-classified tasks, relations, assignments, lifecycle, dependencies, priorities, blockers, and evidence comments.
 - **Gitea:** repositories, branches, commits, pull requests, releases, and integration evidence.
 - **OpenShell:** local repository contents, builds, tests, diffs, commits, conflict recovery, and pushes.
 - **Mattermost:** the shared current-mission channel for ordinary questions, handoffs, blockers, decisions, and awareness; DMs are reserved for genuinely private exchanges.
 
-Gitea issue tracking, labels, milestones, and time tracking are intentionally excluded so Plane remains the delivery source of truth.
+Gitea issue tracking, labels, milestones, and time tracking are intentionally excluded so Kaneo remains the delivery source of truth.
 
 ### Example tool profiles
 
 | Profile | Scope |
 | --- | --- |
-| `workspace-readonly` | Read-only orientation across Plane, Gitea, and Mattermost |
+| `workspace-readonly` | Read-only orientation across Kaneo, Gitea, and Mattermost |
 | `workspace-coordination` | PM-only project/channel bootstrap and access alignment |
 | `product-ownership` | PO Epic lifecycle/acceptance plus validation and prioritization of `defect` findings |
-| `delivery-management` | PM Story planning, dependency/assignment flow, and routing of accepted Todo Defects |
+| `delivery-management` | PM Story planning, dependency/assignment flow, and routing of validated `to-do` Defects |
 | `quality-management` | QE `test` lifecycle, `defect` creation/retest evidence, and Epic evidence |
 | `engineering-work` | DEV/ARCH execution updates for already-assigned `story` or `defect` work |
 | `source-control` | Read-only Gitea source discovery and evidence |
@@ -596,7 +605,7 @@ Check the scheduler consumer, Kafka connectivity, `agent-runs.scheduled`, and wh
 
 ### An LLM request times out
 
-Check the selected lane's worker logs, reply topic, reply-consumer group, model endpoint timeout, and `LLM_REPLY_TIMEOUT_MS`.
+Check the selected lane's worker logs for the job ID, AgentRun ID, and Kafka partition and offset. Check the model endpoint timeout and `LLM_REPLY_TIMEOUT_MS` to distinguish a slow active worker from a request that never started.
 
 ### MCP tools do not appear
 

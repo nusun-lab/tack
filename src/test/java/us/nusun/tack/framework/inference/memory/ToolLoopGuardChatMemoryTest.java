@@ -6,8 +6,6 @@ import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.memory.ChatMemory;
 import org.junit.jupiter.api.Test;
-import us.nusun.tack.framework.inference.lane.ToolPassSettings;
-import us.nusun.tack.framework.tests.support.TestTokenCountEstimator;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -114,14 +112,13 @@ class ToolLoopGuardChatMemoryTest {
     }
 
     @Test
-    void compactionKeepsTheCompleteHistoryAvailableToTheGuard() {
-        ChatMemory memory = ToolLoopGuardChatMemory.forPass("test",
-                new ToolPassSettings(1000, 5, 0.001, 1, 20000, 2000), new TestTokenCountEstimator());
+    void theGuardKeepsCompleteNativeHistory() {
+        ChatMemory memory = memory(5);
         memory.add(UserMessage.from("Check the current status."));
         addExecution(memory, "1", "status", "{}", "pending");
         addExecution(memory, "2", "status", "{}", "pending");
 
-        assertEquals(1, memory.messages().stream().filter(ToolExecutionResultMessage.class::isInstance).count());
+        assertEquals(2, memory.messages().stream().filter(ToolExecutionResultMessage.class::isInstance).count());
         assertThrows(ToolLoopGuardChatMemory.RepeatedToolExecutionException.class,
                 () -> memory.add(AiMessage.from(request("3", "status", "{}"))));
     }
@@ -141,7 +138,6 @@ class ToolLoopGuardChatMemoryTest {
     }
 
     private static ChatMemory memory(int maxCalls) {
-        return ToolLoopGuardChatMemory.forPass("test", new ToolPassSettings(10000, maxCalls, 1.0, 3, 20000, 2000),
-                new TestTokenCountEstimator());
+        return ToolLoopGuardChatMemory.forPass("test", maxCalls);
     }
 }

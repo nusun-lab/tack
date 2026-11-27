@@ -5,6 +5,7 @@ import org.apache.camel.builder.RouteBuilder;
 import us.nusun.tack.example.tool.ArchitectSourceControlWriteToolProfile;
 import us.nusun.tack.example.tool.EngineeringWorkToolProfile;
 import us.nusun.tack.example.tool.IntegrationToolProfile;
+import us.nusun.tack.example.tool.SourceControlToolProfile;
 import us.nusun.tack.example.tool.TeamChatToolProfile;
 import us.nusun.tack.example.tool.WorkspaceReadonlyToolProfile;
 import us.nusun.tack.framework.routine.RoutineProvider;
@@ -34,9 +35,9 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
                 .subroutine("repository-architecture", "Establish the system and component repository model.",
                         "direct:architect-repository-architecture")
                 .subroutine("integration", "Resolve and integrate system/component pull requests.",
-                        "direct:architect-integration")
+                        "direct:architect-focus-integration")
                 .subroutine("implementation", "Execute assigned architecture-heavy engineering work.",
-                        "direct:architect-implementation")
+                        "direct:architect-focus-implementation")
                 .defaultLane("high-pass")
                 .withLaneBinding(LlmPassType.SYNTHESIS, "low-pass")
                 .withLaneBinding(LlmPassType.CONSOLIDATION, "low-pass")
@@ -48,8 +49,9 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:example-software-team-architect")
                 .routeId("example-software-team-architect")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Durable architecture anchors: system repo, component repo map, architecture decisions,
-                        assigned ARCH work, open PRs, conflicts, integration blockers, and cross-role questions.
+                        Exact Kaneo workspace/project IDs and slug, authenticated user, Mattermost team/channel IDs, and Gitea
+                        system/component owner/repo pairs and readiness. Keep architecture decisions, assigned work locators,
+                        open PRs, conflicts, integration blockers and cross-role questions.
                         """))
                 .to("tack:thought-enter?name=architect-root&maxTokens=450")
                 .setProperty("decision.architect-mission-complete.result", constant("no"))
@@ -59,15 +61,15 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
                             Choose exactly one highest-value Architect focus.
                             - repository-architecture: system repo/component repo model is missing, incomplete, or
                               inconsistent with the current architecture.
-                            - reconcile: an ARCH-assigned story remains In Progress after its linked
-                              PR is verified merged; Architect owns its transition to Done.
+                            - reconcile: an ARCH-assigned Story or Defect needs a status update after verified merge or
+                              concrete in-review feedback requiring source changes.
                             - integration: any current-mission open PR can be safely merged, needs conflict recovery, or
                               needs a small integration adjustment. Architect owns and drains the whole integration queue,
                               including Architect-authored PRs. Safe integration work outranks new ARCH implementation work.
                             - implementation: an assigned, classification-verified ARCH story or defect is actionable
                               and no safe integration candidate is waiting.
                             - coordination: a fresh architecture/product/QA/developer question needs Architect judgment.
-                            - complete: every required product Epic is terminal, the repository model is established, no
+                            - complete: every required product Epic is accepted and done, the repository model is established, no
                               ARCH-assigned engineering or integration remains, and no architecture blocker remains.
                             - wait: the mission is not complete and none of the other focuses is useful now.
                             Prefer concrete implementation/integration over passive review. Choose exactly one value.
@@ -82,11 +84,11 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
                 .routeId("architect-orientation")
                 .setHeader(TackHeaders.PROMPT, constant("""
                         Read only enough fresh current-mission state to rank Architect focus. Reuse the verified
-                        agent-workspace repository map already in thought. Check: whether repository architecture is
-                        still missing; any ARCH-assigned classification-verified source work needing reconciliation;
-                        current open PRs across the known mission repos regardless of author; and actionable ARCH-assigned
-                        Story/Defect work. Do not manufacture a blocker or reread chat/repository structure when existing
-                        anchors remain valid. Integration candidates outrank new implementation. Report only; do not mutate.
+                        agent-workspace repository map already in thought. Filter tasks by your Kaneo user ID in to-do,
+                        in-progress and in-review. Check verification gaps in repository architecture, assigned work needing
+                        reconciliation, open PRs across known mission repos, and actionable Defects before Stories.
+                        Check targeted conversation for a fresh question when needed. Integration candidates outrank new
+                        implementation. Report exact locators and evidence without mutation.
                         """))
                 .to("tack:act?id=architect-orientation&toolProfile=" + WorkspaceReadonlyToolProfile.ID);
 
@@ -96,10 +98,12 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
 
         from("direct:architect-repository-architecture")
                 .routeId("architect-repository-architecture")
+                .setHeader(TackHeaders.THOUGHT_PURPOSE, constant(
+                        "Exact system/component repository locators, responsibilities, canonical baseline paths and repository readiness."))
+                .to("tack:thought-enter?name=architect-repository-architecture-focus&maxTokens=400")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Make one concrete repository-architecture advance. All mission repositories belong under the
-                        agent-workspace Gitea organization; repositories in a persona's personal namespace are not valid
-                        mission repositories. Reuse current mission repositories under agent-workspace when their
+                        Make one concrete repository-architecture advance. Use gitea.create_repo and organization agent-workspace
+                        when provisioning is required. Reuse current mission repositories under agent-workspace when their
                         responsibility is already clear. Otherwise provision only what the architecture requires:
                         exactly one system repository and the justified component repository set. Establish the system
                         repository baseline with README.md, gitops/README.md, docs/architecture.md, and
@@ -113,15 +117,17 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
                         """))
                 .to("tack:act?id=architect-repository-step&toolProfile="
                         + ArchitectSourceControlWriteToolProfile.ID)
-                .to("direct:architect-awareness");
+                .to("direct:architect-awareness")
+                .to("tack:thought-exit?name=architect-repository-architecture-focus");
 
         from("direct:architect-focus-reconcile")
                 .routeId("architect-focus-reconcile")
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Reconcile exactly one ARCH-assigned story whose linked PR is verified merged.
-                        Confirm the Story is still In Progress, the PR/commit actually merged to the intended base, and no
-                        newer evidence requires source changes. Move that Story to Done with concise merge/validation
-                        evidence. Never close defect here; repaired Defects remain In Progress for QA retest/closure.
+                        Reconcile one ARCH-assigned Story or Defect using its exact Gitea PR. Leave an open PR awaiting
+                        merge in-review. Concrete feedback requiring implementation or unmerged closure returns the task
+                        to in-progress. After verified merge to the intended base, move a Story to done only with required
+                        validation. Return a merged Defect to in-progress for QA retest. Record exact merge/validation
+                        evidence, and leave successful Defect closure to QA.
                         """))
                 .to("tack:act?id=architect-story-reconcile&toolProfile=" + EngineeringWorkToolProfile.ID)
                 .to("direct:architect-awareness");
@@ -129,65 +135,81 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
         from("direct:architect-focus-implementation")
                 .routeId("architect-focus-implementation")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        One architecture-owned engineering unit: exact Plane id/classification/owner, Epic acceptance,
+                        One architecture-owned engineering unit: exact Kaneo id/classification/owner, Epic acceptance,
                         repository locator, branch/PR, dependency state, validation, and current blocker.
                         """))
                 .to("tack:thought-enter?name=architect-implementation-focus&maxTokens=500")
                 .to("direct:architect-implementation")
-                .to("tack:thought-exit?name=architect-implementation-focus")
-                .to("direct:architect-awareness");
+                .to("direct:architect-awareness")
+                .to("tack:thought-exit?name=architect-implementation-focus");
 
         from("direct:architect-implementation")
                 .routeId("architect-implementation")
                 .setProperty("decision.architect-has-work.result", constant("no"))
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Select exactly one ARCH-assigned actionable engineering unit. Before any lifecycle mutation,
-                        verify attached classification in current evidence: story for delivery or defect for repair.
-                        Unknown/missing classification means do not mutate. A epic
-                        or test is never claimable ARCH source work. Prefer assigned In Progress; otherwise claim a
-                        classification-verified assigned Todo -> In Progress. For a story, verify its
-                        parent Epic is In Progress before claiming it; Todo/Backlog Epic children are prepared future work.
-                        Verify Epic parent/acceptance, exact agent-workspace repository locator, dependencies, and expected
-                        validation. Never self-assign
-                        unowned Backlog work. Ordinary component Stories assigned to DEV remain DEV-owned.
+                        Use your authenticated Kaneo user ID to list assigned in-progress and to-do tasks. Prioritize
+                        actionable Defects before Stories, and in-progress before to-do within each kind. Skip in-review,
+                        integration-only waits and Defects awaiting QA. Verify exact labels, Epic relation and acceptance,
+                        repository and done incoming prerequisites. The first executable assigned Story can start under a
+                        to-do Epic. Claim one eligible to-do task with the dedicated status tool.
                         """))
                 .to("tack:act?id=architect-work-select&toolProfile=" + EngineeringWorkToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""
-                        Is one valid ARCH-assigned engineering unit now selected In Progress with enough context to
+                        Is one valid ARCH-assigned engineering unit now selected in-progress with enough context to
                         implement? Answer yes or no.
                         """))
                 .to("tack:decide?id=architect-has-work")
                 .choice()
                     .when(exchangeProperty("decision.architect-has-work.result").isEqualTo("yes"))
                         .setHeader(TackHeaders.PROMPT, constant("""
-                                Implement exactly one coherent architecture-owned patch in the existing system/component
-                                repository: integration/system wiring, GitOps, repository structure, cross-component
-                                contract, architecture-heavy component work, or assigned defect repair. Reuse the task
-                                branch/PR when continuing. Validate directly in the sandbox. Do not create a new repository
-                                to solve an ordinary implementation task, and do not absorb unrelated DEV work.
+                                Choose investigation for a selected Story explicitly asking a bounded technical or
+                                topology question. Choose implementation for source delivery or defect repair.
                                 """))
-                        .to("tack:act?id=architect-implementation-step&toolProfile="
-                                + ArchitectSourceControlWriteToolProfile.ID)
+                        .to("tack:decide?id=architect-work-kind&choices=investigation,implementation")
+                        .toD("direct:architect-work-${exchangeProperty.decision.architect-work-kind.result}")
                         .setHeader(TackHeaders.PROMPT, constant("""
-                                Update only the selected Plane work with branch/commit/PR, changed scope, validation, and
-                                concrete blockers. Keep story In Progress while its PR is open; Architect
-                                reconciles its assigned Story Done after verified merge. Keep defect In Progress
-                                through merge; QA retest closes the Defect.
+                                Record exact owner/repo/PR, head and validation evidence on the selected task. Move it to
+                                in-review when an open implementation PR has credible validation. Leave incomplete work
+                                in-progress with its concrete next action. Reconcile after merge in the separate focus.
+                                For an investigation, record verified findings for PM. A Story whose sole evidence
+                                objective is fulfilled can be done without a PR.
                                 """))
                         .to("tack:act?id=architect-work-evidence&toolProfile=" + EngineeringWorkToolProfile.ID)
                 .end();
 
+        from("direct:architect-work-investigation")
+                .routeId("architect-work-investigation")
+                .setHeader(TackHeaders.PROMPT, constant("""
+                        Inspect the source boundaries, contracts and related tasks relevant to the selected technical
+                        question. Return verified findings and dependency implications for PM, including unresolved
+                        product questions. Use source and task reads to answer the investigation.
+                        """))
+                .to("tack:act?id=architect-topology-investigation&toolProfile=" + WorkspaceReadonlyToolProfile.ID);
+
+        from("direct:architect-work-implementation")
+                .routeId("architect-work-implementation")
+                .setHeader(TackHeaders.PROMPT, constant("""
+                        Implement one coherent assigned patch in the established system or component repository. Reuse
+                        the task branch/PR and validate directly in the sandbox. Repository provisioning has its own focus.
+                        """))
+                .to("tack:act?id=architect-implementation-step&toolProfile=" + ArchitectSourceControlWriteToolProfile.ID)
+                .setHeader(TackHeaders.PROMPT, constant("""
+                        Check the exact branch/head and Gitea PR state. Verify the evidence of checks actually run,
+                        applicable acceptance scope and remaining limitations.
+                        """))
+                .to("tack:act?id=architect-validation-step&toolProfile=" + SourceControlToolProfile.ID);
+
         from("direct:architect-focus-integration")
                 .routeId("architect-focus-integration")
                 .setHeader(TackHeaders.THOUGHT_PURPOSE, constant("""
-                        Drain the current integration queue. Preserve exact selected Gitea owner/repo/PR, linked Plane
+                        Drain the current integration queue. Preserve exact selected Gitea owner/repo/PR, linked Kaneo
                         work, head/base, mergeability, validation evidence, and any concrete blocker across selection,
                         conflict recovery, and final merge. Exact locators are the most important memory in this scope.
                         """))
                 .to("tack:thought-enter?name=architect-integration-focus&maxTokens=550")
                 .to("direct:architect-integration-focus")
-                .to("tack:thought-exit?name=architect-integration-focus")
-                .to("direct:architect-awareness");
+                .to("direct:architect-awareness")
+                .to("tack:thought-exit?name=architect-integration-focus");
 
         from("direct:architect-integration-focus")
                 .routeId("architect-integration-focus")
@@ -211,7 +233,7 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
                         Include DEV-, QA-, and Architect-authored PRs. Process oldest safe PRs first, but never let an unsafe,
                         conflicted, stale, or ambiguous PR block independent safe PRs behind it.
 
-                        For each candidate, fresh-read the exact owner/repo/PR and linked Plane work needed to verify:
+                        For each candidate, fresh-read the exact owner/repo/PR and linked Kaneo work needed to verify:
                         intended base, current head/base, mergeability/conflicts, credible validation, acceptance scope,
                         and absence of a current product/QA blocker. If safe, merge it immediately and continue to the next
                         candidate in the same act. If another candidate targets the same repository after a merge, refresh
@@ -220,8 +242,8 @@ public class ArchitectRoutine extends RouteBuilder implements RoutineProvider {
                         Skip unsafe candidates and record concise blocker evidence. If one remaining candidate needs a
                         concrete source-level conflict recovery or small integration patch that does not require product
                         judgment, preserve its exact owner/repo/PR locator for the follow-up recovery decision. Do not
-                        require Director approval, QA "green", review-ready phrases, or chat handoffs. Continue until no
-                        immediately safe candidate remains or the tool execution budget is reached.
+                        require a Kaneo in-review transition, Director approval, QA "green", review-ready phrases,
+                        or chat handoffs. Continue until no immediately safe candidate remains or the tool budget is reached.
                         """))
                 .to("tack:act?id=architect-integration-batch&toolProfile=" + IntegrationToolProfile.ID)
                 .setHeader(TackHeaders.PROMPT, constant("""

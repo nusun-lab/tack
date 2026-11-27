@@ -6,8 +6,15 @@ import us.nusun.tack.framework.tests.support.FrameworkFixtures;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -75,6 +82,62 @@ class InFlightReplyManagerBoundaryTest {
         manager.complete(new LlmJobResult(job.jobId(), LlmJobStatus.SUCCEEDED, job.laneId(), job.passType(), job.requester(), job.role(), "mock", "late", "late", job.requestedAt(), Instant.now(), Instant.now(), 0, null));
 
         assertTrue(failure.getMessage().contains("Timed out waiting for LLM reply"));
+        assertFalse(manager.claim(job.jobId()));
+        assertEquals(0, manager.inFlightCount());
+    }
+
+    @Test
+    void timeoutAfterClaimKeepsTheRunOwnedUntilTheWorkerFinishes() throws Exception {
+        InFlightReplyManager manager = new InFlightReplyManager();
+        LlmJobEnvelope job = queuedJob(UUID.randomUUID());
+        LlmJobResult result = LlmJobResult.succeeded(job, "mock", "ok", "ok", Instant.now());
+        manager.register(job.jobId(), "run");
+        assertTrue(manager.claim(job.jobId()));
+        assertFalse(manager.claim(job.jobId()));
+
+        try (var caller = Executors.newSingleThreadExecutor()) {
+            var reply = caller.submit(() -> manager.await(job.jobId(), 1));
+            try {
+                assertThrows(TimeoutException.class, () -> reply.get(100, TimeUnit.MILLISECONDS));
+                assertThrows(IllegalStateException.class, () -> manager.register(UUID.randomUUID(), "run"));
+                UUID other = UUID.randomUUID();
+                manager.register(other, "other-run");
+                assertTrue(manager.claim(other));
+                manager.complete(LlmJobResult.succeeded(queuedJob(other), "mock", "other", "other", Instant.now()));
+                assertEquals("other", manager.await(other, 100).content());
+            } finally {
+                manager.complete(result);
+            }
+            assertEquals(result, reply.get(1, TimeUnit.SECONDS));
+        }
+        assertFalse(manager.claim(job.jobId()));
+        assertEquals(0, manager.inFlightCount());
+    }
+
+    @Test
+    void interruptedCallerCannotReleaseTheRunWhileItsWorkerIsActive() throws Exception {
+        InFlightReplyManager manager = new InFlightReplyManager();
+        LlmJobEnvelope job = queuedJob(UUID.randomUUID());
+        manager.register(job.jobId(), "run");
+        assertTrue(manager.claim(job.jobId()));
+        CountDownLatch waiting = new CountDownLatch(1);
+
+        try (var caller = Executors.newSingleThreadExecutor()) {
+            var reply = caller.submit(() -> {
+                Thread.currentThread().interrupt();
+                waiting.countDown();
+                return manager.await(job.jobId(), 100);
+            });
+            try {
+                assertTrue(waiting.await(1, TimeUnit.SECONDS));
+                assertThrows(TimeoutException.class, () -> reply.get(100, TimeUnit.MILLISECONDS));
+                assertThrows(IllegalStateException.class, () -> manager.register(UUID.randomUUID(), "run"));
+            } finally {
+                manager.complete(LlmJobResult.succeeded(job, "mock", "ok", "ok", Instant.now()));
+            }
+            var failure = assertThrows(ExecutionException.class, () -> reply.get(1, TimeUnit.SECONDS));
+            assertInstanceOf(InterruptedException.class, failure.getCause());
+        }
         assertEquals(0, manager.inFlightCount());
     }
 

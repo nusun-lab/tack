@@ -4,10 +4,10 @@ import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.memory.ChatMemory;
-import dev.langchain4j.model.TokenCountEstimator;
-import us.nusun.tack.framework.inference.lane.ToolPassSettings;
+import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 
 import java.util.List;
+import java.util.stream.IntStream;
 
 /**
  * Hard stop for pathological tool loops and tool-pass budget exhaustion.
@@ -16,17 +16,18 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
     private static final System.Logger LOG = System.getLogger(ToolLoopGuardChatMemory.class.getName());
     private static final int MAX_CYCLE_LENGTH = 5;
 
-    private final ToolAwareTokenWindowChatMemory transcript;
+    private final ChatMemory transcript;
+    private final ToolInteractions interactions = new ToolInteractions();
     private final int maxToolCalls;
     private int assistantRounds;
 
-    public static ChatMemory forPass(Object id, ToolPassSettings settings, TokenCountEstimator estimator) {
-        return new ToolLoopGuardChatMemory(new ToolAwareTokenWindowChatMemory(id, settings.memoryTokens(), estimator,
-                settings.compactionThreshold(), settings.recentToolInteractions()), settings.maxToolCalls());
+    public static ChatMemory forPass(Object id, int maxToolCalls) {
+        return new ToolLoopGuardChatMemory(id, maxToolCalls);
     }
 
-    private ToolLoopGuardChatMemory(ToolAwareTokenWindowChatMemory transcript, int maxToolCalls) {
-        this.transcript = transcript;
+    private ToolLoopGuardChatMemory(Object id, int maxToolCalls) {
+        this.transcript = MessageWindowChatMemory.builder().id(id).maxMessages(Integer.MAX_VALUE)
+                .alwaysKeepSystemMessageFirst(true).build();
         this.maxToolCalls = Math.max(0, maxToolCalls);
     }
 
@@ -39,7 +40,7 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
     public synchronized void add(ChatMessage message) {
         if (message instanceof AiMessage aiMessage) {
             assistantRounds++;
-            int acceptedToolCalls = transcript.interactions().requested().size();
+            int acceptedToolCalls = interactions.requestCount();
             List<ToolExecutionRequest> requests = aiMessage.toolExecutionRequests();
             LOG.log(System.Logger.Level.INFO,
                     "LLM tool-loop assistant round={0} thinkingChars={1} textChars={2} toolCalls={3} acceptedToolCalls={4}/{5}",
@@ -63,6 +64,7 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
         }
 
         transcript.add(message);
+        interactions.record(message);
     }
 
     @Override
@@ -79,11 +81,12 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
     @Override
     public synchronized void clear() {
         transcript.clear();
+        interactions.clear();
         assistantRounds = 0;
     }
 
     private int repeatedCycleLength(ToolInteractions.Signature nextRequest) {
-        List<ToolInteractions.Execution> completedExecutions = transcript.interactions().completed();
+        List<ToolInteractions.Execution> completedExecutions = interactions.completed();
         int completed = completedExecutions.size();
         for (int cycleLength = 1; cycleLength <= MAX_CYCLE_LENGTH; cycleLength++) {
             if (completed < cycleLength * 2) {
@@ -92,8 +95,8 @@ public final class ToolLoopGuardChatMemory implements ChatMemory {
             int firstCycleStart = completed - cycleLength * 2;
             int secondCycleStart = completed - cycleLength;
             if (completedExecutions.get(secondCycleStart).request().equals(nextRequest)
-                    && completedExecutions.subList(firstCycleStart, secondCycleStart)
-                            .equals(completedExecutions.subList(secondCycleStart, completed))) {
+                    && IntStream.range(0, cycleLength).allMatch(i -> completedExecutions.get(firstCycleStart + i)
+                            .matches(completedExecutions.get(secondCycleStart + i)))) {
                 return cycleLength;
             }
         }

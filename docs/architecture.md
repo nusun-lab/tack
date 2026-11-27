@@ -59,16 +59,16 @@ Sandbox lifecycle is independent of AgentRun lifecycle. `POST /workspace/reset` 
 
 ## Tool-pass safety
 
-Tool/action memory is ephemeral to one tool pass. Tack keeps a bounded recent interaction window and compacts tool memory once the configured threshold is crossed instead of carrying an indefinitely growing transcript.
+Tool/action memory is ephemeral to one tool pass. Tack keeps the original execution history for accounting and projects the model request after it knows the current prompt and tool schemas.
 
 The default controls are:
 
-- 50,000 tool-memory tokens;
-- compaction at 50% of that budget;
-- three recent tool interactions preserved around compaction;
+- 50,000 transcript tokens, bounded by the model context available after protected prompts, schemas, and reserved output;
 - a semantic budget of 50 individual tool calls per tool pass.
 
-Tack also detects repeated completed tool executions, including repeated cycles up to length five, before executing the next repeated cycle. The semantic call budget is checked before another tool executes, so a runaway pass fails at the Tack boundary rather than silently continuing through an unbounded tool loop.
+When a request exceeds the effective budget, Tack replaces payloads one at a time, starting with the largest savings and preferring older results among similar sizes. It aims for 90% of the budget. The result notices preserve tool-call correlation and reported outcomes. When the remaining messages still cannot fit, Tack stops the pass. Previously completed calls remain executed.
+
+Tack also detects repeated completed tool executions, including cycles up to length five, and checks the call budget before executing more tools.
 
 These mechanisms are safety rails, not the primary routine design. Act prompts should still define a valid stop when evidence is found, when required state is absent, or when an exact blocker is known.
 
@@ -82,28 +82,23 @@ When topic provisioning is enabled, missing lane request topics are created with
 
 Lane-wide FIFO is not guaranteed when `parallelism > 1`. Ordering is preserved only for jobs with the same Kafka partition key. The default partition key strategy is `AGENT_RUN`, with fallback `agentRunId -> missionId -> jobId`. `MISSION` uses `missionId -> agentRunId -> jobId`, and `JOB` uses `jobId`.
 
-Replies remain simple in this mode: reply topics are single-partition, reply records are keyed by `jobId`, and `InFlightReplyManager` completes the local in-memory waiter by `jobId`.
+One active orchestrator owns its local lane workers and in-memory waiters. The worker commits the Kafka offset before claiming the job, then completes the waiter by `jobId` when the tool loop exits. It also publishes the result to the lane's single-partition reply topic. Lane worker parallelism is supported within that process.
 
-The current request/reply implementation assumes one active orchestrator instance owns those in-memory waiters. Lane worker parallelism is supported inside that topology. Horizontally scaled orchestrator/API instances require reply-to routing or durable reply storage and are intentionally out of scope for this mode.
+The reply deadline withdraws a queued request. Once claimed, the job holds its AgentRun until the tool loop exits. A process crash after commit can leave external effects incomplete or unknown, and the committed request is skipped on restart.
 
 ## Software-Team Tool Boundaries
 
 The bundled software-team example is deliberately outside framework core, but it documents one concrete way to keep tool authority understandable.
 
-Plane owns projects, planned work, assignments, status, dependencies, priorities, blockers, and delivery planning. Gitea owns remote repository state and review metadata. Mattermost owns conversation, questions, handoffs, and concise notifications. OpenShell is the local execution boundary for repository content work.
+Kaneo owns projects, planned work, assignments, status, dependencies, priorities, blockers, and delivery planning. Gitea owns remote repository state and review metadata. Mattermost owns conversation, questions, handoffs, and concise notifications. OpenShell is the local execution boundary for repository content work.
 
 The software-team example declares separate profiles for workspace observation, coordination,
 delivery, product ownership, QA, source changes, integration, and team chat. The
 [example profile table](../README.md#example-tool-profiles) lists the current IDs and ownership.
-Repository-writing profiles share their sandbox and Gitea grants. Plane work profiles share
-classification and query guidance. The read-only workspace profile advertises and enforces an
-explicit list of Plane actions for each resource tool. Omitted actions require a profile-owned
-default. Tack applies defaults and checks the effective values before dispatch.
-
-Architect owns the non-empty repository baseline on main. Developers report missing baselines
-to Architect and start task branches from an established baseline. Project managers record
-verified dependency cycles and continue unrelated executable work. Plane CE supports reading
-and creating built-in relations, so the routine does not attempt relation deletion.
+Repository-writing profiles share sandbox and Gitea guidance. Kaneo profiles grant exact native tool
+names per responsibility. Workspace observation and the Kaneo side of integration expose read tools only.
+Architect owns the non-empty baseline on main. PM can repair a verified dependency relation by ID using
+Kaneo's native relation deletion, then verify the corrected graph.
 
 ## Runtime boundaries
 
@@ -132,8 +127,6 @@ and creating built-in relations, so the routine does not attempt relation deleti
   connection on first discovery, checks tool grants at dispatch, and passes through the
   native schema, arguments and result content. The persona execution log includes an
   abbreviated preview of the response.
-- The example checks read-only Plane actions before dispatch from workspace observation
-  and integration profiles. Plane supplies its native schemas, including PQL.
 
 ## Near-term decisions
 

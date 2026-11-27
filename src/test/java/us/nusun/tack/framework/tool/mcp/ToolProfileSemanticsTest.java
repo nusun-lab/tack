@@ -69,27 +69,29 @@ class ToolProfileSemanticsTest {
         ToolProfile profile = ToolProfile.builder("composite")
                 .mcpServer(McpServerDefinition.builder(FrameworkFixtures.SERVER_ALPHA).build())
                 .mcpServer(McpServerDefinition.builder(FrameworkFixtures.SERVER_BETA).build())
-                .allowTool(FrameworkFixtures.SERVER_ALPHA, "search")
-                .allowTool(FrameworkFixtures.SERVER_BETA, "search")
+                .allowTool(FrameworkFixtures.SERVER_ALPHA, "create_task_relation")
+                .allowTool(FrameworkFixtures.SERVER_BETA, "create_task_relation")
                 .build();
         var schema = JsonObjectSchema.builder().description("Original request")
-                .addProperty("action", JsonEnumSchema.builder().enumValues("search", "update").build())
-                .addStringProperty("pql").required("action").additionalProperties(false).build();
-        var spec = ToolSpecification.builder().name("search").description("Original description").parameters(schema).build();
+                .addStringProperty("sourceTaskId")
+                .addStringProperty("targetTaskId")
+                .addProperty("relationType", JsonEnumSchema.builder().enumValues("subtask", "blocks", "related").build())
+                .required("sourceTaskId", "targetTaskId", "relationType").build();
+        var spec = ToolSpecification.builder().name("create_task_relation").description("Original description").parameters(schema).build();
         String payload = "{\"rows\":[\"" + "large-result".repeat(6000) + "\"],\"complete\":true}";
         var completeResult = ToolExecutionResult.builder().resultText(payload)
                 .attributes(Map.of("cursor", "last")).build();
         var alpha = new FakeMcpClient(completeResult, List.of(spec));
         var beta = new FakeMcpClient(List.of(spec));
         var exposed = policy(alpha, FrameworkFixtures.SERVER_ALPHA, profile).provideTools(DISCOVERY);
-        var advertised = exposed.toolSpecificationByName("alpha_mcp__search");
-        assertEquals(spec.toBuilder().name("alpha_mcp__search").build(), advertised);
+        var advertised = exposed.toolSpecificationByName("alpha_mcp__create_task_relation");
+        assertEquals(spec.toBuilder().name("alpha_mcp__create_task_relation").build(), advertised);
         assertSame(schema, advertised.parameters());
-        assertEquals(List.of("beta_mcp__search"), tools(policy(beta, FrameworkFixtures.SERVER_BETA, profile))
+        assertEquals(List.of("beta_mcp__create_task_relation"), tools(policy(beta, FrameworkFixtures.SERVER_BETA, profile))
                 .stream().map(ToolSpecification::name).toList());
 
         var request = ToolExecutionRequest.builder().id("call-1").name(advertised.name())
-                .arguments(" { \"action\": \"search\", \"pql\": \"priority = high\", \"extra\": null } ").build();
+                .arguments(" { \"sourceTaskId\": \"source\", \"targetTaskId\": \"target\", \"relationType\": \"blocks\" } ").build();
         var context = InvocationContext.builder().chatMemoryId("run-1").build();
         var result = exposed.toolExecutorByName(advertised.name()).executeWithContext(request, context);
 
@@ -101,29 +103,19 @@ class ToolProfileSemanticsTest {
     }
 
     @Test
-    void executionCheckRejectsBeforeDispatchAndKeepsSuccessfulArgumentsUnchanged() {
-        var spec = ToolSpecification.builder().name("lookup").build();
-        var client = new FakeMcpClient(List.of(spec));
+    void executorRejectsMismatchedToolIdentityBeforeDispatch() {
+        var client = new FakeMcpClient(List.of(ToolSpecification.builder().name("get_task").build()));
         var profile = ToolProfile.builder("restricted")
-                .mcpServer(McpServerDefinition.builder("catalog").build())
-                .allowTool("catalog", "lookup")
-                .denyTool("catalog", "delete")
-                .authorizeMcpExecution("catalog", (tool, raw) -> {
-                    assertEquals("lookup", tool);
-                    if (!"read only".equals(raw)) {
-                        throw new IllegalArgumentException("Read access only");
-                    }
-                }).build();
-        var exposed = policy(client, "catalog", profile).provideTools(DISCOVERY);
-        var executor = exposed.toolExecutorByName("lookup");
-        var request = ToolExecutionRequest.builder().name("lookup").arguments("write").build();
+                .mcpServer(McpServerDefinition.builder("kaneo").build())
+                .allowTool("kaneo", "get_task")
+                .build();
+        var exposed = policy(client, "kaneo", profile).provideTools(DISCOVERY);
+        var executor = exposed.toolExecutorByName("get_task");
+        var wrongTool = ToolExecutionRequest.builder().name("delete_task").arguments("{}").build();
 
-        assertThrows(IllegalArgumentException.class, () -> executor.execute(request, "memory"));
-        assertThrows(IllegalArgumentException.class, () -> executor.execute(request.toBuilder().name("delete").build(), "memory"));
+        assertNull(exposed.toolExecutorByName("delete_task"));
+        assertThrows(IllegalArgumentException.class, () -> executor.execute(wrongTool, "memory"));
         assertNull(client.lastRequest);
-        var read = request.toBuilder().arguments("read only").build();
-        executor.execute(read, "memory");
-        assertEquals(read, client.lastRequest);
     }
 
     @Test
