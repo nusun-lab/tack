@@ -23,8 +23,8 @@ import java.util.Map;
 
 final class PrimitivePrompts {
     private static final String MEMORY_GUIDANCE = """
-            Write the complete updated working memory in `content`. This replaces the existing thought, so omissions are lost.
-            Use the thought purpose as a checklist. Carry forward unchanged notes that still serve it and add relevant verified facts and open conditions.
+            Write the complete updated working memory as one plain-text paragraph with inline labels in `content`. This replaces the existing thought, so omissions are lost.
+            Use the thought purpose to select what matters. Use these inline labels in order: Verified locators, Current state, Open conditions. Retain relevant locators from both the existing thought and new evidence.
             Copy exact identifiers verbatim with what they identify. Change established facts only when supported by new evidence. Keep useful detail within the available budget.
             """.strip();
 

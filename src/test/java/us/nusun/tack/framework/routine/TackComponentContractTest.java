@@ -70,8 +70,10 @@ class TackComponentContractTest {
             String synthesis = llm.requests.get(1).prompt();
             int existingThought = synthesis.indexOf("### Existing thought");
             assertTrue(existingThought >= 0 && existingThought < synthesis.indexOf("### New observations"));
+            assertTrue(synthesis.contains("one plain-text paragraph with inline labels in `content`"));
             assertTrue(synthesis.contains("This replaces the existing thought, so omissions are lost"));
-            assertTrue(synthesis.contains("Carry forward unchanged notes"));
+            assertTrue(synthesis.contains("Verified locators, Current state, Open conditions"));
+            assertTrue(synthesis.contains("Retain relevant locators from both the existing thought and new evidence"));
             assertTrue(synthesis.contains("Copy exact identifiers verbatim with what they identify"));
             assertTrue(synthesis.contains("Evaluate only the latest act"));
             assertFalse(llm.requests.get(1).prompt().contains("\"durableProgress\":true"));
@@ -215,6 +217,8 @@ class TackComponentContractTest {
                 consolidation++;
                 assertTrue(request.prompt().contains(locator));
                 assertTrue(request.prompt().contains("Start with the existing parent thought"));
+                assertTrue(request.prompt().contains("one plain-text paragraph with inline labels in `content`"));
+                assertTrue(request.prompt().contains("Verified locators, Current state, Open conditions"));
                 assertTrue(request.prompt().contains("Change established facts only when supported by new evidence"));
                 assertTrue(request.prompt().contains("Omit internal thought identifiers"));
                 return "{\"content\":\"root memory after turn " + consolidation + " " + locator + "\"}";

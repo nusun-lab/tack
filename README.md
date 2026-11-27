@@ -426,6 +426,8 @@ Run the rebalance regression against a local Kafka broker with `TACK_TEST_KAFKA_
 | `LLM_MODEL_DEFAULT_TOOL_MEMORY_RECENT_TOOL_INTERACTIONS` | `3` |
 | `LLM_MODEL_DEFAULT_MAX_TOOL_CALLING_ROUND_TRIPS` | `50` |
 
+The software-team example defaults to temperature `0.2`, top-p `0.90`, and top-k `20` on low-pass, and temperature `0.30`, top-p `0.90`, and presence penalty `0.0` on high-pass. The corresponding `LLM_LOW_*` and `LLM_HIGH_*` settings override these defaults.
+
 ### OpenShell runtime
 
 | Environment variable | Default |
